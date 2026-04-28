@@ -376,14 +376,23 @@ impl Checker {
             }
             ExprKind::NewScopedObject { receiver, args } => {
                 let class_name = match receiver {
-                    crate::parser::ast::StaticReceiver::Self_
-                    | crate::parser::ast::StaticReceiver::Static => {
+                    crate::parser::ast::StaticReceiver::Self_ => {
                         self.current_class.clone().ok_or_else(|| {
                             CompileError::new(
                                 expr.span,
-                                "Cannot use 'new self()' or 'new static()' outside a class context",
+                                "Cannot use 'new self()' outside a class context",
                             )
                         })?
+                    }
+                    crate::parser::ast::StaticReceiver::Static => {
+                        let class_name = self.current_class.clone().ok_or_else(|| {
+                            CompileError::new(
+                                expr.span,
+                                "Cannot use 'new static()' outside a class context",
+                            )
+                        })?;
+                        self.validate_late_bound_constructor_targets(&class_name, args, expr, env)?;
+                        return Ok(PhpType::Object(class_name));
                     }
                     crate::parser::ast::StaticReceiver::Parent => {
                         let current = self.current_class.as_ref().ok_or_else(|| {
@@ -515,6 +524,42 @@ impl Checker {
 }
 
 impl Checker {
+    fn validate_late_bound_constructor_targets(
+        &mut self,
+        base_class: &str,
+        args: &[Expr],
+        expr: &Expr,
+        env: &TypeEnv,
+    ) -> Result<(), CompileError> {
+        let mut class_names: Vec<String> = self
+            .classes
+            .keys()
+            .filter(|name| self.class_is_same_or_descends_from(name, base_class))
+            .cloned()
+            .collect();
+        class_names.sort();
+
+        for class_name in class_names {
+            self.infer_new_object_type(&class_name, args, expr, env)?;
+        }
+
+        Ok(())
+    }
+
+    fn class_is_same_or_descends_from(&self, class_name: &str, base_class: &str) -> bool {
+        let mut current = Some(class_name);
+        while let Some(name) = current {
+            if name == base_class {
+                return true;
+            }
+            current = self
+                .classes
+                .get(name)
+                .and_then(|info| info.parent.as_deref());
+        }
+        false
+    }
+
     fn validate_class_constant_receiver(
         &self,
         receiver: &StaticReceiver,

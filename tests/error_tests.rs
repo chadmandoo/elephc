@@ -3682,3 +3682,11 @@ fn test_error_parent_class_without_parent() {
         "Class 'C' has no parent class",
     );
 }
+
+#[test]
+fn test_error_new_static_validates_child_constructor() {
+    expect_error(
+        "<?php class Base { public static function make(): Base { return new static(); } } class Child extends Base { public function __construct(string $name) {} } echo Child::make();",
+        "Constructor 'Child::__construct' expects 1 arguments, got 0",
+    );
+}
