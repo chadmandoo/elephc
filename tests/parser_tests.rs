@@ -1325,6 +1325,19 @@ fn test_parse_array_compound_assignment() {
 }
 
 #[test]
+fn test_parse_effectful_array_compound_assignment_uses_synthetic_temporary() {
+    let stmts = parse_source("<?php $items[idx()] += 3;");
+    match &stmts[0].kind {
+        StmtKind::Synthetic(stmts) => {
+            assert_eq!(stmts.len(), 2);
+            assert!(matches!(stmts[0].kind, StmtKind::Assign { .. }));
+            assert!(matches!(stmts[1].kind, StmtKind::ArrayAssign { .. }));
+        }
+        other => panic!("Expected Synthetic lowering, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_null_coalesce_assignment_parse() {
     let stmts = parse_source("<?php $x ??= 10;");
     assert_eq!(stmts.len(), 1);
