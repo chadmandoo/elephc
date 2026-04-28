@@ -110,8 +110,7 @@ Registry::$items[0] ??= 10;
 ```
 
 Append targets such as `$items[] += 1` are invalid; append syntax is only supported with plain assignment (`$items[] = 1`).
-
-For non-local compound targets, receiver and index expressions must currently be side-effect-free so the compiler can preserve PHP-compatible read-modify-write behavior without evaluating a function or method call twice.
+Receiver and index expressions are evaluated once for non-local compound targets, matching PHP read-modify-write behavior for forms such as `$items[f()] += 1` and `getBox()->count += 1`.
 
 ## List Unpacking
 
