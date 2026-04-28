@@ -1,5 +1,5 @@
 use crate::errors::CompileError;
-use crate::parser::ast::{Expr, ExprKind, Stmt, StmtKind};
+use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
 use crate::types::{
     merge_array_key_types, normalized_array_key_type, packed_type_size, PhpType, TypeEnv,
 };
@@ -370,7 +370,10 @@ impl Checker {
                 target_type,
                 expr: inner,
             } => self.infer_ptr_cast_type(target_type, inner, expr, env),
-            ExprKind::ClassConstant { .. } => Ok(PhpType::Str),
+            ExprKind::ClassConstant { receiver } => {
+                self.validate_class_constant_receiver(receiver, expr.span)?;
+                Ok(PhpType::Str)
+            }
             ExprKind::NewScopedObject { receiver, args } => {
                 let class_name = match receiver {
                     crate::parser::ast::StaticReceiver::Self_
@@ -511,6 +514,49 @@ impl Checker {
     }
 }
 
+impl Checker {
+    fn validate_class_constant_receiver(
+        &self,
+        receiver: &StaticReceiver,
+        span: crate::span::Span,
+    ) -> Result<(), CompileError> {
+        match receiver {
+            StaticReceiver::Named(_) => Ok(()),
+            StaticReceiver::Self_ | StaticReceiver::Static => {
+                if self.current_class.is_some() {
+                    Ok(())
+                } else {
+                    Err(CompileError::new(
+                        span,
+                        "Cannot use self::class or static::class outside a class context",
+                    ))
+                }
+            }
+            StaticReceiver::Parent => {
+                let current = self.current_class.as_ref().ok_or_else(|| {
+                    CompileError::new(
+                        span,
+                        "Cannot use parent::class outside a class context",
+                    )
+                })?;
+                if self
+                    .classes
+                    .get(current)
+                    .and_then(|info| info.parent.as_ref())
+                    .is_some()
+                {
+                    Ok(())
+                } else {
+                    Err(CompileError::new(
+                        span,
+                        &format!("Class '{}' has no parent class", current),
+                    ))
+                }
+            }
+        }
+    }
+}
+
 /// Walk a static closure body and reject any reference to `$this`. PHP forbids
 /// `$this` inside `static function() {}` and `static fn() => ...` because the
 /// closure isn't bound to an object instance.
@@ -526,6 +572,7 @@ fn stmt_must_not_use_this(stmt: &Stmt, span: crate::span::Span) -> Result<(), Co
         StmtKind::Echo(e)
         | StmtKind::Throw(e)
         | StmtKind::ExprStmt(e)
+        | StmtKind::Include { path: e, .. }
         | StmtKind::ConstDecl { value: e, .. }
         | StmtKind::StaticVar { init: e, .. }
         | StmtKind::ListUnpack { value: e, .. }
@@ -631,6 +678,11 @@ fn stmt_must_not_use_this(stmt: &Stmt, span: crate::span::Span) -> Result<(), Co
             }
             Ok(())
         }
+        StmtKind::NamespaceBlock { body, .. } => body_must_not_use_this(body, span),
+        StmtKind::FunctionDecl { .. }
+        | StmtKind::ClassDecl { .. }
+        | StmtKind::TraitDecl { .. }
+        | StmtKind::InterfaceDecl { .. } => Ok(()),
         _ => Ok(()),
     }
 }
@@ -645,14 +697,20 @@ fn expr_must_not_use_this(expr: &Expr, span: crate::span::Span) -> Result<(), Co
             expr_must_not_use_this(left, span)?;
             expr_must_not_use_this(right, span)
         }
-        ExprKind::Negate(inner)
+        ExprKind::InstanceOf { value: inner, .. }
+        | ExprKind::Negate(inner)
         | ExprKind::Not(inner)
         | ExprKind::BitNot(inner)
         | ExprKind::Throw(inner)
+        | ExprKind::ErrorSuppress(inner)
         | ExprKind::Spread(inner)
         | ExprKind::PtrCast { expr: inner, .. }
         | ExprKind::Cast { expr: inner, .. } => expr_must_not_use_this(inner, span),
         ExprKind::NullCoalesce { value, default } => {
+            expr_must_not_use_this(value, span)?;
+            expr_must_not_use_this(default, span)
+        }
+        ExprKind::ShortTernary { value, default } => {
             expr_must_not_use_this(value, span)?;
             expr_must_not_use_this(default, span)
         }
@@ -673,7 +731,8 @@ fn expr_must_not_use_this(expr: &Expr, span: crate::span::Span) -> Result<(), Co
             }
             Ok(())
         }
-        ExprKind::MethodCall { object, args, .. } => {
+        ExprKind::MethodCall { object, args, .. }
+        | ExprKind::NullsafeMethodCall { object, args, .. } => {
             expr_must_not_use_this(object, span)?;
             for arg in args {
                 expr_must_not_use_this(arg, span)?;
@@ -723,10 +782,22 @@ fn expr_must_not_use_this(expr: &Expr, span: crate::span::Span) -> Result<(), Co
             }
             Ok(())
         }
-        ExprKind::PropertyAccess { object, .. } => expr_must_not_use_this(object, span),
+        ExprKind::PropertyAccess { object, .. }
+        | ExprKind::NullsafePropertyAccess { object, .. } => expr_must_not_use_this(object, span),
         ExprKind::NamedArg { value, .. } => expr_must_not_use_this(value, span),
         ExprKind::BufferNew { len, .. } => expr_must_not_use_this(len, span),
+        ExprKind::FirstClassCallable(target) => callable_target_must_not_use_this(target, span),
         ExprKind::Closure { body, .. } => body_must_not_use_this(body, span),
         _ => Ok(()),
+    }
+}
+
+fn callable_target_must_not_use_this(
+    target: &CallableTarget,
+    span: crate::span::Span,
+) -> Result<(), CompileError> {
+    match target {
+        CallableTarget::Method { object, .. } => expr_must_not_use_this(object, span),
+        CallableTarget::Function(_) | CallableTarget::StaticMethod { .. } => Ok(()),
     }
 }

@@ -3658,3 +3658,27 @@ fn test_error_static_arrow_closure_uses_this() {
         "Cannot use $this inside a static closure",
     );
 }
+
+#[test]
+fn test_error_static_closure_uses_this_through_short_ternary() {
+    expect_error(
+        "<?php class C { public int $count = 5; public function bad() { $f = static fn($x) => $x ?: $this->count; return $f; } }",
+        "Cannot use $this inside a static closure",
+    );
+}
+
+#[test]
+fn test_error_self_class_outside_class() {
+    expect_error(
+        "<?php echo self::class;",
+        "Cannot use self::class or static::class outside a class context",
+    );
+}
+
+#[test]
+fn test_error_parent_class_without_parent() {
+    expect_error(
+        "<?php class C { public static function name() { return parent::class; } }",
+        "Class 'C' has no parent class",
+    );
+}
