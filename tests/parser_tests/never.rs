@@ -17,6 +17,17 @@ fn test_parse_never_return_type() {
 }
 
 #[test]
+fn test_parse_never_return_type_is_case_insensitive() {
+    let stmts = parse_source("<?php function fail(): NEVER { throw new \\Exception(); }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { return_type, .. } => {
+            assert_eq!(return_type.as_ref(), Some(&TypeExpr::Never));
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_parse_never_return_type_on_instance_method() {
     let stmts = parse_source(
         "<?php class Failer { public function fail(): never { throw new \\Exception(); } }",
