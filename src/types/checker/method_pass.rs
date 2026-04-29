@@ -152,6 +152,21 @@ impl Checker {
                 &format!("Method '{}::{}'", class.name, method.name),
             ) {
                 Ok(declared) => {
+                    if matches!(declared, PhpType::Never)
+                        && Self::body_contains_return(&method.body)
+                    {
+                        pass_errors.push(CompileError::new(
+                            method.span,
+                            &format!(
+                                "Method '{}::{}' declared never must not return",
+                                class.name, method.name
+                            ),
+                        ));
+                        self.current_class = None;
+                        self.current_method = None;
+                        self.current_method_is_static = false;
+                        return;
+                    }
                     // :never methods are allowed to have no return statements (they always throw/exit/loop).
                     let skip_compat_check =
                         matches!(declared, PhpType::Never) && raw_inferred.is_none();

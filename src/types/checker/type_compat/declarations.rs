@@ -41,7 +41,7 @@ impl Checker {
                 span,
                 &format!("{} cannot use type void", context),
             )),
-            PhpType::Never => Err(CompileError::new(
+            _ if Self::type_contains_never(&ty) => Err(CompileError::new(
                 span,
                 &format!("{} cannot use type never", context),
             )),
@@ -55,6 +55,12 @@ impl Checker {
         span: crate::span::Span,
         _context: &str,
     ) -> Result<PhpType, CompileError> {
+        if !matches!(type_expr, TypeExpr::Never) && Self::type_expr_contains_never(type_expr) {
+            return Err(CompileError::new(
+                span,
+                "never can only be used as a standalone return type",
+            ));
+        }
         self.resolve_type_expr(type_expr, span)
     }
 
@@ -65,7 +71,7 @@ impl Checker {
         context: &str,
     ) -> Result<PhpType, CompileError> {
         let ty = self.resolve_type_expr(type_expr, span)?;
-        if matches!(ty, PhpType::Never) {
+        if Self::type_contains_never(&ty) {
             return Err(CompileError::new(
                 span,
                 &format!("{} cannot use type never", context),
@@ -87,7 +93,7 @@ impl Checker {
                 &format!("{} cannot use type void", context),
             ));
         }
-        if matches!(ty, PhpType::Never) {
+        if Self::type_contains_never(&ty) {
             return Err(CompileError::new(
                 span,
                 &format!("{} cannot use type never", context),
@@ -110,6 +116,29 @@ impl Checker {
             PhpType::AssocArray { key, value } => {
                 Self::type_contains_callable(key) || Self::type_contains_callable(value)
             }
+            _ => false,
+        }
+    }
+
+    fn type_contains_never(ty: &PhpType) -> bool {
+        match ty {
+            PhpType::Never => true,
+            PhpType::Union(members) => members.iter().any(Self::type_contains_never),
+            PhpType::Array(inner) | PhpType::Buffer(inner) => Self::type_contains_never(inner),
+            PhpType::AssocArray { key, value } => {
+                Self::type_contains_never(key) || Self::type_contains_never(value)
+            }
+            _ => false,
+        }
+    }
+
+    fn type_expr_contains_never(type_expr: &TypeExpr) -> bool {
+        match type_expr {
+            TypeExpr::Never => true,
+            TypeExpr::Nullable(inner) | TypeExpr::Buffer(inner) => {
+                Self::type_expr_contains_never(inner)
+            }
+            TypeExpr::Union(members) => members.iter().any(Self::type_expr_contains_never),
             _ => false,
         }
     }

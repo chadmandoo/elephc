@@ -710,7 +710,16 @@ pub(crate) fn build_class_info_recursive(
                 "implementing interface",
             )?;
             let actual_method = class.methods.iter().find(|m| m.name == *method_name);
-            if actual_method.is_some_and(|m| m.return_type.is_some())
+            if required_sig.declared_return && !actual_sig.declared_return {
+                return Err(CompileError::new(
+                    actual_method.map(|m| m.span).unwrap_or_else(crate::span::Span::dummy),
+                    &format!(
+                        "Cannot implement interface method {}::{} without declaring a compatible return type (interface returns {})",
+                        class.name, method_name, required_sig.return_type
+                    ),
+                ));
+            }
+            if required_sig.declared_return
                 && !Checker::types_compatible(&required_sig.return_type, &actual_sig.return_type)
             {
                 return Err(CompileError::new(
