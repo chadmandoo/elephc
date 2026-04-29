@@ -165,7 +165,11 @@ pub(super) fn check_typed_assign(
     span: Span,
     env: &mut TypeEnv,
 ) -> Result<(), CompileError> {
-    let declared_ty = checker.resolve_type_expr(type_expr, span)?;
+    let declared_ty = checker.resolve_declared_local_type_hint(
+        type_expr,
+        span,
+        &format!("Typed local ${}", name),
+    )?;
     let value_ty = checker.infer_type(value, env)?;
     if !checker.type_accepts(&declared_ty, &value_ty) {
         return Err(CompileError::new(

@@ -22,12 +22,49 @@ sidebar:
 | `enum`           | Yes              | Pure and backed enums. Cases are singletons. Backed enums support `->value`, `::from()`, `::tryFrom()`, `::cases()`.   |
 | `int|string`     | Yes              | Union type — variable accepts any of the listed types. Lowered to Mixed at runtime.                                    |
 | `?int`           | Yes              | Nullable shorthand — sugar for `int|null`.                                                                             |
-| `void`           | Return only      | Valid as a function, method, closure, or extern return type. Internally, `null` is represented as `Void`.              |
+| `void`           | Return only      | Valid as a function, method, or extern return type. Internally, `null` is represented as `Void`.                       |
+| `never`          | Return only      | Marks a function, method, or interface method that **never returns** — it must always `throw`, call `exit()`/`die()`, or loop forever. Returning is rejected at type-check time. |
 | `ptr` / `ptr<T>` | elephc extension | Raw 64-bit pointer, optionally carrying a checked compile-time pointee tag. See [Pointers](../beyond-php/pointers.md). |
 | `buffer<T>`      | elephc extension | Fixed-size contiguous storage for POD scalars, pointers, or packed records. See [Buffers](../beyond-php/buffers.md).   |
 | `packed class`   | elephc extension | Flat POD record type with compile-time field offsets. See [Packed Classes](../beyond-php/packed-classes.md).           |
 | `resource`       | No               | File handles are modeled as integer file descriptors (`int`).                                                          |
 
+
+### Never
+
+`never` marks a function, method, or interface method that **must not return normally**. The function body is expected to either `throw`, call `exit()`/`die()`, or loop forever.
+
+```php
+<?php
+function panic(string $msg): never {
+    throw new RuntimeException($msg);
+}
+
+class Failer {
+    public function fail(): never {
+        throw new \Exception("boom");
+    }
+
+    public static function bail(int $code): never {
+        exit($code);
+    }
+}
+
+interface Aborts {
+    public function abort(): never;
+}
+```
+
+Rules:
+
+- valid as a return type for functions, instance methods, static methods, and interface methods
+- matched case-insensitively like PHP's built-in type names (`never`, `Never`, and `NEVER` are equivalent)
+- must be used as a standalone return type; `?never`, `never|null`, and `int|never` are rejected
+- not valid as a parameter, property, or typed local
+- declaring `: never` and then writing `return $value;` (or even bare `return;`) is rejected at type-check time
+- `: never` is the **bottom type** in the type system: it is a subtype of every other type, so a child method may override a parent that returns `void`/`int`/etc. with `: never`
+- the reverse is rejected: a parent or interface method declared as `: never` requires the child/implementation to declare a compatible return type
+- if execution falls through a `: never` function or method body, elephc emits a runtime fatal error instead of returning to the caller
 
 ### Typed local declarations
 

@@ -11,3 +11,5 @@ mod type_annotations;
 mod named_arguments;
 #[path = "types/examples.rs"]
 mod examples;
+#[path = "types/never.rs"]
+mod never;

@@ -171,5 +171,7 @@ mod io_builtins;
 mod array_builtins;
 #[path = "error_tests/callables.rs"]
 mod callables;
+#[path = "error_tests/never.rs"]
+mod never;
 #[path = "error_tests/misc.rs"]
 mod misc;
