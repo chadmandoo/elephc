@@ -31,6 +31,49 @@ fn test_compound_assignment_missing_ops_parse() {
 }
 
 #[test]
+fn test_parse_array_compound_assignment() {
+    let stmts = parse_source("<?php $items[0] += 3;");
+    match &stmts[0].kind {
+        StmtKind::ArrayAssign {
+            array,
+            index,
+            value,
+        } => {
+            assert_eq!(array, "items");
+            assert!(matches!(index.kind, ExprKind::IntLiteral(0)));
+            match &value.kind {
+                ExprKind::BinaryOp { left, op, right } => {
+                    assert_eq!(op, &BinOp::Add);
+                    assert!(matches!(right.kind, ExprKind::IntLiteral(3)));
+                    match &left.kind {
+                        ExprKind::ArrayAccess { array, index } => {
+                            assert!(matches!(array.kind, ExprKind::Variable(ref name) if name == "items"));
+                            assert!(matches!(index.kind, ExprKind::IntLiteral(0)));
+                        }
+                        other => panic!("Expected ArrayAccess lhs, got {:?}", other),
+                    }
+                }
+                other => panic!("Expected BinaryOp value, got {:?}", other),
+            }
+        }
+        other => panic!("Expected ArrayAssign, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_effectful_array_compound_assignment_uses_synthetic_temporary() {
+    let stmts = parse_source("<?php $items[idx()] += 3;");
+    match &stmts[0].kind {
+        StmtKind::Synthetic(stmts) => {
+            assert_eq!(stmts.len(), 2);
+            assert!(matches!(stmts[0].kind, StmtKind::Assign { .. }));
+            assert!(matches!(stmts[1].kind, StmtKind::ArrayAssign { .. }));
+        }
+        other => panic!("Expected Synthetic lowering, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_parse_nullable_typed_assign() {
     let stmts = parse_source("<?php ?int $value = null;");
     match &stmts[0].kind {

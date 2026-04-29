@@ -5,7 +5,7 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::{coerce_result_to_type, emit_expr};
 use crate::codegen::stmt::helpers;
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
 pub(crate) fn emit_property_assign_stmt(
@@ -18,6 +18,28 @@ pub(crate) fn emit_property_assign_stmt(
 ) {
     emitter.blank();
     emitter.comment(&format!("->{}  = ...", property));
+    if let Some((current, default)) =
+        crate::codegen::stmt::null_coalesce_property_target(object, property, value)
+    {
+        if matches!(default.kind, ExprKind::Null) {
+            emitter.comment("literal null fallback leaves the property unchanged");
+            return;
+        }
+        let current_ty = emit_expr(current, emitter, ctx, data);
+        if current_ty != PhpType::Void {
+            let keep_label = ctx.next_label("nca_keep");
+            crate::codegen::stmt::emit_branch_if_result_non_null(
+                &current_ty,
+                &keep_label,
+                emitter,
+            );
+            emit_property_assign_stmt(object, property, default, emitter, ctx, data);
+            emitter.label(&keep_label);
+        } else {
+            emit_property_assign_stmt(object, property, default, emitter, ctx, data);
+        }
+        return;
+    }
 
     let magic_set_class = magic_set::resolve_magic_set_target(object, property, ctx);
     let declared_target_ty = declared_property_type(object, property, ctx);
@@ -92,4 +114,3 @@ fn declared_property_type(object: &Expr, property: &str, ctx: &Context) -> Optio
         .find(|(name, _)| name == property)
         .map(|(_, ty)| ty.clone())
 }
-

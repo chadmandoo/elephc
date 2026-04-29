@@ -33,6 +33,36 @@ fn test_parse_static_property_assignment() {
 }
 
 #[test]
+fn test_parse_static_property_compound_assignment() {
+    let stmts = parse_source("<?php Counter::$count += 2;");
+    match &stmts[0].kind {
+        StmtKind::StaticPropertyAssign {
+            receiver,
+            property,
+            value,
+        } => {
+            assert_eq!(receiver, &StaticReceiver::Named("Counter".into()));
+            assert_eq!(property, "count");
+            match &value.kind {
+                ExprKind::BinaryOp { left, op, right } => {
+                    assert_eq!(op, &BinOp::Add);
+                    assert!(matches!(right.kind, ExprKind::IntLiteral(2)));
+                    match &left.kind {
+                        ExprKind::StaticPropertyAccess { receiver, property } => {
+                            assert_eq!(receiver, &StaticReceiver::Named("Counter".into()));
+                            assert_eq!(property, "count");
+                        }
+                        other => panic!("Expected StaticPropertyAccess lhs, got {:?}", other),
+                    }
+                }
+                other => panic!("Expected BinaryOp value, got {:?}", other),
+            }
+        }
+        other => panic!("Expected StaticPropertyAssign, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_parse_static_property_array_push() {
     let stmts = parse_source("<?php Counter::$items[] = 2;");
     match &stmts[0].kind {
@@ -63,6 +93,37 @@ fn test_parse_static_property_array_assign() {
             assert_eq!(property, "items");
             assert!(matches!(index.kind, ExprKind::IntLiteral(1)));
             assert!(matches!(value.kind, ExprKind::IntLiteral(3)));
+        }
+        other => panic!("Expected StaticPropertyArrayAssign, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_parse_static_property_array_compound_assignment() {
+    let stmts = parse_source("<?php Counter::$items[1] ??= 3;");
+    match &stmts[0].kind {
+        StmtKind::StaticPropertyArrayAssign {
+            receiver,
+            property,
+            index,
+            value,
+        } => {
+            assert_eq!(receiver, &StaticReceiver::Named("Counter".into()));
+            assert_eq!(property, "items");
+            assert!(matches!(index.kind, ExprKind::IntLiteral(1)));
+            match &value.kind {
+                ExprKind::NullCoalesce { value, default } => {
+                    assert!(matches!(default.kind, ExprKind::IntLiteral(3)));
+                    match &value.kind {
+                        ExprKind::ArrayAccess { array, index } => {
+                            assert!(matches!(index.kind, ExprKind::IntLiteral(1)));
+                            assert!(matches!(array.kind, ExprKind::StaticPropertyAccess { .. }));
+                        }
+                        other => panic!("Expected ArrayAccess lhs, got {:?}", other),
+                    }
+                }
+                other => panic!("Expected NullCoalesce value, got {:?}", other),
+            }
         }
         other => panic!("Expected StaticPropertyArrayAssign, got {:?}", other),
     }

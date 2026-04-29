@@ -48,11 +48,22 @@ pub(in crate::parser::stmt) fn parse_variable_stmt(
         )
     {
         let expr = parse_expr(tokens, pos)?;
-        if *pos < tokens.len() && tokens[*pos].0 == Token::Assign {
+        if let Some(op) = tokens
+            .get(*pos)
+            .and_then(|(token, _)| compound::assignment_operator(token))
+        {
             *pos += 1;
-            let value = parse_assignment_value_expr(tokens, pos)?;
+            let rhs = parse_assignment_value_expr(tokens, pos)?;
             expect_semicolon(tokens, pos)?;
             if let ExprKind::PropertyAccess { object, property } = expr.kind {
+                let target = Expr::new(
+                    ExprKind::PropertyAccess {
+                        object: object.clone(),
+                        property: property.clone(),
+                    },
+                    span,
+                );
+                let value = compound::assignment_value(target, op, rhs, span);
                 return Ok(Stmt::new(
                     StmtKind::PropertyAssign {
                         object,
@@ -78,4 +89,3 @@ pub(in crate::parser::stmt) fn parse_variable_stmt(
     // Regular or compound assignment
     compound::parse_assign(tokens, pos, span)
 }
-

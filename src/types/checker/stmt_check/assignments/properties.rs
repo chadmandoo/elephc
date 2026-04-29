@@ -1,5 +1,5 @@
 use crate::errors::CompileError;
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, ExprKind};
 use crate::span::Span;
 use crate::types::{PhpType, TypeEnv};
 
@@ -16,7 +16,7 @@ pub(super) fn check_property_assign(
     let obj_ty = checker.infer_type(object, env)?;
     let val_ty = checker.infer_type(value, env)?;
     if let PhpType::Object(class_name) = &obj_ty {
-        check_object_property_write(checker, class_name, property, &val_ty, span)?;
+        check_object_property_write(checker, object, class_name, property, value, &val_ty, span)?;
         refine_object_property_type(checker, class_name, property, &val_ty);
     }
     if let PhpType::Pointer(Some(class_name)) = &obj_ty {
@@ -149,8 +149,10 @@ pub(super) fn check_property_array_assign(
 
 fn check_object_property_write(
     checker: &Checker,
+    object: &Expr,
     class_name: &str,
     property: &str,
+    value: &Expr,
     val_ty: &PhpType,
     span: Span,
 ) -> Result<(), CompileError> {
@@ -165,13 +167,32 @@ fn check_object_property_write(
             ));
         }
         validate_object_property_access(checker, class_name, property, span)?;
+        let expected_ty = class_info
+            .properties
+            .iter()
+            .find(|(n, _)| n == property)
+            .map(|(_, ty)| ty.clone())
+            .unwrap_or(PhpType::Int);
+        let readonly_non_null_coalesce_keep =
+            null_coalesce_property_keeps_non_null(object, property, value, &expected_ty);
+        if class_info.readonly_properties.contains(property)
+            && !(checker.current_class.as_deref()
+                == class_info
+                    .property_declaring_classes
+                    .get(property)
+                    .map(String::as_str)
+                && checker.current_method.as_deref() == Some("__construct"))
+            && !readonly_non_null_coalesce_keep
+        {
+            return Err(CompileError::new(
+                span,
+                &format!(
+                    "Cannot assign to readonly property outside constructor: {}::{}",
+                    class_name, property
+                ),
+            ));
+        }
         if class_info.declared_properties.contains(property) {
-            let expected_ty = class_info
-                .properties
-                .iter()
-                .find(|(n, _)| n == property)
-                .map(|(_, ty)| ty.clone())
-                .unwrap_or(PhpType::Int);
             checker.require_compatible_arg_type(
                 &expected_ty,
                 val_ty,
@@ -210,23 +231,55 @@ fn validate_object_property_access(
             ));
         }
     }
-    if class_info.readonly_properties.contains(property)
-        && !(checker.current_class.as_deref()
-            == class_info
-                .property_declaring_classes
-                .get(property)
-                .map(String::as_str)
-            && checker.current_method.as_deref() == Some("__construct"))
-    {
-        return Err(CompileError::new(
-            span,
-            &format!(
-                "Cannot assign to readonly property outside constructor: {}::{}",
-                class_name, property
-            ),
-        ));
-    }
     Ok(())
+}
+
+fn type_can_be_null(ty: &PhpType) -> bool {
+    *ty == PhpType::Void || Checker::union_contains_void(ty) || matches!(ty, PhpType::Mixed)
+}
+
+fn null_coalesce_property_keeps_non_null(
+    object: &Expr,
+    property: &str,
+    value: &Expr,
+    property_ty: &PhpType,
+) -> bool {
+    if type_can_be_null(property_ty) {
+        return false;
+    }
+    let ExprKind::NullCoalesce {
+        value: current,
+        default: _,
+    } = &value.kind
+    else {
+        return false;
+    };
+    let ExprKind::PropertyAccess {
+        object: current_object,
+        property: current_property,
+    } = &current.kind
+    else {
+        return false;
+    };
+    current_property == property && assignment_expr_equivalent(current_object, object)
+}
+
+fn assignment_expr_equivalent(left: &Expr, right: &Expr) -> bool {
+    match (&left.kind, &right.kind) {
+        (ExprKind::Variable(a), ExprKind::Variable(b)) => a == b,
+        (ExprKind::This, ExprKind::This) => true,
+        (
+            ExprKind::PropertyAccess {
+                object: a_object,
+                property: a_property,
+            },
+            ExprKind::PropertyAccess {
+                object: b_object,
+                property: b_property,
+            },
+        ) => a_property == b_property && assignment_expr_equivalent(a_object, b_object),
+        _ => false,
+    }
 }
 
 fn refine_object_property_type(

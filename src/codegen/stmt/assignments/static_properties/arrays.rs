@@ -8,7 +8,7 @@ use crate::codegen::expr::emit_expr;
 use crate::codegen::platform::Arch;
 use crate::codegen::stmt::helpers;
 use crate::names::static_property_symbol;
-use crate::parser::ast::{Expr, StaticReceiver};
+use crate::parser::ast::{Expr, ExprKind, StaticReceiver};
 use crate::types::PhpType;
 
 mod indexed;
@@ -103,6 +103,34 @@ pub(crate) fn emit_static_property_array_assign_stmt(
 ) {
     emitter.blank();
     emitter.comment(&format!("::${}[...] = ...", property));
+    if let Some((current, default)) =
+        crate::codegen::stmt::null_coalesce_static_property_array_target(
+            receiver, property, index, value,
+        )
+    {
+        if matches!(default.kind, ExprKind::Null) {
+            emitter.comment("literal null fallback leaves the static property array slot unchanged");
+            return;
+        }
+        let current_ty = emit_expr(current, emitter, ctx, data);
+        if current_ty != PhpType::Void {
+            let keep_label = ctx.next_label("nca_keep");
+            crate::codegen::stmt::emit_branch_if_result_non_null(
+                &current_ty,
+                &keep_label,
+                emitter,
+            );
+            emit_static_property_array_assign_stmt(
+                receiver, property, index, default, emitter, ctx, data,
+            );
+            emitter.label(&keep_label);
+        } else {
+            emit_static_property_array_assign_stmt(
+                receiver, property, index, default, emitter, ctx, data,
+            );
+        }
+        return;
+    }
 
     let Some((_, declaring_class, prop_ty, _)) =
         resolve::resolve_static_property(receiver, property, ctx, emitter)

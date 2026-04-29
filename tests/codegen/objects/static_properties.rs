@@ -143,6 +143,56 @@ echo Registry::$items[0] . ":" . Registry::$items[1];
 }
 
 #[test]
+fn test_static_property_compound_assign() {
+    let out = compile_and_run(
+        r#"<?php
+class Counter {
+    public static int $count = 4;
+}
+Counter::$count += 6;
+Counter::$count *= 2;
+echo Counter::$count;
+"#,
+    );
+    assert_eq!(out, "20");
+}
+
+#[test]
+fn test_static_property_array_compound_assign() {
+    let out = compile_and_run(
+        r#"<?php
+class Registry {
+    public static $items = [3, 5, 7];
+}
+Registry::$items[0] += 9;
+Registry::$items[2] -= 4;
+echo Registry::$items[0] . ":" . Registry::$items[2];
+"#,
+    );
+    assert_eq!(out, "12:3");
+}
+
+#[test]
+fn test_static_property_array_compound_assign_evaluates_index_once() {
+    let out = compile_and_run(
+        r#"<?php
+class Registry {
+    public static $items = [3, 5, 7];
+}
+
+function idx() {
+    echo "i";
+    return 1;
+}
+
+Registry::$items[idx()] += 6;
+echo ":" . Registry::$items[1];
+"#,
+    );
+    assert_eq!(out, "i:11");
+}
+
+#[test]
 fn test_static_property_redeclared_array_writes_are_late_bound() {
     let out = compile_and_run(
         r#"<?php

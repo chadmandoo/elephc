@@ -6,7 +6,7 @@ use crate::codegen::emit::Emitter;
 use crate::codegen::expr::emit_expr;
 use crate::codegen::platform::Arch;
 use crate::codegen::stmt::helpers;
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
 pub(crate) fn emit_property_array_assign_stmt(
@@ -20,6 +20,28 @@ pub(crate) fn emit_property_array_assign_stmt(
 ) {
     emitter.blank();
     emitter.comment(&format!("->{}[...] = ...", property));
+    if let Some((current, default)) =
+        crate::codegen::stmt::null_coalesce_property_array_target(object, property, index, value)
+    {
+        if matches!(default.kind, ExprKind::Null) {
+            emitter.comment("literal null fallback leaves the property array slot unchanged");
+            return;
+        }
+        let current_ty = emit_expr(current, emitter, ctx, data);
+        if current_ty != PhpType::Void {
+            let keep_label = ctx.next_label("nca_keep");
+            crate::codegen::stmt::emit_branch_if_result_non_null(
+                &current_ty,
+                &keep_label,
+                emitter,
+            );
+            emit_property_array_assign_stmt(object, property, index, default, emitter, ctx, data);
+            emitter.label(&keep_label);
+        } else {
+            emit_property_array_assign_stmt(object, property, index, default, emitter, ctx, data);
+        }
+        return;
+    }
 
     let obj_ty = emit_expr(object, emitter, ctx, data);
     let target = match target::resolve_property_assign_target(&obj_ty, property, None, emitter, ctx) {
