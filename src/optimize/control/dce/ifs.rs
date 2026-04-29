@@ -35,7 +35,6 @@ fn dce_if_tail(
         )]
     }
 }
-
 pub(super) fn dce_if_stmt(
     condition: Expr,
     then_body: Vec<Stmt>,
@@ -232,4 +231,3 @@ fn dce_if_false_path(
             .unwrap_or_default()
     }
 }
-

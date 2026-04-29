@@ -11,7 +11,6 @@ pub(in crate::optimize::control::dce) fn guard_variable_name(condition: &Expr) -
         _ => None,
     }
 }
-
 pub(in crate::optimize::control::dce) fn scalar_guard_value(expr: &Expr) -> Option<GuardLiteral> {
     match &expr.kind {
         ExprKind::BoolLiteral(value) => Some(GuardLiteral::Bool(*value)),
@@ -261,4 +260,3 @@ fn infer_condition_value_from_composite_guards(
 
     None
 }
-

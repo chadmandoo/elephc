@@ -19,7 +19,6 @@ pub(in crate::optimize::control::dce) fn clear_guards_for_name(guards: &mut Guar
         .condition_guards
         .retain(|known| !known.names.iter().any(|known_name| known_name == name));
 }
-
 fn push_guard_name(names: &mut Vec<String>, name: &str) {
     if !names.iter().any(|known| known == name) {
         names.push(name.to_string());
@@ -346,4 +345,3 @@ pub(in crate::optimize::control::dce) fn extend_guards(guards: &GuardState, cond
 
     next
 }
-

@@ -18,7 +18,6 @@ pub(super) fn is_reference_property(object: &Expr, property: &str, ctx: &Context
         .get(&class_name)
         .is_some_and(|class_info| class_info.reference_properties.contains(property))
 }
-
 pub(super) fn promoted_reference_bind_var(
     object: &Expr,
     property: &str,
@@ -111,4 +110,3 @@ fn reference_property_type(object: &Expr, property: &str, ctx: &Context) -> Opti
         .find(|(name, _)| name == property)
         .map(|(_, ty)| ty.clone())
 }
-
