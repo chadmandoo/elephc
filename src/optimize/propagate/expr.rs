@@ -47,9 +47,16 @@ pub(crate) fn propagate_expr(expr: Expr, env: &ConstantEnv) -> Expr {
             value: Box::new(propagate_expr(*value, env)),
             default: Box::new(propagate_expr(*default, env)),
         },
-        ExprKind::Assignment { target, value } => ExprKind::Assignment {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => ExprKind::Assignment {
             target,
             value: Box::new(propagate_expr(*value, env)),
+            result_target,
+            prelude,
         },
         ExprKind::PreIncrement(name) => ExprKind::PreIncrement(name),
         ExprKind::PostIncrement(name) => ExprKind::PostIncrement(name),

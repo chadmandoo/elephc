@@ -425,9 +425,16 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
             value: Box::new(prune_expr(*value)),
             default: Box::new(prune_expr(*default)),
         },
-        ExprKind::Assignment { target, value } => ExprKind::Assignment {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => ExprKind::Assignment {
             target: Box::new(prune_expr(*target)),
             value: Box::new(prune_expr(*value)),
+            result_target: result_target.map(|target| Box::new(prune_expr(*target))),
+            prelude: prelude.into_iter().flat_map(prune_stmt).collect(),
         },
         ExprKind::PreIncrement(name) => ExprKind::PreIncrement(name),
         ExprKind::PostIncrement(name) => ExprKind::PostIncrement(name),

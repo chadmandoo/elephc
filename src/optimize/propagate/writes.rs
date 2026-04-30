@@ -281,8 +281,14 @@ pub(crate) fn expr_local_writes(expr: &Expr) -> Option<HashSet<String>> {
             expr_local_writes(value)?,
             expr_local_writes(default)?,
         ]),
-        ExprKind::Assignment { target, value } => {
-            let mut writes = expr_local_writes(value)?;
+        ExprKind::Assignment {
+            target,
+            value,
+            prelude,
+            ..
+        } => {
+            let mut writes = block_local_writes(prelude)?;
+            writes.extend(expr_local_writes(value)?);
             collect_assignment_target_writes(target, &mut writes)?;
             Some(writes)
         }

@@ -1,27 +1,35 @@
 use super::super::context::Context;
 use super::super::data_section::DataSection;
 use super::super::emit::Emitter;
-use crate::parser::ast::{Expr, ExprKind};
+use crate::parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 use crate::types::PhpType;
 
 pub(super) fn emit_assignment_expr(
     target: &Expr,
     value: &Expr,
+    result_target: Option<&Expr>,
+    prelude: &[Stmt],
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
+    emit_assignment_prelude(prelude, emitter, ctx, data);
+
     let ExprKind::Variable(name) = &target.kind else {
-        return emit_non_local_assignment_expr(target, value, emitter, ctx, data);
+        return emit_non_local_assignment_expr(target, value, result_target, emitter, ctx, data);
     };
 
     super::super::stmt::emit_assign_stmt(name, value, emitter, ctx, data);
-    super::variables::emit_variable(name, emitter, ctx)
+    match result_target {
+        Some(target) => super::emit_expr(target, emitter, ctx, data),
+        None => super::variables::emit_variable(name, emitter, ctx),
+    }
 }
 
 pub(super) fn emit_non_local_assignment_expr(
     target: &Expr,
     value: &Expr,
+    result_target: Option<&Expr>,
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
@@ -62,5 +70,26 @@ pub(super) fn emit_non_local_assignment_expr(
         }
     }
 
-    super::emit_expr(target, emitter, ctx, data)
+    super::emit_expr(result_target.unwrap_or(target), emitter, ctx, data)
+}
+
+fn emit_assignment_prelude(
+    prelude: &[Stmt],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    for stmt in prelude {
+        match &stmt.kind {
+            StmtKind::Assign { name, value } => {
+                super::super::stmt::emit_assign_stmt(name, value, emitter, ctx, data);
+            }
+            StmtKind::Synthetic(stmts) => {
+                emit_assignment_prelude(stmts, emitter, ctx, data);
+            }
+            _ => {
+                super::super::stmt::emit_stmt(stmt, emitter, ctx, data);
+            }
+        }
+    }
 }

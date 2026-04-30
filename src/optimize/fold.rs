@@ -94,9 +94,16 @@ pub(super) fn fold_expr(expr: Expr) -> Expr {
                 default: Box::new(default),
             })
         }
-        ExprKind::Assignment { target, value } => ExprKind::Assignment {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => ExprKind::Assignment {
             target: Box::new(fold_expr(*target)),
             value: Box::new(fold_expr(*value)),
+            result_target: result_target.map(|target| Box::new(fold_expr(*target))),
+            prelude: fold_block(prelude),
         },
         ExprKind::PreIncrement(name) => ExprKind::PreIncrement(name),
         ExprKind::PostIncrement(name) => ExprKind::PostIncrement(name),

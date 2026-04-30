@@ -199,7 +199,13 @@ pub fn collect_local_vars(
 
 fn collect_assignment_expr_vars(expr: &Expr, ctx: &mut Context, sig: &FunctionSig) {
     match &expr.kind {
-        ExprKind::Assignment { target, value } => {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => {
+            collect_local_vars(prelude, ctx, sig);
             collect_assignment_expr_vars(value, ctx, sig);
             if let ExprKind::Variable(name) = &target.kind {
                 if !ctx.variables.contains_key(name) {
@@ -208,6 +214,9 @@ fn collect_assignment_expr_vars(expr: &Expr, ctx: &mut Context, sig: &FunctionSi
                 }
             } else {
                 collect_assignment_expr_vars(target, ctx, sig);
+            }
+            if let Some(result_target) = result_target {
+                collect_assignment_expr_vars(result_target, ctx, sig);
             }
         }
         ExprKind::BinaryOp { left, right, .. } => {

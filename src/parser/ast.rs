@@ -39,6 +39,8 @@ pub enum ExprKind {
     Assignment {
         target: Box<Expr>,
         value: Box<Expr>,
+        result_target: Option<Box<Expr>>,
+        prelude: Vec<Stmt>,
     },
     PreIncrement(String),
     PostIncrement(String),

@@ -29,11 +29,22 @@ pub(super) fn collect_expr_reads(
             collect_expr_reads(value, scope, warnings);
             collect_expr_reads(default, scope, warnings);
         }
-        ExprKind::Assignment { target, value } => {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => {
+            for stmt in prelude {
+                collect_assignment_prelude_reads(stmt, scope, warnings);
+            }
             if !matches!(target.kind, ExprKind::Variable(_)) {
                 collect_expr_reads(target, scope, warnings);
             }
             collect_expr_reads(value, scope, warnings);
+            if let Some(result_target) = result_target {
+                collect_expr_reads(result_target, scope, warnings);
+            }
         }
         ExprKind::PreIncrement(name)
         | ExprKind::PostIncrement(name)
@@ -152,6 +163,22 @@ pub(super) fn collect_expr_reads(
         ExprKind::MagicConstant(_) => {
             unreachable!("MagicConstant must be lowered before warnings analysis")
         }
+    }
+}
+
+fn collect_assignment_prelude_reads(
+    stmt: &Stmt,
+    scope: &mut ScopeUsage,
+    warnings: &mut Vec<CompileWarning>,
+) {
+    match &stmt.kind {
+        StmtKind::Synthetic(stmts) => {
+            for stmt in stmts {
+                collect_assignment_prelude_reads(stmt, scope, warnings);
+            }
+        }
+        StmtKind::Assign { value, .. } => collect_expr_reads(value, scope, warnings),
+        _ => {}
     }
 }
 

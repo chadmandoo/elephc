@@ -548,8 +548,18 @@ impl Checker {
             crate::parser::ast::ExprKind::NullCoalesce { value, default } => {
                 Self::expr_contains_method_call(value) || Self::expr_contains_method_call(default)
             }
-            crate::parser::ast::ExprKind::Assignment { target, value } => {
-                Self::expr_contains_method_call(target) || Self::expr_contains_method_call(value)
+            crate::parser::ast::ExprKind::Assignment {
+                target,
+                value,
+                result_target,
+                prelude,
+            } => {
+                Self::expr_contains_method_call(target)
+                    || Self::expr_contains_method_call(value)
+                    || result_target
+                        .as_deref()
+                        .is_some_and(Self::expr_contains_method_call)
+                    || prelude.iter().any(Self::stmt_contains_method_call)
             }
             crate::parser::ast::ExprKind::FunctionCall { args, .. }
             | crate::parser::ast::ExprKind::ClosureCall { args, .. }

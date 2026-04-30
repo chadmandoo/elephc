@@ -367,9 +367,16 @@ fn rewrite_expr(expr: Expr, defines: &HashSet<String>) -> Expr {
             value: Box::new(rewrite_expr(*value, defines)),
             default: Box::new(rewrite_expr(*default, defines)),
         },
-        ExprKind::Assignment { target, value } => ExprKind::Assignment {
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+        } => ExprKind::Assignment {
             target: Box::new(rewrite_expr(*target, defines)),
             value: Box::new(rewrite_expr(*value, defines)),
+            result_target: result_target.map(|target| Box::new(rewrite_expr(*target, defines))),
+            prelude: apply_stmts(prelude, defines),
         },
         ExprKind::FunctionCall { name, args } => ExprKind::FunctionCall {
             name,

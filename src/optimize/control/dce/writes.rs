@@ -442,7 +442,15 @@ fn collect_expr_written_names(expr: &Expr, written: &mut Vec<String>) {
         | ExprKind::PostIncrement(name)
         | ExprKind::PreDecrement(name)
         | ExprKind::PostDecrement(name) => push_written_name(written, name),
-        ExprKind::Assignment { target, value } => {
+        ExprKind::Assignment {
+            target,
+            value,
+            prelude,
+            ..
+        } => {
+            for stmt in prelude {
+                collect_written_names(stmt, written);
+            }
             collect_expr_written_names(value, written);
             collect_assignment_target_written_names(target, written);
         }

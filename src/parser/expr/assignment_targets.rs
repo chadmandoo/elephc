@@ -1,6 +1,8 @@
 use std::collections::HashSet;
 
-use crate::parser::ast::{Expr, ExprKind};
+use crate::parser::ast::{Expr, ExprKind, Stmt, StmtKind};
+use crate::parser::stmt::can_replay_assignment_target;
+use crate::span::Span;
 
 pub(super) fn is_non_local_assignment_target(expr: &Expr) -> bool {
     matches!(
@@ -26,6 +28,150 @@ pub(super) fn is_assignment_expression_target(expr: &Expr) -> bool {
     }
 }
 
+pub(super) struct AssignmentExpressionLowerer {
+    span: Span,
+    next_temp: usize,
+    prelude: Vec<Stmt>,
+}
+
+impl AssignmentExpressionLowerer {
+    pub(super) fn new(span: Span) -> Self {
+        Self {
+            span,
+            next_temp: 0,
+            prelude: Vec::new(),
+        }
+    }
+
+    pub(super) fn stabilize_non_local_target(&mut self, target: Expr, rhs: &Expr) -> Expr {
+        self.stabilize_assignment_target(target, rhs)
+    }
+
+    pub(super) fn bind_value(&mut self, value: Expr) -> Expr {
+        self.bind_temp(value)
+    }
+
+    pub(super) fn finish(self) -> Vec<Stmt> {
+        self.prelude
+    }
+
+    fn stabilize_assignment_target(&mut self, expr: Expr, rhs: &Expr) -> Expr {
+        let span = expr.span;
+        match expr.kind {
+            ExprKind::ArrayAccess { array, index } => {
+                let array = match *array {
+                    Expr {
+                        kind: ExprKind::PropertyAccess { object, property },
+                        span: array_span,
+                    } => Expr::new(
+                        ExprKind::PropertyAccess {
+                            object: Box::new(self.stabilize_receiver(*object, rhs)),
+                            property,
+                        },
+                        array_span,
+                    ),
+                    other => other,
+                };
+                Expr::new(
+                    ExprKind::ArrayAccess {
+                        array: Box::new(array),
+                        index: Box::new(self.stabilize_dimension_index(*index, rhs)),
+                    },
+                    span,
+                )
+            }
+            ExprKind::PropertyAccess { object, property } => Expr::new(
+                ExprKind::PropertyAccess {
+                    object: Box::new(self.stabilize_receiver(*object, rhs)),
+                    property,
+                },
+                span,
+            ),
+            ExprKind::StaticPropertyAccess { receiver, property } => Expr::new(
+                ExprKind::StaticPropertyAccess { receiver, property },
+                span,
+            ),
+            other => Expr::new(other, span),
+        }
+    }
+
+    fn stabilize_receiver(&mut self, expr: Expr, rhs: &Expr) -> Expr {
+        let span = expr.span;
+        match expr.kind {
+            ExprKind::PropertyAccess { object, property } => Expr::new(
+                ExprKind::PropertyAccess {
+                    object: Box::new(self.stabilize_receiver(*object, rhs)),
+                    property,
+                },
+                span,
+            ),
+            ExprKind::ArrayAccess { array, index } => Expr::new(
+                ExprKind::ArrayAccess {
+                    array: Box::new(self.stabilize_receiver(*array, rhs)),
+                    index: Box::new(self.stabilize_dimension_index(*index, rhs)),
+                },
+                span,
+            ),
+            kind @ (ExprKind::Variable(_)
+                | ExprKind::This
+                | ExprKind::StaticPropertyAccess { .. }) => Expr::new(kind, span),
+            other => {
+                let expr = Expr::new(other, span);
+                if self.must_bind_target_part(&expr, rhs) {
+                    self.bind_temp(expr)
+                } else {
+                    expr
+                }
+            }
+        }
+    }
+
+    fn stabilize_dimension_index(&mut self, expr: Expr, rhs: &Expr) -> Expr {
+        if self.must_bind_dimension_index(&expr, rhs) {
+            self.bind_temp(expr)
+        } else {
+            expr
+        }
+    }
+
+    fn must_bind_target_part(&self, expr: &Expr, rhs: &Expr) -> bool {
+        !can_replay_assignment_target(expr)
+            || target_part_reads_mutated_dependency(expr, rhs)
+    }
+
+    fn must_bind_dimension_index(&self, expr: &Expr, rhs: &Expr) -> bool {
+        if matches!(
+            expr.kind,
+            ExprKind::Variable(_)
+                | ExprKind::IntLiteral(_)
+                | ExprKind::StringLiteral(_)
+                | ExprKind::BoolLiteral(_)
+                | ExprKind::Null
+        ) {
+            return false;
+        }
+
+        !can_replay_assignment_target(expr)
+            || target_part_reads_mutated_dependency(expr, rhs)
+    }
+
+    fn bind_temp(&mut self, value: Expr) -> Expr {
+        let name = format!(
+            "__elephc_assign_expr_{}_{}_{}",
+            self.span.line, self.span.col, self.next_temp
+        );
+        self.next_temp += 1;
+        self.prelude.push(Stmt::new(
+            StmtKind::Assign {
+                name: name.clone(),
+                value,
+            },
+            self.span,
+        ));
+        Expr::new(ExprKind::Variable(name), self.span)
+    }
+}
+
 pub(super) fn assignment_value_may_mutate_target_dependency(
     target: &Expr,
     value: &Expr,
@@ -33,6 +179,10 @@ pub(super) fn assignment_value_may_mutate_target_dependency(
     let mut dependencies = HashSet::new();
     collect_assignment_target_dependencies(target, &mut dependencies);
     !dependencies.is_empty() && expr_may_write_dependency(value, &dependencies)
+}
+
+fn target_part_reads_mutated_dependency(target: &Expr, value: &Expr) -> bool {
+    assignment_value_may_mutate_target_dependency(target, value)
 }
 
 fn collect_assignment_target_dependencies(expr: &Expr, dependencies: &mut HashSet<String>) {
@@ -140,9 +290,15 @@ fn collect_assignment_target_dependencies(expr: &Expr, dependencies: &mut HashSe
 
 fn expr_may_write_dependency(expr: &Expr, dependencies: &HashSet<String>) -> bool {
     match &expr.kind {
-        ExprKind::Assignment { target, value } => {
+        ExprKind::Assignment { target, value, prelude, result_target } => {
             assignment_target_may_write_dependency(target, dependencies)
                 || expr_may_write_dependency(value, dependencies)
+                || prelude
+                    .iter()
+                    .any(|stmt| stmt_may_write_dependency(stmt, dependencies))
+                || result_target
+                    .as_deref()
+                    .is_some_and(|target| expr_may_write_dependency(target, dependencies))
         }
         ExprKind::PreIncrement(name)
         | ExprKind::PostIncrement(name)
@@ -244,6 +400,18 @@ fn expr_may_write_dependency(expr: &Expr, dependencies: &HashSet<String>) -> boo
         | ExprKind::This
         | ExprKind::ClassConstant { .. }
         | ExprKind::MagicConstant(_) => false,
+    }
+}
+
+fn stmt_may_write_dependency(stmt: &Stmt, dependencies: &HashSet<String>) -> bool {
+    match &stmt.kind {
+        StmtKind::Assign { name, value } => {
+            dependencies.contains(name) || expr_may_write_dependency(value, dependencies)
+        }
+        StmtKind::Synthetic(stmts) => stmts
+            .iter()
+            .any(|stmt| stmt_may_write_dependency(stmt, dependencies)),
+        _ => false,
     }
 }
 

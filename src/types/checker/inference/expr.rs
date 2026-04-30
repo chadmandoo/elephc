@@ -17,8 +17,20 @@ impl Checker {
         env: &mut TypeEnv,
     ) -> Result<PhpType, CompileError> {
         match &expr.kind {
-            ExprKind::Assignment { target, value } => {
-                self.check_assignment_expression(target, value, expr.span, env)
+            ExprKind::Assignment {
+                target,
+                value,
+                result_target,
+                prelude,
+            } => {
+                self.check_assignment_expression(
+                    target,
+                    value,
+                    result_target.as_deref(),
+                    prelude,
+                    expr.span,
+                    env,
+                )
             }
             ExprKind::BinaryOp { left, op, right } => {
                 self.infer_type_with_assignment_effects(left, env)?;
@@ -468,9 +480,21 @@ impl Checker {
                     Ok(wider_type_syntactic(&vt, &dt))
                 }
             }
-            ExprKind::Assignment { target, value } => {
+            ExprKind::Assignment {
+                target,
+                value,
+                result_target,
+                prelude,
+            } => {
                 let mut scoped_env = env.clone();
-                self.check_assignment_expression(target, value, expr.span, &mut scoped_env)
+                self.check_assignment_expression(
+                    target,
+                    value,
+                    result_target.as_deref(),
+                    prelude,
+                    expr.span,
+                    &mut scoped_env,
+                )
             }
             ExprKind::ConstRef(name) => {
                 self.constants.get(name.as_str()).cloned().ok_or_else(|| {
@@ -609,9 +633,15 @@ impl Checker {
         &mut self,
         target: &Expr,
         value: &Expr,
+        result_target: Option<&Expr>,
+        prelude: &[Stmt],
         span: Span,
         env: &mut TypeEnv,
     ) -> Result<PhpType, CompileError> {
+        for stmt in prelude {
+            self.check_assignment_like_stmt(stmt, env)?;
+        }
+
         if let ExprKind::Variable(name) = &target.kind {
             return self.check_local_assignment_expression(name, value, span, env);
         }
@@ -656,7 +686,7 @@ impl Checker {
 
         let stmt = Stmt::new(stmt_kind, span);
         self.check_assignment_like_stmt(&stmt, env)?;
-        self.infer_type(target, env)
+        self.infer_type(result_target.unwrap_or(target), env)
     }
 
 }
