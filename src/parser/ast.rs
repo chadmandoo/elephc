@@ -31,6 +31,7 @@ pub enum ExprKind {
     BitNot(Box<Expr>),
     Throw(Box<Expr>),
     ErrorSuppress(Box<Expr>),
+    Print(Box<Expr>),
     NullCoalesce {
         value: Box<Expr>,
         default: Box<Expr>,
@@ -70,6 +71,7 @@ pub enum ExprKind {
     Closure {
         params: Vec<(String, Option<TypeExpr>, Option<Expr>, bool)>,
         variadic: Option<String>,
+        return_type: Option<TypeExpr>,
         body: Vec<Stmt>,
         is_arrow: bool,
         is_static: bool,
@@ -243,6 +245,10 @@ impl Expr {
     pub fn negate(inner: Expr) -> Self {
         Self::new(ExprKind::Negate(Box::new(inner)), Span::dummy())
     }
+
+    pub fn print(inner: Expr) -> Self {
+        Self::new(ExprKind::Print(Box::new(inner)), Span::dummy())
+    }
 }
 
 // --- Operators ---
@@ -374,8 +380,8 @@ pub enum StmtKind {
         catches: Vec<CatchClause>,
         finally_body: Option<Vec<Stmt>>,
     },
-    Break,
-    Continue,
+    Break(usize),
+    Continue(usize),
     ExprStmt(Expr),
     NamespaceDecl {
         name: Option<Name>,

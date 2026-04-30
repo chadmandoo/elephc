@@ -181,6 +181,8 @@ impl Checker {
             active_ref_params: HashSet::new(),
             active_globals: HashSet::new(),
             active_statics: HashSet::new(),
+            break_continue_depth: 0,
+            finally_break_continue_bases: Vec::new(),
         }
     }
 
@@ -519,6 +521,7 @@ impl Checker {
             | crate::parser::ast::ExprKind::BitNot(object)
             | crate::parser::ast::ExprKind::Spread(object)
             | crate::parser::ast::ExprKind::ErrorSuppress(object)
+            | crate::parser::ast::ExprKind::Print(object)
             | crate::parser::ast::ExprKind::Throw(object) => Self::expr_contains_method_call(object),
             crate::parser::ast::ExprKind::ArrayAccess { array, index } => {
                 Self::expr_contains_method_call(array) || Self::expr_contains_method_call(index)

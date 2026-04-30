@@ -22,6 +22,7 @@ pub(crate) use null_coalesce_assign::{
     null_coalesce_static_property_array_target,
     null_coalesce_static_property_target,
 };
+pub(crate) use io::emit_expr_to_stdout;
 
 fn current_function_name(ctx: &Context) -> String {
     ctx.return_label
@@ -139,8 +140,8 @@ pub fn emit_stmt(stmt: &Stmt, emitter: &mut Emitter, ctx: &mut Context, data: &m
         } => {
             control_flow::emit_try_stmt(try_body, catches, finally_body, emitter, ctx, data);
         }
-        StmtKind::Break => {
-            control_flow::emit_break_stmt(emitter, ctx);
+        StmtKind::Break(levels) => {
+            control_flow::emit_break_stmt(*levels, emitter, ctx);
         }
         StmtKind::FunctionDecl { .. } => {
             // Emitted separately in codegen/mod.rs
@@ -156,8 +157,8 @@ pub fn emit_stmt(stmt: &Stmt, emitter: &mut Emitter, ctx: &mut Context, data: &m
             emit_expr(expr, emitter, ctx, data);
             // result discarded
         }
-        StmtKind::Continue => {
-            control_flow::emit_continue_stmt(emitter, ctx);
+        StmtKind::Continue(levels) => {
+            control_flow::emit_continue_stmt(*levels, emitter, ctx);
         }
         StmtKind::Switch {
             subject,

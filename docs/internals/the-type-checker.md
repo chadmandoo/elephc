@@ -102,6 +102,19 @@ $x = "hello";  // ← Type error: cannot reassign $x from Int to Str
 
 This is intentional — it lets the compiler know exactly what `$x` is at every point, without needing runtime type tags.
 
+## Statement checks
+
+Statement checking validates control-flow constraints that are not expression
+types. `foreach` requires an indexed or associative array input and binds the
+key/value variables to the inferred element types. `break` and `continue`
+track the active loop/switch target depth, so `break 2;` is accepted only when
+two enclosing break/continue targets exist in the current function or closure
+body. Function, method, and closure bodies reset that depth so an inner
+declaration cannot target an outer loop. `finally` bodies also record the
+target depth at entry: `break` or `continue` may target loops/switches created
+inside that `finally`, but jumping out of a `finally` block is rejected to match
+PHP.
+
 ## Expression type inference
 
 The type checker computes the type of every expression:
@@ -136,14 +149,15 @@ The type checker computes the type of every expression:
 | `Int <=> Int` | spaceship | `Int` (-1, 0, or 1) |
 | `expr instanceof ClassName` | class/interface metadata check | `Bool` |
 | `expr ?? expr` | null coalescing | Type of the non-null operand |
+| `print expr` | output expression | `Int` (`1`) |
 
 ### Function calls
 
-Built-in functions have hardcoded type signatures (see below). User-defined functions, methods, and constructors can carry declared parameter and return type hints. Closures and arrow functions currently carry declared parameter hints, while their return type is inferred from the body or expression because closure / arrow return annotations are not represented in the AST yet. Named arguments are normalized against the declared parameter list before the usual argument-count and type checks run.
+Built-in functions have hardcoded type signatures (see below). User-defined functions, methods, constructors, closures, and arrow functions can carry declared parameter hints; functions, methods, closures, and arrow functions can carry declared return type hints. Declared non-`void` returns are validated both against returned values and against reachable fallthrough paths, while `throw`, `exit()`/`die()`, and provably infinite loops count as non-returning paths. Closure / arrow return annotations are represented in the AST and threaded into callable `FunctionSig` metadata; unannotated closures continue to infer their return type from the body or expression. Named arguments are normalized against the declared parameter list before the usual argument-count and type checks run.
 
 ## Built-in function signatures
 
-**Files:** `src/types/checker/builtins/`, plus `src/types/checker/mod.rs` and `src/types/checker/inference/` for special expression forms such as `ExprKind::PtrCast` and `ExprKind::InstanceOf`
+**Files:** `src/types/checker/builtins/`, plus `src/types/checker/mod.rs` and `src/types/checker/inference/` for special expression forms such as `ExprKind::PtrCast`, `ExprKind::InstanceOf`, and `ExprKind::Print`
 
 Every built-in function has a registered type signature:
 

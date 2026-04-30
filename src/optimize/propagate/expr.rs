@@ -35,6 +35,7 @@ pub(crate) fn propagate_expr(expr: Expr, env: &ConstantEnv) -> Expr {
         ExprKind::ErrorSuppress(inner) => {
             ExprKind::ErrorSuppress(Box::new(propagate_expr(*inner, env)))
         }
+        ExprKind::Print(inner) => ExprKind::Print(Box::new(propagate_expr(*inner, env))),
         ExprKind::NullCoalesce { value, default } => ExprKind::NullCoalesce {
             value: Box::new(propagate_expr(*value, env)),
             default: Box::new(propagate_expr(*default, env)),
@@ -102,6 +103,7 @@ pub(crate) fn propagate_expr(expr: Expr, env: &ConstantEnv) -> Expr {
         ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body,
             is_arrow,
             is_static,
@@ -109,6 +111,7 @@ pub(crate) fn propagate_expr(expr: Expr, env: &ConstantEnv) -> Expr {
         } => ExprKind::Closure {
             params: propagate_params(params),
             variadic,
+            return_type,
             body: propagate_block(body, captured_constant_env(&captures, env)).0,
             is_arrow,
             is_static,

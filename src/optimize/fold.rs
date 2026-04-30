@@ -85,6 +85,7 @@ pub(super) fn fold_expr(expr: Expr) -> Expr {
         }
         ExprKind::Throw(inner) => ExprKind::Throw(Box::new(fold_expr(*inner))),
         ExprKind::ErrorSuppress(inner) => ExprKind::ErrorSuppress(Box::new(fold_expr(*inner))),
+        ExprKind::Print(inner) => ExprKind::Print(Box::new(fold_expr(*inner))),
         ExprKind::NullCoalesce { value, default } => {
             let value = fold_expr(*value);
             let default = fold_expr(*default);
@@ -169,6 +170,7 @@ pub(super) fn fold_expr(expr: Expr) -> Expr {
         ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body,
             is_arrow,
             is_static,
@@ -176,6 +178,7 @@ pub(super) fn fold_expr(expr: Expr) -> Expr {
         } => ExprKind::Closure {
             params: fold_params(params),
             variadic,
+            return_type,
             body: fold_block(body),
             is_arrow,
             is_static,

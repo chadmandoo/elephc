@@ -146,8 +146,8 @@ fn rewrite_stmt_kind(kind: StmtKind, defines: &HashSet<String>) -> StmtKind {
                 .collect(),
             finally_body: finally_body.map(|body| apply_stmts(body, defines)),
         },
-        StmtKind::Break => StmtKind::Break,
-        StmtKind::Continue => StmtKind::Continue,
+        StmtKind::Break(levels) => StmtKind::Break(levels),
+        StmtKind::Continue(levels) => StmtKind::Continue(levels),
         StmtKind::ExprStmt(expr) => StmtKind::ExprStmt(rewrite_expr(expr, defines)),
         StmtKind::FunctionDecl {
             name,
@@ -362,6 +362,7 @@ fn rewrite_expr(expr: Expr, defines: &HashSet<String>) -> Expr {
         ExprKind::ErrorSuppress(inner) => {
             ExprKind::ErrorSuppress(Box::new(rewrite_expr(*inner, defines)))
         }
+        ExprKind::Print(inner) => ExprKind::Print(Box::new(rewrite_expr(*inner, defines))),
         ExprKind::NullCoalesce { value, default } => ExprKind::NullCoalesce {
             value: Box::new(rewrite_expr(*value, defines)),
             default: Box::new(rewrite_expr(*default, defines)),
@@ -429,6 +430,7 @@ fn rewrite_expr(expr: Expr, defines: &HashSet<String>) -> Expr {
         ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body,
             is_arrow,
             is_static,
@@ -441,6 +443,7 @@ fn rewrite_expr(expr: Expr, defines: &HashSet<String>) -> Expr {
                 })
                 .collect(),
             variadic,
+            return_type,
             body: apply_stmts(body, defines),
             is_arrow,
             is_static,

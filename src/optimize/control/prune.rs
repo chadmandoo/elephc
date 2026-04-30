@@ -344,7 +344,7 @@ fn block_contains_loop_exit(body: &[Stmt]) -> bool {
 
 fn stmt_contains_loop_exit(stmt: &Stmt) -> bool {
     match &stmt.kind {
-        StmtKind::Break | StmtKind::Continue => true,
+        StmtKind::Break(_) | StmtKind::Continue(_) => true,
         StmtKind::If {
             then_body,
             elseif_clauses,
@@ -420,6 +420,7 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
         ExprKind::BitNot(inner) => ExprKind::BitNot(Box::new(prune_expr(*inner))),
         ExprKind::Throw(inner) => ExprKind::Throw(Box::new(prune_expr(*inner))),
         ExprKind::ErrorSuppress(inner) => ExprKind::ErrorSuppress(Box::new(prune_expr(*inner))),
+        ExprKind::Print(inner) => ExprKind::Print(Box::new(prune_expr(*inner))),
         ExprKind::NullCoalesce { value, default } => ExprKind::NullCoalesce {
             value: Box::new(prune_expr(*value)),
             default: Box::new(prune_expr(*default)),
@@ -482,6 +483,7 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
         ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body,
             is_arrow,
             is_static,
@@ -489,6 +491,7 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
         } => ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body: prune_block(body),
             is_arrow,
             is_static,

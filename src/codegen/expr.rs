@@ -75,6 +75,9 @@ pub fn emit_expr(
         ExprKind::ErrorSuppress(inner) => {
             diagnostics::emit_error_suppress(inner, emitter, ctx, data)
         }
+        ExprKind::Print(inner) => {
+            emit_print_expr(inner, emitter, ctx, data)
+        }
         ExprKind::NullCoalesce { value, default } => {
             emit_null_coalesce(value, default, emitter, ctx, data)
         }
@@ -112,12 +115,22 @@ pub fn emit_expr(
         }
         ExprKind::Closure {
             params,
+            return_type,
             body,
             is_arrow: _,
             is_static: _,
             variadic,
             captures,
-        } => emit_closure(params, variadic, body, captures, emitter, ctx, data),
+        } => emit_closure(
+            params,
+            variadic,
+            return_type,
+            body,
+            captures,
+            emitter,
+            ctx,
+            data,
+        ),
         ExprKind::FirstClassCallable(target) => {
             emit_first_class_callable(target, emitter, ctx, data)
         }
@@ -193,6 +206,18 @@ pub fn emit_expr(
             unreachable!("MagicConstant must be lowered before codegen")
         }
     }
+}
+
+fn emit_print_expr(
+    inner: &Expr,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    emitter.comment("print expression");
+    super::stmt::emit_expr_to_stdout(inner, emitter, ctx, data);
+    abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 1);
+    PhpType::Int
 }
 
 fn emit_new_object(
@@ -416,13 +441,23 @@ pub(crate) fn coerce_result_to_type(
 fn emit_closure(
     params: &[(String, Option<TypeExpr>, Option<Expr>, bool)],
     variadic: &Option<String>,
+    return_type: &Option<TypeExpr>,
     body: &[crate::parser::ast::Stmt],
     captures: &[String],
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
-    calls::emit_closure(params, variadic, body, captures, emitter, ctx, data)
+    calls::emit_closure(
+        params,
+        variadic,
+        return_type,
+        body,
+        captures,
+        emitter,
+        ctx,
+        data,
+    )
 }
 
 fn emit_closure_call(
