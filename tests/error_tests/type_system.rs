@@ -74,8 +74,24 @@ fn test_error_word_logical_missing_rhs() {
 }
 
 #[test]
-fn test_error_word_logical_assignment_rhs_requires_parentheses() {
-    expect_error("<?php $x = true and false;", "Expected ';'");
+fn test_error_assignment_expression_rejects_non_lvalue() {
+    expect_error("<?php echo 1 = 2;", "Invalid assignment target");
+}
+
+#[test]
+fn test_error_assignment_expression_rejects_non_local_target() {
+    expect_error(
+        "<?php echo ($items[0] = 2);",
+        "Assignment expressions currently support variable targets only",
+    );
+}
+
+#[test]
+fn test_error_short_circuit_assignment_effect_is_not_definite() {
+    expect_error(
+        "<?php echo false && ($x = 1); echo $x;",
+        "Undefined variable: $x",
+    );
 }
 
 #[test]

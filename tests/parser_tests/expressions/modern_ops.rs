@@ -142,6 +142,46 @@ fn test_parenthesized_word_logical_assignment_rhs() {
 }
 
 #[test]
+fn test_assignment_expression_binds_tighter_than_word_and() {
+    let stmts = parse_source("<?php $x = true and false;");
+    match &stmts[0].kind {
+        StmtKind::ExprStmt(expr) => match &expr.kind {
+            ExprKind::BinaryOp { left, op, right } => {
+                assert_eq!(op, &BinOp::And);
+                assert!(matches!(right.kind, ExprKind::BoolLiteral(false)));
+                match &left.kind {
+                    ExprKind::Assignment { target, value } => {
+                        assert!(matches!(target.kind, ExprKind::Variable(ref name) if name == "x"));
+                        assert!(matches!(value.kind, ExprKind::BoolLiteral(true)));
+                    }
+                    other => panic!("expected assignment expression, got {:?}", other),
+                }
+            }
+            other => panic!("expected BinaryOp, got {:?}", other),
+        },
+        other => panic!("expected ExprStmt, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_assignment_expression_is_right_associative() {
+    let stmts = parse_source("<?php $x = $y = 1;");
+    match &stmts[0].kind {
+        StmtKind::Assign { name, value } => {
+            assert_eq!(name, "x");
+            match &value.kind {
+                ExprKind::Assignment { target, value } => {
+                    assert!(matches!(target.kind, ExprKind::Variable(ref name) if name == "y"));
+                    assert!(matches!(value.kind, ExprKind::IntLiteral(1)));
+                }
+                other => panic!("expected nested assignment expression, got {:?}", other),
+            }
+        }
+        other => panic!("expected Assign, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_short_ternary_expression() {
     let stmts = parse_source("<?php echo $a ?: $b;");
     let expected = Stmt::echo(Expr::new(
