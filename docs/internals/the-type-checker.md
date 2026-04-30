@@ -149,7 +149,7 @@ The type checker computes the type of every expression:
 
 ### Function calls
 
-Built-in functions have hardcoded type signatures (see below). User-defined functions, methods, and constructors can carry declared parameter and return type hints. Closures and arrow functions currently carry declared parameter hints, while their return type is inferred from the body or expression because closure / arrow return annotations are not represented in the AST yet. Named arguments are normalized against the declared parameter list before the usual argument-count and type checks run.
+Built-in functions have hardcoded type signatures (see below). User-defined functions, methods, constructors, closures, and arrow functions can carry declared parameter hints; functions, methods, closures, and arrow functions can carry declared return type hints. Declared non-`void` returns are validated both against returned values and against reachable fallthrough paths, while `throw`, `exit()`/`die()`, and provably infinite loops count as non-returning paths. Closure / arrow return annotations are represented in the AST and threaded into callable `FunctionSig` metadata; unannotated closures continue to infer their return type from the body or expression. Named arguments are normalized against the declared parameter list before the usual argument-count and type checks run.
 
 ## Built-in function signatures
 
