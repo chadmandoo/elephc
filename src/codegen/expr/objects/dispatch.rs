@@ -124,10 +124,16 @@ pub(super) fn emit_method_call(
 ) -> PhpType {
     emitter.comment(&format!("->{}()", method));
 
+    // Resolve the receiver's static class. Accepts a direct object type or
+    // a nullable object union (`?Foo`, `Foo|null`) — for those, the
+    // singular Object member's class is used and the codegen relies on
+    // the value loaded by `emit_expr` to be a real instance pointer at
+    // runtime. PHP would fatal-error on a null receiver; we currently
+    // accept that as an unsafe-but-correct match for PHP semantics.
     let obj_ty = functions::infer_contextual_type(object, ctx);
-    let class_name = match &obj_ty {
-        PhpType::Object(cn) => cn.clone(),
-        _ => {
+    let class_name = match functions::singular_object_class(&obj_ty) {
+        Some(cn) => cn.to_string(),
+        None => {
             emitter.comment("WARNING: method call on non-object");
             return PhpType::Int;
         }
@@ -139,17 +145,38 @@ pub(super) fn emit_method_call(
         .cloned();
     let arg_types = eval_and_push_args(args, sig.as_ref(), emitter, ctx, data);
 
-    let obj_ty = emit_expr(object, emitter, ctx, data);
-    let class_name = match &obj_ty {
-        PhpType::Object(cn) => cn.clone(),
-        _ => {
-            emitter.comment("WARNING: method call on non-object");
-            return PhpType::Int;
-        }
-    };
+    // Re-evaluate the receiver expression so its result lands in the
+    // current result register. When the receiver's codegen-level type is
+    // Mixed (the runtime representation for nullable / union object
+    // parameters), the result register holds a pointer to a boxed mixed
+    // cell rather than the raw object — unbox it so the downstream
+    // method dispatch receives the underlying object pointer.
+    let runtime_obj_ty = emit_expr(object, emitter, ctx, data);
+    if matches!(runtime_obj_ty, PhpType::Mixed | PhpType::Union(_)) {
+        unbox_mixed_object_payload(emitter);
+    }
     abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                 // push $this pointer for the active target ABI
 
     emit_method_call_with_pushed_args(&class_name, method, &arg_types, emitter, ctx)
+}
+
+/// After `__rt_mixed_unbox`, the unwrapped payload's low word — which is
+/// the raw object pointer for boxed objects — sits in the second integer
+/// argument register on each platform (x1 on AArch64, rdi on x86_64).
+/// Call this helper from a site that has just produced a boxed mixed
+/// pointer in `int_result_reg` to overwrite that register with the
+/// concrete object pointer. The runtime tag returned in x0/rax is
+/// discarded; callers that need it can inline the call themselves.
+fn unbox_mixed_object_payload(emitter: &mut Emitter) {
+    abi::emit_call_label(emitter, "__rt_mixed_unbox");
+    match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => {
+            emitter.instruction("mov x0, x1");                                  // promote the unboxed object pointer (value_lo) into the int result register on AArch64
+        }
+        crate::codegen::platform::Arch::X86_64 => {
+            emitter.instruction("mov rax, rdi");                                // promote the unboxed object pointer (value_lo) into the SysV int result register on x86_64
+        }
+    }
 }
 
 pub(super) fn emit_immediate_class_id(emitter: &mut Emitter, class_id: u64) {

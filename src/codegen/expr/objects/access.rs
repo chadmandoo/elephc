@@ -2,6 +2,7 @@ use crate::codegen::abi;
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
+use crate::codegen::functions;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
@@ -14,7 +15,35 @@ pub(super) fn emit_property_access(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
+    // Resolve the receiver's static class up-front so a nullable object
+    // union (`?Foo`) routes through the same path as a direct object type.
+    // The runtime value loaded by emit_expr below is the raw object
+    // pointer in either case — only the codegen type representation
+    // differs (Mixed for unions vs Object for direct types).
+    let static_obj_ty = functions::infer_contextual_type(object, ctx);
+    let static_class = functions::singular_object_class(&static_obj_ty)
+        .map(|name| name.to_string());
     let obj_ty = emit_expr(object, emitter, ctx, data);
+    if let Some(class_name) = static_class.as_ref() {
+        if matches!(obj_ty, PhpType::Object(_) | PhpType::Mixed | PhpType::Union(_)) {
+            // For Mixed-typed receivers (nullable object union storage),
+            // the result register currently holds a boxed mixed pointer.
+            // Unbox it so the downstream property access reads from the
+            // underlying object header rather than the wrapper cell.
+            if matches!(obj_ty, PhpType::Mixed | PhpType::Union(_)) {
+                abi::emit_call_label(emitter, "__rt_mixed_unbox");
+                match emitter.target.arch {
+                    crate::codegen::platform::Arch::AArch64 => {
+                        emitter.instruction("mov x0, x1");                      // promote the unboxed object pointer into the AArch64 int result register
+                    }
+                    crate::codegen::platform::Arch::X86_64 => {
+                        emitter.instruction("mov rax, rdi");                    // promote the unboxed object pointer into the SysV int result register
+                    }
+                }
+            }
+            return emit_loaded_object_property_access(class_name, property, emitter, ctx, data);
+        }
+    }
     let (class_name, prop_ty, offset, needs_deref, is_reference) = match &obj_ty {
         PhpType::Object(class_name) => {
             return emit_loaded_object_property_access(class_name, property, emitter, ctx, data);
