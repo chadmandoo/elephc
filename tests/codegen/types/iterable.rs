@@ -32,22 +32,39 @@ fn test_foreach_over_iterable_hash_emits_keys_and_values() {
 }
 
 #[test]
-fn test_foreach_over_iterable_indexed_runtime_error() {
-    let stderr = compile_and_run_expect_failure(
+fn test_foreach_over_iterable_indexed_emits_keys_and_values() {
+    let out = compile_and_run(
         "<?php
         function dump(iterable $items): void {
-            foreach ($items as $v) {
+            foreach ($items as $k => $v) {
+                echo $k;
+                echo '=';
                 echo $v;
+                echo ';';
             }
         }
         dump([10, 20, 30]);
         ",
     );
-    assert!(
-        stderr.contains("foreach over iterable with non-hash kind"),
-        "expected non-hash iterable runtime error, got: {}",
-        stderr
+    assert_eq!(out, "0=10;1=20;2=30;");
+}
+
+#[test]
+fn test_foreach_over_iterable_indexed_strings_uses_runtime_slot_width() {
+    let out = compile_and_run(
+        "<?php
+        function dump(iterable $items): void {
+            foreach ($items as $k => $v) {
+                echo $k;
+                echo ':';
+                echo $v;
+                echo ';';
+            }
+        }
+        dump(['red', 'blue']);
+        ",
     );
+    assert_eq!(out, "0:red;1:blue;");
 }
 
 #[test]
