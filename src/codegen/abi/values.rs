@@ -69,6 +69,9 @@ pub fn emit_decref_if_refcounted(emitter: &mut Emitter, ty: &PhpType) {
         PhpType::Object(_) => {
             emit_call_label(emitter, "__rt_decref_object");                             // release object reference
         }
+        PhpType::Iterable => {
+            emit_call_label(emitter, "__rt_decref_any");                                // release the erased iterable payload by inspecting its heap kind
+        }
         _ => {}
     }
 }

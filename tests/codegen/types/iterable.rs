@@ -204,3 +204,32 @@ fn test_empty_iterable_uses_underlying_array_length() {
     );
     assert_eq!(out, "empty|not|not");
 }
+
+#[test]
+fn test_iterable_cleanup_uses_uniform_decref_dispatch() {
+    let id = TEST_ID.fetch_add(1, Ordering::SeqCst);
+    let tid = std::thread::current().id();
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("elephc_test_{}_{:?}_{}", pid, tid, id));
+    fs::create_dir_all(&dir).unwrap();
+
+    let (user_asm, _runtime_asm, _) = compile_source_to_asm_with_options(
+        "<?php
+        function hold(iterable $items): void {
+            $copy = $items;
+            echo 'ok';
+        }
+        hold([1, 2]);
+        ",
+        &dir,
+        8_388_608,
+        false,
+        false,
+    );
+    match target().arch {
+        Arch::AArch64 => assert!(user_asm.contains("bl __rt_decref_any"), "{user_asm}"),
+        Arch::X86_64 => assert!(user_asm.contains("call __rt_decref_any"), "{user_asm}"),
+    }
+
+    let _ = fs::remove_dir_all(&dir);
+}
