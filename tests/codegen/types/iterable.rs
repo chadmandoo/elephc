@@ -142,6 +142,22 @@ fn test_iterable_value_appended_to_array_stays_boxed() {
 }
 
 #[test]
+fn test_iterable_variadic_arg_stays_boxed_in_runtime_array() {
+    let out = compile_and_run(
+        "<?php
+        function id(iterable $items): iterable {
+            return $items;
+        }
+        function collect(...$items): void {
+            echo json_encode($items);
+        }
+        collect(id([1, 2]));
+        ",
+    );
+    assert_eq!(out, "[[1,2]]");
+}
+
+#[test]
 fn test_gettype_iterable_returns_array() {
     let out = compile_and_run(
         "<?php
