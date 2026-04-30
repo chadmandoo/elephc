@@ -97,6 +97,12 @@ fn test_assignment_expression_returns_assigned_value() {
 }
 
 #[test]
+fn test_string_assignment_expression_returns_assigned_value() {
+    let out = compile_and_run(r#"<?php echo ($s = "hi"); echo ":"; echo $s;"#);
+    assert_eq!(out, "hi:hi");
+}
+
+#[test]
 fn test_assignment_expression_word_and_uses_php_precedence() {
     let out = compile_and_run(
         r#"<?php
@@ -123,6 +129,38 @@ if ($x = 3) {
 fn test_compound_assignment_expression_returns_new_value() {
     let out = compile_and_run("<?php $x = 4; echo ($x += 3); echo ':'; echo $x;");
     assert_eq!(out, "7:7");
+}
+
+#[test]
+fn test_null_coalesce_assignment_expression_returns_existing_mixed_value() {
+    let out = compile_and_run(
+        r#"<?php
+function maybe(bool $flag): mixed {
+    return $flag ? 7 : null;
+}
+$x = maybe(true);
+echo ($x ??= 5);
+echo ":";
+echo $x;
+"#,
+    );
+    assert_eq!(out, "7:7");
+}
+
+#[test]
+fn test_null_coalesce_assignment_expression_returns_default_for_mixed_null() {
+    let out = compile_and_run(
+        r#"<?php
+function maybe(bool $flag): mixed {
+    return $flag ? 7 : null;
+}
+$x = maybe(false);
+echo ($x ??= 5);
+echo ":";
+echo $x;
+"#,
+    );
+    assert_eq!(out, "5:5");
 }
 
 #[test]

@@ -1,7 +1,6 @@
 use super::super::context::Context;
 use super::super::data_section::DataSection;
 use super::super::emit::Emitter;
-use super::super::functions;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
@@ -18,8 +17,5 @@ pub(super) fn emit_assignment_expr(
     };
 
     super::super::stmt::emit_assign_stmt(name, value, emitter, ctx, data);
-    ctx.variables
-        .get(name)
-        .map(|var| var.ty.clone())
-        .unwrap_or_else(|| functions::infer_contextual_type(value, ctx))
+    super::variables::emit_variable(name, emitter, ctx)
 }
