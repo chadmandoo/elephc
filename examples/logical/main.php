@@ -59,6 +59,10 @@ $slot = 0;
 echo "RHS-mutated index assignment: " . ($scores[$slot] = ($slot = 1)) . "\n";
 echo "Scores after stabilized writes: " . $scores[0] . ", " . $scores[1] . "\n";
 
+$missing_slot = 2;
+echo "RHS-mutated null-coalesce assignment: " . ($scores[$missing_slot] ??= ($missing_slot = 0)) . "\n";
+echo "Scores after conditional write: " . $scores[0] . ", " . $scores[1] . "\n";
+
 // Short ternary / Elvis keeps the left value when truthy
 $nickname = "";
 $display_name = $nickname ?: "anonymous";

@@ -165,7 +165,7 @@ echo (Registry::$value ??= 10);
 
 Non-local assignment expression targets stabilize receiver and index subexpressions when needed, so side-effecting targets such as `$items[idx()] = 1` and `make_box()->count += 1` are evaluated once. For `=` and compound assignment, elephc also preserves PHP's ordering for RHS-mutated simple indexes such as `$items[$i] = ($i = 1)` while pre-evaluating computed indexes such as `$items[$i + 0] = ($i = 1)`.
 
-**Current limitation:** `??=` expression form still rejects non-local targets whose RHS mutates a variable used by the target, such as `$items[$i] ??= ($i = 1)`. This keeps the RHS short-circuit behavior correct until conditional non-local write stabilization is implemented.
+For `??=` expression form, elephc preserves the PHP short-circuit rule and the conditional write order for non-local targets. If the current target value is non-null, the right-hand side is not evaluated. If it is null, the right-hand side runs before the final write target is evaluated, so forms such as `$items[$i] ??= ($i = 1)` write through the updated simple index while computed/effectful index parts remain stabilized.
 
 ## List Unpacking
 
