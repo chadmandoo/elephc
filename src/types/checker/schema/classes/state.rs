@@ -73,6 +73,12 @@ impl ClassBuildState {
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_readonly_class: class.is_readonly_class,
+            allow_dynamic_properties: class_has_allow_dynamic_properties(class),
+            constants: class
+                .constants
+                .iter()
+                .map(|c| (c.name.clone(), c.value.clone()))
+                .collect(),
             properties: self.prop_types,
             property_offsets: self.property_offsets,
             property_declaring_classes: self.property_declaring_classes,
@@ -108,6 +114,21 @@ impl ClassBuildState {
         }
     }
 
+}
+
+/// Returns `true` if the class declaration carries the PHP 8.2
+/// `#[\AllowDynamicProperties]` marker attribute.
+pub(super) fn class_has_allow_dynamic_properties(class: &FlattenedClass) -> bool {
+    class.attributes.iter().any(|group| {
+        group.attributes.iter().any(|attr| {
+            attr.name
+                .last_segment()
+                .is_some_and(|seg| seg.eq_ignore_ascii_case("AllowDynamicProperties"))
+        })
+    })
+}
+
+impl ClassBuildState {
     fn inherit_properties(&mut self, parent: &ClassInfo) {
         for (index, (name, ty)) in parent.properties.iter().enumerate() {
             self.prop_types.push((name.clone(), ty.clone()));

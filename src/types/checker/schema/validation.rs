@@ -69,7 +69,34 @@ pub(crate) fn build_method_sig(
             .chain(method.variadic.iter().map(|_| false))
             .collect(),
         variadic: method.variadic.clone(),
+        deprecation: extract_deprecation(&method.attributes),
     }))
+}
+
+/// Returns `Some(reason)` when the attribute list contains a `#[\Deprecated]`
+/// marker, with `reason` set to the attribute's first string argument (or an
+/// empty string if absent). Match is case-insensitive on the last segment of
+/// the attribute name.
+pub(crate) fn extract_deprecation(
+    groups: &[crate::parser::ast::AttributeGroup],
+) -> Option<String> {
+    for group in groups {
+        for attr in &group.attributes {
+            let matches = attr
+                .name
+                .last_segment()
+                .is_some_and(|seg| seg.eq_ignore_ascii_case("Deprecated"));
+            if !matches {
+                continue;
+            }
+            let reason = attr.args.iter().find_map(|expr| match &expr.kind {
+                ExprKind::StringLiteral(s) => Some(s.clone()),
+                _ => None,
+            });
+            return Some(reason.unwrap_or_default());
+        }
+    }
+    None
 }
 
 pub(crate) fn build_constructor_param_map(methods: &[ClassMethod]) -> Vec<Option<String>> {

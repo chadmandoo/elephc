@@ -172,6 +172,7 @@ pub(super) fn emit_closure(
         ref_params: ref_params.clone(),
         declared_params: declared_params.clone(),
         variadic: variadic.clone(),
+        deprecation: None,
     };
     let resolved_return_type = return_type
         .as_ref()
@@ -185,6 +186,7 @@ pub(super) fn emit_closure(
         ref_params,
         declared_params,
         variadic: variadic.clone(),
+        deprecation: None,
     };
 
     let param_names: Vec<String> = params.iter().map(|(n, _, _, _)| n.clone()).collect();
