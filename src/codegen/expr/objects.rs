@@ -97,7 +97,7 @@ fn class_is_same_or_descends_from(class_name: &str, base_class: &str, ctx: &Cont
     false
 }
 
-pub(super) fn emit_unbox_mixed_object_or_fatal(
+pub(crate) fn emit_unbox_mixed_object_or_fatal(
     message: &[u8],
     emitter: &mut Emitter,
     ctx: &mut Context,

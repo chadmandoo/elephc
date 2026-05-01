@@ -208,3 +208,52 @@ read(null);
     assert_eq!(out.stdout, "fallback");
     assert_eq!(out.stderr, "");
 }
+
+#[test]
+fn test_nullable_object_property_assign_writes_non_null_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+function rhs(): string {
+    echo "rhs|";
+    return "updated";
+}
+class Holder {
+    public string $msg = "initial";
+}
+function write(?Holder $h): void {
+    $h->msg = rhs();
+    echo $h->msg;
+}
+write(new Holder());
+"#,
+    );
+    assert_eq!(out, "rhs|updated");
+}
+
+#[test]
+fn test_nullable_object_property_assign_on_null_receiver_fatals_after_rhs() {
+    let out = compile_and_run_capture(
+        r#"<?php
+function receiver(): ?Holder {
+    echo "receiver|";
+    return null;
+}
+function rhs(): string {
+    echo "rhs|";
+    return "unused";
+}
+class Holder {
+    public string $msg = "initial";
+}
+receiver()->msg = rhs();
+echo "after";
+"#,
+    );
+    assert!(!out.success, "program unexpectedly succeeded");
+    assert_eq!(out.stdout, "receiver|rhs|");
+    assert!(
+        out.stderr.contains("Attempt to assign property \"msg\" on null"),
+        "{}",
+        out.stderr
+    );
+}
