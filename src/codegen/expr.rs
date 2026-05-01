@@ -1,4 +1,5 @@
 mod arrays;
+mod assignment;
 mod binops;
 pub(crate) mod calls;
 mod coerce;
@@ -80,6 +81,24 @@ pub fn emit_expr(
         }
         ExprKind::NullCoalesce { value, default } => {
             emit_null_coalesce(value, default, emitter, ctx, data)
+        }
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+            conditional_value_temp,
+        } => {
+            assignment::emit_assignment_expr(
+                target,
+                value,
+                result_target.as_deref(),
+                prelude,
+                conditional_value_temp.as_deref(),
+                emitter,
+                ctx,
+                data,
+            )
         }
         ExprKind::PreIncrement(name) => {
             variables::emit_pre_increment(name, emitter, ctx)

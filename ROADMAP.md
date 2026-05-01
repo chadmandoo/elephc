@@ -124,6 +124,7 @@ Proper type system for PHP compatibility.
 - [x] `asort()`, `arsort()`, `ksort()`, `krsort()`
 - [x] `natsort()`, `natcasesort()`, `shuffle()`, `array_rand()`
 - [x] `range()`
+- [x] Direct indexed-array growth preserves existing slots for writes such as `$items[2] = 1` after `$items = [10, 20]`
 - [x] `switch` / `case` / `default` (with fall-through)
 - [x] `match` expression (PHP 8 style, no fall-through)
 
@@ -143,6 +144,7 @@ Proper type system for PHP compatibility.
 - [x] Heredoc / nowdoc strings
 - [x] Bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
 - [x] Full compound assignment family: `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
+- [x] Assignment expressions — local variables and stabilized non-local targets (`$items[0]`, `$items[idx()]`, `$obj->x`, `makeBox()->x`, `ClassName::$x`, property array slots) support `=`, compound assignment, and `??=` as PHP-compatible expressions, including RHS-mutated target dependencies such as `$items[$i] ??= ($i = 1)`, with assignment precedence below `?:` / `??` and above `and` / `xor` / `or`
 - [x] Spaceship operator: `<=>`
 - [x] `call_user_func()` (string callbacks)
 - [x] `call_user_func_array()`
@@ -416,7 +418,6 @@ Features that are feasible but complex. Not currently planned for any specific v
 
 | Feature | Complexity | Notes |
 |---|---|---|
-| Assignment expressions with PHP low-precedence operators | Medium | Model assignment as an expression so forms like `$x = true and false;` match PHP exactly instead of requiring parentheses around the word-form logical RHS. Requires parser/AST/type/codegen changes and precedence regression tests. |
 | PHP case-insensitive symbol parity | Medium | Extend PHP-compatible case-insensitive matching beyond magic constants to keywords, built-in/user function calls, class/interface/trait names, and method lookup while preserving PHP's case-sensitive variables, object properties, string array keys, and user constants. |
 | Dynamic `instanceof` targets | Medium | Support PHP forms such as `$obj instanceof $className` once class-string/object target expressions and their runtime validation semantics are modeled. Current support is for named class/interface targets plus `self`, `parent`, and `static`. |
 | Mixed nullsafe/member chains | Medium | Match PHP's full chain semantics for forms that mix `?->` and `->`, such as `$a?->b->c`. Current support handles nullsafe hops written explicitly with `?->` and short-circuits each nullsafe receiver. |

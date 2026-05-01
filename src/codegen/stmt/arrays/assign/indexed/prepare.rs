@@ -100,6 +100,7 @@ pub(super) fn prepare_indexed_array_assign(
     emitter.instruction("ldr x12, [x10, #8]");                                  // reload the new array capacity after growth
     emitter.instruction(&format!("b {}", grow_check));                          // continue growing until the target slot fits
     emitter.label(&grow_ready);
+    emitter.instruction("ldr x11, [x10]");                                      // reload the logical length after growth helpers clobber caller-saved registers
     if target.is_ref {
         abi::load_at_offset_scratch(emitter, "x13", target.offset, "x14");           // load ref pointer (x14 scratch avoids clobbering x9 = index)
         emitter.instruction("str x10, [x13]");                                  // store the possibly-grown array pointer through the ref

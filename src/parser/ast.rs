@@ -36,6 +36,13 @@ pub enum ExprKind {
         value: Box<Expr>,
         default: Box<Expr>,
     },
+    Assignment {
+        target: Box<Expr>,
+        value: Box<Expr>,
+        result_target: Option<Box<Expr>>,
+        prelude: Vec<Stmt>,
+        conditional_value_temp: Option<String>,
+    },
     PreIncrement(String),
     PostIncrement(String),
     PreDecrement(String),

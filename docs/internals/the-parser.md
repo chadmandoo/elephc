@@ -229,6 +229,7 @@ Operator          Left BP    Right BP    Associativity
 or                  1          2         left
 xor                 3          4         left
 and                 5          6         left
+assignment          7          6         RIGHT (variable targets)
 ? : / ?:            7          7         right-ish ternary parse
 ??                  9          8         RIGHT (null coalescing)
 ||                 11         12         left
@@ -259,7 +260,9 @@ The word-form logical operators (`and`, `xor`, `or`) have PHP's lower precedence
 
 The full ternary form builds `ExprKind::Ternary`. The omitted-middle form `expr ?: fallback` builds `ExprKind::ShortTernary` so later phases can preserve PHP's single-evaluation rule for the left-hand expression.
 
-Because assignment expressions are not represented in the AST yet, assignment statement right-hand sides are parsed starting at ternary precedence. That deliberately rejects unparenthesized forms such as `$x = true and false;` instead of compiling them with non-PHP semantics. Parenthesized logical RHS expressions such as `$x = (true and false);` are parsed normally.
+Assignment expressions build `ExprKind::Assignment { target, value, result_target, prelude, conditional_value_temp }`. Their binding power matches PHP's low-precedence assignment slot, so `$x = true and false` parses as `($x = true) and false`, while `$x = $y = 1` remains right-associative. Standalone variable assignment statements still lower to `StmtKind::Assign` unless a lower-precedence word logical operator requires the whole statement to be represented as an expression statement.
+
+For non-local expression targets, the parser emits hidden assignment prelude statements when a receiver, index, or RHS must be evaluated exactly once before the final write. The lowered `target` is the write target, `result_target` is the expression read after the write, and `prelude` contains temporary assignments such as the captured result of `idx()` in `$items[idx()] = value()` or the RHS value in `$items[$i] = ($i = 1)`. This keeps codegen on the normal assignment paths while preserving PHP's evaluation order for plain and compound assignment expressions. For `??=`, `conditional_value_temp` reserves a hidden temporary that codegen fills only in the null branch, preserving PHP's conditional RHS evaluation for targets such as `$items[$i] ??= ($i = 1)`.
 
 ### The algorithm
 
@@ -424,13 +427,15 @@ $x = 42;         →  Assign { name: "x", value: IntLiteral(42) }
 $x += 5;         →  Assign { name: "x", value: BinaryOp(Add, Variable("x"), IntLiteral(5)) }
 $x <<= 1;        →  Assign { name: "x", value: BinaryOp(ShiftLeft, Variable("x"), IntLiteral(1)) }
 $x ??= 5;        →  Assign { name: "x", value: NullCoalesce(Variable("x"), IntLiteral(5)) }
+$x = true and false; → ExprStmt(BinaryOp(Assignment(Variable("x"), BoolLiteral(true)), And, BoolLiteral(false)))
+echo ($x += 1);  →  Echo(Assignment(Variable("x"), BinaryOp(Add, Variable("x"), IntLiteral(1))))
 $arr[0] = 5;     →  ArrayAssign { array: "arr", index: IntLiteral(0), value: IntLiteral(5) }
 $arr[0] += 5;    →  ArrayAssign { array: "arr", index: IntLiteral(0), value: BinaryOp(Add, ArrayGet(...), IntLiteral(5)) }
 $arr[] = 5;      →  ArrayPush { array: "arr", value: IntLiteral(5) }
 $x++;            →  ExprStmt(PostIncrement("x"))
 ```
 
-Compound assignments (`+=`, `-=`, `*=`, `**=`, `/=`, `.=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`) are desugared into regular assignments with binary operations. Null coalescing assignment (`??=`) is represented as a regular assignment with a `NullCoalesce` value; codegen recognizes this shape and emits a conditional store so the right-hand side is only evaluated when the current target value is `null`.
+Compound assignments (`+=`, `-=`, `*=`, `**=`, `/=`, `.=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`) are desugared into regular assignments with binary operations. Null coalescing assignment (`??=`) is represented as a regular assignment with a `NullCoalesce` value; codegen recognizes this shape and emits a conditional store so the right-hand side is only evaluated when the current target value is `null`. In expression form, the type checker and optimizer treat `ExprKind::Assignment`, its hidden prelude, and its conditional value temp as observable assignment machinery so the assignment cannot be folded away or hidden by stale constant-propagation facts.
 
 Compound assignments can target variables, object properties, static properties, and non-append array elements. For simple targets, the parser lowers directly to the final assignment node. For effectful non-local targets such as `$obj->items[next_key()] += 1`, the parser emits a `StmtKind::Synthetic` sequence that stores the receiver or index expressions in hidden temporaries, then performs the read-modify-write using those temporaries. This preserves PHP's single-evaluation behavior without making codegen duplicate the target expressions.
 
