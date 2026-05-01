@@ -70,6 +70,11 @@ impl Checker {
                 }
                 _ => false,
             },
+            PhpType::Iterable => match actual {
+                PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => true,
+                PhpType::Object(actual_name) => self.object_type_implements_iterable(actual_name),
+                _ => false,
+            },
             PhpType::Pointer(_) => Self::pointer_types_compatible(expected, actual),
             _ => false,
         }

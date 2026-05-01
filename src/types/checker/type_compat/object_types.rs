@@ -92,6 +92,18 @@ impl Checker {
         false
     }
 
+    pub(crate) fn object_type_implements_iterable(&self, type_name: &str) -> bool {
+        if self.classes.contains_key(type_name) {
+            return self.class_implements_interface(type_name, "Iterator")
+                || self.class_implements_interface(type_name, "IteratorAggregate");
+        }
+        if self.interfaces.contains_key(type_name) {
+            return self.interface_extends_interface(type_name, "Iterator")
+                || self.interface_extends_interface(type_name, "IteratorAggregate");
+        }
+        false
+    }
+
     pub(crate) fn common_catch_type_name(&self, type_names: &[String]) -> String {
         let mut iter = type_names.iter();
         let Some(first_name) = iter.next() else {

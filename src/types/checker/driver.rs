@@ -14,6 +14,7 @@ use super::builtin_types::{
     inject_builtin_throwables, patch_builtin_exception_signatures, patch_magic_method_signatures,
     InterfaceDeclInfo,
 };
+use super::builtin_iterators::inject_builtin_iterators;
 use super::schema::{
     build_class_info_recursive, build_enum_info, build_interface_info_recursive,
 };
@@ -65,10 +66,13 @@ pub(super) fn check_types_impl(
             );
         }
     }
-    checker.declared_interfaces = interface_map.keys().cloned().collect();
     if let Err(error) = inject_builtin_throwables(&mut interface_map, &mut class_map) {
         errors.extend(error.flatten());
     }
+    if let Err(error) = inject_builtin_iterators(&mut interface_map, &mut class_map) {
+        errors.extend(error.flatten());
+    }
+    checker.declared_interfaces = interface_map.keys().cloned().collect();
 
     let mut next_interface_id = 0u64;
     let mut building_interfaces = HashSet::new();

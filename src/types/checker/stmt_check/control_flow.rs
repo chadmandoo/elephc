@@ -28,13 +28,35 @@ impl Checker {
                         env.insert(k.clone(), *key.clone());
                     }
                     env.insert(value_var.clone(), *value.clone());
+                } else if let PhpType::Object(class_name) = &arr_ty {
+                    let is_iter = self.class_implements_interface(class_name, "Iterator")
+                        || self.interface_extends_interface(class_name, "Iterator");
+                    let is_iter_agg = self
+                        .class_implements_interface(class_name, "IteratorAggregate")
+                        || self.interface_extends_interface(class_name, "IteratorAggregate");
+                    if !is_iter && !is_iter_agg {
+                        return Err(CompileError::new(
+                            stmt.span,
+                            &format!(
+                                "foreach over object requires {} to implement Iterator or IteratorAggregate",
+                                class_name
+                            ),
+                        ));
+                    }
+                    if let Some(k) = key_var {
+                        env.insert(k.clone(), PhpType::Mixed);
+                    }
+                    env.insert(value_var.clone(), PhpType::Mixed);
                 } else if let PhpType::Iterable = &arr_ty {
                     if let Some(k) = key_var {
                         env.insert(k.clone(), PhpType::Mixed);
                     }
                     env.insert(value_var.clone(), PhpType::Mixed);
                 } else {
-                    return Err(CompileError::new(stmt.span, "foreach requires an array"));
+                    return Err(CompileError::new(
+                        stmt.span,
+                        "foreach requires an array, iterable, or an object implementing Iterator/IteratorAggregate",
+                    ));
                 }
                 let errors = self.check_break_continue_target_body(body, env);
                 if errors.is_empty() {

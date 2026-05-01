@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::names::{
-    enum_case_symbol, mangle_fqn, method_symbol, static_method_symbol, static_property_symbol,
+    enum_case_symbol, interface_method_wrapper_symbol, mangle_fqn, method_symbol,
+    static_method_symbol, static_property_symbol,
 };
 use crate::types::{ClassInfo, EnumInfo, InterfaceInfo, PhpType};
 
@@ -323,7 +324,14 @@ pub(crate) fn emit_runtime_data_user(
             }
             for method_name in &interface_info.method_order {
                 if let Some(impl_class) = class_info.method_impl_classes.get(method_name) {
-                    out.push_str(&format!("    .quad {}\n", method_symbol(impl_class, method_name)));
+                    let symbol = interface_method_table_symbol(
+                        class_info,
+                        interface_info,
+                        method_name,
+                        impl_class,
+                        classes,
+                    );
+                    out.push_str(&format!("    .quad {}\n", symbol));
                 } else {
                     out.push_str("    .quad 0\n");
                 }
@@ -397,6 +405,44 @@ pub(crate) fn emit_runtime_data_user(
     }
 
     out
+}
+
+fn interface_method_table_symbol(
+    class_info: &ClassInfo,
+    interface_info: &InterfaceInfo,
+    method_name: &str,
+    impl_class: &str,
+    classes: &HashMap<String, ClassInfo>,
+) -> String {
+    if interface_method_needs_return_wrapper(interface_info, method_name, impl_class, classes) {
+        interface_method_wrapper_symbol(
+            class_info.class_id,
+            interface_info.interface_id,
+            method_name,
+        )
+    } else {
+        method_symbol(impl_class, method_name)
+    }
+}
+
+fn interface_method_needs_return_wrapper(
+    interface_info: &InterfaceInfo,
+    method_name: &str,
+    impl_class: &str,
+    classes: &HashMap<String, ClassInfo>,
+) -> bool {
+    let Some(interface_sig) = interface_info.methods.get(method_name) else {
+        return false;
+    };
+    let Some(actual_sig) = classes
+        .get(impl_class)
+        .and_then(|class_info| class_info.methods.get(method_name))
+    else {
+        return false;
+    };
+
+    matches!(interface_sig.return_type.codegen_repr(), PhpType::Mixed)
+        && !matches!(actual_sig.return_type.codegen_repr(), PhpType::Mixed)
 }
 
 #[cfg(test)]
