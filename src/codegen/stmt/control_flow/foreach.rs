@@ -65,6 +65,7 @@ pub(super) fn emit_foreach_stmt(
             // boundary.
             let indexed_case = ctx.next_label("foreach_iter_indexed");
             let hash_case = ctx.next_label("foreach_iter_hash");
+            let object_case = ctx.next_label("foreach_iter_object");
             let done = ctx.next_label("foreach_iter_done");
             let indexed_start = ctx.next_label("foreach_iter_indexed_start");
             let indexed_end = ctx.next_label("foreach_iter_indexed_end");
@@ -81,15 +82,31 @@ pub(super) fn emit_foreach_stmt(
                     emitter.instruction(&format!("b.eq {}", indexed_case));     // dispatch the indexed iterable path
                     emitter.instruction("cmp x0, #3");                          // hash table kind?
                     emitter.instruction(&format!("b.eq {}", hash_case));        // dispatch the associative iterable path
+                    emitter.instruction("cmp x0, #4");                          // object kind?
+                    emitter.instruction(&format!("b.eq {}", object_case));      // dispatch the Traversable object iterable path
                 }
                 Arch::X86_64 => {
                     emitter.instruction("cmp rax, 2");                          // indexed-array kind?
                     emitter.instruction(&format!("je {}", indexed_case));       // dispatch the indexed iterable path
                     emitter.instruction("cmp rax, 3");                          // hash table kind?
                     emitter.instruction(&format!("je {}", hash_case));          // dispatch the associative iterable path
+                    emitter.instruction("cmp rax, 4");                          // object kind?
+                    emitter.instruction(&format!("je {}", object_case));        // dispatch the Traversable object iterable path
                 }
             }
             abi::emit_call_label(emitter, "__rt_iterable_unsupported_kind");    // unsupported iterable kind aborts with a fatal diagnostic
+
+            emitter.label(&object_case);
+            abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));           // restore iterable pointer for the object foreach prologue
+            iterator::emit_iterable_object_foreach(
+                key_var,
+                value_var,
+                body,
+                emitter,
+                ctx,
+                data,
+            );
+            abi::emit_jump(emitter, &done);                                      // skip array iterable branches after object iteration completes
 
             emitter.label(&hash_case);
             abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));           // restore iterable pointer for the assoc foreach prologue

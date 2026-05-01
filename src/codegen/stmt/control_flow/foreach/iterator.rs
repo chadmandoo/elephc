@@ -106,6 +106,76 @@ pub(crate) fn emit_iterator_foreach(
     abi::emit_release_temporary_stack(emitter, 16);                             // discard the parked receiver slot
 }
 
+pub(crate) fn emit_iterable_object_foreach(
+    key_var: &Option<String>,
+    value_var: &str,
+    body: &[Stmt],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let iterator_id = ctx
+        .interfaces
+        .get("Iterator")
+        .expect("codegen bug: missing builtin Iterator interface")
+        .interface_id;
+    let aggregate_id = ctx
+        .interfaces
+        .get("IteratorAggregate")
+        .expect("codegen bug: missing builtin IteratorAggregate interface")
+        .interface_id;
+    let direct_case = ctx.next_label("foreach_iter_object_iterator");
+    let aggregate_case = ctx.next_label("foreach_iter_object_aggregate");
+    let done = ctx.next_label("foreach_iter_object_done");
+
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the object-backed iterable while probing its Traversable shape
+    emit_branch_if_saved_receiver_implements(iterator_id, &direct_case, emitter);
+    emit_branch_if_saved_receiver_implements(aggregate_id, &aggregate_case, emitter);
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // discard the unsupported object before raising the foreach diagnostic
+    abi::emit_call_label(emitter, "__rt_iterable_unsupported_kind");            // unsupported object-backed iterables abort with a fatal diagnostic
+
+    emitter.label(&direct_case);
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the Iterator object pointer for the object foreach lowering
+    let direct_start = ctx.next_label("foreach_iter_object_iterator_start");
+    let direct_end = ctx.next_label("foreach_iter_object_iterator_end");
+    let direct_cont = ctx.next_label("foreach_iter_object_iterator_cont");
+    emit_iterator_foreach(
+        "Iterator",
+        key_var,
+        value_var,
+        body,
+        &direct_start,
+        &direct_end,
+        &direct_cont,
+        emitter,
+        ctx,
+        data,
+    );
+    abi::emit_jump(emitter, &done);                                             // skip the IteratorAggregate branch after direct Iterator iteration
+
+    emitter.label(&aggregate_case);
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the IteratorAggregate object pointer before getIterator()
+    move_result_to_receiver_arg(emitter);
+    emit_dispatch_interface_method("IteratorAggregate", "getIterator", emitter, ctx);
+    let aggregate_start = ctx.next_label("foreach_iter_object_aggregate_start");
+    let aggregate_end = ctx.next_label("foreach_iter_object_aggregate_end");
+    let aggregate_cont = ctx.next_label("foreach_iter_object_aggregate_cont");
+    emit_iterator_foreach(
+        "Iterator",
+        key_var,
+        value_var,
+        body,
+        &aggregate_start,
+        &aggregate_end,
+        &aggregate_cont,
+        emitter,
+        ctx,
+        data,
+    );
+
+    emitter.label(&done);
+}
+
 #[derive(Clone)]
 enum IteratorDispatchTarget {
     Class(String),
@@ -260,6 +330,31 @@ fn emit_branch_if_invalid_iterator(emitter: &mut Emitter, loop_end: &str) {
         Arch::X86_64 => {
             emitter.instruction("test rax, rax");                               // valid() returned 0 means the iterator is exhausted
             emitter.instruction(&format!("je {}", loop_end));                   // exit foreach when valid() returns false
+        }
+    }
+}
+
+fn emit_branch_if_saved_receiver_implements(
+    interface_id: u64,
+    target_label: &str,
+    emitter: &mut Emitter,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("ldr x0, [sp]");                                // load the saved iterable object as matcher argument 1
+            abi::emit_load_int_immediate(emitter, "x1", interface_id as i64);
+            abi::emit_load_int_immediate(emitter, "x2", 1);
+            abi::emit_call_label(emitter, "__rt_exception_matches");            // test whether the object implements the requested Traversable interface
+            emitter.instruction("cmp x0, #0");                                  // did the runtime interface matcher succeed?
+            emitter.instruction(&format!("b.ne {}", target_label));             // branch to the matching foreach lowering path
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov rdi, QWORD PTR [rsp]");                    // load the saved iterable object as matcher argument 1
+            abi::emit_load_int_immediate(emitter, "rsi", interface_id as i64);
+            abi::emit_load_int_immediate(emitter, "rdx", 1);
+            abi::emit_call_label(emitter, "__rt_exception_matches");            // test whether the object implements the requested Traversable interface
+            emitter.instruction("test rax, rax");                               // did the runtime interface matcher succeed?
+            emitter.instruction(&format!("jne {}", target_label));              // branch to the matching foreach lowering path
         }
     }
 }
