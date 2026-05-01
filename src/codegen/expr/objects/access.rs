@@ -17,9 +17,9 @@ pub(super) fn emit_property_access(
 ) -> PhpType {
     // Resolve the receiver's static class up-front so a nullable object
     // union (`?Foo`) routes through the same path as a direct object type.
-    // The runtime value loaded by emit_expr below is the raw object
-    // pointer in either case — only the codegen type representation
-    // differs (Mixed for unions vs Object for direct types).
+    // Direct object receivers produce a raw object pointer, while nullable
+    // unions produce a boxed mixed cell that must be checked and unboxed
+    // before the normal property load.
     let static_obj_ty = functions::infer_contextual_type(object, ctx);
     let static_class = functions::singular_object_class(&static_obj_ty)
         .map(|name| name.to_string());
@@ -31,15 +31,16 @@ pub(super) fn emit_property_access(
             // Unbox it so the downstream property access reads from the
             // underlying object header rather than the wrapper cell.
             if matches!(obj_ty, PhpType::Mixed | PhpType::Union(_)) {
-                abi::emit_call_label(emitter, "__rt_mixed_unbox");
-                match emitter.target.arch {
-                    crate::codegen::platform::Arch::AArch64 => {
-                        emitter.instruction("mov x0, x1");                      // promote the unboxed object pointer into the AArch64 int result register
-                    }
-                    crate::codegen::platform::Arch::X86_64 => {
-                        emitter.instruction("mov rax, rdi");                    // promote the unboxed object pointer into the SysV int result register
-                    }
-                }
+                let message = format!(
+                    "Fatal error: Attempt to read property \"{}\" on null\n",
+                    property
+                );
+                super::emit_unbox_mixed_object_or_fatal(
+                    message.as_bytes(),
+                    emitter,
+                    ctx,
+                    data,
+                );
             }
             return emit_loaded_object_property_access(class_name, property, emitter, ctx, data);
         }

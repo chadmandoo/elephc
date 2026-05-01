@@ -97,6 +97,57 @@ fn class_is_same_or_descends_from(class_name: &str, base_class: &str, ctx: &Cont
     false
 }
 
+pub(super) fn emit_unbox_mixed_object_or_fatal(
+    message: &[u8],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let (message_label, message_len) = data.add_string(message);
+    let ok_label = ctx.next_label("mixed_object_not_null");
+    abi::emit_call_label(emitter, "__rt_mixed_unbox");                          // inspect the boxed nullable object before member access
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("cmp x0, #8");                                  // runtime tag 8 means the nullable receiver is null
+            emitter.instruction(&format!("b.ne {}", ok_label));                 // continue only for a real object payload
+            emit_fatal_message(emitter, &message_label, message_len);
+            emitter.label(&ok_label);
+            emitter.instruction("mov x0, x1");                                  // promote the unboxed object pointer into the AArch64 result register
+        }
+        Arch::X86_64 => {
+            emitter.instruction("cmp rax, 8");                                  // runtime tag 8 means the nullable receiver is null
+            emitter.instruction(&format!("jne {}", ok_label));                  // continue only for a real object payload
+            emit_fatal_message(emitter, &message_label, message_len);
+            emitter.label(&ok_label);
+            emitter.instruction("mov rax, rdi");                                // promote the unboxed object pointer into the SysV result register
+        }
+    }
+}
+
+fn emit_fatal_message(emitter: &mut Emitter, message_label: &str, message_len: usize) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, #2");                                  // fd = stderr for the nullable-object fatal diagnostic
+            emitter.adrp("x1", message_label);                                  // load the page containing the nullable-object fatal diagnostic
+            emitter.add_lo12("x1", "x1", message_label);                        // resolve the nullable-object fatal diagnostic address
+            emitter.instruction(&format!("mov x2, #{}", message_len));          // pass the nullable-object fatal diagnostic length to write()
+            emitter.syscall(4);
+            emitter.instruction("mov x0, #1");                                  // exit status 1 indicates abnormal termination
+            emitter.syscall(1);
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(emitter, "rsi", message_label);            // point the Linux write buffer at the nullable-object fatal diagnostic
+            emitter.instruction(&format!("mov edx, {}", message_len));          // pass the nullable-object fatal diagnostic length to write()
+            emitter.instruction("mov edi, 2");                                  // fd = stderr for the nullable-object fatal diagnostic
+            emitter.instruction("mov eax, 1");                                  // Linux x86_64 syscall 1 = write
+            emitter.instruction("syscall");                                     // emit the nullable-object fatal diagnostic
+            emitter.instruction("mov edi, 1");                                  // exit status 1 indicates abnormal termination
+            emitter.instruction("mov eax, 60");                                 // Linux x86_64 syscall 60 = exit
+            emitter.instruction("syscall");                                     // terminate after reporting the nullable-object fatal diagnostic
+        }
+    }
+}
+
 fn emit_late_bound_class_id_or_lexical_fallback(emitter: &mut Emitter, ctx: &Context) {
     if !dispatch::emit_forwarded_called_class_id(emitter, ctx) {
         let class_id = ctx

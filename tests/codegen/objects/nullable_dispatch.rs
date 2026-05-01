@@ -113,11 +113,48 @@ class Outer {
     public function getInner(): ?Inner { return $this->inner; }
 }
 $o = new Outer(new Inner("nested"));
-$inner = $o->getInner();
-if ($inner instanceof Inner) {
-    echo $inner->get();
-}
+echo $o->getInner()->get();
 "#,
     );
     assert_eq!(out, "nested");
+}
+
+#[test]
+fn test_nullable_object_chain_method_call_on_null_receiver_is_fatal() {
+    let err = compile_and_run_expect_failure(
+        r#"<?php
+class Inner {
+    public function get(): string { return "never"; }
+}
+class Outer {
+    public ?Inner $inner = null;
+    public function getInner(): ?Inner { return $this->inner; }
+}
+$o = new Outer();
+echo $o->getInner()->get();
+"#,
+    );
+    assert!(
+        err.contains("Call to a member function get() on null"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_nullable_object_property_access_on_null_receiver_is_fatal() {
+    let err = compile_and_run_expect_failure(
+        r#"<?php
+class Holder {
+    public string $msg = "unused";
+}
+function read(?Holder $h): void {
+    echo $h->msg;
+}
+read(null);
+"#,
+    );
+    assert!(
+        err.contains("Attempt to read property \"msg\" on null"),
+        "{err}"
+    );
 }
