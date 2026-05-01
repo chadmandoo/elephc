@@ -1,11 +1,12 @@
 mod arrays;
+mod assignment;
 mod binops;
 pub(crate) mod calls;
 mod coerce;
 mod compare;
 mod diagnostics;
 mod helpers;
-mod objects;
+pub(crate) mod objects;
 mod ownership;
 mod scalars;
 mod ternary;
@@ -81,6 +82,24 @@ pub fn emit_expr(
         ExprKind::NullCoalesce { value, default } => {
             emit_null_coalesce(value, default, emitter, ctx, data)
         }
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+            conditional_value_temp,
+        } => {
+            assignment::emit_assignment_expr(
+                target,
+                value,
+                result_target.as_deref(),
+                prelude,
+                conditional_value_temp.as_deref(),
+                emitter,
+                ctx,
+                data,
+            )
+        }
         ExprKind::PreIncrement(name) => {
             variables::emit_pre_increment(name, emitter, ctx)
         }
@@ -115,12 +134,22 @@ pub fn emit_expr(
         }
         ExprKind::Closure {
             params,
+            return_type,
             body,
             is_arrow: _,
             is_static: _,
             variadic,
             captures,
-        } => emit_closure(params, variadic, body, captures, emitter, ctx, data),
+        } => emit_closure(
+            params,
+            variadic,
+            return_type,
+            body,
+            captures,
+            emitter,
+            ctx,
+            data,
+        ),
         ExprKind::FirstClassCallable(target) => {
             emit_first_class_callable(target, emitter, ctx, data)
         }
@@ -431,13 +460,23 @@ pub(crate) fn coerce_result_to_type(
 fn emit_closure(
     params: &[(String, Option<TypeExpr>, Option<Expr>, bool)],
     variadic: &Option<String>,
+    return_type: &Option<TypeExpr>,
     body: &[crate::parser::ast::Stmt],
     captures: &[String],
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
-    calls::emit_closure(params, variadic, body, captures, emitter, ctx, data)
+    calls::emit_closure(
+        params,
+        variadic,
+        return_type,
+        body,
+        captures,
+        emitter,
+        ctx,
+        data,
+    )
 }
 
 fn emit_closure_call(

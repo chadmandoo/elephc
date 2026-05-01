@@ -158,6 +158,19 @@ pub fn method_symbol(class_name: &str, method_name: &str) -> String {
     )
 }
 
+pub fn interface_method_wrapper_symbol(
+    class_id: u64,
+    interface_id: u64,
+    method_name: &str,
+) -> String {
+    format!(
+        "_ifacewrap_{}_{}_{}",
+        class_id,
+        interface_id,
+        mangle_fqn(method_name)
+    )
+}
+
 pub fn static_method_symbol(class_name: &str, method_name: &str) -> String {
     format!(
         "_static_{}_{}",

@@ -175,3 +175,59 @@ mod callables;
 mod never;
 #[path = "error_tests/misc.rs"]
 mod misc;
+
+// --- Iterator-related errors ---
+
+#[test]
+fn test_error_foreach_over_object_not_implementing_iterator() {
+    expect_error(
+        "<?php class Plain { public int $x = 1; } foreach (new Plain() as $v) { echo $v; }",
+        "foreach over object requires Plain to implement Iterator",
+    );
+}
+
+#[test]
+fn test_error_iterator_cannot_be_redeclared() {
+    expect_error(
+        "<?php interface Iterator { public function current(): mixed; }",
+        "Cannot redeclare built-in interface: Iterator",
+    );
+}
+
+#[test]
+fn test_error_iterator_aggregate_cannot_be_redeclared() {
+    expect_error(
+        "<?php interface IteratorAggregate { public function getIterator(): Iterator; }",
+        "Cannot redeclare built-in interface: IteratorAggregate",
+    );
+}
+
+#[test]
+fn test_error_iterator_method_requires_declared_return_type() {
+    expect_error(
+        "<?php
+class Bad implements Iterator {
+    public function current() { return 1; }
+    public function key(): mixed { return 0; }
+    public function next(): void {}
+    public function valid(): bool { return true; }
+    public function rewind(): void {}
+}",
+        "Cannot implement interface method Bad::current without declaring a compatible return type",
+    );
+}
+
+#[test]
+fn test_error_iterator_method_rejects_incompatible_return_type() {
+    expect_error(
+        "<?php
+class Bad implements Iterator {
+    public function current(): mixed { return 1; }
+    public function key(): mixed { return 0; }
+    public function next(): void {}
+    public function valid(): int { return 1; }
+    public function rewind(): void {}
+}",
+        "Cannot implement interface method Bad::valid with incompatible return type int",
+    );
+}

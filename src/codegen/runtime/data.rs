@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::names::{
-    enum_case_symbol, mangle_fqn, method_symbol, static_method_symbol, static_property_symbol,
+    enum_case_symbol, interface_method_wrapper_symbol, mangle_fqn, method_symbol,
+    static_method_symbol, static_property_symbol,
 };
 use crate::types::{ClassInfo, EnumInfo, InterfaceInfo, PhpType};
 
@@ -41,6 +42,8 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize) -> String {
     out.push_str(".globl _arr_cap_err_msg\n_arr_cap_err_msg:\n    .ascii \"Fatal error: array capacity exceeded\\n\"\n");
     out.push_str(".globl _buffer_bounds_msg\n_buffer_bounds_msg:\n    .ascii \"Fatal error: buffer index out of bounds\\n\"\n");
     out.push_str(".globl _buffer_uaf_msg\n_buffer_uaf_msg:\n    .ascii \"Fatal error: use of buffer after buffer_free()\\n\"\n");
+    out.push_str(".globl _iterable_unsupported_kind_msg\n_iterable_unsupported_kind_msg:\n    .ascii \"Fatal error: foreach over iterable with unsupported kind\\n\"\n");
+    out.push_str(".globl _iterable_array_str\n_iterable_array_str:\n    .ascii \"Array\"\n");
     out.push_str(".globl _match_unhandled_msg\n_match_unhandled_msg:\n    .ascii \"Fatal error: unhandled match case\\n\"\n");
     out.push_str(".globl _enum_from_msg\n_enum_from_msg:\n    .ascii \"Fatal error: enum case not found\\n\"\n");
     out.push_str(".globl _static_prop_private_access_msg\n_static_prop_private_access_msg:\n    .ascii \"Fatal error: Cannot access private static property\\n\"\n");
@@ -321,7 +324,14 @@ pub(crate) fn emit_runtime_data_user(
             }
             for method_name in &interface_info.method_order {
                 if let Some(impl_class) = class_info.method_impl_classes.get(method_name) {
-                    out.push_str(&format!("    .quad {}\n", method_symbol(impl_class, method_name)));
+                    let symbol = interface_method_table_symbol(
+                        class_info,
+                        interface_info,
+                        method_name,
+                        impl_class,
+                        classes,
+                    );
+                    out.push_str(&format!("    .quad {}\n", symbol));
                 } else {
                     out.push_str("    .quad 0\n");
                 }
@@ -351,6 +361,7 @@ pub(crate) fn emit_runtime_data_user(
                         PhpType::Object(_) => 6,
                         PhpType::Mixed => 7,
                         PhpType::Union(_) => 7,
+                        PhpType::Iterable => 7,
                         PhpType::Callable
                         | PhpType::Pointer(_)
                         | PhpType::Buffer(_)
@@ -394,6 +405,44 @@ pub(crate) fn emit_runtime_data_user(
     }
 
     out
+}
+
+fn interface_method_table_symbol(
+    class_info: &ClassInfo,
+    interface_info: &InterfaceInfo,
+    method_name: &str,
+    impl_class: &str,
+    classes: &HashMap<String, ClassInfo>,
+) -> String {
+    if interface_method_needs_return_wrapper(interface_info, method_name, impl_class, classes) {
+        interface_method_wrapper_symbol(
+            class_info.class_id,
+            interface_info.interface_id,
+            method_name,
+        )
+    } else {
+        method_symbol(impl_class, method_name)
+    }
+}
+
+fn interface_method_needs_return_wrapper(
+    interface_info: &InterfaceInfo,
+    method_name: &str,
+    impl_class: &str,
+    classes: &HashMap<String, ClassInfo>,
+) -> bool {
+    let Some(interface_sig) = interface_info.methods.get(method_name) else {
+        return false;
+    };
+    let Some(actual_sig) = classes
+        .get(impl_class)
+        .and_then(|class_info| class_info.methods.get(method_name))
+    else {
+        return false;
+    };
+
+    matches!(interface_sig.return_type.codegen_repr(), PhpType::Mixed)
+        && !matches!(actual_sig.return_type.codegen_repr(), PhpType::Mixed)
 }
 
 #[cfg(test)]

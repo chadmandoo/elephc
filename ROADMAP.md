@@ -124,6 +124,7 @@ Proper type system for PHP compatibility.
 - [x] `asort()`, `arsort()`, `ksort()`, `krsort()`
 - [x] `natsort()`, `natcasesort()`, `shuffle()`, `array_rand()`
 - [x] `range()`
+- [x] Direct indexed-array growth preserves existing slots for writes such as `$items[2] = 1` after `$items = [10, 20]`
 - [x] `switch` / `case` / `default` (with fall-through)
 - [x] `match` expression (PHP 8 style, no fall-through)
 
@@ -143,6 +144,7 @@ Proper type system for PHP compatibility.
 - [x] Heredoc / nowdoc strings
 - [x] Bitwise operators: `&`, `|`, `^`, `~`, `<<`, `>>`
 - [x] Full compound assignment family: `**=`, `&=`, `|=`, `^=`, `<<=`, `>>=`
+- [x] Assignment expressions — local variables and stabilized non-local targets (`$items[0]`, `$items[idx()]`, `$obj->x`, `makeBox()->x`, `ClassName::$x`, property array slots) support `=`, compound assignment, and `??=` as PHP-compatible expressions, including RHS-mutated target dependencies such as `$items[$i] ??= ($i = 1)`, with assignment precedence below `?:` / `??` and above `and` / `xor` / `or`
 - [x] Spaceship operator: `<=>`
 - [x] `call_user_func()` (string callbacks)
 - [x] `call_user_func_array()`
@@ -303,7 +305,7 @@ Proper type system for PHP compatibility.
 - [x] Final classes, methods, and properties (`final class Foo {}`, `final public function run() {}`, `final public $id`) — compile-time inheritance and override enforcement
 - [x] Union types (`int|string`) — tagged union with runtime type dispatch
 - [x] Nullable types (`?int`) — sugar for `int|null`
-- [x] Function / method parameter and return type hints (`function foo(int $x): string`) — compile-time validation for functions, methods, and constructors; closure / arrow parameter hints are supported, while closure / arrow return annotations remain future work
+- [x] Function / method parameter and return type hints (`function foo(int $x): string`) — compile-time validation for functions, methods, constructor parameters, closures, arrow functions, and non-`void` return-path coverage
 - [x] Constructor property promotion (`public function __construct(public int $x)`) — promoted parameters lower to declared properties plus constructor assignments, including visibility, `readonly`, defaults, nullable/union type declarations, and by-reference promoted parameters
 
 ## v0.18.x — Multi-platform and optimizations
@@ -365,6 +367,7 @@ Proper type system for PHP compatibility.
 - [x] PHP 7.4 numeric separators (`1_000_000`, `0xFF_FF`, `0b1010_1010`, `0o7_7_7`, `1_000.5`, `1e1_0`) across decimal, hex, octal, binary, and float literals
 - [x] Trailing-character validation on numeric literals (rejects `0o78`, `078`, `0xfg`, `0b12`, `1_`, `1__0` at lex time instead of silently splitting tokens)
 - [x] Support for `never` return type
+- [x] `iterable` pseudo-type runtime parity — `foreach` over indexed-array, hash-backed, `Iterator`, and `IteratorAggregate` iterables; `echo`, `gettype()`, `var_dump()`, `===`, scalar casts (`(int)`, `(float)`, `(string)`, `(bool)`), and the `is_iterable()` builtin all dispatch through heap-kind, value-type, or interface metadata where needed
 
 ## v0.20.x — Shared and static libraries (C ABI)
 
@@ -415,7 +418,6 @@ Features that are feasible but complex. Not currently planned for any specific v
 
 | Feature | Complexity | Notes |
 |---|---|---|
-| Assignment expressions with PHP low-precedence operators | Medium | Model assignment as an expression so forms like `$x = true and false;` match PHP exactly instead of requiring parentheses around the word-form logical RHS. Requires parser/AST/type/codegen changes and precedence regression tests. |
 | PHP case-insensitive symbol parity | Medium | Extend PHP-compatible case-insensitive matching beyond magic constants to keywords, built-in/user function calls, class/interface/trait names, and method lookup while preserving PHP's case-sensitive variables, object properties, string array keys, and user constants. |
 | Dynamic `instanceof` targets | Medium | Support PHP forms such as `$obj instanceof $className` once class-string/object target expressions and their runtime validation semantics are modeled. Current support is for named class/interface targets plus `self`, `parent`, and `static`. |
 | Mixed nullsafe/member chains | Medium | Match PHP's full chain semantics for forms that mix `?->` and `->`, such as `$a?->b->c`. Current support handles nullsafe hops written explicitly with `?->` and short-circuits each nullsafe receiver. |
@@ -424,7 +426,6 @@ Features that are feasible but complex. Not currently planned for any specific v
 | Mixed indexed/associative array union | Medium | Model `array + array` cases where one operand is represented as an indexed array and the other as an associative hash, preserving PHP's shared int/string key space and left-key precedence. |
 | Named-argument parity for built-ins, extern calls, and spread | Medium | Extend call validation/lowering so named arguments work outside user-defined calls and interact correctly with spread arguments. |
 | Captured closures as callback values | Medium | Forward hidden `use (...)` capture environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`. |
-| Closure and arrow return type annotations | Low | Parse and validate `function (...): T {}` and `fn(...): T => expr`, adding a closure return-type field to the AST and threading it through closure `FunctionSig` creation. |
 | Full first-class callable targets | Medium | Support `static::method(...)` and `$object->method(...)` first-class callable syntax in addition to function, `ClassName::`, `self::`, and `parent::` targets. |
 | OOP property parity v2 | High | Cover abstract properties, `readonly static` properties, instance property redeclaration rules, and the remaining by-reference constructor-promotion gaps (`readonly` and default values). |
 | Buffer ergonomics v2 | Medium | Consider dynamic resize/push/pop, `foreach`, array conversion, and automatic cleanup for `buffer<T>` while keeping the hot-path POD contract explicit. |

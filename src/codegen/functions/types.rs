@@ -78,6 +78,14 @@ fn wider_of(a: &PhpType, b: &PhpType) -> PhpType {
     a.clone()
 }
 
+fn mixed_container_value_type(ty: PhpType) -> PhpType {
+    if matches!(ty, PhpType::Iterable) {
+        PhpType::Mixed
+    } else {
+        ty
+    }
+}
+
 fn array_union_type(a: &PhpType, b: &PhpType) -> Option<PhpType> {
     match (a, b) {
         (PhpType::Array(left), PhpType::Array(right)) if left == right => {
@@ -157,7 +165,7 @@ fn resolve_buffer_element_type(type_expr: &TypeExpr, ctx: &Context) -> PhpType {
         TypeExpr::Buffer(inner) => {
             PhpType::Buffer(Box::new(resolve_buffer_element_type(inner, ctx)))
         }
-        TypeExpr::Nullable(_) | TypeExpr::Union(_) => PhpType::Int,
+        TypeExpr::Iterable | TypeExpr::Nullable(_) | TypeExpr::Union(_) => PhpType::Int,
     }
 }
 
@@ -169,6 +177,7 @@ pub(crate) fn codegen_declared_type(type_expr: &TypeExpr, ctx: &Context) -> PhpT
         TypeExpr::Str => PhpType::Str,
         TypeExpr::Void => PhpType::Void,
         TypeExpr::Never => PhpType::Never,
+        TypeExpr::Iterable => PhpType::Iterable,
         TypeExpr::Ptr(target) => {
             PhpType::Pointer(target.as_ref().map(|name| name.as_str().to_string()))
         }
@@ -261,7 +270,7 @@ pub(super) fn infer_local_type(
             let elem_ty = if elems.is_empty() {
                 PhpType::Int
             } else {
-                infer_local_type(&elems[0], sig, ctx)
+                mixed_container_value_type(infer_local_type(&elems[0], sig, ctx))
             };
             PhpType::Array(Box::new(elem_ty))
         }
@@ -272,14 +281,14 @@ pub(super) fn infer_local_type(
                 .unwrap_or(PhpType::Mixed);
             let mut value_ty = pairs
                 .first()
-                .map(|(_, value)| infer_local_type(value, sig, ctx))
+                .map(|(_, value)| mixed_container_value_type(infer_local_type(value, sig, ctx)))
                 .unwrap_or(PhpType::Mixed);
             for (key, value) in pairs.iter().skip(1) {
                 key_ty = merge_array_key_types(
                     key_ty,
                     normalized_array_key_type(key, infer_local_type(key, sig, ctx)),
                 );
-                let next_ty = infer_local_type(value, sig, ctx);
+                let next_ty = mixed_container_value_type(infer_local_type(value, sig, ctx));
                 if next_ty != value_ty {
                     value_ty = PhpType::Mixed;
                 }
@@ -315,6 +324,7 @@ pub(super) fn infer_local_type(
             let right = infer_local_type(default, sig, ctx);
             wider_of(&left, &right)
         }
+        ExprKind::Assignment { value, .. } => infer_local_type(value, sig, ctx),
         ExprKind::Ternary {
             then_expr,
             else_expr,
@@ -607,6 +617,15 @@ pub(super) fn infer_local_type(
                     }
                     _ => {}
                 }
+            }
+            if let ExprKind::Closure {
+                return_type: Some(type_ann),
+                ..
+            } = &callee.kind
+            {
+                return ctx
+                    .map(|c| codegen_static_type(type_ann, c))
+                    .unwrap_or(PhpType::Mixed);
             }
             if let ExprKind::Closure { body, .. } = &callee.kind {
                 return crate::types::checker::infer_return_type_syntactic(body);

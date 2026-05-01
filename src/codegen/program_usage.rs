@@ -198,6 +198,20 @@ fn collect_required_class_names_in_expr(expr: &Expr, names: &mut HashSet<String>
             collect_required_class_names_in_expr(value, names);
             collect_required_class_names_in_expr(default, names);
         }
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+            ..
+        } => {
+            collect_required_class_names_in_body(prelude, names);
+            collect_required_class_names_in_expr(target, names);
+            collect_required_class_names_in_expr(value, names);
+            if let Some(result_target) = result_target {
+                collect_required_class_names_in_expr(result_target, names);
+            }
+        }
         ExprKind::FunctionCall { args, .. } | ExprKind::ClosureCall { args, .. } => {
             for arg in args {
                 collect_required_class_names_in_expr(arg, names);
@@ -510,6 +524,20 @@ fn expr_uses_variable(expr: &Expr, needle: &str) -> bool {
         | ExprKind::PtrCast { expr: inner, .. } => expr_uses_variable(inner, needle),
         ExprKind::NullCoalesce { value, default } => {
             expr_uses_variable(value, needle) || expr_uses_variable(default, needle)
+        }
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+            ..
+        } => {
+            prelude.iter().any(|stmt| stmt_uses_variable(stmt, needle))
+                || expr_uses_variable(target, needle)
+                || expr_uses_variable(value, needle)
+                || result_target
+                    .as_deref()
+                    .is_some_and(|target| expr_uses_variable(target, needle))
         }
         ExprKind::PreIncrement(name)
         | ExprKind::PostIncrement(name)

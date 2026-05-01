@@ -127,7 +127,8 @@ pub(super) fn emit_property_access(
             PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
             }
-            PhpType::Mixed
+            PhpType::Iterable
+            | PhpType::Mixed
             | PhpType::Union(_)
             | PhpType::Array(_)
             | PhpType::AssocArray { .. }
@@ -156,7 +157,8 @@ pub(super) fn emit_property_access(
         PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
         }
-        PhpType::Mixed
+        PhpType::Iterable
+        | PhpType::Mixed
         | PhpType::Union(_)
         | PhpType::Array(_)
         | PhpType::AssocArray { .. }
@@ -268,7 +270,8 @@ fn emit_loaded_object_property_value(
             PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
             }
-            PhpType::Mixed
+            PhpType::Iterable
+            | PhpType::Mixed
             | PhpType::Union(_)
             | PhpType::Array(_)
             | PhpType::AssocArray { .. }
@@ -297,7 +300,8 @@ fn emit_loaded_object_property_value(
         PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
         }
-        PhpType::Mixed
+        PhpType::Iterable
+        | PhpType::Mixed
         | PhpType::Union(_)
         | PhpType::Array(_)
         | PhpType::AssocArray { .. }

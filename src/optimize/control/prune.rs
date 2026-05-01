@@ -425,6 +425,19 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
             value: Box::new(prune_expr(*value)),
             default: Box::new(prune_expr(*default)),
         },
+        ExprKind::Assignment {
+            target,
+            value,
+            result_target,
+            prelude,
+            conditional_value_temp,
+        } => ExprKind::Assignment {
+            target: Box::new(prune_expr(*target)),
+            value: Box::new(prune_expr(*value)),
+            result_target: result_target.map(|target| Box::new(prune_expr(*target))),
+            prelude: prelude.into_iter().flat_map(prune_stmt).collect(),
+            conditional_value_temp,
+        },
         ExprKind::PreIncrement(name) => ExprKind::PreIncrement(name),
         ExprKind::PostIncrement(name) => ExprKind::PostIncrement(name),
         ExprKind::PreDecrement(name) => ExprKind::PreDecrement(name),
@@ -483,6 +496,7 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
         ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body,
             is_arrow,
             is_static,
@@ -490,6 +504,7 @@ pub(crate) fn prune_expr(expr: Expr) -> Expr {
         } => ExprKind::Closure {
             params,
             variadic,
+            return_type,
             body: prune_block(body),
             is_arrow,
             is_static,
