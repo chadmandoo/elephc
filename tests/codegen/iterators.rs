@@ -92,3 +92,60 @@ foreach (new Aggregate() as $v) { echo $v; echo " "; }
     );
     assert_eq!(out, "0 1 2 3 4 ");
 }
+
+#[test]
+fn test_foreach_iterator_aggregate_returning_iterator_interface() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $current;
+    private int $end;
+    public function __construct(int $start, int $end) {
+        $this->current = $start;
+        $this->end = $end;
+    }
+    public function rewind(): void {}
+    public function valid(): bool { return $this->current < $this->end; }
+    public function current(): int { return $this->current; }
+    public function key(): int { return $this->current; }
+    public function next(): void { $this->current = $this->current + 1; }
+}
+class Aggregate implements IteratorAggregate {
+    public function getIterator(): Iterator { return new Range(0, 3); }
+}
+foreach (new Aggregate() as $v) { echo $v; }
+"#,
+    );
+    assert_eq!(out, "012");
+}
+
+#[test]
+fn test_foreach_iterator_typed_parameter_dispatches_by_interface() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $current;
+    private int $end;
+    public function __construct(int $start, int $end) {
+        $this->current = $start;
+        $this->end = $end;
+    }
+    public function rewind(): void {}
+    public function valid(): bool { return $this->current < $this->end; }
+    public function current(): int { return $this->current; }
+    public function key(): int { return $this->current - 2; }
+    public function next(): void { $this->current = $this->current + 1; }
+}
+function dump_values(Iterator $it): void {
+    foreach ($it as $k => $v) {
+        echo $k;
+        echo "=";
+        echo $v;
+        echo " ";
+    }
+}
+dump_values(new Range(2, 5));
+"#,
+    );
+    assert_eq!(out, "0=2 1=3 2=4 ");
+}
