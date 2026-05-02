@@ -108,6 +108,64 @@ echo $picked === Color::Red ? "red" : "other";
 }
 
 #[test]
+fn test_case_insensitive_constructor_name_supports_promotion_and_readonly_writes() {
+    let out = compile_and_run(
+        r#"<?php
+class User {
+    public readonly string $name;
+
+    public function __CONSTRUCT(public int $id, string $name) {
+        $this->name = $name;
+    }
+}
+
+$user = new User(7, "Ada");
+echo $user->id . ":" . $user->name;
+"#,
+    );
+    assert_eq!(out, "7:Ada");
+}
+
+#[test]
+fn test_case_insensitive_constructor_override_skips_signature_compatibility() {
+    let out = compile_and_run(
+        r#"<?php
+class Base {
+    public function __construct(int $id) {}
+}
+
+class Child extends Base {
+    public function __CONSTRUCT() {}
+}
+
+$child = new Child();
+echo "ok";
+"#,
+    );
+    assert_eq!(out, "ok");
+}
+
+#[test]
+fn test_case_insensitive_builtin_type_names_do_not_resolve_as_classes() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+
+function apply(CALLABLE $fn, ARRAY $items): MIXED {
+    return $fn($items[0]);
+}
+
+function inc($value) {
+    return $value + 1;
+}
+
+echo apply(inc(...), [41]);
+"#,
+    );
+    assert_eq!(out, "42");
+}
+
+#[test]
 fn test_class_constant_preserves_written_receiver_case() {
     let out = compile_and_run(
         r#"<?php

@@ -67,7 +67,7 @@ impl Checker {
                     }
 
                     self.current_class = Some(class.name.clone());
-                    self.current_method = Some(method.name.clone());
+                    self.current_method = Some(method_key.clone());
                     self.current_method_is_static = method.is_static;
                     let method_ref_params: Vec<String> = method
                         .params
