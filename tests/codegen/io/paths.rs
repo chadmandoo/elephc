@@ -33,7 +33,7 @@ echo basename("/etc/passwd") . "|";
 echo dirname("/etc/passwd") . "|";
 echo fnmatch("*.txt", "report.txt") ? "match" : "miss";
 echo "|";
-echo pathinfo("/var/log/syslog.log", 8);
+echo pathinfo("/var/log/syslog.log", PATHINFO_FILENAME);
 "#,
     );
     assert_eq!(out, "passwd|/etc|match|syslog");
@@ -375,6 +375,28 @@ echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|"
 "#,
     );
     assert_eq!(out, "/var/log|syslog.log|log|syslog");
+}
+
+#[test]
+fn test_pathinfo_array_with_pathinfo_all_flag() {
+    let out = compile_and_run(
+        r#"<?php
+$info = pathinfo("/var/log/syslog.log", PATHINFO_ALL);
+echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|" . $info["filename"];
+"#,
+    );
+    assert_eq!(out, "/var/log|syslog.log|log|syslog");
+}
+
+#[test]
+fn test_pathinfo_array_with_literal_all_flag() {
+    let out = compile_and_run(
+        r#"<?php
+$info = pathinfo("foo.txt", 15);
+echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|" . $info["filename"];
+"#,
+    );
+    assert_eq!(out, ".|foo.txt|txt|foo");
 }
 
 #[test]

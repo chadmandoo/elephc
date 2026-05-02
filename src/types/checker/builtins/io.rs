@@ -1,5 +1,5 @@
 use crate::errors::CompileError;
-use crate::parser::ast::Expr;
+use crate::parser::ast::{Expr, ExprKind};
 use crate::types::{PhpType, TypeEnv};
 
 use super::super::Checker;
@@ -269,7 +269,7 @@ pub(super) fn check_builtin(
             for arg in args {
                 checker.infer_type(arg, env)?;
             }
-            if args.len() == 1 {
+            if pathinfo_returns_array(args) {
                 Ok(Some(PhpType::AssocArray {
                     key: Box::new(PhpType::Str),
                     value: Box::new(PhpType::Str),
@@ -279,5 +279,20 @@ pub(super) fn check_builtin(
             }
         }
         _ => Ok(None),
+    }
+}
+
+fn pathinfo_returns_array(args: &[Expr]) -> bool {
+    args.len() == 1
+        || args
+            .get(1)
+            .is_some_and(|flag| pathinfo_flag_is_all(flag))
+}
+
+fn pathinfo_flag_is_all(flag: &Expr) -> bool {
+    match &flag.kind {
+        ExprKind::IntLiteral(15) => true,
+        ExprKind::ConstRef(name) => name.as_str() == "PATHINFO_ALL",
+        _ => false,
     }
 }
