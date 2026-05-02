@@ -213,6 +213,21 @@ fn test_clearstatcache_no_op_with_args() {
 }
 
 #[test]
+fn test_clearstatcache_evaluates_arguments() {
+    let out = compile_and_run(
+        r#"<?php
+function marker(): bool {
+    echo "arg|";
+    return true;
+}
+clearstatcache(marker(), "foo.txt");
+echo "ok";
+"#,
+    );
+    assert_eq!(out, "arg|ok");
+}
+
+#[test]
 fn test_stat_array_has_expected_keys() {
     let (out, dir) = compile_and_run_in_dir(
         r#"<?php
