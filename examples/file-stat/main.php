@@ -2,7 +2,7 @@
 // Extended file metadata — beyond the basic file_exists/filesize/filemtime
 // triplet, elephc exposes the rest of the stat() field set as individual
 // helpers, plus stat()/lstat()/fstat() that return the full record as an
-// array.
+// array on success.
 
 file_put_contents("data.txt", "hello\n");
 
@@ -26,8 +26,10 @@ echo "is_link:       " . (is_link("data.txt") ? "y" : "n") . "\n";
 // Full stat() array — both the integer and the named keys are populated,
 // matching PHP's classic dual indexing.
 $info = stat("data.txt");
-echo "stat[size]:  " . $info["size"] . "\n";
-echo "stat[mode] high nibble (file type): " . sprintf("%X", ($info["mode"] >> 12) & 0xF) . "\n";
+if ($info !== false) {
+    echo "stat[size]:  " . $info["size"] . "\n";
+    echo "stat[mode] high nibble (file type): " . sprintf("%X", ($info["mode"] >> 12) & 0xF) . "\n";
+}
 
 // clearstatcache() is a no-op in elephc (no cache to clear) but is kept
 // for source-level compatibility.
