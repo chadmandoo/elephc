@@ -588,6 +588,81 @@ echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|"
 }
 
 #[test]
+fn test_pathinfo_dynamic_component_flag_returns_string() {
+    let out = compile_and_run(
+        r#"<?php
+$flag = PATHINFO_EXTENSION;
+echo pathinfo("archive.tar.gz", $flag);
+"#,
+    );
+    assert_eq!(out, "gz");
+}
+
+#[test]
+fn test_pathinfo_dynamic_all_flag_returns_array() {
+    let out = compile_and_run(
+        r#"<?php
+$flag = PATHINFO_ALL;
+$info = pathinfo("/var/log/syslog.log", $flag);
+echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|" . $info["filename"];
+"#,
+    );
+    assert_eq!(out, "/var/log|syslog.log|log|syslog");
+}
+
+#[test]
+fn test_pathinfo_dynamic_all_bitmask_returns_array() {
+    let out = compile_and_run(
+        r#"<?php
+$flag = PATHINFO_DIRNAME | PATHINFO_BASENAME | PATHINFO_EXTENSION | PATHINFO_FILENAME;
+$info = pathinfo("foo.txt", $flag);
+echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|" . $info["filename"];
+"#,
+    );
+    assert_eq!(out, ".|foo.txt|txt|foo");
+}
+
+#[test]
+fn test_pathinfo_dynamic_runtime_shape_can_change() {
+    let out = compile_and_run(
+        r#"<?php
+$flag = PATHINFO_EXTENSION;
+$component = pathinfo("foo.txt", $flag);
+echo $component . "|";
+$flag = PATHINFO_ALL;
+$info = pathinfo("foo.txt", $flag);
+echo $info["basename"] . "|" . $info["extension"];
+"#,
+    );
+    assert_eq!(out, "txt|foo.txt|txt");
+}
+
+#[test]
+fn test_pathinfo_dynamic_all_inside_function_returns_array() {
+    let out = compile_and_run(
+        r#"<?php
+function dynamic_basename(int $flag) {
+    $info = pathinfo("foo.txt", $flag);
+    return $info["basename"];
+}
+echo dynamic_basename(PATHINFO_ALL);
+"#,
+    );
+    assert_eq!(out, "foo.txt");
+}
+
+#[test]
+fn test_pathinfo_dynamic_zero_flag_returns_empty_string() {
+    let out = compile_and_run(
+        r#"<?php
+$flag = 0;
+echo "[" . pathinfo("foo.txt", $flag) . "]";
+"#,
+    );
+    assert_eq!(out, "[]");
+}
+
+#[test]
 fn test_dirname_dynamic_invalid_levels_fails() {
     let err = compile_and_run_expect_failure(
         r#"<?php
