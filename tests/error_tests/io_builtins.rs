@@ -321,13 +321,13 @@ fn test_error_fnmatch_rejects_non_int_flags() {
 }
 
 #[test]
-fn test_error_pathinfo_rejects_dynamic_flags() {
+fn test_error_pathinfo_rejects_non_int_flags() {
     expect_error(
         r#"<?php
-$flag = PATHINFO_EXTENSION;
+$flag = "extension";
 echo pathinfo("foo.txt", $flag);
 "#,
-        "pathinfo() flag must be a compile-time PATHINFO_* constant, bitmask, or integer literal",
+        "pathinfo() flag must be int",
     );
 }
 
