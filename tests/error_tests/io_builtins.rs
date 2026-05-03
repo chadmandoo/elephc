@@ -343,6 +343,22 @@ fn test_error_touch_rejects_invalid_timestamp_args() {
     );
 }
 
+#[test]
+fn test_error_file_ownership_builtins_reject_invalid_principals() {
+    expect_error(
+        r#"<?php chmod("file.txt", "0644");"#,
+        "chmod() mode must be int",
+    );
+    expect_error(
+        r#"<?php chown("file.txt", null);"#,
+        "chown() owner/group must be int or string",
+    );
+    expect_error(
+        r#"<?php chgrp("file.txt", null);"#,
+        "chgrp() owner/group must be int or string",
+    );
+}
+
 // --- v0.6: switch/match/array errors ---
 
 #[test]

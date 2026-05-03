@@ -62,6 +62,72 @@ pub fn emit_modify(emitter: &mut Emitter) {
     emitter.instruction("ret");                                                 // return predicate
 
     // ================================================================
+    // __rt_chown_user: resolve a user name via getpwnam(), then chown(path, uid, -1)
+    // Input:  x1/x2 = path, x3/x4 = user name
+    // Output: x0 = 1 on success, 0 on failure
+    // ================================================================
+    emitter.blank();
+    emitter.raw("    .p2align 2");                                              // ensure 4-byte alignment for the next runtime helper
+    emitter.comment("--- runtime: chown user name ---");
+    emitter.label_global("__rt_chown_user");
+    emitter.instruction("sub sp, sp, #48");                                     // allocate frame + spill slots for path and user strings
+    emitter.instruction("stp x29, x30, [sp, #32]");                             // save frame pointer and return address
+    emitter.instruction("add x29, sp, #32");                                    // establish new frame pointer
+    emitter.instruction("stp x3, x4, [sp, #16]");                               // preserve user-name ptr/len across path conversion
+    emitter.instruction("bl __rt_cstr");                                        // path → C string in x0
+    emitter.instruction("str x0, [sp, #0]");                                    // save C path pointer
+    emitter.instruction("ldp x1, x2, [sp, #16]");                               // reload user-name ptr/len
+    emitter.instruction("bl __rt_cstr2");                                       // user name → secondary C string in x0
+    emitter.bl_c("getpwnam");                                                   // libc getpwnam(name)
+    emitter.instruction("cbz x0, __rt_chown_user_fail");                        // unknown user name → false
+    emitter.instruction("ldr w1, [x0, #16]");                                   // load passwd.pw_uid
+    emitter.instruction("ldr x0, [sp, #0]");                                    // reload C path pointer
+    emitter.instruction("mov x2, #-1");                                         // gid = -1 (leave group unchanged)
+    emitter.bl_c("chown");                                                      // libc chown(path, uid, -1)
+    emitter.instruction("cmp x0, #0");                                          // success?
+    emitter.instruction("cset x0, eq");                                         // x0 = 1 if chown succeeded
+    emitter.instruction("b __rt_chown_user_done");                              // skip failure return
+    emitter.label("__rt_chown_user_fail");
+    emitter.instruction("mov x0, #0");                                          // unknown name returns false
+    emitter.label("__rt_chown_user_done");
+    emitter.instruction("ldp x29, x30, [sp, #32]");                             // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // deallocate frame
+    emitter.instruction("ret");                                                 // return predicate
+
+    // ================================================================
+    // __rt_chgrp_group: resolve a group name via getgrnam(), then chown(path, -1, gid)
+    // Input:  x1/x2 = path, x3/x4 = group name
+    // Output: x0 = 1 on success, 0 on failure
+    // ================================================================
+    emitter.blank();
+    emitter.raw("    .p2align 2");                                              // ensure 4-byte alignment for the next runtime helper
+    emitter.comment("--- runtime: chgrp group name ---");
+    emitter.label_global("__rt_chgrp_group");
+    emitter.instruction("sub sp, sp, #48");                                     // allocate frame + spill slots for path and group strings
+    emitter.instruction("stp x29, x30, [sp, #32]");                             // save frame pointer and return address
+    emitter.instruction("add x29, sp, #32");                                    // establish new frame pointer
+    emitter.instruction("stp x3, x4, [sp, #16]");                               // preserve group-name ptr/len across path conversion
+    emitter.instruction("bl __rt_cstr");                                        // path → C string in x0
+    emitter.instruction("str x0, [sp, #0]");                                    // save C path pointer
+    emitter.instruction("ldp x1, x2, [sp, #16]");                               // reload group-name ptr/len
+    emitter.instruction("bl __rt_cstr2");                                       // group name → secondary C string in x0
+    emitter.bl_c("getgrnam");                                                   // libc getgrnam(name)
+    emitter.instruction("cbz x0, __rt_chgrp_group_fail");                       // unknown group name → false
+    emitter.instruction("ldr w2, [x0, #16]");                                   // load group.gr_gid
+    emitter.instruction("ldr x0, [sp, #0]");                                    // reload C path pointer
+    emitter.instruction("mov x1, #-1");                                         // uid = -1 (leave owner unchanged)
+    emitter.bl_c("chown");                                                      // libc chown(path, -1, gid)
+    emitter.instruction("cmp x0, #0");                                          // success?
+    emitter.instruction("cset x0, eq");                                         // x0 = 1 if chown succeeded
+    emitter.instruction("b __rt_chgrp_group_done");                             // skip failure return
+    emitter.label("__rt_chgrp_group_fail");
+    emitter.instruction("mov x0, #0");                                          // unknown name returns false
+    emitter.label("__rt_chgrp_group_done");
+    emitter.instruction("ldp x29, x30, [sp, #32]");                             // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // deallocate frame
+    emitter.instruction("ret");                                                 // return predicate
+
+    // ================================================================
     // __rt_umask: umask(mask) — sets new umask, returns previous
     // Input:  x0 = new mask value
     // Output: x0 = previous umask
@@ -270,6 +336,72 @@ fn emit_modify_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp rax, 0");                                          // success?
     emitter.instruction("sete al");                                             // boolean byte
     emitter.instruction("movzx rax, al");                                       // widen
+    emitter.instruction("add rsp, 32");                                         // release stack
+    emitter.instruction("pop rbp");                                             // restore caller frame pointer
+    emitter.instruction("ret");                                                 // return predicate
+
+    // -- chown by user name --
+    emitter.blank();
+    emitter.comment("--- runtime: chown user name ---");
+    emitter.label_global("__rt_chown_user");
+    emitter.instruction("push rbp");                                            // preserve caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish frame
+    emitter.instruction("sub rsp, 32");                                         // align stack + spill user string and path pointer
+    emitter.instruction("mov QWORD PTR [rbp - 16], rdi");                       // preserve user-name pointer
+    emitter.instruction("mov QWORD PTR [rbp - 24], rsi");                       // preserve user-name length
+    emitter.instruction("call __rt_cstr");                                      // path → C string in rax
+    emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save C path pointer
+    emitter.instruction("mov rax, QWORD PTR [rbp - 16]");                       // reload user-name pointer
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 24]");                       // reload user-name length
+    emitter.instruction("call __rt_cstr2");                                     // user name → secondary C string in rax
+    emitter.instruction("mov rdi, rax");                                        // first getpwnam arg = C user name
+    emitter.instruction("call getpwnam");                                       // libc getpwnam(name)
+    emitter.instruction("test rax, rax");                                       // user found?
+    emitter.instruction("jz __rt_chown_user_fail_x86");                         // unknown user name → false
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // first chown arg = C path
+    emitter.instruction("mov esi, DWORD PTR [rax + 16]");                       // second chown arg = passwd.pw_uid
+    emitter.instruction("mov rdx, -1");                                         // gid = -1 (leave group unchanged)
+    emitter.instruction("call chown");                                          // libc chown(path, uid, -1)
+    emitter.instruction("cmp rax, 0");                                          // success?
+    emitter.instruction("sete al");                                             // boolean byte
+    emitter.instruction("movzx rax, al");                                       // widen
+    emitter.instruction("jmp __rt_chown_user_done_x86");                        // skip failure return
+    emitter.label("__rt_chown_user_fail_x86");
+    emitter.instruction("xor eax, eax");                                        // unknown name returns false
+    emitter.label("__rt_chown_user_done_x86");
+    emitter.instruction("add rsp, 32");                                         // release stack
+    emitter.instruction("pop rbp");                                             // restore caller frame pointer
+    emitter.instruction("ret");                                                 // return predicate
+
+    // -- chgrp by group name --
+    emitter.blank();
+    emitter.comment("--- runtime: chgrp group name ---");
+    emitter.label_global("__rt_chgrp_group");
+    emitter.instruction("push rbp");                                            // preserve caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish frame
+    emitter.instruction("sub rsp, 32");                                         // align stack + spill group string and path pointer
+    emitter.instruction("mov QWORD PTR [rbp - 16], rdi");                       // preserve group-name pointer
+    emitter.instruction("mov QWORD PTR [rbp - 24], rsi");                       // preserve group-name length
+    emitter.instruction("call __rt_cstr");                                      // path → C string in rax
+    emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save C path pointer
+    emitter.instruction("mov rax, QWORD PTR [rbp - 16]");                       // reload group-name pointer
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 24]");                       // reload group-name length
+    emitter.instruction("call __rt_cstr2");                                     // group name → secondary C string in rax
+    emitter.instruction("mov rdi, rax");                                        // first getgrnam arg = C group name
+    emitter.instruction("call getgrnam");                                       // libc getgrnam(name)
+    emitter.instruction("test rax, rax");                                       // group found?
+    emitter.instruction("jz __rt_chgrp_group_fail_x86");                        // unknown group name → false
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // first chown arg = C path
+    emitter.instruction("mov rsi, -1");                                         // uid = -1 (leave owner unchanged)
+    emitter.instruction("mov edx, DWORD PTR [rax + 16]");                       // third chown arg = group.gr_gid
+    emitter.instruction("call chown");                                          // libc chown(path, -1, gid)
+    emitter.instruction("cmp rax, 0");                                          // success?
+    emitter.instruction("sete al");                                             // boolean byte
+    emitter.instruction("movzx rax, al");                                       // widen
+    emitter.instruction("jmp __rt_chgrp_group_done_x86");                       // skip failure return
+    emitter.label("__rt_chgrp_group_fail_x86");
+    emitter.instruction("xor eax, eax");                                        // unknown name returns false
+    emitter.label("__rt_chgrp_group_done_x86");
     emitter.instruction("add rsp, 32");                                         // release stack
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
     emitter.instruction("ret");                                                 // return predicate

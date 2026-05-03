@@ -276,15 +276,37 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Int))
         }
-        "chmod" | "chown" | "chgrp" => {
+        "chmod" => {
             if args.len() != 2 {
                 return Err(CompileError::new(
                     span,
                     &format!("{}() takes exactly 2 arguments", name),
                 ));
             }
-            for arg in args {
-                checker.infer_type(arg, env)?;
+            checker.infer_type(&args[0], env)?;
+            let mode_ty = checker.infer_type(&args[1], env)?;
+            if mode_ty != PhpType::Int {
+                return Err(CompileError::new(
+                    args[1].span,
+                    "chmod() mode must be int",
+                ));
+            }
+            Ok(Some(PhpType::Bool))
+        }
+        "chown" | "chgrp" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() takes exactly 2 arguments", name),
+                ));
+            }
+            checker.infer_type(&args[0], env)?;
+            let principal_ty = checker.infer_type(&args[1], env)?;
+            if !matches!(principal_ty, PhpType::Int | PhpType::Str) {
+                return Err(CompileError::new(
+                    args[1].span,
+                    &format!("{}() owner/group must be int or string", name),
+                ));
             }
             Ok(Some(PhpType::Bool))
         }

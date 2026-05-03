@@ -84,6 +84,30 @@ fn test_chgrp_missing_path_returns_false() {
 }
 
 #[test]
+fn test_chown_unknown_user_string_returns_false() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+file_put_contents("owner.txt", "");
+echo chown("owner.txt", "elephc_user_that_should_not_exist") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "n");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_chgrp_unknown_group_string_returns_false() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+file_put_contents("group.txt", "");
+echo chgrp("group.txt", "elephc_group_that_should_not_exist") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "n");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_umask_set_then_set_back() {
     let out = compile_and_run(
         r#"<?php
