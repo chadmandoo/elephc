@@ -130,15 +130,16 @@ PHP source → Lexer (tokens) → Parser (AST) → Resolver (include/require) �
 ### Adding a new built-in function
 
 1. Add the function to `src/types/checker/builtins/catalog.rs`. This is mandatory: it drives PHP-style case-insensitive builtin lookup, namespace fallback, redeclaration checks, and `name_resolver` behavior.
-2. Add the function to the `BUILTINS` list in `src/codegen/builtins/arrays/function_exists.rs`, or `function_exists("...")` will report the new builtin as missing.
+2. Confirm `function_exists("...")` recognizes the function. The implementation delegates to the canonical catalog; do not add a second builtin-name table without keeping it in lockstep.
 3. Add type signature handling in the appropriate `src/types/checker/builtins/<category>.rs` file (argument count, types, return type).
-4. Create a new file in `src/codegen/builtins/<category>/` (e.g., `strings/my_func.rs`).
-5. Add `mod my_func;` plus dispatcher wiring in the category's `mod.rs`.
-6. If the function needs a runtime routine, create it under `src/codegen/runtime/<category>/`.
-7. Add module/re-export wiring in the relevant `runtime/<category>/mod.rs`, then call it from the runtime emitter orchestration.
-8. Add codegen and error tests.
+4. Add the codegen return type to `src/codegen/functions/types.rs` when local type inference needs to know the result type before the builtin is emitted.
+5. Create a new file in `src/codegen/builtins/<category>/` (e.g., `strings/my_func.rs`).
+6. Add `mod my_func;` plus dispatcher wiring in the category's `mod.rs`.
+7. If the function needs a runtime routine, create it under `src/codegen/runtime/<category>/`.
+8. Add module/re-export wiring in the relevant `runtime/<category>/mod.rs`, then call it from the runtime emitter orchestration.
+9. Add codegen and error tests.
 
-Do not stop after wiring only the checker and codegen dispatcher. A builtin is not complete until the catalog and `function_exists()` table know about it. New builtins should also include at least one case-insensitive or namespaced call test when the feature is PHP-visible.
+Do not stop after wiring only the checker and codegen dispatcher. A builtin is not complete until the catalog, `function_exists()`, case-insensitive lookup, and namespace fallback all see it. New builtins should include at least one case-insensitive or namespaced call test when the feature is PHP-visible.
 
 Leaf builtin/runtime files contain exactly **one emitter function**. Keep dispatcher/re-export files (`mod.rs`) as orchestration-only files, and keep runtime data emission in `src/codegen/runtime/data.rs`.
 

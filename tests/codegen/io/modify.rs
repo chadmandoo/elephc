@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn test_function_exists_recognizes_file_modify_builtins() {
+    let out = compile_and_run(
+        r#"<?php
+echo (function_exists("touch") ? "1" : "0")
+   . (function_exists("ChMoD") ? "1" : "0")
+   . (function_exists("chown") ? "1" : "0")
+   . (function_exists("chgrp") ? "1" : "0")
+   . (function_exists("umask") ? "1" : "0")
+   . (function_exists("ftruncate") ? "1" : "0")
+   . (function_exists("fflush") ? "1" : "0")
+   . (function_exists("fsync") ? "1" : "0")
+   . (function_exists("FdAtAsYnC") ? "1" : "0");
+"#,
+    );
+    assert_eq!(out, "111111111");
+}
+
+#[test]
+fn test_file_modify_builtins_are_case_insensitive_and_namespaced() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+namespace FsModifyCase;
+ToUcH("case.txt");
+$ok = ChMoD("case.txt", 0o644);
+echo ($ok ? "y" : "n") . "|" . (FiLe_ExIsTs("case.txt") ? "y" : "n");
+"#,
+    );
+    assert_eq!(out, "y|y");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_chmod_existing_file_succeeds() {
     let (out, dir) = compile_and_run_in_dir(
         r#"<?php
