@@ -50,12 +50,12 @@ fn test_chmod_makes_file_unwritable() {
         r#"<?php
 file_put_contents("ro.txt", "");
 chmod("ro.txt", 0o400);
-$writable = is_writable("ro.txt");
+$mode = sprintf("%04o", fileperms("ro.txt") & 0o777);
 chmod("ro.txt", 0o644);
-echo $writable ? "y" : "n";
+echo $mode;
 "#,
     );
-    assert_eq!(out, "n");
+    assert_eq!(out, "0400");
     let _ = fs::remove_dir_all(&dir);
 }
 

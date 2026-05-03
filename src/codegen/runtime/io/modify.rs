@@ -477,8 +477,8 @@ fn emit_modify_linux_x86_64(emitter: &mut Emitter) {
     //   [rbp - 16] : mtime arg
     //   [rbp - 24] : atime arg
     //   [rbp - 32] : current-time mask
-    //   [rbp - 48] : timespec[0] (tv_sec=[rbp-48], tv_nsec=[rbp-40])
-    //   [rbp - 64] : timespec[1] (tv_sec=[rbp-64], tv_nsec=[rbp-56])
+    //   [rbp - 64] : timespec[0] (tv_sec=[rbp-64], tv_nsec=[rbp-56])
+    //   [rbp - 48] : timespec[1] (tv_sec=[rbp-48], tv_nsec=[rbp-40])
     emitter.instruction("push rbp");                                            // preserve caller frame pointer
     emitter.instruction("mov rbp, rsp");                                        // establish frame
     emitter.instruction("sub rsp, 80");                                         // reserve aligned frame
@@ -503,29 +503,29 @@ fn emit_modify_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("test r8, 1");                                          // use current time for atime?
     emitter.instruction("jnz __rt_touch_atime_now_x86");                        // current atime path
     emitter.instruction("mov r8, QWORD PTR [rbp - 24]");                        // load explicit atime seconds
-    emitter.instruction("mov QWORD PTR [rbp - 48], r8");                        // tv_sec = atime
-    emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // tv_nsec = 0
+    emitter.instruction("mov QWORD PTR [rbp - 64], r8");                        // tv_sec = atime
+    emitter.instruction("mov QWORD PTR [rbp - 56], 0");                         // tv_nsec = 0
     emitter.instruction("jmp __rt_touch_handle_mtime_x86");                     // continue with mtime selection
     emitter.label("__rt_touch_atime_now_x86");
-    emitter.instruction("mov QWORD PTR [rbp - 48], 0");                         // tv_sec = 0
-    emitter.instruction(&format!("mov QWORD PTR [rbp - 40], {}", utime_now));   // tv_nsec = platform UTIME_NOW sentinel
+    emitter.instruction("mov QWORD PTR [rbp - 64], 0");                         // tv_sec = 0
+    emitter.instruction(&format!("mov QWORD PTR [rbp - 56], {}", utime_now));   // tv_nsec = platform UTIME_NOW sentinel
 
     emitter.label("__rt_touch_handle_mtime_x86");
     emitter.instruction("mov r8, QWORD PTR [rbp - 32]");                        // reload current-time mask
     emitter.instruction("test r8, 2");                                          // use current time for mtime?
     emitter.instruction("jnz __rt_touch_mtime_now_x86");                        // current mtime path
     emitter.instruction("mov r8, QWORD PTR [rbp - 16]");                        // load explicit mtime seconds
-    emitter.instruction("mov QWORD PTR [rbp - 64], r8");                        // tv_sec = mtime
-    emitter.instruction("mov QWORD PTR [rbp - 56], 0");                         // tv_nsec = 0
+    emitter.instruction("mov QWORD PTR [rbp - 48], r8");                        // tv_sec = mtime
+    emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // tv_nsec = 0
     emitter.instruction("jmp __rt_touch_call_utimensat_x86");                   // call utimensat with prepared timestamps
     emitter.label("__rt_touch_mtime_now_x86");
-    emitter.instruction("mov QWORD PTR [rbp - 64], 0");                         // tv_sec = 0
-    emitter.instruction(&format!("mov QWORD PTR [rbp - 56], {}", utime_now));   // tv_nsec = platform UTIME_NOW sentinel
+    emitter.instruction("mov QWORD PTR [rbp - 48], 0");                         // tv_sec = 0
+    emitter.instruction(&format!("mov QWORD PTR [rbp - 40], {}", utime_now));   // tv_nsec = platform UTIME_NOW sentinel
 
     emitter.label("__rt_touch_call_utimensat_x86");
     emitter.instruction(&format!("mov rdi, {}", plat.at_fdcwd()));              // AT_FDCWD (platform-dependent: -2 Darwin, -100 Linux)
     emitter.instruction("mov rsi, QWORD PTR [rbp - 8]");                        // C path pointer
-    emitter.instruction("lea rdx, [rbp - 48]");                                 // pointer to timespec[0]
+    emitter.instruction("lea rdx, [rbp - 64]");                                 // pointer to timespec[0]
     emitter.instruction("mov rcx, 0");                                          // flags = 0
     emitter.instruction("call utimensat");                                      // libc utimensat()
     emitter.instruction("cmp rax, 0");                                          // success?
