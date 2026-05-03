@@ -366,7 +366,7 @@ fn emit_modify_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jne __rt_touch_atime_explicit_x86");                   // explicit atime
     emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // tv_sec = 0
     emitter.instruction("mov QWORD PTR [rbp - 32], 0x3FFFFFFF");                // tv_nsec = UTIME_NOW
-    emitter.instruction("jmp __rt_touch_handle_mtime_x86");
+    emitter.instruction("jmp __rt_touch_handle_mtime_x86");                     // continue with mtime selection
     emitter.label("__rt_touch_atime_explicit_x86");
     emitter.instruction("mov QWORD PTR [rbp - 40], r8");                        // tv_sec = atime
     emitter.instruction("mov QWORD PTR [rbp - 32], 0");                         // tv_nsec = 0
@@ -377,7 +377,7 @@ fn emit_modify_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jne __rt_touch_mtime_explicit_x86");                   // explicit mtime
     emitter.instruction("mov QWORD PTR [rbp - 56], 0");                         // tv_sec = 0
     emitter.instruction("mov QWORD PTR [rbp - 48], 0x3FFFFFFF");                // tv_nsec = UTIME_NOW
-    emitter.instruction("jmp __rt_touch_call_utimensat_x86");
+    emitter.instruction("jmp __rt_touch_call_utimensat_x86");                   // call utimensat with prepared timestamps
     emitter.label("__rt_touch_mtime_explicit_x86");
     emitter.instruction("mov QWORD PTR [rbp - 56], r8");                        // tv_sec = mtime
     emitter.instruction("mov QWORD PTR [rbp - 48], 0");                         // tv_nsec = 0
