@@ -1,4 +1,4 @@
-pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
+fn is_supported_builtin_function_exact(name: &str) -> bool {
     matches!(
         name,
         "abs"
@@ -42,6 +42,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "atan2"
             | "base64_decode"
             | "base64_encode"
+            | "basename"
             | "bin2hex"
             | "boolval"
             | "buffer_free"
@@ -52,6 +53,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "ceil"
             | "chdir"
             | "chr"
+            | "clearstatcache"
             | "copy"
             | "cos"
             | "cosh"
@@ -64,6 +66,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "define"
             | "deg2rad"
             | "die"
+            | "dirname"
             | "empty"
             | "exec"
             | "exit"
@@ -75,17 +78,26 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "fgetcsv"
             | "fgets"
             | "file"
+            | "fileatime"
+            | "filectime"
             | "file_exists"
+            | "filegroup"
             | "file_get_contents"
+            | "fileinode"
             | "file_put_contents"
+            | "fileowner"
+            | "fileperms"
+            | "filetype"
             | "filemtime"
             | "filesize"
             | "floatval"
             | "floor"
+            | "fnmatch"
             | "fmod"
             | "fopen"
             | "fputcsv"
             | "fread"
+            | "fstat"
             | "fseek"
             | "ftell"
             | "function_exists"
@@ -106,6 +118,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "intval"
             | "is_bool"
             | "is_dir"
+            | "is_executable"
             | "is_file"
             | "is_finite"
             | "is_float"
@@ -117,6 +130,8 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "is_numeric"
             | "is_readable"
             | "is_string"
+            | "is_link"
+            | "is_writeable"
             | "is_writable"
             | "isset"
             | "json_decode"
@@ -128,6 +143,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "log"
             | "log10"
             | "log2"
+            | "lstat"
             | "ltrim"
             | "max"
             | "md5"
@@ -142,6 +158,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "number_format"
             | "ord"
             | "passthru"
+            | "pathinfo"
             | "php_uname"
             | "phpversion"
             | "pi"
@@ -171,6 +188,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "rawurldecode"
             | "rawurlencode"
             | "readline"
+            | "realpath"
             | "rename"
             | "rewind"
             | "rmdir"
@@ -189,6 +207,7 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "sprintf"
             | "sqrt"
             | "sscanf"
+            | "stat"
             | "str_contains"
             | "str_ends_with"
             | "str_ireplace"
@@ -230,4 +249,13 @@ pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
             | "var_dump"
             | "wordwrap"
     )
+}
+
+pub(crate) fn canonical_builtin_function_name(name: &str) -> Option<String> {
+    let canonical = name.to_ascii_lowercase();
+    is_supported_builtin_function_exact(&canonical).then_some(canonical)
+}
+
+pub(crate) fn is_supported_builtin_function(name: &str) -> bool {
+    canonical_builtin_function_name(name).is_some()
 }

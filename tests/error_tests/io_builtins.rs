@@ -204,6 +204,31 @@ fn test_error_filemtime_wrong_args() {
 }
 
 #[test]
+fn test_error_extended_stat_builtins_wrong_args() {
+    for (source, message) in [
+        ("<?php fileatime();", "fileatime() takes exactly 1 argument"),
+        ("<?php filectime();", "filectime() takes exactly 1 argument"),
+        ("<?php fileperms();", "fileperms() takes exactly 1 argument"),
+        ("<?php fileowner();", "fileowner() takes exactly 1 argument"),
+        ("<?php filegroup();", "filegroup() takes exactly 1 argument"),
+        ("<?php fileinode();", "fileinode() takes exactly 1 argument"),
+        ("<?php filetype();", "filetype() takes exactly 1 argument"),
+        ("<?php is_executable();", "is_executable() takes exactly 1 argument"),
+        ("<?php is_link();", "is_link() takes exactly 1 argument"),
+        ("<?php is_writeable();", "is_writeable() takes exactly 1 argument"),
+        ("<?php stat();", "stat() takes exactly 1 argument"),
+        ("<?php lstat();", "lstat() takes exactly 1 argument"),
+        ("<?php fstat();", "fstat() takes exactly 1 argument"),
+        (
+            "<?php clearstatcache(false, \"a\", \"extra\");",
+            "clearstatcache() takes at most 2 arguments",
+        ),
+    ] {
+        expect_error(source, message);
+    }
+}
+
+#[test]
 fn test_error_unlink_wrong_args() {
     expect_error("<?php unlink();", "unlink() takes exactly 1 argument");
 }
@@ -267,6 +292,43 @@ fn test_error_fgetcsv_wrong_args() {
 #[test]
 fn test_error_fputcsv_wrong_args() {
     expect_error("<?php fputcsv(1);", "fputcsv() takes 2 to 4 arguments");
+}
+
+#[test]
+fn test_error_dirname_wrong_args() {
+    expect_error("<?php dirname();", "dirname() takes 1 or 2 arguments");
+}
+
+#[test]
+fn test_error_dirname_rejects_static_levels_below_one() {
+    expect_error(
+        r#"<?php dirname("/tmp/file", 0);"#,
+        "dirname() levels must be greater than or equal to 1",
+    );
+}
+
+#[test]
+fn test_error_fnmatch_wrong_args() {
+    expect_error("<?php fnmatch(\"*.txt\");", "fnmatch() takes 2 or 3 arguments");
+}
+
+#[test]
+fn test_error_fnmatch_rejects_unsupported_flags() {
+    expect_error(
+        r#"<?php fnmatch("*.TXT", "file.txt", 16);"#,
+        "fnmatch() flags other than 0 are not supported yet",
+    );
+}
+
+#[test]
+fn test_error_pathinfo_rejects_dynamic_flags() {
+    expect_error(
+        r#"<?php
+$flag = PATHINFO_EXTENSION;
+echo pathinfo("foo.txt", $flag);
+"#,
+        "pathinfo() flag must be a compile-time PATHINFO_* constant, bitmask, or integer literal",
+    );
 }
 
 // --- v0.6: switch/match/array errors ---

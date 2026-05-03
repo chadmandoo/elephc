@@ -233,6 +233,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     io::emit_file_put_contents(emitter);
     io::emit_file(emitter);
     io::emit_stat(emitter);
+    io::emit_stat_ext(emitter);
+    io::emit_stat_array(emitter);
     io::emit_fs(emitter);
     io::emit_getcwd(emitter);
     io::emit_scandir(emitter);
@@ -240,6 +242,13 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     io::emit_tempnam(emitter);
     io::emit_fgetcsv(emitter);
     io::emit_fputcsv(emitter);
+    io::emit_basename(emitter);
+    io::emit_dirname(emitter);
+    io::emit_dirname_levels(emitter);
+    io::emit_fnmatch(emitter);
+    io::emit_realpath(emitter);
+    io::emit_pathinfo_str(emitter);
+    io::emit_pathinfo_array(emitter);
     io::emit_modify(emitter);
 
     // Pointer runtime functions

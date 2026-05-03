@@ -1,20 +1,31 @@
+mod basename;
 mod chdir;
 mod chgrp;
 mod chmod;
 mod chown;
+mod clearstatcache;
 mod copy;
+mod dirname;
 mod fclose;
 mod fdatasync;
 mod feof;
 mod fflush;
 mod fgetcsv;
 mod fgets;
+mod fnmatch;
 mod file;
 mod file_exists;
 mod file_get_contents;
 mod file_put_contents;
+mod fileatime;
+mod filectime;
+mod filegroup;
+mod fileinode;
 mod filemtime;
+mod fileowner;
+mod fileperms;
 mod filesize;
+mod filetype;
 mod fopen;
 mod fputcsv;
 mod fread;
@@ -26,16 +37,24 @@ mod fwrite;
 mod getcwd;
 mod glob_fn;
 mod is_dir;
+mod is_executable;
 mod is_file;
+mod is_link;
 mod is_readable;
 mod is_writable;
 mod mkdir;
+mod pathinfo;
 mod print_r;
 mod readline;
+mod realpath;
 mod rename;
 mod rewind;
 mod rmdir;
+mod fstat;
+mod lstat;
 mod scandir;
+mod stat;
+mod stat_result;
 mod sys_get_temp_dir;
 mod tempnam;
 mod touch;
@@ -92,6 +111,26 @@ pub fn emit(
         "sys_get_temp_dir" => sys_get_temp_dir::emit(name, args, emitter, ctx, data),
         "fgetcsv" => fgetcsv::emit(name, args, emitter, ctx, data),
         "fputcsv" => fputcsv::emit(name, args, emitter, ctx, data),
+        "fileatime" => fileatime::emit(name, args, emitter, ctx, data),
+        "filectime" => filectime::emit(name, args, emitter, ctx, data),
+        "fileperms" => fileperms::emit(name, args, emitter, ctx, data),
+        "fileowner" => fileowner::emit(name, args, emitter, ctx, data),
+        "filegroup" => filegroup::emit(name, args, emitter, ctx, data),
+        "fileinode" => fileinode::emit(name, args, emitter, ctx, data),
+        "filetype" => filetype::emit(name, args, emitter, ctx, data),
+        "is_executable" => is_executable::emit(name, args, emitter, ctx, data),
+        "is_link" => is_link::emit(name, args, emitter, ctx, data),
+        // is_writeable is a documented PHP alias of is_writable.
+        "is_writeable" => is_writable::emit(name, args, emitter, ctx, data),
+        "clearstatcache" => clearstatcache::emit(name, args, emitter, ctx, data),
+        "stat" => stat::emit(name, args, emitter, ctx, data),
+        "lstat" => lstat::emit(name, args, emitter, ctx, data),
+        "fstat" => fstat::emit(name, args, emitter, ctx, data),
+        "basename" => basename::emit(name, args, emitter, ctx, data),
+        "dirname" => dirname::emit(name, args, emitter, ctx, data),
+        "fnmatch" => fnmatch::emit(name, args, emitter, ctx, data),
+        "realpath" => realpath::emit(name, args, emitter, ctx, data),
+        "pathinfo" => pathinfo::emit(name, args, emitter, ctx, data),
         "chmod" => chmod::emit(name, args, emitter, ctx, data),
         "chown" => chown::emit(name, args, emitter, ctx, data),
         "chgrp" => chgrp::emit(name, args, emitter, ctx, data),
