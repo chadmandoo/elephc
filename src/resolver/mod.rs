@@ -2,6 +2,8 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 mod contains;
+mod declarations;
+mod discovery;
 mod engine;
 mod exprs;
 mod files;
@@ -14,6 +16,7 @@ use crate::errors::CompileError;
 use crate::parser::ast::Program;
 
 use contains::has_includes;
+use discovery::discover_include_declarations;
 use engine::resolve_stmts;
 use state::ResolveState;
 
@@ -24,14 +27,18 @@ pub fn resolve(program: Program, base_dir: &Path) -> Result<Program, CompileErro
         return Ok(program);
     }
 
+    let mut discovered_declarations = discover_include_declarations(&program, base_dir)?;
     let mut declared_once: HashSet<PathBuf> = HashSet::new();
     let mut include_chain: Vec<PathBuf> = Vec::new();
     let mut state = ResolveState::default();
-    resolve_stmts(
+    let resolved = resolve_stmts(
         program,
         base_dir,
         &mut declared_once,
         &mut include_chain,
         &mut state,
-    )
+    )?;
+
+    discovered_declarations.extend(resolved);
+    Ok(discovered_declarations)
 }

@@ -5,8 +5,9 @@ use crate::errors::CompileError;
 use crate::names::canonical_name_for_decl;
 use crate::parser::ast::{CatchClause, ClassMethod, ExprKind, Stmt, StmtKind};
 
+use super::declarations::strip_discoverable_declarations;
 use super::files::{parse_file, resolve_path};
-use super::include_once::{include_once_label, split_include_once_declarations};
+use super::include_once::include_once_label;
 use super::include_path::fold_include_path;
 use super::state::{
     is_define_call_name, namespace_string, normalize_defined_constant_name,
@@ -71,19 +72,11 @@ pub(super) fn resolve_stmts(
                 include_chain.pop();
 
                 let include_label = include_once_label(&canonical);
+                let executable = strip_discoverable_declarations(resolved_stmts);
                 if *once {
-                    // Declarations stay hoisted for the existing AOT symbol model; executable
-                    // include body statements are guarded so runtime order matches PHP.
-                    let (decls, executable) = split_include_once_declarations(resolved_stmts);
-                    if declared_once.insert(canonical) && !decls.is_empty() {
-                        result.push(Stmt::new(
-                            StmtKind::NamespaceBlock {
-                                name: None,
-                                body: decls,
-                            },
-                            stmt.span,
-                        ));
-                    }
+                    // Declaration discovery already hoisted compile-time declarations;
+                    // executable include body statements are guarded so runtime order matches PHP.
+                    declared_once.insert(canonical);
                     result.push(Stmt::new(
                         StmtKind::IncludeOnceGuard {
                             label: include_label,
@@ -98,10 +91,9 @@ pub(super) fn resolve_stmts(
                         stmt.span,
                     ));
                 } else {
-                    // Regular includes emit declarations too. Track that so a later
-                    // include_once/require_once of the same file does not hoist duplicate
-                    // declarations, while the runtime mark below still happens only when
-                    // execution reaches this include.
+                    // Regular includes still mark the file as loaded for a later
+                    // include_once/require_once, while executable statements stay at
+                    // the include point.
                     declared_once.insert(canonical);
                     result.push(Stmt::new(
                         StmtKind::IncludeOnceMark {
@@ -112,7 +104,7 @@ pub(super) fn resolve_stmts(
                     result.push(Stmt::new(
                         StmtKind::NamespaceBlock {
                             name: None,
-                            body: resolved_stmts,
+                            body: executable,
                         },
                         stmt.span,
                     ));
