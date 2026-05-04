@@ -78,6 +78,13 @@ branches, so a file is marked as included only when execution reaches the
 include point. Skipped branches do not make a later `include_once` skip the
 file, and repeated calls or loop iterations do not re-run a `*_once` file.
 
+Function, class, interface, trait, enum, packed-class, and extern declarations
+from statically-resolved include targets are discovered before name resolution
+and type checking. This lets declarations included through loader functions,
+branches, or nested include files participate in normal symbol resolution,
+while executable top-level statements from included files still run at their
+include point.
+
 ### Path expressions
 
 The path may be any **compile-time-constant string expression**:
@@ -114,7 +121,7 @@ Rejected (compile error):
 
 `const` or `define()` calls inside functions, methods, loops, and branches are scoped to that resolved body during include expansion. They do not leak into the surrounding top-level include path resolver.
 
-**Other limitations:** Included files must start with `<?php`. Runtime-dynamic include paths are not supported by the current AOT resolver. Function, class, interface, and trait declarations from included files are still discovered in resolver traversal order, so references can remain sensitive to source include order until include-graph declaration discovery is implemented.
+**Other limitations:** Included files must start with `<?php`. Runtime-dynamic include paths are not supported by the current AOT resolver.
 
 ## Constants
 ```php

@@ -98,7 +98,9 @@ In this example, there are no `ifdef` blocks, so the AST passes through unchange
 
 If the program had `include` or `require` statements, the resolver would parse those files, lower their file-local magic constants, and inline their ASTs. It also folds compile-time include path expressions, including namespace-aware `const`, `use const`, and `define()` references.
 
-For `include_once` and `require_once`, declarations are still hoisted into the compile-time AST so functions, classes, interfaces, traits, and constants remain visible to later AOT passes, while executable statements are wrapped in an internal runtime guard. That guard is shared per resolved file, so skipped branches, functions, closures, methods, and loop iterations follow PHP execution order instead of compile-time traversal order.
+Before inlining, the resolver pre-scans every statically resolvable include target for declarations. Function, class, interface, trait, enum, packed-class, and extern declarations are placed in a compile-time declaration prelude so name resolution and type checking see the whole include graph even when a file is loaded through a function, method, closure, branch, or nested include.
+
+Executable statements from included files are still left at the include point. For `include_once` and `require_once`, those executable statements are wrapped in an internal runtime guard. That guard is shared per resolved file, so skipped branches, functions, closures, methods, and loop iterations follow PHP execution order instead of compile-time traversal order.
 
 In this example, there's nothing to resolve — the AST passes through unchanged.
 
