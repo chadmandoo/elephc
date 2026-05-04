@@ -73,10 +73,10 @@ including file.
 Both `include 'f';` and `include('f');` syntax supported.
 
 `include_once` and `require_once` use a runtime guard per resolved file. The
-guard is shared across top-level code, functions, methods, loops, and branches,
-so a file is marked as included only when execution reaches the include point.
-Skipped branches do not make a later `include_once` skip the file, and repeated
-calls or loop iterations do not re-run a `*_once` file.
+guard is shared across top-level code, functions, closures, methods, loops, and
+branches, so a file is marked as included only when execution reaches the
+include point. Skipped branches do not make a later `include_once` skip the
+file, and repeated calls or loop iterations do not re-run a `*_once` file.
 
 ### Path expressions
 

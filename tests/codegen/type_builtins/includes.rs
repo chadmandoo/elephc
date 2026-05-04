@@ -178,6 +178,67 @@ $loader->load();
 }
 
 #[test]
+fn test_require_once_in_closure_is_global_once() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                r#"<?php
+$load = function() {
+    require_once 'piece.php';
+};
+$load();
+$load();
+"#,
+            ),
+            ("piece.php", "<?php echo \"piece\";"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "piece");
+}
+
+#[test]
+fn test_regular_include_in_closure_marks_later_include_once() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                r#"<?php
+$load = function() {
+    include 'piece.php';
+};
+$load();
+include_once 'piece.php';
+"#,
+            ),
+            ("piece.php", "<?php echo \"piece\";"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "piece");
+}
+
+#[test]
+fn test_regular_include_marks_later_include_once_declarations() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                r#"<?php
+include 'lib.php';
+include_once 'lib.php';
+echo seven();
+"#,
+            ),
+            ("lib.php", "<?php function seven() { return 7; }"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "7");
+}
+
+#[test]
 fn test_skipped_regular_include_does_not_make_include_once_skip() {
     let out = compile_and_run_files(
         &[
