@@ -6,6 +6,8 @@ use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
+use super::stream_arg::emit_stream_fd_arg;
+
 pub fn emit(
     _name: &str,
     args: &[Expr],
@@ -14,7 +16,7 @@ pub fn emit(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     emitter.comment("fseek()");
-    emit_expr(&args[0], emitter, ctx, data);
+    emit_stream_fd_arg("fseek", &args[0], emitter, ctx, data);
     abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the file descriptor while the seek offset expression is evaluated
     emit_expr(&args[1], emitter, ctx, data);
     abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the seek offset while the optional whence expression is evaluated

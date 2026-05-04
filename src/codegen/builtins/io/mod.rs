@@ -55,6 +55,7 @@ mod lstat;
 mod scandir;
 mod stat;
 mod stat_result;
+mod stream_arg;
 mod sys_get_temp_dir;
 mod tempnam;
 mod touch;

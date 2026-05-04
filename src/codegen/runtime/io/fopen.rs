@@ -1,4 +1,6 @@
-use crate::codegen::{emit::Emitter, platform::Arch};
+use crate::codegen::{abi, emit::Emitter, platform::Arch};
+
+const FOPEN_FAILED_WARNING: &str = "Warning: fopen(): Failed to open stream\n";
 
 /// fopen: open a file and return its file descriptor.
 /// Input:  x1/x2=filename string, x3/x4=mode string
@@ -27,6 +29,8 @@ pub fn emit_fopen(emitter: &mut Emitter) {
 
     // -- parse mode string to derive open() flags --
     emitter.instruction("ldp x3, x4, [sp, #16]");                               // reload mode ptr and len
+    emitter.instruction("cmp x4, #0");                                          // reject an empty fopen() mode before reading the first byte
+    emitter.instruction("b.eq __rt_fopen_fail");                                // empty modes fail like PHP and return false
     emitter.instruction("ldrb w9, [x3]");                                       // load first character of mode string
 
     // -- check for 'r' mode --
@@ -44,6 +48,8 @@ pub fn emit_fopen(emitter: &mut Emitter) {
 
     // -- check for 'a' mode (append) --
     emitter.label("__rt_fopen_check_a");
+    emitter.instruction("cmp w9, #0x61");                                       // compare with 'a'
+    emitter.instruction("b.ne __rt_fopen_fail");                                // reject unsupported fopen() mode letters
     emitter.instruction(&format!("mov x1, #0x{:X}", emitter.platform.o_wronly_creat_append())); // O_WRONLY|O_CREAT|O_APPEND
     // fall through to check_plus
 
@@ -69,6 +75,8 @@ pub fn emit_fopen(emitter: &mut Emitter) {
         emitter.instruction("cmp x0, #0");                                      // Linux: check if return value is negative
     }
     emitter.instruction(&emitter.platform.branch_on_syscall_success("__rt_fopen_ok")); // branch if syscall succeeded
+    emitter.label("__rt_fopen_fail");
+    emit_fopen_failed_warning(emitter);
     emitter.instruction("mov x0, #-1");                                         // return -1 to indicate failure
 
     // -- restore frame and return fd in x0 --
@@ -111,6 +119,8 @@ fn emit_fopen_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jmp __rt_fopen_check_plus_x86");                       // continue with the optional '+' upgrade after selecting the base flags
 
     emitter.label("__rt_fopen_check_a_x86");
+    emitter.instruction("cmp r11b, 0x61");                                      // does the mode string start with 'a' for append writes?
+    emitter.instruction("jne __rt_fopen_fail_x86");                             // reject unsupported fopen() mode letters
     emitter.instruction(&format!("mov esi, 0x{:X}", emitter.platform.o_wronly_creat_append())); // select O_WRONLY|O_CREAT|O_APPEND for the Linux append-mode fopen() path
 
     emitter.label("__rt_fopen_check_plus_x86");
@@ -123,8 +133,29 @@ fn emit_fopen_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rdi, QWORD PTR [rbp - 24]");                       // pass the converted C pathname as the first libc open() argument
     emitter.instruction("mov edx, 0x1A4");                                      // pass mode 0644 for create-capable fopen() modes
     emitter.instruction("call open");                                           // open the requested file through libc open() using the parsed fopen() flags
+    emitter.instruction("test rax, rax");                                       // did libc open() return a negative failure descriptor?
+    emitter.instruction("jns __rt_fopen_ok_x86");                               // skip the warning when fopen() succeeded
+    emitter.label("__rt_fopen_fail_x86");
+    emit_fopen_failed_warning(emitter);
+    emitter.instruction("mov rax, -1");                                         // normalize all open failures to the PHP false sentinel path
+    emitter.label("__rt_fopen_ok_x86");
 
     emitter.instruction("add rsp, 32");                                         // release the temporary pathname and mode spill slots before returning the file descriptor
     emitter.instruction("pop rbp");                                             // restore the caller frame pointer after the x86_64 fopen() helper completes
     emitter.instruction("ret");                                                 // return the libc open() file descriptor or negative error value in rax
+}
+
+fn emit_fopen_failed_warning(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_symbol_address(emitter, "x1", "_diag_fopen_failed_msg");  // pass the fopen() warning text pointer to the diagnostic helper
+            emitter.instruction(&format!("mov x2, #{}", FOPEN_FAILED_WARNING.len())); // pass the fopen() warning byte length to the diagnostic helper
+            emitter.instruction("bl __rt_diag_warning");                        // emit or suppress the fopen() failure warning
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(emitter, "rdi", "_diag_fopen_failed_msg"); // pass the fopen() warning text pointer to the diagnostic helper
+            emitter.instruction(&format!("mov esi, {}", FOPEN_FAILED_WARNING.len())); // pass the fopen() warning byte length to the diagnostic helper
+            emitter.instruction("call __rt_diag_warning");                      // emit or suppress the fopen() failure warning
+        }
+    }
 }

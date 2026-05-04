@@ -58,6 +58,52 @@ unlink("resource.txt");
 }
 
 #[test]
+fn test_fopen_missing_returns_false_and_warns() {
+    let out = compile_and_run_capture(
+        r#"<?php
+$f = fopen("no_such_file.txt", "r");
+echo $f === false ? "false" : "resource";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "false");
+    assert!(
+        out.stderr.contains("Warning: fopen()"),
+        "expected fopen warning, got stderr={}",
+        out.stderr
+    );
+}
+
+#[test]
+fn test_error_control_suppresses_fopen_missing_warning() {
+    let out = compile_and_run_capture(
+        r#"<?php
+$f = @fopen("no_such_file.txt", "r");
+echo gettype($f) . "|";
+echo $f === false ? "false" : "resource";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "boolean|false");
+    assert_eq!(out.stderr, "");
+}
+
+#[test]
+fn test_fopen_invalid_modes_return_false() {
+    let out = compile_and_run_capture(
+        r#"<?php
+$bad = @fopen("bad_mode.txt", "z");
+$empty = @fopen("empty_mode.txt", "");
+echo ($bad === false ? "z" : "!");
+echo ($empty === false ? "e" : "!");
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "ze");
+    assert_eq!(out.stderr, "");
+}
+
+#[test]
 fn test_mixed_file_handle_preserves_resource_type() {
     let (out, dir) = compile_and_run_in_dir(
         r#"<?php
@@ -131,15 +177,39 @@ echo "got: " . $line;
 }
 
 #[test]
-fn test_fopen_nonexistent_fgets_no_hang() {
-    let out = compile_and_run(
+fn test_fopen_false_stream_use_is_type_error() {
+    let out = compile_and_run_capture(
         r#"<?php
-$f = fopen("no_such_file.txt", "r");
+ $f = @fopen("no_such_file.txt", "r");
 $line = fgets($f);
 echo "done";
 "#,
     );
-    assert_eq!(out, "done");
+    assert!(!out.success, "program unexpectedly succeeded");
+    assert!(
+        out.stderr.contains("TypeError: fgets()"),
+        "expected fgets TypeError, got stderr={}",
+        out.stderr
+    );
+}
+
+#[test]
+fn test_fopen_guarded_resource_path_can_read() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+file_put_contents("guarded.txt", "safe");
+$f = fopen("guarded.txt", "r");
+if ($f === false) {
+    echo "fail";
+} else {
+    echo fread($f, 4);
+    fclose($f);
+}
+unlink("guarded.txt");
+"#,
+    );
+    assert_eq!(out, "safe");
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]

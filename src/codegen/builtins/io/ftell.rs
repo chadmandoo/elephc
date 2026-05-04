@@ -1,10 +1,11 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::emit_expr;
 use crate::codegen::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
+
+use super::stream_arg::emit_stream_fd_arg;
 
 pub fn emit(
     _name: &str,
@@ -14,7 +15,7 @@ pub fn emit(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     emitter.comment("ftell()");
-    emit_expr(&args[0], emitter, ctx, data);
+    emit_stream_fd_arg("ftell", &args[0], emitter, ctx, data);
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("mov x1, #0");                                  // offset = 0 for the AArch64 ftell() lseek syscall

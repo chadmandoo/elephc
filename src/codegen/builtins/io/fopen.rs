@@ -33,5 +33,44 @@ pub fn emit(
             abi::emit_call_label(emitter, "__rt_fopen");                        // open the file through the target-aware runtime helper
         }
     }
-    Some(PhpType::stream_resource())
+    box_fopen_result(emitter, ctx);
+    Some(PhpType::Mixed)
+}
+
+fn box_fopen_result(emitter: &mut Emitter, ctx: &mut Context) {
+    let false_label = ctx.next_label("fopen_false");
+    let done_label = ctx.next_label("fopen_done");
+
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("cmp x0, #0");                                  // did fopen() return a negative descriptor for failure?
+            emitter.instruction(&format!("b.lt {}", false_label));              // box PHP false when opening the stream failed
+            emitter.instruction("mov x1, x0");                                  // move the native stream descriptor into the mixed payload low word
+            emitter.instruction("mov x2, #0");                                  // resource mixed payloads do not use a high word
+            emitter.instruction("mov x0, #9");                                  // runtime tag 9 = resource
+            abi::emit_call_label(emitter, "__rt_mixed_from_value");             // box the successful stream resource result
+            emitter.instruction(&format!("b {}", done_label));                  // skip the false-boxing path after a successful open
+            emitter.label(&false_label);
+            emitter.instruction("mov x1, #0");                                  // false payload = 0 for fopen() failure
+            emitter.instruction("mov x2, #0");                                  // bool mixed payloads do not use a high word
+            emitter.instruction("mov x0, #3");                                  // runtime tag 3 = bool false
+            abi::emit_call_label(emitter, "__rt_mixed_from_value");             // box false for PHP-compatible fopen() failure semantics
+            emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            emitter.instruction("test rax, rax");                               // did fopen() return a negative descriptor for failure?
+            emitter.instruction(&format!("js {}", false_label));                // box PHP false when opening the stream failed
+            emitter.instruction("mov rdi, rax");                                // move the native stream descriptor into the mixed payload low word
+            emitter.instruction("xor esi, esi");                                // resource mixed payloads do not use a high word
+            emitter.instruction("mov eax, 9");                                  // runtime tag 9 = resource
+            abi::emit_call_label(emitter, "__rt_mixed_from_value");             // box the successful stream resource result
+            emitter.instruction(&format!("jmp {}", done_label));                // skip the false-boxing path after a successful open
+            emitter.label(&false_label);
+            emitter.instruction("xor edi, edi");                                // false payload = 0 for fopen() failure
+            emitter.instruction("xor esi, esi");                                // bool mixed payloads do not use a high word
+            emitter.instruction("mov eax, 3");                                  // runtime tag 3 = bool false
+            abi::emit_call_label(emitter, "__rt_mixed_from_value");             // box false for PHP-compatible fopen() failure semantics
+            emitter.label(&done_label);
+        }
+    }
 }

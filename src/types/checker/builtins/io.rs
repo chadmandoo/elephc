@@ -14,13 +14,31 @@ fn ensure_stream_resource(
 ) -> Result<(), CompileError> {
     let actual = checker.infer_type(arg, env)?;
     let expected = PhpType::stream_resource();
-    if checker.type_accepts(&expected, &actual) {
+    if stream_arg_accepts(checker, &expected, &actual) {
         Ok(())
     } else {
         Err(CompileError::new(
             arg.span,
             &format!("{}() expects resource, got {}", name, actual),
         ))
+    }
+}
+
+fn stream_arg_accepts(checker: &Checker, expected: &PhpType, actual: &PhpType) -> bool {
+    if checker.type_accepts(expected, actual) || matches!(actual, PhpType::Mixed) {
+        return true;
+    }
+    match actual {
+        PhpType::Union(members) => {
+            let has_resource = members
+                .iter()
+                .any(|member| checker.type_accepts(expected, member));
+            let only_resource_or_false = members
+                .iter()
+                .all(|member| checker.type_accepts(expected, member) || *member == PhpType::Bool);
+            has_resource && only_resource_or_false
+        }
+        _ => false,
     }
 }
 
@@ -49,7 +67,10 @@ pub(super) fn check_builtin(
             for arg in args {
                 checker.infer_type(arg, env)?;
             }
-            Ok(Some(PhpType::stream_resource()))
+            Ok(Some(checker.normalize_union_type(vec![
+                PhpType::stream_resource(),
+                PhpType::Bool,
+            ])))
         }
         "fclose" => {
             if args.len() != 1 {

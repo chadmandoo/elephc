@@ -1,10 +1,11 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::emit_expr;
 use crate::codegen::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
+
+use super::stream_arg::emit_stream_fd_arg;
 
 pub fn emit(
     _name: &str,
@@ -14,7 +15,7 @@ pub fn emit(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     emitter.comment("fclose()");
-    emit_expr(&args[0], emitter, ctx, data);
+    emit_stream_fd_arg("fclose", &args[0], emitter, ctx, data);
     let success = ctx.next_label("fclose_ok");
     let done = ctx.next_label("fclose_done");
     match emitter.target.arch {
