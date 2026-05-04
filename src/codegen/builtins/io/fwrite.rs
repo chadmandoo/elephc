@@ -6,6 +6,8 @@ use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
+use super::stream_arg::emit_stream_fd_arg;
+
 pub fn emit(
     _name: &str,
     args: &[Expr],
@@ -14,7 +16,7 @@ pub fn emit(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     emitter.comment("fwrite()");
-    emit_expr(&args[0], emitter, ctx, data);
+    emit_stream_fd_arg("fwrite", &args[0], emitter, ctx, data);
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("str x0, [sp, #-16]!");                         // push the file descriptor while the data expression is evaluated

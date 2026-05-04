@@ -1,6 +1,6 @@
 ---
 title: "Types"
-description: "Data types supported by elephc: int, float, string, bool, array, null, mixed, callable, object, enum, and extension types."
+description: "Data types supported by elephc: int, float, string, bool, array, null, mixed, iterable, resource, callable, object, enum, and extension types."
 sidebar:
   order: 1
 ---
@@ -18,6 +18,7 @@ sidebar:
 | `array`          | Yes              | Indexed (`[1, 2, 3]`) and associative (`["key" => "value"]`). Arrays use copy-on-write semantics.                      |
 | `mixed`          | Yes              | Supported in type hints and typed locals. Runtime values are boxed with a per-value tag.                               |
 | `iterable`       | Yes              | PHP pseudo-type for `array \| Traversable`. Supports indexed arrays, associative arrays, `Iterator`, and `IteratorAggregate`; runtime operations (`foreach`, `echo`, `gettype()`, `var_dump()`, `===`, casts, `is_iterable()`) dispatch on heap-kind, value-type, or interface metadata as needed. |
+| `resource`       | Inferred only    | File handles and standard streams are modeled separately from integers. `fopen()` returns `resource\|false`, and `STDIN`, `STDOUT`, and `STDERR` are stream resources. PHP does not allow `resource` as a type declaration, so elephc does not accept `resource` annotations. |
 | `callable`       | Yes              | Closures, arrow functions, first-class callables, and FFI callback parameters.                                         |
 | `object`         | Yes              | Class instances. Heap-allocated, fixed-layout. `new ClassName(...)`                                                    |
 | `enum`           | Yes              | Pure and backed enums. Cases are singletons. Backed enums support `->value`, `::from()`, `::tryFrom()`, `::cases()`.   |
@@ -28,7 +29,6 @@ sidebar:
 | `ptr` / `ptr<T>` | elephc extension | Raw 64-bit pointer, optionally carrying a checked compile-time pointee tag. See [Pointers](../beyond-php/pointers.md). |
 | `buffer<T>`      | elephc extension | Fixed-size contiguous storage for POD scalars, pointers, or packed records. See [Buffers](../beyond-php/buffers.md).   |
 | `packed class`   | elephc extension | Flat POD record type with compile-time field offsets. See [Packed Classes](../beyond-php/packed-classes.md).           |
-| `resource`       | No               | File handles are modeled as integer file descriptors (`int`).                                                          |
 
 
 ### Never
@@ -144,6 +144,7 @@ Aliases: `(integer)`, `(double)`, `(real)`, `(boolean)`.
 | `is_string()`   | `is_string($val): bool`      | Returns true if string         |
 | `is_numeric()`  | `is_numeric($val): bool`     | Returns true if int or float   |
 | `is_bool()`     | `is_bool($val): bool`        | Returns true if bool           |
+| `is_iterable()` | `is_iterable($val): bool`    | Returns true if array or Traversable-compatible iterable |
 | `is_nan()`      | `is_nan($val): bool`         | Returns true if NAN            |
 | `is_finite()`   | `is_finite($val): bool`      | Returns true if not INF/NAN    |
 | `is_infinite()` | `is_infinite($val): bool`    | Returns true if INF or -INF    |
@@ -186,4 +187,4 @@ The compiler also emits non-fatal warnings (unused variables, unreachable code).
 
 ### Runtime diagnostics
 
-Runtime warnings flow through a suppressible diagnostics channel. The `@` operator hides those warnings for its operand only, while fatal runtime errors and compile-time diagnostics remain visible. Current suppressible warnings include `file_get_contents()` open failures and duplicate `define()` calls.
+Runtime warnings flow through a suppressible diagnostics channel. The `@` operator hides those warnings for its operand only, while fatal runtime errors and compile-time diagnostics remain visible. Current suppressible warnings include `fopen()` / `file_get_contents()` open failures and duplicate `define()` calls.

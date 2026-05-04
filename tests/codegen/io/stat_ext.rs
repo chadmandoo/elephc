@@ -246,10 +246,27 @@ fn test_stat_lstat_fstat_failures_are_strict_false() {
         r#"<?php
 echo stat("missing.txt") === false ? "s" : "!";
 echo lstat("missing.txt") === false ? "l" : "!";
-echo fstat(-1) === false ? "f" : "!";
+$f = @fopen("missing.txt", "r");
+echo $f === false ? "f" : "!";
 "#,
     );
     assert_eq!(out, "slf");
+}
+
+#[test]
+fn test_fstat_rejects_fopen_false_runtime_handle() {
+    let out = compile_and_run_capture(
+        r#"<?php
+$f = @fopen("missing.txt", "r");
+fstat($f);
+"#,
+    );
+    assert!(!out.success, "program unexpectedly succeeded");
+    assert!(
+        out.stderr.contains("TypeError: fstat()") && out.stderr.contains("false given"),
+        "expected fstat TypeError, got stderr={}",
+        out.stderr
+    );
 }
 
 #[test]

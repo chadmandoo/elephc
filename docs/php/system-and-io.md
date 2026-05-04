@@ -73,18 +73,20 @@ Uses POSIX extended regex with common PCRE shorthand translation (`\s`, `\d`, `\
 
 | Function | Signature | Description |
 |---|---|---|
-| `fopen()` | `fopen($filename, $mode): int` | Open file (modes: r, w, a, r+, w+, a+) |
-| `fclose()` | `fclose($handle): bool` | Close file handle |
-| `fread()` | `fread($handle, $length): string` | Read up to $length bytes |
-| `fwrite()` | `fwrite($handle, $data): int` | Write to file |
-| `fgets()` | `fgets($handle): string` | Read a line |
-| `feof()` | `feof($handle): bool` | End-of-file check |
+| `fopen()` | `fopen($filename, $mode): resource\|false` | Open file (modes: r, w, a, r+, w+, a+), or `false` on failure |
+| `fclose()` | `fclose(resource $handle): bool` | Close file handle |
+| `fread()` | `fread(resource $handle, $length): string` | Read up to $length bytes |
+| `fwrite()` | `fwrite(resource $handle, $data): int` | Write to file |
+| `fgets()` | `fgets(resource $handle): string` | Read a line |
+| `feof()` | `feof(resource $handle): bool` | End-of-file check |
 | `readline()` | `readline([$prompt]): string` | Read line from STDIN |
-| `fseek()` | `fseek($handle, $offset [, $whence]): int` | Seek in file |
-| `ftell()` | `ftell($handle): int` | Current position |
-| `rewind()` | `rewind($handle): bool` | Seek to beginning |
-| `fgetcsv()` | `fgetcsv($handle [, $sep]): array` | Read CSV line |
-| `fputcsv()` | `fputcsv($handle, $fields [, $sep]): int` | Write CSV line |
+| `fseek()` | `fseek(resource $handle, $offset [, $whence]): int` | Seek in file |
+| `ftell()` | `ftell(resource $handle): int` | Current position |
+| `rewind()` | `rewind(resource $handle): bool` | Seek to beginning |
+| `fgetcsv()` | `fgetcsv(resource $handle [, $sep]): array` | Read CSV line |
+| `fputcsv()` | `fputcsv(resource $handle, $fields [, $sep]): int` | Write CSV line |
+
+File handles are PHP `resource` values, not integers. `gettype(fopen(...))` returns `"resource"` on success and `"boolean"` on failure, `gettype(STDIN)` returns `"resource"`, and passing a plain `int` to stream functions is rejected. Failed `fopen()` calls, including invalid or empty modes, emit a suppressible runtime warning and return `false`; passing that `false` to stream functions is a fatal runtime TypeError with PHP-style "false given" wording, matching PHP's guard-before-use pattern.
 
 ## File system
 
@@ -128,10 +130,10 @@ Uses POSIX extended regex with common PCRE shorthand translation (`\s`, `\d`, `\
 | `is_writeable()` | `is_writeable($filename): bool` | Alias of `is_writable()` |
 | `stat()` | `stat($filename): array\|false` | Associative array with both numeric (0..=12) and string keys (`dev`, `ino`, `mode`, `nlink`, `uid`, `gid`, `rdev`, `size`, `atime`, `mtime`, `ctime`, `blksize`, `blocks`), or `false` on failure. |
 | `lstat()` | `lstat($filename): array\|false` | Same shape as `stat()` but does not follow symlinks, or `false` on failure |
-| `fstat()` | `fstat($handle): array\|false` | Same shape as `stat()` but operates on an open file descriptor, or `false` on failure |
+| `fstat()` | `fstat(resource $handle): array\|false` | Same shape as `stat()` but operates on an open stream resource, or `false` on failure |
 | `clearstatcache()` | `clearstatcache($clear_realpath_cache = false, $filename = ""): void` | No-op (elephc does not cache `stat()` results). Arguments are still evaluated. |
 
-> The 13 `stat()` / `lstat()` / `fstat()` fields are inserted in PHP's documented order. Check the return value against `false` before reading fields when the path or descriptor may be invalid.
+> The 13 `stat()` / `lstat()` / `fstat()` fields are inserted in PHP's documented order. Check the return value against `false` before reading fields when the path or stream may be invalid.
 
 ## Path manipulation
 
@@ -156,10 +158,10 @@ Uses POSIX extended regex with common PCRE shorthand translation (`\s`, `\d`, `\
 | `chown()` | `chown($filename, $user): bool` | Change owner by UID or user name. The group is left unchanged. |
 | `chgrp()` | `chgrp($filename, $group): bool` | Change group by GID or group name. The owner is left unchanged. |
 | `umask()` | `umask([$mask]): int` | Set the process umask and return the previous value. With no argument, returns the current umask without changing it (implemented by setting `umask(0)` and immediately restoring the original). |
-| `ftruncate()` | `ftruncate($handle, $size): bool` | Truncate or extend an open file to `$size` bytes. |
-| `fflush()` | `fflush($handle): bool` | Flush buffered output. Implemented as `fsync()` since elephc has no userspace stdio buffer. |
-| `fsync()` | `fsync($handle): bool` | Flush data and metadata to durable storage. |
-| `fdatasync()` | `fdatasync($handle): bool` | Flush data only. On macOS (which lacks a `fdatasync` libc entry point) this falls back to `fsync()`. |
+| `ftruncate()` | `ftruncate(resource $handle, $size): bool` | Truncate or extend an open file to `$size` bytes. |
+| `fflush()` | `fflush(resource $handle): bool` | Flush buffered output. Implemented as `fsync()` since elephc has no userspace stdio buffer. |
+| `fsync()` | `fsync(resource $handle): bool` | Flush data and metadata to durable storage. |
+| `fdatasync()` | `fdatasync(resource $handle): bool` | Flush data only. On macOS (which lacks a `fdatasync` libc entry point) this falls back to `fsync()`. |
 
 > All file-modification functions return `true` on success and `false` on failure.
 

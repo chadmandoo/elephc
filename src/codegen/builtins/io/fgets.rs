@@ -1,10 +1,11 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::emit_expr;
 use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
+
+use super::stream_arg::emit_stream_fd_arg;
 
 pub fn emit(
     _name: &str,
@@ -14,7 +15,7 @@ pub fn emit(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     emitter.comment("fgets()");
-    emit_expr(&args[0], emitter, ctx, data);
+    emit_stream_fd_arg("fgets", &args[0], emitter, ctx, data);
     if emitter.target.arch == Arch::X86_64 {
         emitter.instruction("mov rdi, rax");                                    // move the file descriptor into the first SysV fgets helper argument register
     }

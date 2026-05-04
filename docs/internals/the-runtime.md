@@ -27,6 +27,7 @@ All runtime routines start with `__rt_`:
 
 ```
 __rt_itoa          integer → string
+__rt_resource_to_string resource → "Resource id #N"
 __rt_ftoa          float → string
 __rt_concat        string + string → string
 __rt_str_eq        string == string → bool
@@ -56,6 +57,17 @@ Converts a signed 64-bit integer in `x0` to a decimal string.
 5. Update concat buffer offset
 
 The digits are written **right-to-left** because division gives us the least significant digit first. The result is written into the [concat buffer](memory-model.md#the-string-buffer).
+
+### `__rt_resource_to_string` — Resource to string
+
+**File:** `strings/resource_to_string.rs`
+
+Formats the native resource payload used by stream handles as PHP's display string (`Resource id #N`). The helper keeps resources distinct from integers when boxing into `mixed`, while still letting the I/O runtime pass the underlying file descriptor to stream syscalls.
+
+**Input:** `x0` = native resource payload
+**Output:** `x1` = pointer to string, `x2` = length
+
+`__rt_resource_write_stdout` uses the same display form for `echo` / `print` without exposing the raw file descriptor as an integer.
 
 ### `__rt_ftoa` — Float to string
 
@@ -369,7 +381,7 @@ These routines handle file and filesystem operations through target-aware libc/s
 | Routine | What it does |
 |---|---|
 | `__rt_cstr` | Convert PHP string (ptr+len) to null-terminated C string |
-| `__rt_fopen` | Open file via `open()` syscall |
+| `__rt_fopen` | Open file via target-aware `open()` handling, or return `-1` after emitting a suppressible warning for open failures and invalid modes |
 | `__rt_fgets` | Read line from file descriptor |
 | `__rt_feof` | Check end-of-file flag for a file descriptor |
 | `__rt_fread` | Read N bytes from file descriptor |
@@ -450,11 +462,11 @@ The `emit_runtime()` function calls every AArch64 routine emitter in a fixed ord
 
 ```rust
 pub fn emit_runtime(emitter: &mut Emitter) {
-    // strings: itoa, ftoa, concat, atoi, equality, formatting, trim/mask,
+    // diagnostics: runtime warning emission and @ suppression state
+    // strings: itoa, resource display/stdout, ftoa, concat, atoi, equality, formatting, trim/mask,
     // search/replace, explode/implode, hashing, encoding, sscanf, ...
     // system: argv, time, getenv, shell, date/mktime/strtotime, JSON, regex
     // exceptions: cleanup walk, catch matching, throw/rethrow helpers
-    // diagnostics: runtime warning emission and @ suppression state
     // arrays: heap alloc/free, array/hash helpers, sort, callbacks, refcount
     // buffers: contiguous buffer allocation, bounds checking, UAF traps
     // io: c-string buffers, file I/O, stat/fs helpers, scandir/glob/tempnam, CSV
@@ -513,7 +525,7 @@ Additionally, the runtime emits static data tables:
 - `_heap_dbg_bad_refcount_msg`, `_heap_dbg_double_free_msg`, `_heap_dbg_free_list_msg` — fatal heap-debug error strings enabled by `--heap-debug`
 - `_heap_dbg_*` summary labels — fixed strings used by `__rt_heap_debug_report` for alloc/free/live/leak output
 - `_uncaught_exc_msg` — fatal exception string written by `__rt_throw_current` when no handler exists
-- `_diag_file_get_contents_failed_msg`, `_diag_define_already_defined_msg` — suppressible runtime warning text routed through `__rt_diag_warning`
+- `_diag_fopen_failed_msg`, `_diag_file_get_contents_failed_msg`, `_diag_define_already_defined_msg` — suppressible runtime warning text routed through `__rt_diag_warning`
 - `_php_uname_mode_len_msg`, `_php_uname_mode_value_msg` — fatal `php_uname()` argument diagnostics for invalid mode strings
 - `_pcre_space`, `_pcre_digit`, `_pcre_word`, `_pcre_nspace`, `_pcre_ndigit`, `_pcre_nword` — PCRE shorthand replacement strings for regex translation
 - `_json_true`, `_json_false`, `_json_null` — JSON keyword strings used by `__rt_json_encode_bool` and `__rt_json_encode_null`
