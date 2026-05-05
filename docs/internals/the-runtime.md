@@ -447,6 +447,7 @@ These helpers support the compiler-specific `buffer<T>` hot-path data type.
 | `__rt_mixed_cast_float` | Unbox a mixed cell and cast to float | `x0` = mixed cell pointer | `d0` = float |
 | `__rt_mixed_cast_string` | Unbox a mixed cell and cast to string | `x0` = mixed cell pointer | `x1`/`x2` = string |
 | `__rt_mixed_instanceof` | Unbox a mixed cell and test object payloads against class/interface metadata | `x0` = mixed cell pointer, `x1` = target id, `x2` = 0 class / 1 interface | `x0` = 0 or 1 |
+| `__rt_instanceof_lookup` | Resolve a dynamic class-string target against emitted class/interface name metadata | `x1`/`x2` = string | `x0` = found, `x1` = target id, `x2` = 0 class / 1 interface |
 | `__rt_mixed_is_empty` | Check emptiness of a mixed cell (PHP semantics) | `x0` = mixed cell pointer | `x0` = 0 or 1 |
 | `__rt_mixed_strict_eq` | Compare two mixed cells by tag and value | `x0`, `x1` = mixed pointers | `x0` = 0 or 1 |
 | `__rt_mixed_unbox` | Extract the raw payload from a mixed cell | `x0` = mixed cell pointer | `x0`/`x1`/`x2` depending on type |
@@ -474,7 +475,7 @@ pub fn emit_runtime(emitter: &mut Emitter) {
 }
 ```
 
-Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, and `__rt_cstr_to_str` in addition to the more user-visible helpers.
+Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_instanceof_lookup`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, and `__rt_cstr_to_str` in addition to the more user-visible helpers.
 
 Every routine in the selected target runtime slice is linked into the binary, even if unused by the current program. elephc already does AST-side control-flow pruning and dead-code elimination before codegen, but runtime-specific dead stripping is still future work.
 
