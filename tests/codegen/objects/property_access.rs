@@ -355,6 +355,32 @@ read(null);
 }
 
 #[test]
+fn test_nullsafe_chain_calls_loaded_expr_call_on_non_null_receiver() {
+    let out = compile_and_run_capture(
+        r#"<?php
+function noisy(): int {
+    echo "noisy|";
+    return 20;
+}
+class Root {
+    public function callback(): callable {
+        return function(int $value): int {
+            return $value + 1;
+        };
+    }
+}
+function read(?Root $root): void {
+    echo ($root?->callback())(noisy()) ?? "fallback";
+}
+read(new Root());
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "noisy|21");
+    assert_eq!(out.stderr, "");
+}
+
+#[test]
 fn test_class_array_of_objects_property_access() {
     let out = compile_and_run(
         r#"<?php
