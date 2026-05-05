@@ -40,9 +40,9 @@ PHP source (.php)
      │
      ▼
 ┌─────────┐
-│ Resolver │  src/resolver.rs
-│          │  Resolves include/require by recursively parsing files.
-│          │  Inlines ASTs and lowers *_once forms to runtime guards.
+│ Resolver │  src/resolver/
+│          │  Pre-scans statically resolvable include declarations,
+│          │  inlines executable include bodies, and lowers *_once guards.
 └────┬─────┘
      │
      ▼
@@ -129,12 +129,17 @@ AArch64 remains the most established and best-documented backend (macOS and Linu
 
 ```
 src/
-├── main.rs                    CLI entry point
 ├── lib.rs                     Public module exports
+├── main.rs                    CLI binary entry point
+├── cli.rs                     Command-line option parsing
+├── pipeline.rs                Frontend/backend compilation pipeline
+├── linker.rs                  Assembler and linker invocation
+├── timings.rs                 Phase timing collection/reporting
 ├── span.rs                    Source position (line, col)
 ├── magic_constants.rs         Per-file lowering for PHP magic constants
+├── magic_constants/           File/scope/trait magic-constant walkers
 ├── conditional.rs             Build-time `ifdef` pass
-├── resolver.rs                Include/require file resolution and once-guard lowering
+├── resolver/                  Include/require resolution, declaration discovery, once guards
 ├── optimize.rs                Public optimizer entry points and effect context
 ├── optimize/                  Constant folding, constant propagation, control-flow pruning, normalization, dead-code elimination
 ├── runtime_cache.rs           Cached shared runtime object preparation
@@ -163,7 +168,7 @@ src/
 │   ├── warnings/              Non-fatal diagnostics (unused vars, unreachable code)
 │   └── checker/
 │       ├── mod.rs             Type-checker orchestration boundary
-│       ├── driver.rs          Main checker driver and program passes
+│       ├── driver/            Main checker driver and program passes
 │       ├── builtin_types.rs   Shared builtin/type helper predicates
 │       ├── builtins/          Built-in function type signatures
 │       ├── functions.rs       Function-checking module root / orchestration
@@ -173,7 +178,8 @@ src/
 │       ├── stmt_check.rs      Statement-checking module root
 │       ├── stmt_check/        Assignment and control-flow statement checks
 │       ├── type_compat.rs     Type-compatibility module root
-│       └── type_compat/       Declaration, object, pointer, and union compatibility helpers
+│       ├── type_compat/       Declaration, object, pointer, and union compatibility helpers
+│       └── ...
 │
 ├── codegen/
 │   ├── mod.rs                 generate() orchestration
@@ -206,7 +212,7 @@ src/
 │   │   ├── control_flow.rs    Control-flow dispatch
 │   │   ├── control_flow/      `branching/`, `foreach/`, `loops/`, `exceptions/`
 │   │   ├── helpers.rs         Shared statement-codegen helpers
-│   │   ├── includes.rs        Runtime guard flags for include_once/require_once
+│   │   ├── includes.rs        Runtime guard flags for *_once and include-loaded function variants
 │   │   ├── io.rs              Echo / print helpers
 │   │   ├── null_coalesce_assign.rs `??=` read-modify-write helpers for non-local targets
 │   │   ├── storage.rs         Global / static / extern-global dispatch
@@ -366,6 +372,7 @@ The runtime data emission in `src/codegen/runtime/data.rs` is split into `emit_r
 | GC statistics and cycle state | `_gc_allocs`, `_gc_frees`, `_gc_live`, `_gc_peak`, `_gc_collecting`, `_gc_release_suppressed` | Allocation/free/live-byte counters plus targeted-cycle-collector coordination flags |
 | Exception state | `_exc_handler_top`, `_exc_call_frame_top`, `_exc_value`, `_class_parent_ids` | Active handler stack, activation cleanup stack, current exception object, and parent links used for catch matching |
 | Include-once guards | `_include_once_<hash>` | Per-resolved-file loaded flags used by `include_once` / `require_once` runtime guards |
+| Include-loaded function variants | `_fn_variant_active_<function>` | Active hidden implementation pointer for a function loaded through an include point |
 | I/O scratch | `_cstr_buf`, `_cstr_buf2`, `_eof_flags` | Syscall-oriented C-string scratch buffers and EOF bookkeeping |
 | String/regex tables | `_fmt_g`, `_b64_encode_tbl`, `_b64_decode_tbl`, `_pcre_*` | Formatting and lookup tables for runtime helpers |
 | JSON/date tables | `_json_true`, `_json_false`, `_json_null`, `_day_names`, `_month_names` | Static data used by JSON and date routines |

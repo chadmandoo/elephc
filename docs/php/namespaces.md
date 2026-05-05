@@ -78,6 +78,36 @@ branches, so a file is marked as included only when execution reaches the
 include point. Skipped branches do not make a later `include_once` skip the
 file, and repeated calls or loop iterations do not re-run a `*_once` file.
 
+Function, class, interface, trait, enum, packed-class, and extern declarations
+from statically-resolved include targets are discovered before name resolution
+and type checking. This lets declarations included through loader functions,
+branches, or nested include files participate in normal symbol resolution,
+while executable top-level statements from included files still run at their
+include point.
+
+Declaration discovery is path-aware for the same resolved regular include
+target across mutually exclusive `if` / `elseif` / `else` branches, so the same
+file is not treated as redeclared just because it appears in multiple exclusive
+branches. Sequential regular includes and regular includes that can repeat
+through loops still report duplicate declaration errors, matching PHP's
+redeclaration behavior.
+
+Functions discovered through includes are compiled as hidden implementations
+behind public dispatchers. The dispatcher becomes callable only after a runtime
+include point has activated one of those implementations, and
+`function_exists()` reads the same marker. When mutually exclusive branches in
+the same direct `if` / `elseif` / `else` chain include different files that
+declare the same function name, elephc accepts the pattern only if the function
+signatures match exactly, then dispatches to the implementation loaded by the
+branch that actually ran.
+
+Nested/composed branch combinations and `switch` cases are not treated as
+mutually exclusive for duplicate function declarations yet.
+
+Class-like declarations remain strict: duplicate class, interface, trait, enum,
+packed-class, or extern names still report redeclaration errors unless they are
+separated by namespace.
+
 ### Path expressions
 
 The path may be any **compile-time-constant string expression**:
@@ -114,7 +144,7 @@ Rejected (compile error):
 
 `const` or `define()` calls inside functions, methods, loops, and branches are scoped to that resolved body during include expansion. They do not leak into the surrounding top-level include path resolver.
 
-**Other limitations:** Included files must start with `<?php`. Runtime-dynamic include paths are not supported by the current AOT resolver. Function, class, interface, and trait declarations from included files are still discovered in resolver traversal order, so references can remain sensitive to source include order until include-graph declaration discovery is implemented.
+**Other limitations:** Included files must start with `<?php`. Runtime-dynamic include paths are not supported by the current AOT resolver.
 
 ## Constants
 ```php

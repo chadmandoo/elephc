@@ -109,6 +109,8 @@ Things that do something:
 | `ArrayPush { array, value }` | `$arr[] = 5;` |
 | `TypedAssign { type_expr, name, value }` | `int $x = 42;`, `buffer<int> $xs = buffer_new<int>(8);` |
 | `FunctionDecl { name, params, variadic, return_type, body }` | `function foo(int $a, &$b, string $c = "x"): string { }` — params is `Vec<(String, Option<TypeExpr>, Option<Expr>, bool)>` where the tuple stores name, declared type, default value, and `is_ref` (pass by reference). `variadic` is `Option<String>` for variadic parameters (`...$args`) and `return_type` is an optional declared `TypeExpr` |
+| `FunctionVariantGroup { name, variants }` | Internal resolver metadata for include-loaded hidden function implementations behind one public name |
+| `FunctionVariantMark { name, variant }` | Internal include-body marker that activates the hidden function variant loaded at that runtime include point |
 | `Return(Option<Expr>)` | `return $x;` or `return;` |
 | `Break(usize)` | `break;`, `break 2;` |
 | `Continue(usize)` | `continue;`, `continue 2;` |
@@ -190,6 +192,22 @@ NullCoalesce
 ```
 
 `instanceof` is represented as `ExprKind::InstanceOf` rather than `BinOp` because PHP's supported RHS form is a class/interface target name (`User`, `self`, `parent`, `static`), not an ordinary expression to evaluate.
+
+### Type expressions (`TypeExpr`)
+
+Parsed type annotations use `TypeExpr` before the checker resolves them into
+`PhpType` values:
+
+```
+Int  Float  Bool  Str  Void  Never  Iterable
+Ptr(Option<Name>)  Buffer(Box<TypeExpr>)  Named(Name)
+Nullable(Box<TypeExpr>)  Union(Vec<TypeExpr>)
+```
+
+`Iterable` represents PHP's `iterable` pseudo-type in parameter, return,
+property, and typed-local annotations. Nullable shorthand (`?T`) and explicit
+unions (`T|U`) are represented separately so the checker can reject invalid
+forms such as `?T|U` and normalize accepted declarations.
 
 ### Class-related types
 
