@@ -34,7 +34,7 @@ pub(super) fn discover_include_declarations(
         &mut output,
     )?;
 
-    Ok(output.into_include_discovery())
+    output.into_include_discovery()
 }
 
 pub(super) struct IncludeDiscovery {
@@ -70,6 +70,10 @@ pub(super) struct DiscoveryEntry {
     pub canonical: PathBuf,
     pub span: crate::span::Span,
     pub declarations: Vec<Stmt>,
+    source_stmts: Vec<Stmt>,
+    base_dir: PathBuf,
+    declaration_state: ResolveState,
+    include_chain: Vec<PathBuf>,
     pub repeatable: bool,
     pub exclusive_group: Option<String>,
     pub exclusive_branch: Option<usize>,
@@ -86,6 +90,10 @@ impl DiscoveryOutput {
         canonical: PathBuf,
         span: crate::span::Span,
         declarations: Vec<Stmt>,
+        source_stmts: Vec<Stmt>,
+        base_dir: PathBuf,
+        declaration_state: ResolveState,
+        include_chain: Vec<PathBuf>,
         repeatable: bool,
     ) {
         if declarations.is_empty() {
@@ -98,6 +106,10 @@ impl DiscoveryOutput {
             canonical,
             span,
             declarations,
+            source_stmts,
+            base_dir,
+            declaration_state,
+            include_chain,
             repeatable,
             exclusive_group: None,
             exclusive_branch: None,
@@ -175,9 +187,12 @@ impl DiscoveryOutput {
         output
     }
 
-    fn into_include_discovery(mut self) -> IncludeDiscovery {
+    fn into_include_discovery(mut self) -> Result<IncludeDiscovery, CompileError> {
+        let (_, preliminary_function_variants) =
+            super::function_variants::rewrite_include_loaded_function_variants(&mut self.entries);
+        self.rebuild_declarations(&preliminary_function_variants)?;
         let (groups, function_variants) =
-            super::function_variants::rewrite_conditional_function_variants(&mut self.entries);
+            super::function_variants::rewrite_include_loaded_function_variants(&mut self.entries);
         let mut declarations = groups;
         declarations.extend(self.entries
             .into_iter()
@@ -191,12 +206,32 @@ impl DiscoveryOutput {
                 )
             })
         );
-        IncludeDiscovery {
+        Ok(IncludeDiscovery {
             declarations,
             function_variants,
-        }
+        })
     }
 
+    fn rebuild_declarations(
+        &mut self,
+        function_variants: &FunctionVariantRegistry,
+    ) -> Result<(), CompileError> {
+        for entry in &mut self.entries {
+            let mut declaration_declared_once = HashSet::new();
+            let mut declaration_include_chain = entry.include_chain.clone();
+            let mut declaration_state = entry.declaration_state.clone();
+            let resolved_declarations = resolve_stmts(
+                entry.source_stmts.clone(),
+                &entry.base_dir,
+                &mut declaration_declared_once,
+                &mut declaration_include_chain,
+                &mut declaration_state,
+                function_variants,
+            )?;
+            entry.declarations = extract_discoverable_declarations(&resolved_declarations);
+        }
+        Ok(())
+    }
 }
 
 struct BranchDiscovery {
@@ -601,15 +636,18 @@ fn discover_include(
     state.namespace = saved_namespace;
     state.const_imports = saved_imports;
 
+    let entry_declaration_state = declaration_state.clone();
+    let entry_include_chain = include_chain.clone();
     let mut declaration_declared_once = HashSet::new();
-    let mut declaration_include_chain = include_chain.clone();
+    let mut declaration_include_chain = entry_include_chain.clone();
+    let mut declaration_state_for_resolution = declaration_state.clone();
     let declaration_function_variants = FunctionVariantRegistry::default();
     let resolved_declarations = resolve_stmts(
         included_stmts.clone(),
         included_dir,
         &mut declaration_declared_once,
         &mut declaration_include_chain,
-        &mut declaration_state,
+        &mut declaration_state_for_resolution,
         &declaration_function_variants,
     )?;
 
@@ -622,7 +660,16 @@ fn discover_include(
     }
 
     let file_declarations = extract_discoverable_declarations(&resolved_declarations);
-    output.push(canonical, span, file_declarations, !once);
+    output.push(
+        canonical,
+        span,
+        file_declarations,
+        included_stmts,
+        included_dir.to_path_buf(),
+        entry_declaration_state,
+        entry_include_chain,
+        !once,
+    );
 
     Ok(())
 }

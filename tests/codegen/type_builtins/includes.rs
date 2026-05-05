@@ -664,6 +664,80 @@ if (function_exists('optional_exists_loaded')) {
 }
 
 #[test]
+fn test_include_discovered_function_exists_tracks_runtime_load_order() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                r#"<?php
+function load_lib() {
+    include 'lib.php';
+}
+echo function_exists('runtime_loaded') ? 'yes-before' : 'no-before';
+load_lib();
+echo '|';
+echo function_exists('runtime_loaded') ? runtime_loaded() : 'no-after';
+"#,
+            ),
+            ("lib.php", "<?php function runtime_loaded() { return 'yes-after'; }"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "no-before|yes-after");
+}
+
+#[test]
+fn test_include_discovered_function_call_before_runtime_load_fails() {
+    let err = compile_and_run_files_expect_failure(
+        &[
+            (
+                "main.php",
+                r#"<?php
+function load_lib() {
+    include 'lib.php';
+}
+echo runtime_loaded_late();
+load_lib();
+"#,
+            ),
+            (
+                "lib.php",
+                "<?php function runtime_loaded_late() { return 'loaded'; }",
+            ),
+        ],
+        "main.php",
+    );
+    assert!(err.contains("Call to undefined function runtime_loaded_late()"));
+}
+
+#[test]
+fn test_include_once_discovered_function_exists_tracks_runtime_load_order() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                r#"<?php
+function load_once_lib() {
+    include_once 'lib.php';
+}
+echo function_exists('runtime_loaded_once') ? 'yes-before' : 'no-before';
+load_once_lib();
+load_once_lib();
+echo '|';
+echo function_exists('runtime_loaded_once') ? runtime_loaded_once() : 'no-after';
+"#,
+            ),
+            (
+                "lib.php",
+                "<?php function runtime_loaded_once() { return 'yes-after'; }",
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "no-before|yes-after");
+}
+
+#[test]
 fn test_conditional_include_function_exists_is_case_insensitive_in_namespace() {
     let out = compile_and_run_files(
         &[

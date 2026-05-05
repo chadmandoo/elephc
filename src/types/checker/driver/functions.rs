@@ -198,7 +198,7 @@ impl Checker {
                 return Err(CompileError::new(
                     span,
                     &format!(
-                        "Conditional function variants for '{}' must have identical signatures",
+                        "Function variants for '{}' must have identical signatures",
                         name
                     ),
                 ));

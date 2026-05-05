@@ -49,11 +49,11 @@ fn emit_variant_function_exists(
     abi::emit_load_symbol_to_reg(emitter, result_reg, &active_symbol, 0);
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("cmp {}, #0", result_reg));            // test whether a conditional include has activated this function
+            emitter.instruction(&format!("cmp {}, #0", result_reg));            // test whether an include has activated this function variant
             emitter.instruction(&format!("cset {}, ne", result_reg));           // return true only when a function variant is active
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("test {}, {}", result_reg, result_reg)); // test whether a conditional include has activated this function
+            emitter.instruction(&format!("test {}, {}", result_reg, result_reg)); // test whether an include has activated this function variant
             emitter.instruction("setne al");                                    // return true only when a function variant is active
             emitter.instruction("movzx rax, al");                               // widen the boolean byte into the integer result register
         }

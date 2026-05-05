@@ -9,7 +9,7 @@ use super::discovery::{
 };
 use super::state::namespace_string;
 
-pub(super) fn rewrite_conditional_function_variants(
+pub(super) fn rewrite_include_loaded_function_variants(
     entries: &mut [DiscoveryEntry],
 ) -> (Vec<Stmt>, FunctionVariantRegistry) {
     let mut occurrences = Vec::new();
@@ -38,7 +38,7 @@ pub(super) fn rewrite_conditional_function_variants(
     let mut groups = Vec::new();
 
     for occurrences in by_public.values() {
-        if !is_supported_conditional_function_group(occurrences) {
+        if !is_supported_include_loaded_function_group(occurrences) {
             continue;
         }
 
@@ -158,7 +158,11 @@ fn collect_function_occurrences(
     }
 }
 
-fn is_supported_conditional_function_group(occurrences: &[FunctionOccurrence]) -> bool {
+fn is_supported_include_loaded_function_group(occurrences: &[FunctionOccurrence]) -> bool {
+    if occurrences.len() == 1 {
+        return true;
+    }
+
     let Some(group_id) = occurrences
         .first()
         .and_then(|occurrence| occurrence.exclusive_group.as_ref())

@@ -107,6 +107,71 @@ pub(crate) fn compile_and_run_files(files: &[(&str, &str)], main_file: &str) -> 
     compile_and_run_files_with_defines(files, main_file, &[])
 }
 
+pub(crate) fn compile_and_run_files_expect_failure(
+    files: &[(&str, &str)],
+    main_file: &str,
+) -> String {
+    let id = TEST_ID.fetch_add(1, Ordering::SeqCst);
+    let tid = std::thread::current().id();
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("elephc_test_{}_{:?}_{}", pid, tid, id));
+    fs::create_dir_all(&dir).unwrap();
+
+    for (path, content) in files {
+        let full_path = dir.join(path);
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(&full_path, content).unwrap();
+    }
+
+    let php_path = dir.join(main_file);
+    let source = fs::read_to_string(&php_path).unwrap();
+    let base_dir = php_path.parent().unwrap();
+
+    let tokens = elephc::lexer::tokenize(&source).expect("tokenize failed");
+    let ast = elephc::parser::parse(&tokens).expect("parse failed");
+    let ast = elephc::magic_constants::substitute_file_and_scope_constants(ast, &php_path);
+    let define_set = HashSet::new();
+    let ast = elephc::conditional::apply(ast, &define_set);
+    let resolved = elephc::resolver::resolve(ast, base_dir).expect("resolve failed");
+    let resolved = elephc::name_resolver::resolve(resolved).expect("name resolve failed");
+    let resolved = elephc::optimize::fold_constants(resolved);
+    let check_result =
+        elephc::types::check_with_target(&resolved, target()).expect("type check failed");
+    let optimized = elephc::optimize::propagate_constants(resolved);
+    let optimized = elephc::optimize::prune_constant_control_flow(optimized);
+    let optimized = elephc::optimize::normalize_control_flow(optimized);
+    let optimized = elephc::optimize::eliminate_dead_code(optimized);
+    let (user_asm, _runtime_asm) = elephc::codegen::generate(
+        &optimized,
+        &check_result.global_env,
+        &check_result.functions,
+        &check_result.interfaces,
+        &check_result.classes,
+        &check_result.enums,
+        &check_result.packed_classes,
+        &check_result.extern_functions,
+        &check_result.extern_classes,
+        &check_result.extern_globals,
+        8_388_608,
+        false,
+        false,
+        target(),
+    );
+
+    let elephc_err = assemble_and_run_expect_failure(
+        &user_asm,
+        get_runtime_obj(),
+        &dir,
+        &check_result.required_libraries,
+        &default_link_paths(),
+        &[],
+    );
+    let _ = fs::remove_dir_all(&dir);
+    elephc_err
+}
+
 pub(crate) fn compile_and_run_files_with_defines(
     files: &[(&str, &str)],
     main_file: &str,

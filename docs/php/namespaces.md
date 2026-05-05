@@ -92,14 +92,14 @@ branches. Sequential regular includes and regular includes that can repeat
 through loops still report duplicate declaration errors, matching PHP's
 redeclaration behavior.
 
-When mutually exclusive branches in the same direct `if` / `elseif` / `else`
-chain include different files that declare the same function name, elephc
-accepts the pattern only if the function signatures match exactly. Each branch
-declaration is compiled as a hidden implementation, and the public function name
-dispatches to the implementation loaded by the branch that actually ran. A
-function declared only by an optional conditional include uses the same runtime
-marker, so the function is callable only after that include point has executed;
-`function_exists()` reads the same marker for these conditional functions.
+Functions discovered through includes are compiled as hidden implementations
+behind public dispatchers. The dispatcher becomes callable only after a runtime
+include point has activated one of those implementations, and
+`function_exists()` reads the same marker. When mutually exclusive branches in
+the same direct `if` / `elseif` / `else` chain include different files that
+declare the same function name, elephc accepts the pattern only if the function
+signatures match exactly, then dispatches to the implementation loaded by the
+branch that actually ran.
 Class-like declarations remain strict: duplicate class, interface, trait, enum,
 packed-class, or extern names still report redeclaration errors unless they are
 separated by namespace.

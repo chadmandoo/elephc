@@ -52,7 +52,7 @@ pub(super) fn emit_function_variant_mark(
     data.add_comm(active_symbol.clone(), 8);
 
     emitter.blank();
-    emitter.comment(&format!("activate conditional function variant for {}", name));
+    emitter.comment(&format!("activate include-loaded function variant for {}", name));
     let variant_reg = abi::temp_int_reg(emitter.target);
     abi::emit_symbol_address(emitter, variant_reg, &function_symbol(variant));
     abi::emit_store_reg_to_symbol(emitter, variant_reg, &active_symbol, 0);
