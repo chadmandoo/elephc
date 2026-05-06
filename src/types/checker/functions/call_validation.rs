@@ -67,7 +67,7 @@ impl Checker {
         span: crate::span::Span,
         callee_desc: &str,
     ) -> Result<Vec<Expr>, CompileError> {
-        self.normalize_call_args(sig, args, span, callee_desc, false)
+        self.normalize_call_args(sig, args, span, callee_desc, false, true)
     }
 
     pub(crate) fn normalize_builtin_call_args(
@@ -77,7 +77,7 @@ impl Checker {
         span: crate::span::Span,
         callee_desc: &str,
     ) -> Result<Vec<Expr>, CompileError> {
-        self.normalize_call_args(sig, args, span, callee_desc, true)
+        self.normalize_call_args(sig, args, span, callee_desc, true, false)
     }
 
     fn normalize_call_args(
@@ -87,6 +87,7 @@ impl Checker {
         span: crate::span::Span,
         callee_desc: &str,
         trim_trailing_defaults: bool,
+        allow_unknown_named_variadic: bool,
     ) -> Result<Vec<Expr>, CompileError> {
         if !Self::has_named_args(args) {
             let mut seen_spread = false;
@@ -113,6 +114,7 @@ impl Checker {
         };
         let mut named_values: Vec<Option<(Expr, Span)>> = vec![None; regular_param_count];
         let mut prefix_args = Vec::new();
+        let mut variadic_args = Vec::new();
         let mut seen_named = false;
         let mut seen_spread = false;
 
@@ -126,6 +128,16 @@ impl Checker {
                         .take(regular_param_count)
                         .position(|(param_name, _)| param_name == name)
                     else {
+                        if allow_unknown_named_variadic && sig.variadic.is_some() {
+                            variadic_args.push(Expr::new(
+                                ExprKind::NamedArg {
+                                    name: name.clone(),
+                                    value: value.clone(),
+                                },
+                                arg.span,
+                            ));
+                            continue;
+                        }
                         return Err(CompileError::new(
                             arg.span,
                             &format!("{} has no parameter ${}", callee_desc, name),
@@ -180,7 +192,6 @@ impl Checker {
         }
 
         let mut resolved: Vec<Option<Expr>> = vec![None; regular_param_count];
-        let mut variadic_args = Vec::new();
         let mut positional_idx = 0usize;
 
         for prefix_arg in prefix_args {

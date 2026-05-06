@@ -6,6 +6,7 @@ use crate::codegen::expr::emit_expr;
 use crate::codegen::platform::Arch;
 use crate::names::function_symbol;
 use crate::parser::ast::{Expr, ExprKind};
+use crate::span::Span;
 use crate::types::{FunctionSig, PhpType};
 
 /// Emit an extern (FFI) function call using the C ABI.
@@ -13,6 +14,7 @@ use crate::types::{FunctionSig, PhpType};
 pub fn emit_extern_call(
     name: &str,
     args: &[Expr],
+    call_span: Span,
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
@@ -35,11 +37,26 @@ pub fn emit_extern_call(
             declared_params: vec![true; sig.params.len()],
             variadic: None,
         });
-    let normalized = crate::codegen::expr::calls::args::normalize_named_call_args_with_checks(
-        &call_sig,
-        args,
-        crate::codegen::expr::calls::args::regular_param_count(Some(&call_sig), args.len()),
-    );
+    let regular_param_count =
+        crate::codegen::expr::calls::args::regular_param_count(Some(&call_sig), args.len());
+    let normalized = if crate::codegen::expr::calls::args::has_named_args(args) {
+        crate::codegen::expr::calls::args::preevaluate_named_call_args_to_temps(
+            &call_sig,
+            args,
+            call_span,
+            regular_param_count,
+            false,
+            emitter,
+            ctx,
+            data,
+        )
+    } else {
+        crate::codegen::expr::calls::args::normalize_named_call_args_with_checks(
+            &call_sig,
+            args,
+            regular_param_count,
+        )
+    };
     crate::codegen::expr::calls::args::emit_spread_length_checks(
         &normalized.spread_length_checks,
         emitter,
@@ -282,7 +299,14 @@ mod tests {
             },
         );
 
-        let ret_ty = emit_extern_call("abs", &[Expr::int_lit(-42)], &mut emitter, &mut ctx, &mut data);
+        let ret_ty = emit_extern_call(
+            "abs",
+            &[Expr::int_lit(-42)],
+            Span::dummy(),
+            &mut emitter,
+            &mut ctx,
+            &mut data,
+        );
         let out = emitter.output();
 
         assert_eq!(ret_ty, PhpType::Int);
@@ -309,7 +333,14 @@ mod tests {
             },
         );
 
-        let ret_ty = emit_extern_call("strlen", &[Expr::string_lit("hello")], &mut emitter, &mut ctx, &mut data);
+        let ret_ty = emit_extern_call(
+            "strlen",
+            &[Expr::string_lit("hello")],
+            Span::dummy(),
+            &mut emitter,
+            &mut ctx,
+            &mut data,
+        );
         let out = emitter.output();
 
         assert_eq!(ret_ty, PhpType::Int);

@@ -32,6 +32,28 @@ pub(crate) struct PreparedCallArgs {
     pub(crate) spread_length_checks: Vec<SpreadLengthCheck>,
 }
 
+pub(crate) struct EmittedCallArgs {
+    pub(crate) arg_types: Vec<PhpType>,
+    pub(crate) source_temp_bytes: usize,
+}
+
+#[derive(Clone)]
+enum FinalArgSource {
+    SourceTemp(usize),
+    PrefixElement {
+        prefix_temp_idx: usize,
+        element_idx: usize,
+        default: Option<Expr>,
+    },
+    Default(Expr),
+}
+
+#[derive(Clone)]
+struct VariadicArgSource {
+    key: Option<String>,
+    source: FinalArgSource,
+}
+
 pub(crate) fn has_named_args(args: &[Expr]) -> bool {
     args.iter()
         .any(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }))
@@ -48,19 +70,217 @@ pub(crate) fn regular_param_count(sig: Option<&FunctionSig>, fallback_arg_count:
     .unwrap_or(fallback_arg_count)
 }
 
+pub(crate) fn named_call_arg_temp_name(call_span: Span, idx: usize) -> String {
+    format!(
+        "__elephc_named_arg_{}_{}_{}",
+        call_span.line, call_span.col, idx
+    )
+}
+
+pub(crate) fn named_call_prefix_temp_name(call_span: Span) -> String {
+    format!("__elephc_named_prefix_{}_{}", call_span.line, call_span.col)
+}
+
 pub(crate) fn normalize_named_call_args_with_checks(
     sig: &FunctionSig,
     args: &[Expr],
     regular_param_count: usize,
 ) -> NormalizedCallArgs {
-    normalize_call_args(sig, args, regular_param_count, false)
+    normalize_call_args(sig, args, regular_param_count, false, true)
 }
 
 pub(crate) fn normalize_builtin_call_args_with_checks(
     sig: &FunctionSig,
     args: &[Expr],
 ) -> NormalizedCallArgs {
-    normalize_call_args(sig, args, regular_param_count(Some(sig), args.len()), true)
+    normalize_call_args(
+        sig,
+        args,
+        regular_param_count(Some(sig), args.len()),
+        true,
+        false,
+    )
+}
+
+pub(crate) fn preevaluate_named_call_args_to_temps(
+    sig: &FunctionSig,
+    args: &[Expr],
+    call_span: Span,
+    regular_param_count: usize,
+    trim_trailing_defaults: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> NormalizedCallArgs {
+    if !has_named_args(args) {
+        return normalize_call_args(
+            sig,
+            args,
+            regular_param_count,
+            trim_trailing_defaults,
+            false,
+        );
+    }
+
+    let rewritten = if args.iter().any(|arg| matches!(arg.kind, ExprKind::Spread(_))) {
+        preevaluate_named_spread_args_to_temps(sig, args, call_span, regular_param_count, emitter, ctx, data)
+    } else {
+        preevaluate_named_non_spread_args_to_temps(
+            sig,
+            args,
+            call_span,
+            regular_param_count,
+            emitter,
+            ctx,
+            data,
+        )
+    };
+    normalize_call_args(
+        sig,
+        &rewritten,
+        regular_param_count,
+        trim_trailing_defaults,
+        false,
+    )
+}
+
+fn preevaluate_named_spread_args_to_temps(
+    sig: &FunctionSig,
+    args: &[Expr],
+    call_span: Span,
+    regular_param_count: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Vec<Expr> {
+    let first_named_pos = args
+        .iter()
+        .position(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }))
+        .unwrap_or(args.len());
+    let prefix_args = args[..first_named_pos].to_vec();
+    let prefix_span = prefix_args
+        .first()
+        .map(|arg| arg.span)
+        .unwrap_or(call_span);
+    let prefix_name = named_call_prefix_temp_name(call_span);
+    let prefix_expr = single_spread_inner(&prefix_args)
+        .unwrap_or_else(|| Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span));
+    crate::codegen::stmt::emit_assign_stmt(&prefix_name, &prefix_expr, emitter, ctx, data);
+
+    let mut rewritten = vec![Expr::new(
+        ExprKind::Spread(Box::new(Expr::new(
+            ExprKind::Variable(prefix_name),
+            prefix_span,
+        ))),
+        prefix_span,
+    )];
+
+    for (idx, arg) in args.iter().enumerate().skip(first_named_pos) {
+        if let ExprKind::NamedArg { name, value } = &arg.kind {
+            let rewritten_value =
+                preevaluate_named_value_if_needed(sig, regular_param_count, call_span, idx, name, value, emitter, ctx, data);
+            rewritten.push(Expr::new(
+                ExprKind::NamedArg {
+                    name: name.clone(),
+                    value: Box::new(rewritten_value),
+                },
+                arg.span,
+            ));
+        }
+    }
+
+    rewritten
+}
+
+fn preevaluate_named_non_spread_args_to_temps(
+    sig: &FunctionSig,
+    args: &[Expr],
+    call_span: Span,
+    regular_param_count: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Vec<Expr> {
+    let mut rewritten = Vec::new();
+    let mut positional_idx = 0usize;
+
+    for (idx, arg) in args.iter().enumerate() {
+        match &arg.kind {
+            ExprKind::NamedArg { name, value } => {
+                let rewritten_value =
+                    preevaluate_named_value_if_needed(sig, regular_param_count, call_span, idx, name, value, emitter, ctx, data);
+                rewritten.push(Expr::new(
+                    ExprKind::NamedArg {
+                        name: name.clone(),
+                        value: Box::new(rewritten_value),
+                    },
+                    arg.span,
+                ));
+            }
+            _ => {
+                let is_ref = sig
+                    .ref_params
+                    .get(positional_idx)
+                    .copied()
+                    .unwrap_or(false);
+                if is_ref || is_side_effect_free_literal(arg) {
+                    rewritten.push(arg.clone());
+                } else {
+                    let temp_name = named_call_arg_temp_name(call_span, idx);
+                    crate::codegen::stmt::emit_assign_stmt(&temp_name, arg, emitter, ctx, data);
+                    rewritten.push(Expr::new(ExprKind::Variable(temp_name), arg.span));
+                }
+                positional_idx += 1;
+            }
+        }
+    }
+
+    rewritten
+}
+
+#[allow(clippy::too_many_arguments)]
+fn preevaluate_named_value_if_needed(
+    sig: &FunctionSig,
+    regular_param_count: usize,
+    call_span: Span,
+    arg_idx: usize,
+    name: &str,
+    value: &Expr,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Expr {
+    let is_ref = named_param_index(sig, regular_param_count, name)
+        .and_then(|param_idx| sig.ref_params.get(param_idx))
+        .copied()
+        .unwrap_or(false);
+    if is_ref || is_side_effect_free_literal(value) {
+        return value.clone();
+    }
+
+    let temp_name = named_call_arg_temp_name(call_span, arg_idx);
+    crate::codegen::stmt::emit_assign_stmt(&temp_name, value, emitter, ctx, data);
+    Expr::new(ExprKind::Variable(temp_name), value.span)
+}
+
+fn single_spread_inner(prefix_args: &[Expr]) -> Option<Expr> {
+    if let [arg] = prefix_args {
+        if let ExprKind::Spread(inner) = &arg.kind {
+            return Some((**inner).clone());
+        }
+    }
+    None
+}
+
+fn is_side_effect_free_literal(expr: &Expr) -> bool {
+    matches!(
+        expr.kind,
+        ExprKind::StringLiteral(_)
+            | ExprKind::IntLiteral(_)
+            | ExprKind::FloatLiteral(_)
+            | ExprKind::BoolLiteral(_)
+            | ExprKind::Null
+    )
 }
 
 fn normalize_call_args(
@@ -68,6 +288,7 @@ fn normalize_call_args(
     args: &[Expr],
     regular_param_count: usize,
     trim_trailing_defaults: bool,
+    allow_unknown_named_variadic: bool,
 ) -> NormalizedCallArgs {
     if !has_named_args(args) {
         return NormalizedCallArgs {
@@ -78,6 +299,7 @@ fn normalize_call_args(
 
     let mut named_values: Vec<Option<Expr>> = vec![None; regular_param_count];
     let mut prefix_args = Vec::new();
+    let mut variadic_args = Vec::new();
     let mut seen_named = false;
     let mut seen_spread = false;
     let mut spread_length_checks = Vec::new();
@@ -93,6 +315,14 @@ fn normalize_call_args(
                     .position(|(param_name, _)| param_name == name)
                 {
                     named_values[param_idx] = Some((**value).clone());
+                } else if allow_unknown_named_variadic && sig.variadic.is_some() {
+                    variadic_args.push(Expr::new(
+                        ExprKind::NamedArg {
+                            name: name.clone(),
+                            value: value.clone(),
+                        },
+                        arg.span,
+                    ));
                 }
             }
             ExprKind::Spread(inner) => {
@@ -110,7 +340,6 @@ fn normalize_call_args(
     }
 
     let mut resolved: Vec<Option<Expr>> = vec![None; regular_param_count];
-    let mut variadic_args = Vec::new();
     let mut positional_idx = 0usize;
 
     for prefix_arg in prefix_args {
@@ -390,6 +619,861 @@ pub(crate) fn push_expr_arg(
     }
     push_arg_value(emitter, &pushed_ty);
     pushed_ty
+}
+
+pub(crate) fn emit_pushed_call_args(
+    args_exprs: &[Expr],
+    sig: Option<&FunctionSig>,
+    regular_param_count: usize,
+    ref_arg_context_label: &str,
+    retain_non_variable_ref_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> EmittedCallArgs {
+    if let Some(sig) = sig {
+        if has_named_args(args_exprs) {
+            return emit_source_order_named_call_args(
+                args_exprs,
+                sig,
+                regular_param_count,
+                ref_arg_context_label,
+                retain_non_variable_ref_args,
+                emitter,
+                ctx,
+                data,
+            );
+        }
+    }
+
+    let prepared = prepare_call_args(sig, args_exprs, regular_param_count);
+    emit_spread_length_checks(&prepared.spread_length_checks, emitter, ctx, data);
+    let mut arg_types = emit_pushed_non_variadic_args(
+        &prepared.all_args,
+        sig,
+        ref_arg_context_label,
+        retain_non_variable_ref_args,
+        emitter,
+        ctx,
+        data,
+    );
+
+    if prepared.spread_into_named {
+        if let Some(spread_expr) = prepared.spread_arg.as_ref() {
+            emit_spread_into_named_params(
+                spread_expr,
+                sig,
+                prepared.spread_at_index,
+                prepared.regular_param_count,
+                "named params",
+                emitter,
+                ctx,
+                data,
+                &mut arg_types,
+            );
+        }
+    }
+
+    if prepared.is_variadic {
+        if let Some(spread_expr) = prepared.spread_arg.as_ref() {
+            let variadic_ty = emit_spread_variadic_array_arg(
+                spread_expr,
+                "spread array as variadic param",
+                emitter,
+                ctx,
+                data,
+            );
+            arg_types.push(variadic_ty);
+        } else if prepared.variadic_args.is_empty() {
+            arg_types.push(emit_empty_variadic_array_arg("empty variadic array", emitter));
+        } else {
+            let variadic_ty = emit_variadic_array_arg_from_exprs(
+                &prepared.variadic_args,
+                "build variadic array",
+                true,
+                true,
+                emitter,
+                ctx,
+                data,
+            );
+            arg_types.push(variadic_ty);
+        }
+    }
+
+    EmittedCallArgs {
+        arg_types,
+        source_temp_bytes: 0,
+    }
+}
+
+fn emit_source_order_named_call_args(
+    args_exprs: &[Expr],
+    sig: &FunctionSig,
+    regular_param_count: usize,
+    ref_arg_context_label: &str,
+    retain_non_variable_ref_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> EmittedCallArgs {
+    if args_exprs
+        .iter()
+        .any(|arg| matches!(arg.kind, ExprKind::Spread(_)))
+    {
+        return emit_source_order_named_spread_call_args(
+            args_exprs,
+            sig,
+            regular_param_count,
+            emitter,
+            ctx,
+            data,
+        );
+    }
+
+    let mut slot_sources: Vec<Option<FinalArgSource>> = vec![None; regular_param_count];
+    let mut variadic_sources = Vec::new();
+    let mut source_temp_types = Vec::new();
+    let mut positional_idx = 0usize;
+
+    for arg in args_exprs {
+        match &arg.kind {
+            ExprKind::NamedArg { name, value } => {
+                if let Some(param_idx) = named_param_index(sig, regular_param_count, name) {
+                    let temp_idx = emit_source_temp_arg(
+                        value,
+                        sig,
+                        Some(param_idx),
+                        ref_arg_context_label,
+                        retain_non_variable_ref_args,
+                        &mut source_temp_types,
+                        emitter,
+                        ctx,
+                        data,
+                    );
+                    slot_sources[param_idx] = Some(FinalArgSource::SourceTemp(temp_idx));
+                } else if sig.variadic.is_some() {
+                    let temp_idx = emit_source_temp_arg(
+                        value,
+                        sig,
+                        None,
+                        ref_arg_context_label,
+                        retain_non_variable_ref_args,
+                        &mut source_temp_types,
+                        emitter,
+                        ctx,
+                        data,
+                    );
+                    variadic_sources.push(VariadicArgSource {
+                        key: Some(name.clone()),
+                        source: FinalArgSource::SourceTemp(temp_idx),
+                    });
+                }
+            }
+            _ => {
+                if positional_idx < regular_param_count {
+                    let temp_idx = emit_source_temp_arg(
+                        arg,
+                        sig,
+                        Some(positional_idx),
+                        ref_arg_context_label,
+                        retain_non_variable_ref_args,
+                        &mut source_temp_types,
+                        emitter,
+                        ctx,
+                        data,
+                    );
+                    slot_sources[positional_idx] = Some(FinalArgSource::SourceTemp(temp_idx));
+                } else {
+                    let temp_idx = emit_source_temp_arg(
+                        arg,
+                        sig,
+                        None,
+                        ref_arg_context_label,
+                        retain_non_variable_ref_args,
+                        &mut source_temp_types,
+                        emitter,
+                        ctx,
+                        data,
+                    );
+                    variadic_sources.push(VariadicArgSource {
+                        key: None,
+                        source: FinalArgSource::SourceTemp(temp_idx),
+                    });
+                }
+                positional_idx += 1;
+            }
+        }
+    }
+
+    for (idx, source) in slot_sources.iter_mut().enumerate() {
+        if source.is_none() {
+            if let Some(Some(default)) = sig.defaults.get(idx) {
+                *source = Some(FinalArgSource::Default(default.clone()));
+            }
+        }
+    }
+
+    push_final_call_args_from_sources(
+        slot_sources,
+        variadic_sources,
+        sig,
+        regular_param_count,
+        &source_temp_types,
+        emitter,
+        ctx,
+        data,
+    )
+}
+
+fn emit_source_order_named_spread_call_args(
+    args_exprs: &[Expr],
+    sig: &FunctionSig,
+    regular_param_count: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> EmittedCallArgs {
+    let first_named_pos = args_exprs
+        .iter()
+        .position(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }))
+        .unwrap_or(args_exprs.len());
+    let prefix_args: Vec<Expr> = args_exprs[..first_named_pos].to_vec();
+    let prefix_span = prefix_args
+        .first()
+        .map(|arg| arg.span)
+        .unwrap_or_else(Span::dummy);
+    let prefix_expr = single_spread_inner(&prefix_args)
+        .unwrap_or_else(|| Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span));
+    let mut source_temp_types = Vec::new();
+    emitter.comment("evaluate named-call positional prefix");
+    let prefix_ty = push_expr_arg(&prefix_expr, None, emitter, ctx, data);
+    let prefix_temp_idx = push_source_temp_type(&mut source_temp_types, prefix_ty);
+
+    let mut named_sources: Vec<Option<usize>> = vec![None; regular_param_count];
+    let mut variadic_sources = Vec::new();
+    let mut first_named_idx = regular_param_count;
+    for arg in &args_exprs[first_named_pos..] {
+        if let ExprKind::NamedArg { name, value } = &arg.kind {
+            if let Some(param_idx) = named_param_index(sig, regular_param_count, name) {
+                first_named_idx = first_named_idx.min(param_idx);
+                let temp_idx = emit_source_temp_arg(
+                    value,
+                    sig,
+                    Some(param_idx),
+                    "named arg",
+                    false,
+                    &mut source_temp_types,
+                    emitter,
+                    ctx,
+                    data,
+                );
+                named_sources[param_idx] = Some(temp_idx);
+            } else if sig.variadic.is_some() {
+                let temp_idx = emit_source_temp_arg(
+                    value,
+                    sig,
+                    None,
+                    "named variadic arg",
+                    false,
+                    &mut source_temp_types,
+                    emitter,
+                    ctx,
+                    data,
+                );
+                variadic_sources.push(VariadicArgSource {
+                    key: Some(name.clone()),
+                    source: FinalArgSource::SourceTemp(temp_idx),
+                });
+            }
+        }
+    }
+
+    let max_prefix_len = first_named_idx;
+    let min_prefix_len = (0..max_prefix_len)
+        .rfind(|idx| {
+            named_sources[*idx].is_none()
+                && sig
+                    .defaults
+                    .get(*idx)
+                    .and_then(|default| default.as_ref())
+                    .is_none()
+        })
+        .map(|idx| idx + 1)
+        .unwrap_or(0);
+    emit_prefix_array_length_check(
+        prefix_temp_idx,
+        &source_temp_types,
+        min_prefix_len,
+        max_prefix_len,
+        emitter,
+        ctx,
+        data,
+    );
+
+    let mut slot_sources = Vec::new();
+    for idx in 0..regular_param_count {
+        if let Some(temp_idx) = named_sources[idx] {
+            slot_sources.push(Some(FinalArgSource::SourceTemp(temp_idx)));
+        } else if idx < max_prefix_len {
+            let default = sig.defaults.get(idx).and_then(|default| default.clone());
+            slot_sources.push(Some(FinalArgSource::PrefixElement {
+                prefix_temp_idx,
+                element_idx: idx,
+                default,
+            }));
+        } else if let Some(Some(default)) = sig.defaults.get(idx) {
+            slot_sources.push(Some(FinalArgSource::Default(default.clone())));
+        } else {
+            slot_sources.push(None);
+        }
+    }
+
+    push_final_call_args_from_sources(
+        slot_sources,
+        variadic_sources,
+        sig,
+        regular_param_count,
+        &source_temp_types,
+        emitter,
+        ctx,
+        data,
+    )
+}
+
+fn named_param_index(sig: &FunctionSig, regular_param_count: usize, name: &str) -> Option<usize> {
+    sig.params
+        .iter()
+        .take(regular_param_count)
+        .position(|(param_name, _)| param_name == name)
+}
+
+fn push_source_temp_type(source_temp_types: &mut Vec<PhpType>, ty: PhpType) -> usize {
+    let idx = source_temp_types.len();
+    source_temp_types.push(ty);
+    idx
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_source_temp_arg(
+    arg: &Expr,
+    sig: &FunctionSig,
+    param_idx: Option<usize>,
+    ref_arg_context_label: &str,
+    retain_non_variable_ref_args: bool,
+    source_temp_types: &mut Vec<PhpType>,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> usize {
+    let is_ref = param_idx
+        .and_then(|idx| sig.ref_params.get(idx))
+        .copied()
+        .unwrap_or(false);
+    let pushed_ty = if is_ref {
+        if let ExprKind::Variable(var_name) = &arg.kind {
+            emit_ref_arg_variable_address(var_name, ref_arg_context_label, emitter, ctx);
+        } else {
+            let source_ty = super::super::emit_expr(arg, emitter, ctx, data);
+            if retain_non_variable_ref_args {
+                super::super::retain_borrowed_heap_arg(emitter, arg, &source_ty);
+            }
+        }
+        push_arg_value(emitter, &PhpType::Int);
+        PhpType::Int
+    } else {
+        let target_ty = param_idx.and_then(|idx| declared_target_ty(Some(sig), idx));
+        push_expr_arg(arg, target_ty, emitter, ctx, data)
+    };
+    push_source_temp_type(source_temp_types, pushed_ty)
+}
+
+fn push_final_call_args_from_sources(
+    slot_sources: Vec<Option<FinalArgSource>>,
+    variadic_sources: Vec<VariadicArgSource>,
+    sig: &FunctionSig,
+    regular_param_count: usize,
+    source_temp_types: &[PhpType],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> EmittedCallArgs {
+    let source_temp_bytes = pushed_temp_bytes(source_temp_types);
+    let mut arg_types = Vec::new();
+    let mut final_pushed_bytes = 0usize;
+
+    for (idx, source) in slot_sources.into_iter().enumerate().take(regular_param_count) {
+        let target_ty = declared_target_ty(Some(sig), idx);
+        let pushed_ty = match source {
+            Some(FinalArgSource::SourceTemp(temp_idx)) => {
+                push_saved_source_temp_arg(
+                    temp_idx,
+                    source_temp_types,
+                    final_pushed_bytes,
+                    emitter,
+                )
+            }
+            Some(FinalArgSource::PrefixElement {
+                prefix_temp_idx,
+                element_idx,
+                default,
+            }) => push_prefix_array_element_arg(
+                prefix_temp_idx,
+                element_idx,
+                default.as_ref(),
+                target_ty,
+                source_temp_types,
+                final_pushed_bytes,
+                emitter,
+                ctx,
+                data,
+            ),
+            Some(FinalArgSource::Default(default)) => {
+                push_expr_arg(&default, target_ty, emitter, ctx, data)
+            }
+            None => continue,
+        };
+        final_pushed_bytes += temp_slot_size(&pushed_ty);
+        arg_types.push(pushed_ty);
+    }
+
+    if sig.variadic.is_some() {
+        let variadic_ty = if variadic_sources.is_empty() {
+            emit_empty_variadic_array_arg("empty variadic array", emitter)
+        } else {
+            emit_variadic_array_arg_from_sources(
+                &variadic_sources,
+                source_temp_types,
+                final_pushed_bytes,
+                emitter,
+                ctx,
+                data,
+            )
+        };
+        arg_types.push(variadic_ty);
+    }
+
+    EmittedCallArgs {
+        arg_types,
+        source_temp_bytes,
+    }
+}
+
+fn temp_slot_size(ty: &PhpType) -> usize {
+    if matches!(ty, PhpType::Void | PhpType::Never) {
+        0
+    } else {
+        16
+    }
+}
+
+pub(crate) fn pushed_temp_bytes(types: &[PhpType]) -> usize {
+    types.iter().map(temp_slot_size).sum()
+}
+
+fn temp_offsets(types: &[PhpType]) -> Vec<usize> {
+    let mut offsets = vec![0usize; types.len()];
+    let mut running = 0usize;
+    for idx in (0..types.len()).rev() {
+        offsets[idx] = running;
+        running += temp_slot_size(&types[idx]);
+    }
+    offsets
+}
+
+fn source_temp_offset(source_temp_types: &[PhpType], temp_idx: usize, extra_bytes: usize) -> usize {
+    extra_bytes + temp_offsets(source_temp_types)[temp_idx]
+}
+
+fn load_source_temp_to_result(
+    temp_idx: usize,
+    source_temp_types: &[PhpType],
+    extra_bytes: usize,
+    emitter: &mut Emitter,
+) -> PhpType {
+    let ty = source_temp_types[temp_idx].clone();
+    let offset = source_temp_offset(source_temp_types, temp_idx, extra_bytes);
+    match ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_load_temporary_stack_slot(emitter, abi::float_result_reg(emitter), offset);
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+            abi::emit_load_temporary_stack_slot(emitter, ptr_reg, offset);
+            abi::emit_load_temporary_stack_slot(emitter, len_reg, offset + 8);
+        }
+        PhpType::Void | PhpType::Never => {}
+        _ => {
+            abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), offset);
+        }
+    }
+    ty
+}
+
+fn push_saved_source_temp_arg(
+    temp_idx: usize,
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    emitter: &mut Emitter,
+) -> PhpType {
+    let ty = load_source_temp_to_result(temp_idx, source_temp_types, final_pushed_bytes, emitter);
+    push_arg_value(emitter, &ty);
+    ty
+}
+
+fn emit_prefix_array_length_check(
+    prefix_temp_idx: usize,
+    source_temp_types: &[PhpType],
+    min_len: usize,
+    max_len: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let ok_label = ctx.next_label("named_prefix_len_ok");
+    let fail_label = ctx.next_label("named_prefix_len_fail");
+    emitter.comment("validate named-argument positional prefix length");
+    let prefix_offset = source_temp_offset(source_temp_types, prefix_temp_idx, 0);
+    match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(emitter, "x8", prefix_offset);
+            emitter.instruction("ldr x9, [x8]");                                // load the evaluated positional-prefix array length
+            abi::emit_load_int_immediate(emitter, "x10", min_len as i64);
+            emitter.instruction("cmp x9, x10");                                 // ensure required parameters before the first named slot are filled
+            emitter.instruction(&format!("b.lt {}", fail_label));               // abort after all argument expressions have been evaluated
+            abi::emit_load_int_immediate(emitter, "x10", max_len as i64);
+            emitter.instruction("cmp x9, x10");                                 // ensure the prefix does not overwrite the first named parameter
+            emitter.instruction(&format!("b.le {}", ok_label));                 // continue when the evaluated prefix fits before named arguments
+        }
+        crate::codegen::platform::Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(emitter, "r8", prefix_offset);
+            emitter.instruction("mov r10, QWORD PTR [r8]");                     // load the evaluated positional-prefix array length
+            abi::emit_load_int_immediate(emitter, "r11", min_len as i64);
+            emitter.instruction("cmp r10, r11");                                // ensure required parameters before the first named slot are filled
+            emitter.instruction(&format!("jl {}", fail_label));                 // abort after all argument expressions have been evaluated
+            abi::emit_load_int_immediate(emitter, "r11", max_len as i64);
+            emitter.instruction("cmp r10, r11");                                // ensure the prefix does not overwrite the first named parameter
+            emitter.instruction(&format!("jle {}", ok_label));                  // continue when the evaluated prefix fits before named arguments
+        }
+    }
+    emitter.label(&fail_label);
+    emit_named_spread_length_abort(emitter, data);
+    emitter.label(&ok_label);
+}
+
+fn push_prefix_array_element_arg(
+    prefix_temp_idx: usize,
+    element_idx: usize,
+    default: Option<&Expr>,
+    target_ty: Option<&PhpType>,
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    if let Some(default) = default {
+        let use_default = ctx.next_label("named_prefix_default");
+        let done = ctx.next_label("named_prefix_done");
+        emit_branch_if_prefix_element_missing(
+            prefix_temp_idx,
+            element_idx,
+            source_temp_types,
+            final_pushed_bytes,
+            &use_default,
+            emitter,
+        );
+        let loaded_ty = push_existing_prefix_array_element_arg(
+            prefix_temp_idx,
+            element_idx,
+            target_ty,
+            source_temp_types,
+            final_pushed_bytes,
+            emitter,
+            ctx,
+            data,
+        );
+        abi::emit_jump(emitter, &done);
+        emitter.label(&use_default);
+        let default_ty = push_expr_arg(default, target_ty, emitter, ctx, data);
+        emitter.label(&done);
+        return super::super::widen_codegen_type(&loaded_ty, &default_ty);
+    }
+
+    push_existing_prefix_array_element_arg(
+        prefix_temp_idx,
+        element_idx,
+        target_ty,
+        source_temp_types,
+        final_pushed_bytes,
+        emitter,
+        ctx,
+        data,
+    )
+}
+
+fn emit_branch_if_prefix_element_missing(
+    prefix_temp_idx: usize,
+    element_idx: usize,
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    label: &str,
+    emitter: &mut Emitter,
+) {
+    let prefix_offset = source_temp_offset(source_temp_types, prefix_temp_idx, final_pushed_bytes);
+    match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(emitter, "x8", prefix_offset);
+            emitter.instruction("ldr x9, [x8]");                                // load prefix length before choosing spread element or default
+            abi::emit_load_int_immediate(emitter, "x10", element_idx as i64);
+            emitter.instruction("cmp x9, x10");                                 // check whether this optional prefix element exists
+            emitter.instruction(&format!("b.le {}", label));                    // use the default when the prefix is too short for this slot
+        }
+        crate::codegen::platform::Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(emitter, "r8", prefix_offset);
+            emitter.instruction("mov r10, QWORD PTR [r8]");                     // load prefix length before choosing spread element or default
+            abi::emit_load_int_immediate(emitter, "r11", element_idx as i64);
+            emitter.instruction("cmp r10, r11");                                // check whether this optional prefix element exists
+            emitter.instruction(&format!("jle {}", label));                     // use the default when the prefix is too short for this slot
+        }
+    }
+}
+
+fn push_existing_prefix_array_element_arg(
+    prefix_temp_idx: usize,
+    element_idx: usize,
+    target_ty: Option<&PhpType>,
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    let prefix_ty = source_temp_types[prefix_temp_idx].clone();
+    let source_elem_ty = spread_source_elem_ty(&prefix_ty);
+    let elem_stride = array_element_stride(&source_elem_ty);
+    let prefix_offset = source_temp_offset(source_temp_types, prefix_temp_idx, final_pushed_bytes);
+    let array_data_reg = match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => "x20",
+        crate::codegen::platform::Arch::X86_64 => "r10",
+    };
+    abi::emit_load_temporary_stack_slot(emitter, array_data_reg, prefix_offset);
+    match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => {
+            emitter.instruction(&format!("add {}, {}, #24", array_data_reg, array_data_reg)); // address the positional-prefix array payload
+        }
+        crate::codegen::platform::Arch::X86_64 => {
+            emitter.instruction(&format!("add {}, 24", array_data_reg));        // address the positional-prefix array payload
+        }
+    }
+    load_array_element_to_result(emitter, &source_elem_ty, array_data_reg, element_idx * elem_stride);
+    push_loaded_array_element_arg(&source_elem_ty, target_ty, emitter, ctx, data)
+}
+
+fn emit_variadic_array_arg_from_sources(
+    variadic_sources: &[VariadicArgSource],
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    emitter: &mut Emitter,
+    _ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    if variadic_sources.iter().any(|source| source.key.is_some()) {
+        return emit_variadic_assoc_arg_from_sources(
+            variadic_sources,
+            source_temp_types,
+            final_pushed_bytes,
+            emitter,
+            data,
+        );
+    }
+
+    let elem_count = variadic_sources.len();
+    let first_elem_ty = match variadic_sources.first() {
+        Some(VariadicArgSource {
+            source: FinalArgSource::SourceTemp(temp_idx),
+            ..
+        }) => source_temp_types[*temp_idx].clone(),
+        _ => PhpType::Int,
+    };
+    let container_elem_ty = variadic_container_elem_ty(&first_elem_ty);
+    let elem_size = match container_elem_ty.codegen_repr() {
+        PhpType::Str => 16,
+        _ => 8,
+    };
+    let (capacity_reg, elem_size_reg, peek_reg, len_reg) = match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => ("x0", "x1", "x9", "x10"),
+        crate::codegen::platform::Arch::X86_64 => ("rdi", "rsi", "r11", "r10"),
+    };
+
+    emitter.comment(&format!("build variadic array ({} elements)", elem_count));
+    abi::emit_load_int_immediate(emitter, capacity_reg, elem_count as i64);
+    abi::emit_load_int_immediate(emitter, elem_size_reg, elem_size as i64);
+    abi::emit_call_label(emitter, "__rt_array_new");
+    abi::emit_push_result_value(emitter, &PhpType::Array(Box::new(container_elem_ty.clone())));
+
+    for (idx, source) in variadic_sources.iter().enumerate() {
+        let mut elem_ty = match &source.source {
+            FinalArgSource::SourceTemp(temp_idx) => load_source_temp_to_result(
+                *temp_idx,
+                source_temp_types,
+                final_pushed_bytes + 16,
+                emitter,
+            ),
+            _ => PhpType::Int,
+        };
+        let boxed_for_container = if matches!(container_elem_ty, PhpType::Mixed)
+            && !matches!(elem_ty, PhpType::Mixed | PhpType::Union(_))
+        {
+            crate::codegen::emit_box_current_value_as_mixed(emitter, &elem_ty);
+            elem_ty = PhpType::Mixed;
+            true
+        } else {
+            false
+        };
+        if !boxed_for_container {
+            abi::emit_incref_if_refcounted(emitter, &elem_ty.codegen_repr());
+        }
+        match emitter.target.arch {
+            crate::codegen::platform::Arch::AArch64 => {
+                emitter.instruction(&format!("ldr {}, [sp]", peek_reg));        // peek the variadic array pointer without removing it from the stack
+            }
+            crate::codegen::platform::Arch::X86_64 => {
+                emitter.instruction(&format!("mov {}, QWORD PTR [rsp]", peek_reg)); // peek the variadic array pointer without removing it from the stack
+            }
+        }
+        if idx == 0 {
+            super::super::arrays::emit_array_value_type_stamp(emitter, peek_reg, &elem_ty);
+        }
+        store_current_array_element(emitter, peek_reg, idx, &elem_ty);
+        abi::emit_load_int_immediate(emitter, len_reg, (idx + 1) as i64);
+        abi::emit_store_to_address(emitter, len_reg, peek_reg, 0);
+    }
+
+    PhpType::Array(Box::new(container_elem_ty))
+}
+
+fn emit_variadic_assoc_arg_from_sources(
+    variadic_sources: &[VariadicArgSource],
+    source_temp_types: &[PhpType],
+    final_pushed_bytes: usize,
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+) -> PhpType {
+    let elem_count = variadic_sources.len();
+    let first_elem_ty = match variadic_sources.first() {
+        Some(VariadicArgSource {
+            source: FinalArgSource::SourceTemp(temp_idx),
+            ..
+        }) => source_temp_types[*temp_idx].clone(),
+        _ => PhpType::Int,
+    };
+    let container_elem_ty = variadic_container_elem_ty(&first_elem_ty);
+    let hash_capacity_reg = abi::int_arg_reg_name(emitter.target, 0);
+    let key_ptr_reg = abi::int_arg_reg_name(emitter.target, 1);
+    let key_len_reg = abi::int_arg_reg_name(emitter.target, 2);
+    let value_lo_reg = abi::int_arg_reg_name(emitter.target, 3);
+    let value_hi_reg = abi::int_arg_reg_name(emitter.target, 4);
+    let value_tag_reg = abi::int_arg_reg_name(emitter.target, 5);
+    let tag_reg = abi::int_arg_reg_name(emitter.target, 1);
+    let result_reg = abi::int_result_reg(emitter);
+    let stack_reg = match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => "sp",
+        crate::codegen::platform::Arch::X86_64 => "rsp",
+    };
+    let zero_reg = match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => "xzr",
+        crate::codegen::platform::Arch::X86_64 => "0",
+    };
+
+    emitter.comment(&format!("build named variadic array ({} elements)", elem_count));
+    abi::emit_load_int_immediate(
+        emitter,
+        hash_capacity_reg,
+        std::cmp::max(elem_count * 2, 16) as i64,
+    );
+    abi::emit_load_int_immediate(
+        emitter,
+        tag_reg,
+        crate::codegen::runtime_value_tag(&container_elem_ty) as i64,
+    );
+    abi::emit_call_label(emitter, "__rt_hash_new");
+    abi::emit_push_result_value(emitter, &PhpType::AssocArray {
+        key: Box::new(PhpType::Mixed),
+        value: Box::new(container_elem_ty.clone()),
+    });
+
+    for (idx, source) in variadic_sources.iter().enumerate() {
+        match &source.key {
+            Some(key) => {
+                let (key_label, key_len) = data.add_string(key.as_bytes());
+                abi::emit_symbol_address(emitter, key_ptr_reg, &key_label);
+                abi::emit_load_int_immediate(emitter, key_len_reg, key_len as i64);
+            }
+            None => {
+                abi::emit_load_int_immediate(emitter, key_ptr_reg, idx as i64);
+                abi::emit_load_int_immediate(emitter, key_len_reg, -1);
+            }
+        }
+        abi::emit_push_reg_pair(emitter, key_ptr_reg, key_len_reg);             // preserve the variadic hash key while loading the saved argument value
+        let mut elem_ty = match &source.source {
+            FinalArgSource::SourceTemp(temp_idx) => load_source_temp_to_result(
+                *temp_idx,
+                source_temp_types,
+                final_pushed_bytes + 32,
+                emitter,
+            ),
+            _ => PhpType::Int,
+        };
+        let boxed_for_container = if matches!(container_elem_ty, PhpType::Mixed)
+            && !matches!(elem_ty, PhpType::Mixed | PhpType::Union(_))
+        {
+            crate::codegen::emit_box_current_value_as_mixed(emitter, &elem_ty);
+            elem_ty = PhpType::Mixed;
+            true
+        } else {
+            false
+        };
+        if !boxed_for_container && matches!(elem_ty, PhpType::Str) {
+            abi::emit_call_label(emitter, "__rt_str_persist");                  // persist variadic strings before storing them in the hash table
+        } else if !boxed_for_container {
+            abi::emit_incref_if_refcounted(emitter, &elem_ty.codegen_repr());
+        }
+        let (val_lo, val_hi) = match elem_ty.codegen_repr() {
+            PhpType::Float => {
+                let bits_reg = abi::temp_int_reg(emitter.target);
+                match emitter.target.arch {
+                    crate::codegen::platform::Arch::AArch64 => {
+                        emitter.instruction(&format!("fmov {}, {}", bits_reg, abi::float_result_reg(emitter))); // move variadic float bits into the hash value register
+                    }
+                    crate::codegen::platform::Arch::X86_64 => {
+                        emitter.instruction(&format!("movq {}, {}", bits_reg, abi::float_result_reg(emitter))); // move variadic float bits into the hash value register
+                    }
+                }
+                (bits_reg, zero_reg)
+            }
+            PhpType::Str => {
+                let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+                (ptr_reg, len_reg)
+            }
+            _ => (result_reg, zero_reg),
+        };
+        emitter.instruction(&format!("mov {}, {}", value_lo_reg, val_lo));      // move the variadic value low word into the hash-set ABI register
+        emitter.instruction(&format!("mov {}, {}", value_hi_reg, val_hi));      // move the variadic value high word into the hash-set ABI register
+        abi::emit_load_int_immediate(
+            emitter,
+            value_tag_reg,
+            crate::codegen::runtime_value_tag(&elem_ty) as i64,
+        );
+        abi::emit_pop_reg_pair(emitter, key_ptr_reg, key_len_reg);              // restore the variadic hash key into the hash-set ABI registers
+        abi::emit_load_temporary_stack_slot(emitter, hash_capacity_reg, 0);
+        abi::emit_call_label(emitter, "__rt_hash_set");
+        abi::emit_store_to_address(emitter, result_reg, stack_reg, 0);
+    }
+
+    PhpType::AssocArray {
+        key: Box::new(PhpType::Mixed),
+        value: Box::new(container_elem_ty),
+    }
 }
 
 pub(crate) fn emit_spread_length_checks(

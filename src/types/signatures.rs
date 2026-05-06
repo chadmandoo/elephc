@@ -36,7 +36,11 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         | "empty" | "isset" | "unset" | "var_dump" | "print_r" => {
             Some(fixed(&["value"]))
         }
-        "settype" => Some(fixed(&["var", "type"])),
+        "settype" => {
+            let mut sig = fixed(&["var", "type"]);
+            sig.ref_params[0] = true;
+            Some(sig)
+        }
         "function_exists" => Some(fixed(&["function"])),
 
         "is_nan" | "is_finite" | "is_infinite" | "abs" | "floor" | "ceil" | "sqrt"
@@ -115,16 +119,17 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             vec![int_lit(0), string_lit("."), string_lit(",")],
         )),
 
-        "array_pop" | "array_shift" | "array_keys" | "array_values" | "array_reverse"
-        | "array_unique" | "array_flip" | "array_sum" | "array_product" | "array_rand"
-        | "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
-        | "arsort" | "ksort" | "krsort" => Some(fixed(&["array"])),
+        "array_pop" | "array_shift" => Some(first_param_ref(fixed(&["array"]))),
+        "array_keys" | "array_values" | "array_reverse" | "array_unique" | "array_flip"
+        | "array_sum" | "array_product" | "array_rand" => Some(fixed(&["array"])),
+        "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
+        | "arsort" | "ksort" | "krsort" => Some(first_param_ref(fixed(&["array"]))),
         "in_array" => Some(optional(&["needle", "haystack", "strict"], 2, vec![bool_lit(false)])),
         "array_key_exists" => Some(fixed(&["key", "array"])),
         "array_search" => {
             Some(optional(&["needle", "haystack", "strict"], 2, vec![bool_lit(false)]))
         }
-        "array_push" | "array_unshift" => Some(variadic(&["array"], "values")),
+        "array_push" | "array_unshift" => Some(first_param_ref(variadic(&["array"], "values"))),
         "array_merge" => Some(variadic(&[], "arrays")),
         "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
             Some(variadic(&["array"], "arrays"))
@@ -138,11 +143,11 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             2,
             vec![null_lit()],
         )),
-        "array_splice" => Some(optional(
+        "array_splice" => Some(first_param_ref(optional(
             &["array", "offset", "length"],
             2,
             vec![null_lit()],
-        )),
+        ))),
         "array_chunk" => Some(fixed(&["array", "length"])),
         "array_column" => Some(fixed(&["array", "column_key"])),
         "range" => Some(fixed(&["start", "end"])),
@@ -157,7 +162,9 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             2,
             vec![null_lit()],
         )),
-        "array_walk" | "usort" | "uksort" | "uasort" => Some(fixed(&["array", "callback"])),
+        "array_walk" | "usort" | "uksort" | "uasort" => {
+            Some(first_param_ref(fixed(&["array", "callback"])))
+        }
         "call_user_func" => Some(variadic(&["callback"], "args")),
         "call_user_func_array" => Some(fixed(&["callback", "args"])),
 
@@ -305,6 +312,13 @@ fn variadic(regular_params: &[&str], variadic_name: &str) -> FunctionSig {
     let mut defaults = vec![None; regular_params.len()];
     defaults.push(Some(Expr::new(ExprKind::ArrayLiteral(Vec::new()), Span::dummy())));
     make_sig(&params, defaults, Some(variadic_name))
+}
+
+fn first_param_ref(mut sig: FunctionSig) -> FunctionSig {
+    if let Some(first_ref) = sig.ref_params.first_mut() {
+        *first_ref = true;
+    }
+    sig
 }
 
 fn make_sig(params: &[&str], defaults: Vec<Option<Expr>>, variadic: Option<&str>) -> FunctionSig {

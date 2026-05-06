@@ -137,6 +137,14 @@ fn test_error_named_arguments_reject_unknown_builtin_parameter() {
 }
 
 #[test]
+fn test_error_named_arguments_reject_builtin_variadic_named_parameter() {
+    expect_error(
+        "<?php printf(format: \"%s\", values: \"hello\");",
+        "Builtin 'printf' has no parameter $values",
+    );
+}
+
+#[test]
 fn test_error_named_arguments_reject_positional_after_spread() {
     expect_error(
         "<?php function greet($name, $age) { echo $name; } $args = [\"Alice\"]; greet(...$args, 30);",

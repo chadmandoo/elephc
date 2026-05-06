@@ -145,6 +145,20 @@ echo gettype($value) . ":" . $value;
 }
 
 #[test]
+fn test_named_arguments_builtin_mutating_array_arg_keeps_original_variable() {
+    let out = compile_and_run(
+        r#"<?php
+$items = [3, 1, 2];
+sort(array: $items);
+foreach ($items as $item) {
+    echo $item;
+}
+"#,
+    );
+    assert_eq!(out, "123");
+}
+
+#[test]
 fn test_named_arguments_builtin_with_spread_prefix() {
     let out = compile_and_run(
         r#"<?php
@@ -153,6 +167,42 @@ echo str_repeat(...$args, times: 3);
 "#,
     );
     assert_eq!(out, "hahaha");
+}
+
+#[test]
+fn test_named_arguments_builtin_preserve_source_evaluation_order() {
+    let out = compile_and_run(
+        r#"<?php
+function string_arg() {
+    echo "s";
+    return "ha";
+}
+function times_arg() {
+    echo "t";
+    return 3;
+}
+echo ":" . str_repeat(times: times_arg(), string: string_arg());
+"#,
+    );
+    assert_eq!(out, "ts:hahaha");
+}
+
+#[test]
+fn test_named_arguments_builtin_after_spread_evaluates_spread_once() {
+    let out = compile_and_run(
+        r#"<?php
+function args() {
+    echo "x";
+    return ["ha"];
+}
+function times_arg() {
+    echo "t";
+    return 3;
+}
+echo ":" . str_repeat(...args(), times: times_arg());
+"#,
+    );
+    assert_eq!(out, "xt:hahaha");
 }
 
 #[test]
@@ -209,4 +259,123 @@ echo sum3(...$args, c: 30);
 "#,
     );
     assert!(err.contains("Fatal error: named argument spread length mismatch"));
+}
+
+#[test]
+fn test_named_arguments_preserve_source_evaluation_order() {
+    let out = compile_and_run(
+        r#"<?php
+function mark($label, $value) {
+    echo $label;
+    return $value;
+}
+function sum2($a, $b) {
+    echo ":";
+    echo $a + $b;
+}
+sum2(b: mark("b", 2), a: mark("a", 1));
+"#,
+    );
+    assert_eq!(out, "ba:3");
+}
+
+#[test]
+fn test_named_arguments_after_spread_evaluate_spread_once() {
+    let out = compile_and_run(
+        r#"<?php
+function args() {
+    echo "x";
+    return [10, 20];
+}
+function last() {
+    echo "c";
+    return 30;
+}
+function sum3($a, $b, $c) {
+    echo ":";
+    echo $a + $b + $c;
+}
+sum3(...args(), c: last());
+"#,
+    );
+    assert_eq!(out, "xc:60");
+}
+
+#[test]
+fn test_named_arguments_after_multiple_spreads() {
+    let out = compile_and_run(
+        r#"<?php
+function first() {
+    echo "a";
+    return [1];
+}
+function second() {
+    echo "b";
+    return [2];
+}
+function last() {
+    echo "c";
+    return 3;
+}
+function sum3($a, $b, $c) {
+    echo ":";
+    echo $a + $b + $c;
+}
+sum3(...first(), ...second(), c: last());
+"#,
+    );
+    assert_eq!(out, "abc:6");
+}
+
+#[test]
+fn test_named_arguments_after_spread_evaluate_later_named_before_runtime_error() {
+    let out = compile_and_run_capture(
+        r#"<?php
+function args() {
+    echo "s";
+    return [1, 2, 99];
+}
+function last() {
+    echo "c";
+    return 30;
+}
+function sum3($a, $b, $c) {
+    echo $a + $b + $c;
+}
+sum3(...args(), c: last());
+"#,
+    );
+    assert!(!out.success);
+    assert_eq!(out.stdout, "sc");
+    assert!(out.stderr.contains("Fatal error: named argument spread length mismatch"));
+}
+
+#[test]
+fn test_named_arguments_unknown_variadic_named_args_keep_string_keys() {
+    let out = compile_and_run(
+        r#"<?php
+function show($head, ...$rest) {
+    foreach ($rest as $key => $value) {
+        echo $key . "=" . $value . ";";
+    }
+}
+show(head: 1, extra: 2);
+"#,
+    );
+    assert_eq!(out, "extra=2;");
+}
+
+#[test]
+fn test_named_arguments_variadic_mixes_positional_and_named_extra_args() {
+    let out = compile_and_run(
+        r#"<?php
+function show($head, ...$rest) {
+    foreach ($rest as $key => $value) {
+        echo $key . "=" . $value . ";";
+    }
+}
+show(1, 2, extra: 3);
+"#,
+    );
+    assert_eq!(out, "0=2;extra=3;");
 }

@@ -442,7 +442,7 @@ my_func($a, $b, $c)
 4. `bl _fn_my_func` — branch with link (saves return address)
 5. Result is in `x0`/`d0`/`x1`+`x2` depending on return type
 
-Named-argument calls reuse the same outgoing-argument path after `src/codegen/expr/calls/args.rs` normalizes arguments into parameter order and inserts defaults. That keeps the ABI layer shared by functions, closures, methods, constructors, built-ins, and extern calls. The current representation is still expression-based, so out-of-order named arguments can be evaluated in normalized parameter order, and spread-prefix handling before later named arguments uses runtime length checks plus synthetic indexed reads. Multiple spread prefixes before a named argument and exact single-evaluation/source-order parity remain known gaps in this lowering.
+Named-argument calls split evaluation order from ABI order. `src/codegen/expr/calls/args.rs` evaluates source arguments left-to-right, stores any out-of-order values in temporary slots, validates spread prefixes after later named expressions have run, then materializes the final parameter list in ABI order. Spread prefixes before named arguments are evaluated once; multiple prefix spreads are combined before runtime length/overwrite checks. Built-in and extern named calls use the same source-order pre-evaluation step before their normalized positional emitters run; mutating built-ins mark their target parameter as ref-like so pre-evaluation does not redirect writes into a temporary.
 
 ## Closure codegen
 

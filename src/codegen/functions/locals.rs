@@ -266,8 +266,13 @@ fn collect_assignment_expr_vars(expr: &Expr, ctx: &mut Context, sig: &FunctionSi
             collect_assignment_expr_vars(then_expr, ctx, sig);
             collect_assignment_expr_vars(else_expr, ctx, sig);
         }
-        ExprKind::FunctionCall { args, .. }
-        | ExprKind::ClosureCall { args, .. }
+        ExprKind::FunctionCall { name, args } => {
+            collect_named_builtin_or_extern_call_temps(name.as_str(), expr.span, args, ctx, sig);
+            for arg in args {
+                collect_assignment_expr_vars(arg, ctx, sig);
+            }
+        }
+        ExprKind::ClosureCall { args, .. }
         | ExprKind::NewObject { args, .. }
         | ExprKind::StaticMethodCall { args, .. }
         | ExprKind::NewScopedObject { args, .. } => {
@@ -347,6 +352,144 @@ fn infer_conditional_assignment_temp_type(
     match &value.kind {
         ExprKind::NullCoalesce { default, .. } => infer_local_type(default, sig, Some(ctx)),
         _ => infer_local_type(value, sig, Some(ctx)),
+    }
+}
+
+fn collect_named_builtin_or_extern_call_temps(
+    name: &str,
+    call_span: crate::span::Span,
+    args: &[Expr],
+    ctx: &mut Context,
+    current_sig: &FunctionSig,
+) {
+    if !crate::codegen::expr::calls::args::has_named_args(args) {
+        return;
+    }
+    let Some(call_sig) = crate::types::builtin_call_sig(name)
+        .or_else(|| ctx.extern_functions.contains_key(name).then(|| ctx.functions.get(name).cloned()).flatten())
+    else {
+        return;
+    };
+    let regular_param_count =
+        crate::codegen::expr::calls::args::regular_param_count(Some(&call_sig), args.len());
+
+    if args.iter().any(|arg| matches!(arg.kind, ExprKind::Spread(_))) {
+        let first_named_pos = args
+            .iter()
+            .position(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }))
+            .unwrap_or(args.len());
+        let prefix_args = args[..first_named_pos].to_vec();
+        let prefix_span = prefix_args
+            .first()
+            .map(|arg| arg.span)
+            .unwrap_or(call_span);
+        let prefix_expr = if let [arg] = prefix_args.as_slice() {
+            if let ExprKind::Spread(inner) = &arg.kind {
+                (**inner).clone()
+            } else {
+                Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span)
+            }
+        } else {
+            Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span)
+        };
+        let prefix_name =
+            crate::codegen::expr::calls::args::named_call_prefix_temp_name(call_span);
+        if !ctx.variables.contains_key(&prefix_name) {
+            let static_ty = infer_local_type(&prefix_expr, current_sig, Some(ctx));
+            ctx.alloc_var_with_static_type(&prefix_name, static_ty.codegen_repr(), static_ty);
+        }
+        for (idx, arg) in args.iter().enumerate().skip(first_named_pos) {
+            if let ExprKind::NamedArg { name, value } = &arg.kind {
+                collect_named_call_value_temp(
+                    &call_sig,
+                    regular_param_count,
+                    call_span,
+                    idx,
+                    name,
+                    value,
+                    ctx,
+                    current_sig,
+                );
+            }
+        }
+    } else {
+        let mut positional_idx = 0usize;
+        for (idx, arg) in args.iter().enumerate() {
+            match &arg.kind {
+                ExprKind::NamedArg { name, value } => {
+                    collect_named_call_value_temp(
+                        &call_sig,
+                        regular_param_count,
+                        call_span,
+                        idx,
+                        name,
+                        value,
+                        ctx,
+                        current_sig,
+                    );
+                }
+                _ => {
+                    let is_ref = call_sig
+                        .ref_params
+                        .get(positional_idx)
+                        .copied()
+                        .unwrap_or(false);
+                    if !is_ref && !is_side_effect_free_literal(arg) {
+                        collect_call_arg_temp(call_span, idx, arg, ctx, current_sig);
+                    }
+                    positional_idx += 1;
+                }
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_named_call_value_temp(
+    call_sig: &FunctionSig,
+    regular_param_count: usize,
+    call_span: crate::span::Span,
+    arg_idx: usize,
+    name: &str,
+    value: &Expr,
+    ctx: &mut Context,
+    current_sig: &FunctionSig,
+) {
+    let is_ref = call_sig
+        .params
+        .iter()
+        .take(regular_param_count)
+        .position(|(param_name, _)| param_name == name)
+        .and_then(|param_idx| call_sig.ref_params.get(param_idx))
+        .copied()
+        .unwrap_or(false);
+    if !is_ref && !is_side_effect_free_literal(value) {
+        collect_call_arg_temp(call_span, arg_idx, value, ctx, current_sig);
+    }
+}
+
+fn is_side_effect_free_literal(expr: &Expr) -> bool {
+    matches!(
+        expr.kind,
+        ExprKind::StringLiteral(_)
+            | ExprKind::IntLiteral(_)
+            | ExprKind::FloatLiteral(_)
+            | ExprKind::BoolLiteral(_)
+            | ExprKind::Null
+    )
+}
+
+fn collect_call_arg_temp(
+    call_span: crate::span::Span,
+    arg_idx: usize,
+    value: &Expr,
+    ctx: &mut Context,
+    current_sig: &FunctionSig,
+) {
+    let temp_name = crate::codegen::expr::calls::args::named_call_arg_temp_name(call_span, arg_idx);
+    if !ctx.variables.contains_key(&temp_name) {
+        let static_ty = infer_local_type(value, current_sig, Some(ctx));
+        ctx.alloc_var_with_static_type(&temp_name, static_ty.codegen_repr(), static_ty);
     }
 }
 
