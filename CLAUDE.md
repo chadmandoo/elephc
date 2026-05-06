@@ -197,9 +197,10 @@ Do not list every builtin in this guide. `src/types/checker/builtins/catalog.rs`
 All function-like call surfaces must share the same argument rules instead of normalizing locally in individual emitters:
 
 - Shared named/positional/spread semantics live in `src/types/call_args.rs` whenever they are not codegen-specific.
-- The type checker and codegen must reuse shared helpers or planners for named-argument matching, duplicate detection, static associative-spread expansion, and the regular/variadic split. Do not reimplement those rules separately in checker and emitter code.
-- Type-checker validation and diagnostic mapping lives in `src/types/checker/functions/call_validation.rs`; it should consume the shared semantic helpers rather than owning the rules.
-- `src/codegen/expr/calls/args.rs` is call-argument orchestration: normalization entry points, spread checks, and ABI materialization. Source-order named/spread lowering lives in `src/codegen/expr/calls/args/named.rs`.
+- `src/types/call_args.rs` owns the semantic planner (`CallArgPlan` / `plan_call_args`). The checker and codegen should consume that plan; they should not rebuild named-argument matching, duplicate detection, static associative-spread expansion, spread bounds, or the regular/variadic split locally.
+- If a codegen surface uses an internal signature with hidden parameters, such as closure captures, pass the caller-visible regular parameter count through `plan_call_args_with_regular_param_count()` instead of letting the planner infer it from the full internal signature.
+- Type-checker validation and diagnostic mapping lives in `src/types/checker/functions/call_validation.rs`; it maps planner errors to `CompileError` diagnostics instead of owning the semantic rules.
+- `src/codegen/expr/calls/args.rs` is call-argument orchestration: planner consumption, spread checks, and ABI materialization. Source-order named/spread lowering lives in `src/codegen/expr/calls/args/named.rs` and must also consume the shared plan.
 - User-defined calls, builtins, and extern calls must use the same named/spread normalization rules before any callee-specific lowering runs.
 - PHP call unpacking with static string keys maps to named arguments (`f(...["a" => 1])` behaves like `f(a: 1)`). Static numeric keys remain positional.
 - When adding or extending a builtin, verify `first_class_callable_builtin_sig()` as well as the direct builtin signature so first-class callable syntax and callable aliases stay coherent.

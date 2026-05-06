@@ -362,107 +362,76 @@ fn collect_named_builtin_or_extern_call_temps(
     ctx: &mut Context,
     current_sig: &FunctionSig,
 ) {
-    let expanded_args = crate::types::call_args::expand_static_assoc_spread_args(args);
-    let args = expanded_args.as_slice();
-
-    if !crate::codegen::expr::calls::args::has_named_args(args) {
-        return;
-    }
-    let Some(call_sig) = crate::types::builtin_call_sig(name)
-        .or_else(|| ctx.extern_functions.contains_key(name).then(|| ctx.functions.get(name).cloned()).flatten())
-    else {
+    let call_sig = if ctx.extern_functions.contains_key(name) {
+        ctx.functions.get(name).cloned()
+    } else {
+        crate::types::builtin_call_sig(name)
+    };
+    let Some(call_sig) = call_sig else {
         return;
     };
-    let regular_param_count =
-        crate::codegen::expr::calls::args::regular_param_count(Some(&call_sig), args.len());
+    let Ok(plan) = crate::types::call_args::plan_call_args(
+        &call_sig,
+        args,
+        call_span,
+        false,
+        false,
+    ) else {
+        return;
+    };
+    if !plan.has_named_args() {
+        return;
+    }
 
-    if args.iter().any(|arg| matches!(arg.kind, ExprKind::Spread(_))) {
-        let first_named_pos = args
-            .iter()
-            .position(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }))
-            .unwrap_or(args.len());
-        let prefix_args = args[..first_named_pos].to_vec();
-        let prefix_span = prefix_args
-            .first()
-            .map(|arg| arg.span)
-            .unwrap_or(call_span);
-        let prefix_expr = if let [arg] = prefix_args.as_slice() {
-            if let ExprKind::Spread(inner) = &arg.kind {
-                (**inner).clone()
-            } else {
-                Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span)
-            }
-        } else {
-            Expr::new(ExprKind::ArrayLiteral(prefix_args), prefix_span)
-        };
+    if plan.has_spread_args() {
+        let first_named_pos = plan.first_named_pos.unwrap_or(plan.source_args.len());
+        let prefix_expr = plan
+            .positional_prefix_expr(call_span)
+            .unwrap_or_else(|| Expr::new(ExprKind::ArrayLiteral(Vec::new()), call_span));
         let prefix_name =
             crate::codegen::expr::calls::args::named_call_prefix_temp_name(call_span);
         if !ctx.variables.contains_key(&prefix_name) {
             let static_ty = infer_local_type(&prefix_expr, current_sig, Some(ctx));
             ctx.alloc_var_with_static_type(&prefix_name, static_ty.codegen_repr(), static_ty);
         }
-        for (idx, arg) in args.iter().enumerate().skip(first_named_pos) {
-            if let ExprKind::NamedArg { name, value } = &arg.kind {
-                collect_named_call_value_temp(
+        for source in &plan.source_values {
+            if source.source_index() >= first_named_pos {
+                collect_planned_call_value_temp(
                     &call_sig,
-                    regular_param_count,
                     call_span,
-                    idx,
-                    name,
-                    value,
+                    source.source_index(),
+                    source.param_idx(),
+                    source.expr(),
                     ctx,
                     current_sig,
                 );
             }
         }
     } else {
-        let mut positional_idx = 0usize;
-        for (idx, arg) in args.iter().enumerate() {
-            match &arg.kind {
-                ExprKind::NamedArg { name, value } => {
-                    collect_named_call_value_temp(
-                        &call_sig,
-                        regular_param_count,
-                        call_span,
-                        idx,
-                        name,
-                        value,
-                        ctx,
-                        current_sig,
-                    );
-                }
-                _ => {
-                    let is_ref = call_sig
-                        .ref_params
-                        .get(positional_idx)
-                        .copied()
-                        .unwrap_or(false);
-                    if !is_ref && !is_side_effect_free_literal(arg) {
-                        collect_call_arg_temp(call_span, idx, arg, ctx, current_sig);
-                    }
-                    positional_idx += 1;
-                }
-            }
+        for source in &plan.source_values {
+            collect_planned_call_value_temp(
+                &call_sig,
+                call_span,
+                source.source_index(),
+                source.param_idx(),
+                source.expr(),
+                ctx,
+                current_sig,
+            );
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn collect_named_call_value_temp(
+fn collect_planned_call_value_temp(
     call_sig: &FunctionSig,
-    regular_param_count: usize,
     call_span: crate::span::Span,
     arg_idx: usize,
-    name: &str,
+    param_idx: Option<usize>,
     value: &Expr,
     ctx: &mut Context,
     current_sig: &FunctionSig,
 ) {
-    let is_ref = call_sig
-        .params
-        .iter()
-        .take(regular_param_count)
-        .position(|(param_name, _)| param_name == name)
+    let is_ref = param_idx
         .and_then(|param_idx| call_sig.ref_params.get(param_idx))
         .copied()
         .unwrap_or(false);

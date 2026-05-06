@@ -1,24 +1,17 @@
 use crate::codegen::emit::Emitter;
 use crate::codegen::{abi, context::Context, data_section::DataSection, functions};
-use crate::names::Name;
-use crate::parser::ast::{BinOp, Expr, ExprKind};
+use crate::parser::ast::{Expr, ExprKind};
 use crate::span::Span;
-use crate::types::call_args::{self, NamedParamMatch, NamedParamTracker, PrefixArg};
+use crate::types::call_args::{self, SpreadBoundsCheck};
 use crate::types::{FunctionSig, PhpType};
 
 mod named;
 
 pub(crate) use named::pushed_temp_bytes;
 
-pub(crate) struct SpreadLengthCheck {
-    pub(crate) spread_expr: Expr,
-    pub(crate) min_len: usize,
-    pub(crate) max_len: usize,
-}
-
 pub(crate) struct NormalizedCallArgs {
     pub(crate) args: Vec<Expr>,
-    pub(crate) spread_length_checks: Vec<SpreadLengthCheck>,
+    pub(crate) spread_length_checks: Vec<SpreadBoundsCheck>,
 }
 
 pub(crate) struct PreparedCallArgs {
@@ -29,7 +22,7 @@ pub(crate) struct PreparedCallArgs {
     pub(crate) regular_param_count: usize,
     pub(crate) is_variadic: bool,
     pub(crate) spread_into_named: bool,
-    pub(crate) spread_length_checks: Vec<SpreadLengthCheck>,
+    pub(crate) spread_length_checks: Vec<SpreadBoundsCheck>,
 }
 
 pub(crate) struct EmittedCallArgs {
@@ -269,182 +262,19 @@ fn normalize_call_args(
     trim_trailing_defaults: bool,
     allow_unknown_named_variadic: bool,
 ) -> NormalizedCallArgs {
-    let expanded_args = call_args::expand_static_assoc_spread_args(args);
-    let args = expanded_args.as_slice();
-
-    if !has_named_args(args) {
-        return NormalizedCallArgs {
-            args: args.to_vec(),
-            spread_length_checks: Vec::new(),
-        };
-    }
-
-    let mut named_values: Vec<Option<Expr>> = vec![None; regular_param_count];
-    let mut named_tracker = NamedParamTracker::new(regular_param_count);
-    let mut prefix_args = Vec::new();
-    let mut variadic_args = Vec::new();
-    let mut seen_named = false;
-    let mut seen_spread = false;
-    let mut spread_length_checks = Vec::new();
-
-    for arg in args {
-        match &arg.kind {
-            ExprKind::NamedArg { name, value } => {
-                seen_named = true;
-                match named_tracker.assign(
-                    sig,
-                    regular_param_count,
-                    name,
-                    allow_unknown_named_variadic,
-                ) {
-                    Ok(NamedParamMatch::Regular(param_idx)) => {
-                        named_values[param_idx] = Some((**value).clone());
-                    }
-                    Ok(NamedParamMatch::Variadic) => {
-                        variadic_args.push(Expr::new(
-                            ExprKind::NamedArg {
-                                name: name.clone(),
-                                value: value.clone(),
-                            },
-                            arg.span,
-                        ));
-                    }
-                    Ok(NamedParamMatch::Unknown) | Err(_) => {}
-                }
-            }
-            ExprKind::Spread(inner) => {
-                if !seen_named {
-                    seen_spread = true;
-                    prefix_args.push(PrefixArg::Spread((**inner).clone(), arg.span));
-                }
-            }
-            _ => {
-                if !seen_named && !seen_spread {
-                    prefix_args.push(PrefixArg::Positional(arg.clone()));
-                }
-            }
-        }
-    }
-
-    let mut resolved: Vec<Option<Expr>> = vec![None; regular_param_count];
-    let mut positional_idx = 0usize;
-
-    for prefix_arg in prefix_args {
-        match prefix_arg {
-            PrefixArg::Positional(arg) => {
-                if positional_idx < regular_param_count {
-                    resolved[positional_idx] = Some(arg);
-                } else {
-                    variadic_args.push(arg);
-                }
-                positional_idx += 1;
-            }
-            PrefixArg::Spread(inner, spread_span) => {
-                let next_named_idx = (positional_idx..regular_param_count)
-                    .find(|idx| named_values[*idx].is_some())
-                    .unwrap_or(regular_param_count);
-                let max_len = next_named_idx.saturating_sub(positional_idx);
-                let min_len = (positional_idx..next_named_idx)
-                    .rfind(|idx| sig.defaults.get(*idx).and_then(|default| default.as_ref()).is_none())
-                    .map(|idx| idx - positional_idx + 1)
-                    .unwrap_or(0);
-                spread_length_checks.push(SpreadLengthCheck {
-                    spread_expr: inner.clone(),
-                    min_len,
-                    max_len,
-                });
-                for element_idx in 0..max_len {
-                    let default = sig
-                        .defaults
-                        .get(positional_idx)
-                        .and_then(|default| default.as_ref());
-                    resolved[positional_idx] = Some(if let Some(default) = default {
-                        spread_element_or_default_expr(
-                            &inner,
-                            element_idx,
-                            default.clone(),
-                            spread_span,
-                        )
-                    } else {
-                        spread_element_expr(&inner, element_idx, spread_span)
-                    });
-                    positional_idx += 1;
-                }
-            }
-        }
-    }
-
-    for (idx, named_value) in named_values.into_iter().enumerate() {
-        if let Some(value) = named_value {
-            resolved[idx] = Some(value);
-        }
-    }
-
-    let mut normalized = Vec::new();
-    let output_len = if trim_trailing_defaults {
-        resolved
-            .iter()
-            .rposition(|slot| slot.is_some())
-            .map(|idx| idx + 1)
-            .unwrap_or(0)
-    } else {
-        regular_param_count
-    };
-    for (idx, slot) in resolved.into_iter().take(output_len).enumerate() {
-        if let Some(arg) = slot {
-            normalized.push(arg);
-        } else if let Some(Some(default_expr)) = sig.defaults.get(idx) {
-            normalized.push(default_expr.clone());
-        }
-    }
-    normalized.extend(variadic_args);
+    let plan = call_args::plan_call_args_with_regular_param_count(
+        sig,
+        args,
+        Span::dummy(),
+        regular_param_count,
+        trim_trailing_defaults,
+        allow_unknown_named_variadic,
+    )
+    .expect("codegen received invalid call arguments after type checking");
     NormalizedCallArgs {
-        args: normalized,
-        spread_length_checks,
+        args: plan.normalized_args(),
+        spread_length_checks: plan.spread_bounds_checks,
     }
-}
-
-fn spread_element_expr(spread_expr: &Expr, element_idx: usize, span: Span) -> Expr {
-    Expr::new(
-        ExprKind::ArrayAccess {
-            array: Box::new(spread_expr.clone()),
-            index: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
-        },
-        span,
-    )
-}
-
-fn spread_element_or_default_expr(
-    spread_expr: &Expr,
-    element_idx: usize,
-    default_expr: Expr,
-    span: Span,
-) -> Expr {
-    Expr::new(
-        ExprKind::Ternary {
-            condition: Box::new(Expr::new(
-                ExprKind::BinaryOp {
-                    left: Box::new(spread_len_expr(spread_expr, span)),
-                    op: BinOp::Gt,
-                    right: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
-                },
-                span,
-            )),
-            then_expr: Box::new(spread_element_expr(spread_expr, element_idx, span)),
-            else_expr: Box::new(default_expr),
-        },
-        span,
-    )
-}
-
-fn spread_len_expr(spread_expr: &Expr, span: Span) -> Expr {
-    Expr::new(
-        ExprKind::FunctionCall {
-            name: Name::unqualified("count"),
-            args: vec![spread_expr.clone()],
-        },
-        span,
-    )
 }
 
 pub(crate) fn prepare_call_args(
@@ -697,7 +527,7 @@ pub(crate) fn emit_pushed_call_args(
 }
 
 pub(crate) fn emit_spread_length_checks(
-    checks: &[SpreadLengthCheck],
+    checks: &[SpreadBoundsCheck],
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
