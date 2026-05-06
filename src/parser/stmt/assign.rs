@@ -1,13 +1,17 @@
 mod compound;
+mod list;
 mod locals;
 mod postfix;
 mod simple;
 
+pub(super) use list::{
+    parse_list_construct_unpack,
+    parse_list_unpack,
+};
 pub(super) use locals::{
     looks_like_typed_assign,
     parse_global,
     parse_incdec_stmt,
-    parse_list_unpack,
     parse_static_var,
     parse_typed_assign,
 };

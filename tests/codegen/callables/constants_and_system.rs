@@ -156,6 +156,74 @@ fn test_list_unpack_two_vars() {
     assert_eq!(out, "141");
 }
 
+#[test]
+fn test_list_unpack_skipped_entries() {
+    let out = compile_and_run(
+        "<?php\n[$first, , $third,] = [10, 20, 30];\necho $first . \" \" . $third;\n",
+    );
+    assert_eq!(out, "10 30");
+}
+
+#[test]
+fn test_list_unpack_nested_patterns() {
+    let out = compile_and_run(
+        "<?php\n[[$a, $b], [$c, $d]] = [[1, 2], [3, 4]];\necho $a . $b . $c . $d;\n",
+    );
+    assert_eq!(out, "1234");
+}
+
+#[test]
+fn test_list_unpack_associative_keys() {
+    let out = compile_and_run(
+        "<?php\n[\"name\" => $name, \"id\" => $id] = [\"id\" => 7, \"name\" => \"Ada\"];\necho $id . \":\" . $name;\n",
+    );
+    assert_eq!(out, "7:Ada");
+}
+
+#[test]
+fn test_list_unpack_associative_keys_allow_trailing_comma() {
+    let out = compile_and_run("<?php\n[\"id\" => $id,] = [\"id\" => 7];\necho $id;\n");
+    assert_eq!(out, "7");
+}
+
+#[test]
+fn test_list_unpack_dynamic_associative_key() {
+    let out = compile_and_run(
+        "<?php\n$key = \"id\";\n[$key => $id] = [\"id\" => 7];\necho $id;\n",
+    );
+    assert_eq!(out, "7");
+}
+
+#[test]
+fn test_list_construct_unpack_with_skipped_entries() {
+    let out = compile_and_run("<?php\nlist($a, , $c) = [1, 2, 3];\necho $a . $c;\n");
+    assert_eq!(out, "13");
+}
+
+#[test]
+fn test_list_unpack_array_append_target() {
+    let out = compile_and_run(
+        "<?php\n$items = [0];\n[$items[0], $items[]] = [5, 6];\necho $items[0] . \" \" . $items[1];\n",
+    );
+    assert_eq!(out, "5 6");
+}
+
+#[test]
+fn test_list_unpack_object_property_target() {
+    let out = compile_and_run(
+        "<?php\nclass Box { public int $x = 0; }\n$box = new Box();\n[$box->x] = [42];\necho $box->x;\n",
+    );
+    assert_eq!(out, "42");
+}
+
+#[test]
+fn test_list_unpack_static_property_targets() {
+    let out = compile_and_run(
+        "<?php\nclass Bag { public static array $items = [0]; }\n[Bag::$items[0], Bag::$items[]] = [7, 8];\necho Bag::$items[0] . \" \" . Bag::$items[1];\n",
+    );
+    assert_eq!(out, "7 8");
+}
+
 // --- call_user_func_array ---
 
 #[test]

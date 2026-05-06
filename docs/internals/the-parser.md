@@ -124,7 +124,7 @@ Things that do something:
 | `NamespaceDecl { name: Option<Name> }` | `namespace App\Core;`, `namespace;` |
 | `NamespaceBlock { name: Option<Name>, body }` | `namespace App\Core { ... }`, `namespace { ... }` |
 | `UseDecl { imports }` | `use App\Lib\Tool;`, `use function App\fn as helper;`, `use Vendor\Pkg\{Thing, Other as Alias};` |
-| `ListUnpack { vars, value }` | `[$a, $b] = [1, 2];` |
+| `ListUnpack { vars, value }` | `[$a, $b] = [1, 2];` for simple local positional destructuring; skipped, keyed, nested, and non-local destructuring patterns lower to `Synthetic` assignment statements |
 | `Global { vars }` | `global $x, $y;` — declares variables as referencing global storage |
 | `StaticVar { name, init }` | `static $count = 0;` — declares a variable that persists across function calls |
 | `ClassDecl { name, extends, implements, is_abstract, is_final, is_readonly_class, trait_uses, properties, methods }` | `final readonly class Point extends Shape implements Named { use NamedTrait; ... }` |
@@ -434,7 +434,7 @@ Statement parsing is simpler — after `parse()` has peeled off top-level `exter
 | `Use` | Namespace import declaration (`use Foo\Bar;`, `use function Foo\bar as baz;`) |
 | `Global` | Global variable declaration (`global $x, $y;`) |
 | `Static` | Static variable declaration (`static $count = 0;`) |
-| `[` | List unpacking (`[$a, $b] = expr;`) |
+| `[` | List destructuring (`[$a, , $c] = expr;`, `["id" => $id] = expr;`) |
 | `Identifier` + `(` | Expression statement (function call) |
 | Internal lowering, no source token | `Synthetic` statement sequence used for temporary-backed lowering of effectful compound assignment targets |
 

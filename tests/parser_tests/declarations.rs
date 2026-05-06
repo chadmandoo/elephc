@@ -108,6 +108,100 @@ fn test_list_unpack_three_vars() {
     }
 }
 
+#[test]
+fn test_list_unpack_skipped_entries_lowers_to_synthetic_assignments() {
+    let stmts = parse_source("<?php [$a, , $c] = [10, 20, 30];");
+    assert_eq!(stmts.len(), 1);
+    let StmtKind::Synthetic(stmts) = &stmts[0].kind else {
+        panic!("Expected Synthetic list unpack");
+    };
+    assert_eq!(stmts.len(), 3);
+    match &stmts[1].kind {
+        StmtKind::Assign { name, value } => {
+            assert_eq!(name, "a");
+            match &value.kind {
+                ExprKind::ArrayAccess { index, .. } => {
+                    assert_eq!(index.kind, ExprKind::IntLiteral(0));
+                }
+                other => panic!("Expected array access, got {:?}", other),
+            }
+        }
+        other => panic!("Expected Assign, got {:?}", other),
+    }
+    match &stmts[2].kind {
+        StmtKind::Assign { name, value } => {
+            assert_eq!(name, "c");
+            match &value.kind {
+                ExprKind::ArrayAccess { index, .. } => {
+                    assert_eq!(index.kind, ExprKind::IntLiteral(2));
+                }
+                other => panic!("Expected array access, got {:?}", other),
+            }
+        }
+        other => panic!("Expected Assign, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_list_unpack_keyed_entries_lowers_with_key_accesses() {
+    let stmts = parse_source("<?php [\"id\" => $id, \"name\" => $name] = $row;");
+    assert_eq!(stmts.len(), 1);
+    let StmtKind::Synthetic(stmts) = &stmts[0].kind else {
+        panic!("Expected Synthetic list unpack");
+    };
+    assert_eq!(stmts.len(), 3);
+    match &stmts[1].kind {
+        StmtKind::Assign { name, value } => {
+            assert_eq!(name, "id");
+            match &value.kind {
+                ExprKind::ArrayAccess { index, .. } => {
+                    assert_eq!(index.kind, ExprKind::StringLiteral("id".to_string()));
+                }
+                other => panic!("Expected array access, got {:?}", other),
+            }
+        }
+        other => panic!("Expected Assign, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_list_unpack_nested_pattern_lowers_to_nested_temp() {
+    let stmts = parse_source("<?php [[$a, $b], $c] = [[1, 2], [3, 4]];");
+    assert_eq!(stmts.len(), 1);
+    let StmtKind::Synthetic(stmts) = &stmts[0].kind else {
+        panic!("Expected Synthetic list unpack");
+    };
+    assert_eq!(stmts.len(), 5);
+    assert!(matches!(&stmts[1].kind, StmtKind::Assign { .. }));
+    assert!(matches!(&stmts[2].kind, StmtKind::Assign { name, .. } if name == "a"));
+    assert!(matches!(&stmts[3].kind, StmtKind::Assign { name, .. } if name == "b"));
+    assert!(matches!(&stmts[4].kind, StmtKind::Assign { name, .. } if name == "c"));
+}
+
+#[test]
+fn test_list_construct_unpack_is_supported() {
+    let stmts = parse_source("<?php list($a, $b) = [1, 2];");
+    assert_eq!(stmts.len(), 1);
+    match &stmts[0].kind {
+        StmtKind::ListUnpack { vars, .. } => {
+            assert_eq!(vars, &["a".to_string(), "b".to_string()]);
+        }
+        other => panic!("Expected ListUnpack, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_list_unpack_non_local_targets_lowers_to_target_assignments() {
+    let stmts = parse_source("<?php [$items[], $box->x] = [1, 2];");
+    assert_eq!(stmts.len(), 1);
+    let StmtKind::Synthetic(stmts) = &stmts[0].kind else {
+        panic!("Expected Synthetic list unpack");
+    };
+    assert_eq!(stmts.len(), 3);
+    assert!(matches!(&stmts[1].kind, StmtKind::ArrayPush { array, .. } if array == "items"));
+    assert!(matches!(&stmts[2].kind, StmtKind::PropertyAssign { property, .. } if property == "x"));
+}
+
 // --- Global ---
 
 #[test]

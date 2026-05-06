@@ -38,56 +38,6 @@ pub(in crate::parser::stmt) fn parse_incdec_stmt(
     Ok(Stmt::new(StmtKind::ExprStmt(expr), span))
 }
 
-pub(in crate::parser::stmt) fn parse_list_unpack(
-    tokens: &[(Token, Span)],
-    pos: &mut usize,
-    span: Span,
-) -> Result<Stmt, CompileError> {
-    *pos += 1; // consume '['
-
-    let mut vars = Vec::new();
-    while *pos < tokens.len() && tokens[*pos].0 != Token::RBracket {
-        if !vars.is_empty() {
-            if tokens[*pos].0 != Token::Comma {
-                return Err(CompileError::new(
-                    tokens[*pos].1,
-                    "Expected ',' between list variables",
-                ));
-            }
-            *pos += 1;
-        }
-        match tokens.get(*pos).map(|(t, _)| t) {
-            Some(Token::Variable(n)) => {
-                vars.push(n.clone());
-                *pos += 1;
-            }
-            _ => {
-                return Err(CompileError::new(
-                    span,
-                    "Expected variable in list unpacking",
-                ))
-            }
-        }
-    }
-
-    if *pos >= tokens.len() || tokens[*pos].0 != Token::RBracket {
-        return Err(CompileError::new(span, "Expected ']' after list variables"));
-    }
-    *pos += 1;
-
-    expect_token(
-        tokens,
-        pos,
-        &Token::Assign,
-        "Expected '=' after list pattern",
-    )?;
-
-    let value = parse_assignment_value_expr(tokens, pos)?;
-    expect_semicolon(tokens, pos)?;
-
-    Ok(Stmt::new(StmtKind::ListUnpack { vars, value }, span))
-}
-
 pub(in crate::parser::stmt) fn parse_global(
     tokens: &[(Token, Span)],
     pos: &mut usize,
