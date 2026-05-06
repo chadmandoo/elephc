@@ -56,6 +56,7 @@ Things that have a value:
 | `Throw(Expr)` | `throw new Exception("boom")` | Throw expression node used both in statements and expression positions such as `??` or ternaries |
 | `Print(Expr)` | `print $x` | PHP print expression. It writes the operand and returns `1`; statement-form `print $x;` is represented as `ExprStmt(Print(...))`. |
 | `NullCoalesce { value, default }` | `$x ?? $y` | Returns `$x` if non-null, otherwise `$y` |
+| `Assignment { target, value, result_target, prelude, conditional_value_temp }` | `$x = 1`, `$arr[$i] ??= "fallback"` | Assignment expression. Complex targets can carry prelude statements and synthetic temporaries so side effects are evaluated once while the assignment still returns the assigned value. |
 | `PreIncrement(String)` | `++$i` | Returns new value |
 | `PostIncrement(String)` | `$i++` | Returns old value |
 | `PreDecrement(String)` | `--$i` | |
@@ -118,6 +119,7 @@ Things that do something:
 | `IncludeOnceMark { label }` | Internal resolver lowering for regular `include` / `require`, marking the resolved file as loaded for later `*_once` guards |
 | `IncludeOnceGuard { label, body }` | Internal resolver lowering for `include_once` / `require_once`; codegen checks a per-file flag before emitting the guarded body |
 | `Throw(Expr)` | `throw new Exception("boom");` |
+| `Synthetic(Vec<Stmt>)` | Internal lowering only; a source construct that has already been expanded into one or more ordinary statements before final codegen |
 | `Try { try_body, catches, finally_body }` | `try { ... } catch (Exception $e) { ... } finally { ... }` |
 | `ConstDecl { name, value }` | `const MAX = 100;` |
 | `IfDef { symbol, then_body, else_body }` | `ifdef DEBUG { ... } else { ... }` |

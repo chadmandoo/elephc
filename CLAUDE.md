@@ -21,7 +21,7 @@ The compiler outputs a native binary next to the source file (e.g., `file.php` �
 ### Running tests
 
 ```bash
-cargo test                          # run all tests (slow — ~5-6 min due to as+ld per codegen test)
+cargo test                          # run all tests (slow — ~9 min due to as+ld per codegen test)
 cargo test -- --include-ignored     # run ALL tests including those requiring external libs
 cargo test --test codegen_tests     # run only end-to-end tests
 cargo test test_fizzbuzz            # run a specific test
@@ -137,7 +137,7 @@ PHP source → Lexer → Parser → Magic constants → Conditional compilation 
 1. Add token to `src/lexer/token.rs`
 2. Add scanning logic to `src/lexer/scan.rs`
 3. Add `BinOp` variant to `src/parser/ast.rs`
-4. Add one line to `infix_bp()` in `src/parser/expr.rs` (the Pratt parser binding power table)
+4. Add one line to `infix_bp()` in `src/parser/expr/pratt.rs` (the Pratt parser binding power table)
 5. Add type checking/inference in the relevant `src/types/checker/` file, usually under `inference/ops.rs` or expression inference
 6. Add optimizer/effect handling when the operator can be folded, propagated, pruned, or has side effects
 7. Add target-aware codegen in the relevant file under `src/codegen/expr/` (and only touch `src/codegen/expr.rs` if the dispatcher must learn about a new helper path)
@@ -202,10 +202,11 @@ All function-like call surfaces must share the same argument rules instead of no
 - Type-checker validation and diagnostic mapping lives in `src/types/checker/functions/call_validation.rs`; it maps planner errors to `CompileError` diagnostics instead of owning the semantic rules.
 - `src/codegen/expr/calls/args.rs` is call-argument orchestration: planner consumption, spread checks, and ABI materialization. Source-order named/spread lowering lives in `src/codegen/expr/calls/args/named.rs` and must also consume the shared plan.
 - User-defined calls, builtins, and extern calls must use the same named/spread normalization rules before any callee-specific lowering runs.
-- PHP call unpacking with static string keys maps to named arguments (`f(...["a" => 1])` behaves like `f(a: 1)`). Static numeric keys remain positional.
+- PHP call unpacking with static string keys maps to named arguments (`f(...["a" => 1])` behaves like `f(a: 1)`). Static numeric keys remain positional, and duplicate static string keys inside one unpack use PHP's last-wins behavior before planning.
 - When adding or extending a builtin, verify `first_class_callable_builtin_sig()` as well as the direct builtin signature so first-class callable syntax and callable aliases stay coherent.
-- PHP source evaluation order is distinct from ABI parameter order. Preserve side effects in source order, then materialize arguments in parameter/ABI order.
-- Spread arguments before named arguments must be evaluated once, length/overwrite checks must happen at the PHP-observable point, and later named-argument side effects must not be skipped by early codegen checks.
+- PHP source evaluation order is distinct from ABI parameter order. Preserve side effects in source order, then materialize arguments in parameter/ABI order; extern calls follow the same rule before C ABI register loading.
+- Spread arguments before named arguments must be evaluated once, length/overwrite checks must happen at the PHP-observable point, and later named-argument side effects must not be skipped by early codegen checks. Too-short spreads for required parameters must fail instead of reading past the array payload.
+- A positional spread into a variadic callee fills visible regular parameters first; only the remaining tail becomes the variadic array.
 - User-defined variadics accept unknown named arguments as string-keyed variadic entries; internal/builtin variadics reject unknown named arguments like PHP internals.
 - Ref-like parameters, including mutating builtin parameters, must avoid value-temp preevaluation so the original storage is passed/mutated.
 - If hidden named-argument temporaries are introduced, update `src/codegen/functions/locals.rs` and main emission so slots are allocated before frame-size calculation.

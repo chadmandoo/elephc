@@ -50,6 +50,10 @@ $left = ["a"];
 echo strcmp(...$left, right: "b");
 ```
 
+Argument expressions are evaluated in PHP source order, then elephc loads the
+resulting values into the target C ABI registers. This matters when positional,
+named, or spread arguments have side effects.
+
 ## Callbacks
 ```php
 <?php
