@@ -65,6 +65,11 @@ pub fn parse_stmt(tokens: &[(Token, Span)], pos: &mut usize) -> Result<Stmt, Com
         | Token::Parent
         | Token::Backslash
         | Token::Question => {
+            if matches!(&tokens[*pos].0, Token::Identifier(name) if name.eq_ignore_ascii_case("list"))
+                && matches!(tokens.get(*pos + 1).map(|(token, _)| token), Some(Token::LParen))
+            {
+                return assign::parse_list_construct_unpack(tokens, pos, span);
+            }
             if assign::looks_like_typed_assign(tokens, *pos) {
                 return assign::parse_typed_assign(tokens, pos, span);
             }

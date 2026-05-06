@@ -101,6 +101,19 @@ echo "\n";
 [$first, $second] = [$numbers[0], $numbers[1]];
 echo "First two: " . $first . ", " . $second . "\n";
 
+[$first, , $third] = [$numbers[0], $numbers[1], $numbers[2]];
+echo "Skipped middle: " . $first . ", " . $third . "\n";
+
+[[$top_left, $top_right], [$bottom_left, $bottom_right]] = [[1, 2], [3, 4]];
+echo "Nested: " . $top_left . $top_right . $bottom_left . $bottom_right . "\n";
+
+["name" => $person, "role" => $role] = ["role" => "admin", "name" => "Ada"];
+echo "Keyed: " . $person . " is " . $role . "\n";
+
+$picked = [0];
+[$picked[0], $picked[]] = [7, 8];
+echo "Targets: " . $picked[0] . ", " . $picked[1] . "\n";
+
 // array_column on associative rows
 $users = [
     ["name" => "Ada", "score" => 10],

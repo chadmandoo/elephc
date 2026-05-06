@@ -392,7 +392,7 @@ does not require a new backend or product mode.
 - [x] Conditional include function variants — when mutually exclusive `if` / `elseif` / `else` branches include different files that declare the same function name with identical signatures, compile each declaration as a hidden variant and dispatch the public function name to the variant loaded at runtime
 - [x] Mixed nullsafe/member chains — match PHP's full chain semantics for forms that mix `?->` and `->`, such as `$a?->b->c`
 - [x] Dynamic `instanceof` targets — support PHP forms such as `$obj instanceof $className` with runtime validation for class-string/object target expressions
-- [ ] Full PHP list destructuring — skipped entries, nested patterns, associative-key destructuring, and non-local destructuring targets where PHP permits them
+- [x] Full PHP list destructuring — skipped entries, nested patterns, associative-key destructuring, and non-local destructuring targets where PHP permits them
 - [ ] Named-argument parity for built-ins, extern calls, and spread — extend validation/lowering outside user-defined calls and handle spread interactions
 - [ ] Full first-class callable targets — support `static::method(...)` and `$object->method(...)` in addition to function, `ClassName::`, `self::`, and `parent::` targets
 - [ ] Captured closures as callback values — forward hidden `use (...)` environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`

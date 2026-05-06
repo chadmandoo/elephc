@@ -654,11 +654,13 @@ At program startup, `_main` evaluates static property defaults and stores them i
 [$a, $b, $c] = [10, 20, 30];
 ```
 
-`ListUnpack` destructures an indexed array into individual variables. The codegen:
+Simple local positional destructuring remains a `ListUnpack` statement. The codegen:
 
 1. Evaluates the right-hand side expression (an array)
 2. Saves the array pointer on the stack
 3. For each variable in the list: loads the element at the corresponding index from the array, stores it into the variable's stack slot, and marks heap-backed elements as borrowed aliases of the source container
+
+Richer PHP destructuring patterns are lowered by the parser into ordinary synthetic assignments before checking and codegen. Skipped entries simply emit no assignment, keyed entries become array reads with the given key, nested patterns bind a hidden temporary for the nested source array, and non-local targets reuse the same assignment emitters as `$arr[$i] = ...`, `$arr[] = ...`, `$obj->prop = ...`, and static-property writes.
 
 ### If / Elseif / Else
 

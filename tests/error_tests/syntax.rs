@@ -25,6 +25,29 @@ fn test_error_unexpected_character() {
     expect_error("<?php `", "Unexpected character");
 }
 
+#[test]
+fn test_error_empty_list_destructuring_pattern() {
+    expect_error("<?php [] = [1];", "Cannot use empty list");
+}
+
+#[test]
+fn test_error_list_destructuring_all_skipped() {
+    expect_error("<?php [, ,] = [1, 2];", "Cannot use empty list");
+}
+
+#[test]
+fn test_error_list_destructuring_mixes_keyed_and_unkeyed_entries() {
+    expect_error(
+        "<?php [$a, \"id\" => $id] = [1, \"id\" => 2];",
+        "Cannot mix keyed and unkeyed list entries",
+    );
+}
+
+#[test]
+fn test_error_list_destructuring_requires_writable_target() {
+    expect_error("<?php [1 + 2] = [3];", "Invalid list destructuring target");
+}
+
 // --- Numeric literal errors ---
 
 #[test]

@@ -89,6 +89,33 @@ $matrix = [[1, 2], [3, 4]];
 echo $matrix[0][1];    // 2
 ```
 
+## Array destructuring
+
+Array destructuring assigns array elements to writable targets. Both short syntax and `list(...)` are supported.
+
+```php
+<?php
+[$first, , $third] = [10, 20, 30];
+echo $first; // 10
+echo $third; // 30
+
+list($left, $right) = [1, 2];
+```
+
+Patterns can be nested, keyed, and can write to the same target forms as ordinary assignments.
+
+```php
+<?php
+[[$a, $b], [$c, $d]] = [[1, 2], [3, 4]];
+
+["name" => $name, "role" => $role] = ["role" => "admin", "name" => "Ada"];
+
+$items = [0];
+[$items[0], $items[]] = [5, 6];
+```
+
+PHP does not allow keyed and unkeyed entries in the same destructuring pattern, and elephc reports that as a compile-time error.
+
 ## Built-in array functions
 
 | Function | Signature | Description |
