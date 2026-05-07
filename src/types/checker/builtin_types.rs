@@ -242,8 +242,9 @@ fn builtin_fiber_methods() -> Vec<ClassMethod> {
             span,
         },
         // start(): mixed — bodies are dummy because codegen intercepts the call.
-        // (Variadic ...$args support is deferred — closures captured by Fiber currently
-        // receive no arguments at start time.)
+        // The checker patches this to seven optional Mixed parameters below;
+        // the generated Fiber entry wrapper adapts those cells to the callback
+        // ABI and keeps `use(...)` captures in reserved Fiber slots.
         ClassMethod {
             name: "start".to_string(),
             visibility: Visibility::Public,
@@ -391,9 +392,8 @@ pub(crate) fn patch_builtin_fiber_signatures(checker: &mut Checker) {
         // — that exhausts the AArch64 integer arg registers available after
         // $this. Each slot has a `null` default so $f->start() with no args
         // still type-checks, while $f->start($a, $b) fills slots 0..2 and
-        // leaves slots 2..7 at the null default. Closures with `use(...)`
-        // captures are not yet supported — captures would be passed as
-        // trailing arguments, which we cannot supply from here.
+        // leaves slots 2..7 at the null default. `new Fiber(...)` validation
+        // checks the callback signature and capture slot budgets separately.
         let span = crate::span::Span::dummy();
         sig.params = (0..7)
             .map(|i| (format!("arg{}", i), PhpType::Mixed))

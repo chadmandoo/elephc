@@ -62,7 +62,7 @@ pub fn emit_fiber_throw_state_error(emitter: &mut Emitter) {
 /// __rt_fiber_construct: allocate and initialise a Fiber object.
 /// Input:  x0 = callable (closure object pointer; may be NULL for diagnostics)
 ///         x1 = class_id assigned by the type checker for the Fiber class
-///         x2 = optional wrapper entry that adapts Fiber Mixed traffic to the callable ABI
+///         x2 = wrapper entry that adapts Fiber Mixed traffic to the callable ABI
 /// Output: x0 = pointer to the new Fiber object (16-byte heap header sits at -8)
 pub fn emit_fiber_construct(emitter: &mut Emitter) {
     if emitter.target.arch == Arch::X86_64 {
