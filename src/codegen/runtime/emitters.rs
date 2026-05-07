@@ -265,7 +265,6 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     fibers::emit_fiber_alloc_stack(emitter);
     fibers::emit_fiber_free_stack(emitter);
     fibers::emit_fiber_switch(emitter);
-    fibers::emit_fiber_invoke_callable_stub(emitter);
     fibers::emit_fiber_entry(emitter);
     fibers::emit_fiber_construct(emitter);
     fibers::emit_fiber_throw_state_error(emitter);
@@ -314,7 +313,6 @@ mod tests {
             "__rt_fiber_alloc_stack",
             "__rt_fiber_free_stack",
             "__rt_fiber_switch",
-            "__rt_fiber_invoke_callable",
             "__rt_fiber_entry",
             "__rt_fiber_construct",
             "__rt_fiber_start",

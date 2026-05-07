@@ -13,7 +13,7 @@ use crate::codegen::platform::Arch;
 
 use super::switch::{FIBER_INITIAL_FRAME_X29_X30_OFFSET, FIBER_INITIAL_STACK_FRAME_BYTES};
 use super::{
-    FIBER_CALLABLE_OFFSET, FIBER_CALLER_OFFSET, FIBER_DEFAULT_STACK_SIZE,
+    FIBER_CALLABLE_OFFSET, FIBER_CALLABLE_WRAPPER_OFFSET, FIBER_CALLER_OFFSET, FIBER_DEFAULT_STACK_SIZE,
     FIBER_FLOAT_ARGS_MAX, FIBER_FLOAT_ARGS_OFFSET, FIBER_OBJECT_SIZE,
     FIBER_OWN_CALL_FRAME_OFFSET, FIBER_OWN_EXC_HEAD_OFFSET, FIBER_PENDING_THROW_OFFSET,
     FIBER_SAVED_SP_OFFSET, FIBER_STACK_BASE_OFFSET, FIBER_STACK_SIZE_OFFSET,
@@ -99,7 +99,7 @@ pub fn emit_fiber_construct(emitter: &mut Emitter) {
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_STACK_SIZE_OFFSET)); // stack_size placeholder (overwritten after stack alloc)
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_SAVED_SP_OFFSET)); // saved_sp placeholder (overwritten after fake-frame setup)
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_CALLABLE_OFFSET)); // callable.lo placeholder (overwritten with x19 below)
-    emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_CALLABLE_OFFSET + 8)); // callable wrapper placeholder (overwritten with x22 below)
+    emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_CALLABLE_WRAPPER_OFFSET)); // callable wrapper placeholder (overwritten with x22 below)
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_CALLER_OFFSET));  // caller starts NULL (no resumer until start/resume)
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_TRANSFER_VALUE_OFFSET)); // transfer_value.lo cleared
     emitter.instruction(&format!("str xzr, [x21, #{}]", FIBER_TRANSFER_VALUE_OFFSET + 8)); // transfer_value.hi cleared
@@ -121,7 +121,7 @@ pub fn emit_fiber_construct(emitter: &mut Emitter) {
 
     // -- record the captured callable --
     emitter.instruction(&format!("str x19, [x21, #{}]", FIBER_CALLABLE_OFFSET)); // callable.lo = closure pointer
-    emitter.instruction(&format!("str x22, [x21, #{}]", FIBER_CALLABLE_OFFSET + 8)); // callable wrapper = Fiber entry ABI adapter
+    emitter.instruction(&format!("str x22, [x21, #{}]", FIBER_CALLABLE_WRAPPER_OFFSET)); // callable wrapper = Fiber entry ABI adapter
 
     // -- allocate the per-fiber stack via mmap; alloc returns base/top/total --
     emitter.instruction(&format!("mov x0, #{}", FIBER_DEFAULT_STACK_SIZE));     // request the default usable fiber stack size in bytes

@@ -11,7 +11,8 @@
 //! | 24     | 8    | stack_top         | high address (initial SP, 16-aligned) |
 //! | 32     | 8    | stack_size        | total bytes of the stack region       |
 //! | 40     | 8    | saved_sp          | SP saved when fiber is not running    |
-//! | 48     | 16   | callable          | closure pointer + optional entry wrapper |
+//! | 48     | 8    | callable          | closure/function pointer              |
+//! | 56     | 8    | callable_wrapper  | generated Fiber entry ABI adapter     |
 //! | 64     | 8    | caller            | Fiber* of resumer (NULL = main)       |
 //! | 72     | 16   | transfer_value    | mixed cell — value in transit         |
 //! | 88     | 8    | pending_throw     | Throwable* to rethrow on resume       |
@@ -34,7 +35,7 @@ pub(crate) use api::{
     emit_fiber_start, emit_fiber_state_getter, emit_fiber_suspend, emit_fiber_throw,
     emit_fiber_throw_state_error,
 };
-pub(crate) use entry::{emit_fiber_entry, emit_fiber_invoke_callable_stub};
+pub(crate) use entry::emit_fiber_entry;
 pub(crate) use switch::emit_fiber_switch;
 
 // ── Fiber object field offsets ───────────────────────────────────────
@@ -44,6 +45,7 @@ pub(crate) const FIBER_STACK_TOP_OFFSET: i32 = 24;
 pub(crate) const FIBER_STACK_SIZE_OFFSET: i32 = 32;
 pub(crate) const FIBER_SAVED_SP_OFFSET: i32 = 40;
 pub(crate) const FIBER_CALLABLE_OFFSET: i32 = 48;
+pub(crate) const FIBER_CALLABLE_WRAPPER_OFFSET: i32 = 56;
 pub(crate) const FIBER_CALLER_OFFSET: i32 = 64;
 pub(crate) const FIBER_TRANSFER_VALUE_OFFSET: i32 = 72;
 pub(crate) const FIBER_PENDING_THROW_OFFSET: i32 = 88;

@@ -10,9 +10,8 @@ use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
 
 use super::{
-    FIBER_CALLABLE_OFFSET, FIBER_CALLER_OFFSET, FIBER_FLOAT_ARGS_OFFSET, FIBER_PENDING_THROW_OFFSET,
-    FIBER_START_ARGS_OFFSET, FIBER_STATE_OFFSET, FIBER_STATE_RUNNING, FIBER_STATE_TERMINATED,
-    FIBER_TRANSFER_VALUE_OFFSET,
+    FIBER_CALLABLE_WRAPPER_OFFSET, FIBER_CALLER_OFFSET, FIBER_PENDING_THROW_OFFSET,
+    FIBER_STATE_OFFSET, FIBER_STATE_RUNNING, FIBER_STATE_TERMINATED, FIBER_TRANSFER_VALUE_OFFSET,
 };
 
 /// __rt_fiber_entry: trampoline executed at the start of every fiber.
@@ -56,39 +55,15 @@ pub fn emit_fiber_entry(emitter: &mut Emitter) {
     emitter.instruction(&format!("mov x20, #{}", FIBER_STATE_RUNNING));         // FIBER_STATE_RUNNING constant
     emitter.instruction(&format!("str x20, [x19, #{}]", FIBER_STATE_OFFSET));   // state = Running
 
-    // -- call through a generated Fiber wrapper when one is available --
-    emitter.instruction(&format!("ldr x10, [x19, #{}]", FIBER_CALLABLE_OFFSET + 8)); // x10 = optional Fiber entry wrapper pointer
-    emitter.instruction("cbz x10, __rt_fiber_entry_call_raw");                  // fall back to legacy raw callable dispatch when no wrapper was generated
+    // -- call through the generated Fiber wrapper --
+    emitter.instruction(&format!("ldr x10, [x19, #{}]", FIBER_CALLABLE_WRAPPER_OFFSET)); // x10 = generated Fiber entry wrapper pointer
+    emitter.instruction("cbnz x10, __rt_fiber_entry_call_wrapper");             // proceed when the constructor stored a wrapper
+    abi::emit_symbol_address(emitter, "x0", "_fiber_msg_unsupported_callable"); // x0 = pointer to the static unsupported-callable message
+    emitter.instruction("mov x1, #48");                                         // x1 = error message length in bytes
+    emitter.instruction("bl __rt_fiber_throw_state_error");                     // raise FiberError through the boundary handler (no return)
+    emitter.label("__rt_fiber_entry_call_wrapper");
     emitter.instruction("mov x0, x19");                                         // pass Fiber* to the wrapper so it can load start args and captures
     emitter.instruction("blr x10");                                             // call wrapper; x0 returns a boxed Mixed terminal value
-    emitter.instruction("b __rt_fiber_entry_call_done");                        // skip the raw-call fallback after wrapper dispatch succeeds
-
-    // -- legacy raw callable dispatch for non-closure callables without wrapper metadata --
-    // The seven start_args slots always hold something (Mixed-null cells when the
-    // user did not pass an explicit argument), so we can unconditionally load
-    // x0..x6 before the call — that exhausts the AArch64 integer arg registers
-    // available after $this. The parallel float_args[0..7] file feeds d0..d6
-    // so float captures can ride alongside int/string captures. Closures with
-    // fewer parameters simply ignore the extra registers per the caller-saved
-    // convention.
-    emitter.label("__rt_fiber_entry_call_raw");
-    emitter.instruction(&format!("ldr x9, [x19, #{}]", FIBER_CALLABLE_OFFSET)); // x9 = closure function pointer
-    emitter.instruction(&format!("ldr x0, [x19, #{}]", FIBER_START_ARGS_OFFSET)); // x0 = start_args[0]
-    emitter.instruction(&format!("ldr x1, [x19, #{}]", FIBER_START_ARGS_OFFSET + 8)); // x1 = start_args[1]
-    emitter.instruction(&format!("ldr x2, [x19, #{}]", FIBER_START_ARGS_OFFSET + 16)); // x2 = start_args[2]
-    emitter.instruction(&format!("ldr x3, [x19, #{}]", FIBER_START_ARGS_OFFSET + 24)); // x3 = start_args[3]
-    emitter.instruction(&format!("ldr x4, [x19, #{}]", FIBER_START_ARGS_OFFSET + 32)); // x4 = start_args[4]
-    emitter.instruction(&format!("ldr x5, [x19, #{}]", FIBER_START_ARGS_OFFSET + 40)); // x5 = start_args[5]
-    emitter.instruction(&format!("ldr x6, [x19, #{}]", FIBER_START_ARGS_OFFSET + 48)); // x6 = start_args[6]
-    emitter.instruction(&format!("ldr d0, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET)); // d0 = float_args[0]
-    emitter.instruction(&format!("ldr d1, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 8)); // d1 = float_args[1]
-    emitter.instruction(&format!("ldr d2, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 16)); // d2 = float_args[2]
-    emitter.instruction(&format!("ldr d3, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 24)); // d3 = float_args[3]
-    emitter.instruction(&format!("ldr d4, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 32)); // d4 = float_args[4]
-    emitter.instruction(&format!("ldr d5, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 40)); // d5 = float_args[5]
-    emitter.instruction(&format!("ldr d6, [x19, #{}]", FIBER_FLOAT_ARGS_OFFSET + 48)); // d6 = float_args[6]
-    emitter.instruction("blr x9");                                              // call the closure with up to 7 int and 7 float captured args
-    emitter.label("__rt_fiber_entry_call_done");
 
     // -- store the return value into transfer_value (lo half) and mark Terminated --
     abi::emit_load_symbol_to_reg(emitter, "x19", "_fiber_current", 0);          // reload x19 — registers were clobbered across the closure call
@@ -133,40 +108,9 @@ pub fn emit_fiber_entry(emitter: &mut Emitter) {
     emitter.instruction("brk #0xfffe");                                         // defensive trap: a terminated fiber must never resume past the switch
 }
 
-/// Invoke the callable captured by the fiber.
-///
-/// In elephc, a value of type `PhpType::Callable` is the raw function pointer of
-/// the lowered closure body — there is no extra heap header to dereference. The
-/// MVP supports closures without captures; closures that capture by value would
-/// require their captures to be passed as trailing arguments here, which is not
-/// yet wired up.
-///
-/// Input:  x0 = callable function pointer
-/// Output: x0 = closure return value (raw scalar / pointer)
-pub fn emit_fiber_invoke_callable_stub(emitter: &mut Emitter) {
-    if emitter.target.arch == Arch::X86_64 {
-        emit_x86_64_stub_named(emitter, "__rt_fiber_invoke_callable");
-        return;
-    }
-
-    emitter.blank();
-    emitter.comment("--- runtime: fiber_invoke_callable ---");
-    emitter.label_global("__rt_fiber_invoke_callable");
-
-    emitter.instruction("cbz x0, __rt_fiber_invoke_callable_null");             // a NULL callable returns 0 immediately
-    emitter.instruction("br x0");                                               // tail-call directly into the closure body (x0 is already the function address)
-    emitter.label("__rt_fiber_invoke_callable_null");
-    emitter.instruction("mov x0, #0");                                          // return zero when the fiber was constructed without a callable
-    emitter.instruction("ret");                                                 // hand control back to the entry trampoline
-}
-
 fn emit_x86_64_stub(emitter: &mut Emitter) {
-    emit_x86_64_stub_named(emitter, "__rt_fiber_entry");
-}
-
-fn emit_x86_64_stub_named(emitter: &mut Emitter, name: &str) {
     emitter.blank();
-    emitter.comment(&format!("--- runtime: {} (x86_64 stub) ---", name));
-    emitter.label_global(name);
+    emitter.comment("--- runtime: __rt_fiber_entry (x86_64 stub) ---");
+    emitter.label_global("__rt_fiber_entry");
     emitter.instruction("ret");                                                 // x86_64 fiber runtime not yet implemented
 }
