@@ -178,6 +178,38 @@ fn emit_object_free_deep_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save the object pointer across nested helper calls while releasing properties
     crate::codegen::abi::emit_symbol_address(emitter, "r10", "_gc_release_suppressed");
     emitter.instruction("mov QWORD PTR [r10], 1");                              // suppress nested collector runs while this object deep-free walk releases property payloads
+
+    // -- Fiber special case: release the per-fiber stack before the standard struct free path --
+    emitter.instruction("mov r10, QWORD PTR [rax]");                            // r10 = receiver class_id
+    crate::codegen::abi::emit_load_symbol_to_reg(emitter, "r11", "_fiber_class_id", 0); // r11 = compile-time class id of the built-in Fiber class
+    emitter.instruction("cmp r10, r11");                                        // is the receiver a Fiber instance?
+    emitter.instruction("jne __rt_object_free_deep_not_fiber");                 // skip the fiber-specific cleanup path for non-Fiber receivers
+    emitter.instruction(&format!("mov rdi, QWORD PTR [rax + {}]", crate::codegen::runtime::FIBER_STACK_BASE_OFFSET)); // rdi = fiber stack_base
+    emitter.instruction("test rdi, rdi");                                       // does this Fiber still own a mapped stack?
+    emitter.instruction("je __rt_object_free_deep_fiber_no_stack");             // skip when the stack was already released
+    emitter.instruction(&format!("mov rsi, QWORD PTR [rax + {}]", crate::codegen::runtime::FIBER_STACK_SIZE_OFFSET)); // rsi = total mapped length
+    emitter.instruction("call __rt_fiber_free_stack");                          // return the per-fiber stack to the kernel via munmap
+    emitter.instruction("mov rax, QWORD PTR [rbp - 8]");                        // reload the saved Fiber object pointer
+    emitter.instruction(&format!("mov QWORD PTR [rax + {}], 0", crate::codegen::runtime::FIBER_STACK_BASE_OFFSET)); // null stack_base for double-free safety
+    emitter.instruction(&format!("mov QWORD PTR [rax + {}], 0", crate::codegen::runtime::FIBER_STACK_SIZE_OFFSET)); // null stack_size to mirror the cleared base
+    emitter.label("__rt_object_free_deep_fiber_no_stack");
+    let user_arg_max_off = crate::codegen::runtime::FIBER_USER_ARG_MAX_OFFSET;
+    let start_args_off = crate::codegen::runtime::FIBER_START_ARGS_OFFSET;
+    emitter.instruction(&format!("mov r10, QWORD PTR [rax + {}]", user_arg_max_off)); // r10 = user_arg_max
+    emitter.instruction("mov QWORD PTR [rbp - 32], r10");                       // park user_arg_max in the existing loop-index slot
+    for i in 0..crate::codegen::runtime::FIBER_START_ARGS_MAX {
+        let skip_label = format!("__rt_object_free_deep_fiber_capture_skip_{}", i);
+        emitter.instruction("mov r10, QWORD PTR [rbp - 32]");                   // reload user_arg_max after any nested release helper
+        emitter.instruction(&format!("cmp r10, {}", i));                        // is slot i still inside the user-arg region?
+        emitter.instruction(&format!("jg {}", skip_label));                     // skip user-arg slots; only decref capture slots
+        emitter.instruction("mov rax, QWORD PTR [rbp - 8]");                    // reload the saved Fiber object pointer
+        emitter.instruction(&format!("mov rax, QWORD PTR [rax + {}]", start_args_off + i * 8)); // rax = start_args[i] capture payload
+        emitter.instruction("call __rt_decref_any");                            // release the captured heap payload if it points into the heap
+        emitter.label(&skip_label);
+    }
+    emitter.instruction("jmp __rt_object_free_deep_struct");                    // skip property-tag walking for runtime-managed Fiber payloads
+    emitter.label("__rt_object_free_deep_not_fiber");
+
     emitter.instruction("mov r10d, DWORD PTR [rax - 16]");                      // load the object payload size from the uniform heap header
     emitter.instruction("sub r10, 8");                                          // subtract the leading class_id field from the payload size to isolate property storage
     emitter.instruction("shr r10, 4");                                          // divide by 16 because every property slot occupies two qwords

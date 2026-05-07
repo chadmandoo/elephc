@@ -179,7 +179,7 @@ pub(super) fn emit_method_call_with_pushed_args(
     abi::emit_pop_reg(emitter, abi::int_arg_reg_name(emitter.target, 0));      // pop $this into the first integer argument register for the target ABI
     let overflow_bytes = pop_args_to_registers(emitter, &assignments);
     let ret_ty = if class_name == "Fiber" {
-        emit_fiber_instance_method_dispatch(method, emitter, ctx)
+        emit_fiber_instance_method_dispatch(method, &assignments, overflow_bytes, emitter, ctx)
     } else {
         emit_dispatch_instance_method(class_name, method, emitter, ctx)
     };
@@ -230,6 +230,8 @@ fn emit_fiber_static_method_dispatch(
 /// the matching `__rt_fiber_*` helper directly.
 fn emit_fiber_instance_method_dispatch(
     method: &str,
+    assignments: &[abi::OutgoingArgAssignment],
+    _overflow_bytes: usize,
     emitter: &mut Emitter,
     ctx: &mut Context,
 ) -> PhpType {
@@ -260,13 +262,28 @@ fn emit_fiber_instance_method_dispatch(
                     }
                 }
                 Arch::X86_64 => {
-                    emitter.instruction(&format!("mov rcx, QWORD PTR [rdi + {}]", max_arg_off)); // rcx = how many start_args slots start() may write
+                    emitter.instruction(&format!("mov r11, QWORD PTR [rdi + {}]", max_arg_off)); // r11 = how many start_args slots start() may write
+                    let mut overflow_slot = 0usize;
                     for i in 0..crate::codegen::runtime::FIBER_START_ARGS_MAX {
-                        let src = abi::int_arg_reg_name(emitter.target, (i as usize) + 1);
+                        let Some(assignment) = assignments.get(i as usize) else {
+                            break;
+                        };
                         let off = crate::codegen::runtime::FIBER_START_ARGS_OFFSET + i * 8;
-                        emitter.instruction(&format!("cmp rcx, {}", i + 1));    // is this slot index still within user_arg_max?
+                        emitter.instruction(&format!("cmp r11, {}", i + 1));    // is this slot index still within user_arg_max?
                         emitter.instruction(&format!("jl {}", skip_label));     // stop spilling once we hit the capture-reserved tail
-                        emitter.instruction(&format!("mov QWORD PTR [rdi + {}], {}", off, src)); // start_args[i] = caller-supplied Mixed value
+                        if assignment.in_register() {
+                            let src = abi::int_arg_reg_name(emitter.target, assignment.start_reg);
+                            emitter.instruction(&format!("mov QWORD PTR [rdi + {}], {}", off, src)); // start_args[i] = caller-supplied Mixed value
+                        } else {
+                            let stack_offset = overflow_slot * 16;
+                            if stack_offset == 0 {
+                                emitter.instruction("mov r10, QWORD PTR [rsp]"); // load stack-passed start() Mixed argument from the top overflow slot
+                            } else {
+                                emitter.instruction(&format!("mov r10, QWORD PTR [rsp + {}]", stack_offset)); // load stack-passed start() Mixed argument from its overflow slot
+                            }
+                            emitter.instruction(&format!("mov QWORD PTR [rdi + {}], r10", off)); // start_args[i] = caller-supplied stack-passed Mixed value
+                            overflow_slot += 1;
+                        }
                     }
                 }
             }

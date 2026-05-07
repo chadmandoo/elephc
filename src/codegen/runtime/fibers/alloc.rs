@@ -31,7 +31,7 @@ fn map_anon_private_flags(platform: Platform) -> i32 {
 ///         x2 = total mmap'd length in bytes (usable size + guard page) — needed for munmap
 pub fn emit_fiber_alloc_stack(emitter: &mut Emitter) {
     if emitter.target.arch == Arch::X86_64 {
-        emit_x86_64_stub(emitter, "__rt_fiber_alloc_stack");
+        emit_alloc_stack_x86_64(emitter);
         return;
     }
 
@@ -101,7 +101,7 @@ pub fn emit_fiber_alloc_stack(emitter: &mut Emitter) {
 ///         x1 = total mapped length (the third return value of alloc, stored in stack_size)
 pub fn emit_fiber_free_stack(emitter: &mut Emitter) {
     if emitter.target.arch == Arch::X86_64 {
-        emit_x86_64_stub(emitter, "__rt_fiber_free_stack");
+        emit_free_stack_x86_64(emitter);
         return;
     }
 
@@ -118,10 +118,85 @@ pub fn emit_fiber_free_stack(emitter: &mut Emitter) {
     emitter.instruction("ret");                                                 // hand control back to the caller (NULL/zero-length path also lands here)
 }
 
-/// Placeholder for x86_64 — fibers are ARM64-only in the MVP.
-fn emit_x86_64_stub(emitter: &mut Emitter, name: &str) {
+fn emit_alloc_stack_x86_64(emitter: &mut Emitter) {
+    let map_flags = map_anon_private_flags(emitter.target.platform);
+
     emitter.blank();
-    emitter.comment(&format!("--- runtime: {} (x86_64 stub) ---", name));
-    emitter.label_global(name);
-    emitter.instruction("ret");                                                 // x86_64 fiber runtime not yet implemented
+    emitter.comment("--- runtime: fiber_alloc_stack (mmap + guard page) ---");
+    emitter.label_global("__rt_fiber_alloc_stack");
+
+    // -- prologue: save callee-saved registers used across libc calls --
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer for the allocator helper
+    emitter.instruction("mov rbp, rsp");                                        // establish a stable frame base while libc calls run
+    emitter.instruction("push r12");                                            // preserve the requested usable size across mmap and mprotect
+    emitter.instruction("push r13");                                            // preserve the total mapped length across mprotect
+    emitter.instruction("push r14");                                            // preserve the mapping base across mprotect
+    emitter.instruction("push r15");                                            // keep the SysV stack aligned while saving three live registers
+    emitter.instruction("mov r12, rdi");                                        // r12 = requested usable stack size
+
+    // -- mmap(NULL, requested_size + GUARD, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0) --
+    emitter.instruction("xor edi, edi");                                        // addr = NULL — let the kernel pick the address
+    emitter.instruction(&format!("lea rsi, [r12 + {}]", FIBER_GUARD_PAGE_SIZE)); // length = usable size + guard page
+    emitter.instruction("mov r13, rsi");                                        // r13 = total mapped length for the eventual munmap
+    emitter.instruction("mov edx, 3");                                          // prot = PROT_READ | PROT_WRITE
+    emitter.instruction(&format!("mov ecx, {}", map_flags));                    // flags = MAP_PRIVATE | MAP_ANON for this platform
+    emitter.instruction("mov r8, -1");                                          // fd = -1 for anonymous mappings
+    emitter.instruction("xor r9d, r9d");                                        // offset = 0 for anonymous mappings
+    emitter.bl_c("mmap");                                                       // rax = mapping base on success, MAP_FAILED (-1) on failure
+
+    // -- bail out cleanly when mmap returns MAP_FAILED so callers see (0, 0, 0) --
+    emitter.instruction("cmp rax, -1");                                         // is rax == MAP_FAILED?
+    emitter.instruction("je __rt_fiber_alloc_stack_fail");                      // skip mprotect and return zeros when mmap failed
+
+    // -- mprotect(base, GUARD_PAGE_SIZE, PROT_NONE) installs the guard at the bottom --
+    emitter.instruction("mov r14, rax");                                        // r14 = mapping base preserved across mprotect
+    emitter.instruction("mov rdi, r14");                                        // base = mapping start for the guard region
+    emitter.instruction(&format!("mov esi, {}", FIBER_GUARD_PAGE_SIZE));        // length = one guard page
+    emitter.instruction("xor edx, edx");                                        // prot = PROT_NONE — touching the guard faults via SIGSEGV
+    emitter.bl_c("mprotect");                                                   // ignore the return value: a failure still leaves a usable stack
+
+    // -- compute stack_top = mapping base + total length, aligned down to 16 --
+    emitter.instruction("lea rdx, [r14 + r13]");                                // rdx = end of mapped region, one byte past the usable stack
+    emitter.instruction("and rdx, -16");                                        // round stack_top down to a 16-byte boundary for SysV calls
+
+    // -- pack outputs: rax = base, rdx = top, rcx = total length for munmap --
+    emitter.instruction("mov rax, r14");                                        // rax = mapping base, also used as stack_base for free
+    emitter.instruction("mov rcx, r13");                                        // rcx = total mapped length
+
+    // -- epilogue --
+    emitter.instruction("pop r15");                                             // restore the alignment-preserving callee-saved spill register
+    emitter.instruction("pop r14");                                             // restore the caller's r14
+    emitter.instruction("pop r13");                                             // restore the caller's r13
+    emitter.instruction("pop r12");                                             // restore the caller's r12
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // hand the (base, top, length) triple back to the constructor
+
+    // -- mmap failure path: report a clean (0, 0, 0) so the constructor can detect it --
+    emitter.label("__rt_fiber_alloc_stack_fail");
+    emitter.instruction("xor eax, eax");                                        // stack_base = 0 indicates the alloc failed
+    emitter.instruction("xor edx, edx");                                        // stack_top = 0 mirrors the failure signal
+    emitter.instruction("xor ecx, ecx");                                        // total length = 0 so a defensive free is a no-op
+    emitter.instruction("pop r15");                                             // restore the alignment-preserving callee-saved spill register
+    emitter.instruction("pop r14");                                             // restore the caller's r14
+    emitter.instruction("pop r13");                                             // restore the caller's r13
+    emitter.instruction("pop r12");                                             // restore the caller's r12
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // bail out with the failure triple
+}
+
+fn emit_free_stack_x86_64(emitter: &mut Emitter) {
+    emitter.blank();
+    emitter.comment("--- runtime: fiber_free_stack (munmap) ---");
+    emitter.label_global("__rt_fiber_free_stack");
+
+    emitter.instruction("test rdi, rdi");                                       // skip NULL bases (alloc failure or already freed)
+    emitter.instruction("jz __rt_fiber_free_stack_done");                       // no mapping base means there is nothing to unmap
+    emitter.instruction("test rsi, rsi");                                       // skip zero-length mappings as a defensive guard
+    emitter.instruction("jz __rt_fiber_free_stack_done");                       // no mapped length means there is nothing to unmap
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer before invoking libc
+    emitter.instruction("mov rbp, rsp");                                        // keep the SysV stack aligned for the munmap call
+    emitter.bl_c("munmap");                                                     // ignore the return value: the stack is gone either way
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer after munmap
+    emitter.label("__rt_fiber_free_stack_done");
+    emitter.instruction("ret");                                                 // hand control back to the caller
 }
