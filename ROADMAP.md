@@ -1,5 +1,19 @@
 # Roadmap
 
+## Direction to 1.0
+
+The remaining pre-1.0 work is intentionally focused on PHP parity and release
+stability. Product expansion tracks such as shared libraries, WebAssembly, and
+the PHP extension bridge are useful, but they are no longer part of the 1.0
+definition.
+
+Current direction:
+
+- Finish the PHP-visible compatibility gaps that are already well-bounded.
+- Keep completed historical items in their original version sections.
+- Move optimizer work behind concrete benchmark or release-candidate needs.
+- Treat new targets and distribution formats as post-1.0 product tracks.
+
 ## v0.1.x — Usable CLI compiler (done)
 
 - [x] Lexer, parser (Pratt), type checker, ARM64 codegen pipeline
@@ -322,15 +336,12 @@ Proper type system for PHP compatibility.
 - [x] Benchmark suite (vs C, vs PHP interpreter)
 - [x] Source maps (assembly ↔ PHP line mapping)
 - [x] Compiler timing / profiling output for parse, typecheck, codegen, assemble, and link phases
-- [ ] Source maps v2 — richer mappings for functions / expressions / labels and a more stable machine-readable schema for external tooling
 - [x] Benchmark automation — run the benchmark harness in CI, publish markdown summaries and JSON artifacts, and use it as a correctness/trend gate without noisy hard thresholds
 - [x] Constant folding (`2 + 3` → `5` at compile time)
 - [x] Dead code elimination
-- [ ] Peephole optimization (redundant load/store elimination)
 - [x] Add regression benchmarks so optimization work is measured instead of anecdotal
 - [x] Constant propagation across locals / statement boundaries
 - [x] Path-aware dead code elimination foundations — shared reachability/tail-path analysis for `if` / `ifdef` / `switch` / `try`, shadowed handler/pattern removal, and guard-aware nested region pruning
-- [ ] Dead code elimination v3 — CFG-lite is now used for reachable `if` / `switch` pruning and switch throw-path guard invalidation; remaining work is a fuller fixed-point/basic-block pass beyond the current path-aware AST pruning
 - [x] Purity / may-throw analysis so AST optimizations can reason more precisely about safe hoisting and branch removal
 - [x] Exception-aware dead code elimination beyond conservative `try` / `catch` / `finally` heuristics — catch/finally guard invalidation now tracks pre-handler throw paths, including CFG-pruned switch paths
 - [x] Control-flow normalization pass for flattening redundant nested `if` / `switch` / `try` shells after pruning
@@ -341,20 +352,6 @@ Proper type system for PHP compatibility.
 - [x] `print` expression form — writes output and returns `1`, including statement-form `print $x;` as `ExprStmt(Print(...))`
 - [x] Constant propagation v2 — known-subject `switch` path merges, non-throwing `try` / unreachable-catch env merges, known `match` folding, and scalar indexed/associative array-literal access folding
 - [x] Constant propagation v3 — local loop path summaries for `while(false)`, `do...while(false)`, `while(true)` / `for(;;)` break exits, branch-local loop-exit merges, and safe pruning around `do...while(false)` loop exits
-- [ ] Constant propagation v4 — full fixed-point / basic-block propagation across arbitrary loops and general path merges once there are measured cases that justify the extra pass complexity
-- [ ] Memory-model-aware propagation for heap-backed locals and targeted runtime invalidations beyond `unset($var)` and the currently modeled local writes
-- [ ] Purity / may-throw v2 for dynamic instance dispatch, richer property/array reads, and less pessimistic builtin modeling
-- [ ] Guard reasoning v2 for dead-code elimination — broader range reasoning and multi-variable facts beyond current strict-scalar, boolean, loose-comparison, and safe relational-complement guards
-- [ ] Exception-aware DCE v2 — exact thrown-type / handler reachability, nested try rethrow modeling, and less conservative finally-path invalidation
-- [ ] Control-flow normalization v2 — broader canonicalization of nested block/control shells before CFG-aware optimization passes
-- [ ] Runtime routine dead stripping — include or link only runtime helpers reachable from the generated program instead of carrying the whole target runtime slice
-- [ ] Register allocation (reduce stack spills)
-- [ ] Inline small functions
-- [ ] Tail-call optimization
-- [ ] Performance within 2x of C -O0 on compute benchmarks
-- [ ] Real-world CLI tools compiled as validation
-- [ ] Apple notarization for direct downloads (codesign + notarytool)
-- [ ] Installation / packaging documentation for the supported host platforms
 - [x] PHP-compatible magic constants: `__DIR__`, `__FILE__`, `__LINE__`, `__FUNCTION__`, `__CLASS__`, `__METHOD__`, `__NAMESPACE__`, `__TRAIT__` (case-insensitive names, per-file include scope, closure names, trait `__CLASS__` rebinding)
 - [x] Compile-time-constant expressions in `include` / `require` paths (string literals, concat, magic constants, namespace-aware `const` / `use const` / `define()` refs)
 - [x] Error-control operator `@` backed by a suppressible runtime warning channel and exception-safe suppression-depth restoration
@@ -368,38 +365,76 @@ Proper type system for PHP compatibility.
 - [x] Trailing-character validation on numeric literals (rejects `0o78`, `078`, `0xfg`, `0b12`, `1_`, `1__0` at lex time instead of silently splitting tokens)
 - [x] Support for `never` return type
 - [x] `iterable` pseudo-type runtime parity — `foreach` over indexed-array, hash-backed, `Iterator`, and `IteratorAggregate` iterables; `echo`, `gettype()`, `var_dump()`, `===`, scalar casts (`(int)`, `(float)`, `(string)`, `(bool)`), and the `is_iterable()` builtin all dispatch through heap-kind, value-type, or interface metadata where needed
+- [x] Filesystem modification: `touch()` (with optional nullable `$mtime` / `$atime`, explicit numeric timestamps including `-1`, and PHP-style `0666 & umask` creation mode), `chmod()`, `chown()` / `chgrp()` with numeric IDs or string names, `umask()` (with the no-arg probe form), `ftruncate()`, `fflush()` (implemented as `fsync()`), `fsync()`, and `fdatasync()` (with a Darwin `fsync` fallback). Runtime paths use libc where practical, with target-aware file-creation handling for `touch()`.
+- [x] Filesystem path manipulation: `basename()`, `dirname()` including multi-level parent lookup, `pathinfo()` (component flags returning strings plus no-flag / `PATHINFO_ALL` associative-array forms), `realpath()`, `fnmatch()` with shell-glob `*` / `?` / `[...]` / `\\` support and zero flags, plus the `PATHINFO_DIRNAME` / `PATHINFO_BASENAME` / `PATHINFO_EXTENSION` / `PATHINFO_FILENAME` / `PATHINFO_ALL` constants
+- [x] Filesystem metadata coverage: scalar getters (`fileatime()`, `filectime()`, `fileperms()`, `fileowner()`, `filegroup()`, `fileinode()`, `filetype()`) with PHP-compatible `false` on stat failure, permission predicates (`is_executable()`, `is_link()`, `is_writeable()` alias of `is_writable()`), full PHP-compatible `stat()` / `lstat()` / `fstat()` arrays (numeric `0..=12` + string keys `dev`/`ino`/`mode`/`nlink`/`uid`/`gid`/`rdev`/`size`/`atime`/`mtime`/`ctime`/`blksize`/`blocks`) with PHP-compatible `false` on failure, and `clearstatcache()` as a no-op (elephc has no stat cache)
 
-## v0.20.x — Fibers and shared/static libraries (C ABI)
+## v0.20.x — PHP filesystem, expression, call, and callable parity closure
 
+Close the small, well-scoped PHP filesystem/runtime compatibility gaps that are
+already adjacent to the current implementation, plus the language-level PHP
+behavior visible in everyday source code that does not require a new backend or
+product mode. This is also the series that delivered the Fibers MVP.
+
+- [x] `fnmatch()` non-zero flag parity for `FNM_PATHNAME`, `FNM_PERIOD`, `FNM_CASEFOLD`, and `FNM_NOESCAPE`
+- [x] Dynamic `pathinfo($path, $flag)` parity for runtime flags that may evaluate to `PATHINFO_ALL`; runtime exact `PATHINFO_ALL` now returns the associative-array shape while component flags return strings
+- [x] PHP resource type compatibility — model file handles and future extension handles separately from integers
+- [x] `fopen()` failure parity — return `false` on open failure while keeping successful handles as `resource`, and make stream built-ins reject/handle the `resource|false` path without passing boxed `false` as a native descriptor
+- [x] Runtime-dynamic include paths — explicitly reject runtime-evaluated `include` / `require` path expressions beyond the current compile-time string-folder (`$path`, function calls, ternaries, property access)
+- [x] Runtime-order-aware `include_once` / `require_once` — add runtime guards inside functions, methods, loops, and conditional branches so skipped files match PHP execution order rather than only compile-time traversal order
+- [x] Include graph declaration discovery — pre-scan all statically resolvable `include` / `require` targets for function/class/interface/trait declarations before name resolution and type checking, so symbol references are not sensitive to source include order while top-level include execution order remains PHP-compatible
+- [x] Path-sensitive include declaration discovery — avoid false duplicate declaration errors when the same statically resolvable regular `include` / `require` target is reachable only through mutually exclusive control-flow paths, while still reporting duplicates for sequential loads and potentially repeated loop loads
+- [x] Runtime-loaded include function dispatch — compile include-discovered functions behind public dispatchers activated at each real include point, so direct calls and `function_exists()` follow PHP runtime load order while type checking can still see the include graph
+- [x] Conditional include function variants — when mutually exclusive `if` / `elseif` / `else` branches include different files that declare the same function name with identical signatures, compile each declaration as a hidden variant and dispatch the public function name to the variant loaded at runtime
+- [x] Mixed nullsafe/member chains — match PHP's full chain semantics for forms that mix `?->` and `->`, such as `$a?->b->c`
+- [x] Dynamic `instanceof` targets — support PHP forms such as `$obj instanceof $className` with runtime validation for class-string/object target expressions
+- [x] Full PHP list destructuring — skipped entries, nested patterns, associative-key destructuring, and non-local destructuring targets where PHP permits them
+- [x] Named-argument parity for built-ins, extern calls, and spread — extend validation/lowering outside user-defined calls and handle spread interactions
 - [x] Fibers MVP — `Fiber` and `FiberError` built-in classes, `start()` / `resume()` / `suspend()` / `throw()` / `getReturn()`, state predicates, `Fiber::getCurrent()`, closure captures, uncaught-exception propagation through the caller, guarded per-fiber `mmap` stacks, and context switching on ARM64 plus Linux x86_64
-- [ ] `--lib` flag, export PHP functions as C-callable symbols
-- [ ] `.dylib` / `.so` / `.a` output
-- [ ] Auto-generated C header file
-- [ ] Null-terminated string convention for C interop
-- [ ] FFI documentation for C, Rust, Python, Go
+- [ ] Full first-class callable targets — support `static::method(...)` and `$object->method(...)` in addition to function, `ClassName::`, `self::`, and `parent::` targets
+- [ ] Captured closures as callback values — forward hidden `use (...)` environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`
 
-## v0.21.x — Library ecosystem
+## v0.21.x — PHP array and type-model parity
 
-- [ ] `--export` flag for symbol selection
-- [ ] Multi-file library compilation
-- [ ] Symbol visibility control
-- [ ] `pkg-config` generation
+Tighten the PHP value model where the current static representation is still
+more restrictive than PHP.
 
-## v0.22.x — WebAssembly target
+- [ ] Heterogeneous indexed arrays — allow mixed payloads in indexed arrays instead of requiring homogeneous indexed values
+- [ ] Mixed indexed/associative array union — model `array + array` across indexed/hash representations while preserving PHP's shared int/string key space and left-key precedence
+- [ ] Runtime-value compatibility polishing v2 — continue with PHP's uninitialized typed-property state, integer overflow promotion, broader loose-comparison semantics, and future warning/notice sites as they are added
+- [ ] Broader date, regex, and JSON PHP parity — expand `strtotime()` relative formats, PCRE-compatible regex features/captures/backreferences, and `json_decode()` structured array/object decoding
 
-- [ ] WASM codegen backend
-- [ ] `.wat` / `.wasm` emission
-- [ ] WASI support for I/O
-- [ ] NPM package generation
+## v0.22.x — PHP OOP parity finish
 
-## v0.23.x — PHP extension bridge (experimental)
+Close the remaining class/property compatibility gaps before freezing the 1.0
+language contract.
 
-- [ ] `zval` pack/unpack routines (convert elephc values ↔ PHP `zval` structs)
-- [ ] Link against PHP extension `.so`/`.dylib` shared libraries
-- [ ] Bridge for string, int, float, bool, array types
-- [ ] Proof of concept with one extension (e.g., `mbstring` or `curl`)
-- [ ] `--ext` flag to specify extension libraries at compile time
-- [ ] Documentation: how to bridge a PHP extension
+- [ ] OOP property parity v2 — cover abstract properties, `readonly static` properties, instance property redeclaration rules, and the remaining by-reference constructor-promotion gaps (`readonly` and default values)
+
+## v0.23.x — Optimization and release performance pass
+
+Optimization work should now be driven by benchmarks, generated assembly size,
+and release-candidate validation rather than by speculative pass work.
+
+- [ ] Source maps v2 — richer mappings for functions / expressions / labels and a more stable machine-readable schema for external tooling
+- [ ] Peephole optimization (redundant load/store elimination)
+- [ ] Dead code elimination v3 — fuller fixed-point/basic-block pass beyond the current path-aware AST pruning
+- [ ] Constant propagation v4 — full fixed-point / basic-block propagation across arbitrary loops and general path merges once there are measured cases that justify the extra pass complexity
+- [ ] Memory-model-aware propagation for heap-backed locals and targeted runtime invalidations beyond `unset($var)` and the currently modeled local writes
+- [ ] Purity / may-throw v2 for dynamic instance dispatch, richer property/array reads, and less pessimistic builtin modeling
+- [ ] Guard reasoning v2 for dead-code elimination — broader range reasoning and multi-variable facts beyond current strict-scalar, boolean, loose-comparison, and safe relational-complement guards
+- [ ] Exception-aware DCE v2 — exact thrown-type / handler reachability, nested try rethrow modeling, and less conservative finally-path invalidation
+- [ ] Control-flow normalization v2 — broader canonicalization of nested block/control shells before CFG-aware optimization passes
+- [ ] Composite conditional include function variants — extend include-graph exclusivity from one direct `if` / `elseif` / `else` chain to nested/composed conditional paths where declarations are pairwise exclusive only after combining multiple branch decisions
+- [ ] Switch-aware conditional include function variants — extend include-graph exclusivity beyond `if` / `elseif` / `else` to `switch` cases once fall-through, `break`, and terminating case bodies are modeled precisely; revisit `match` only if include-like statement lowering ever appears inside match arms
+- [ ] Runtime routine dead stripping — include or link only runtime helpers reachable from the generated program instead of carrying the whole target runtime slice
+- [ ] Register allocation (reduce stack spills)
+- [ ] Inline small functions
+- [ ] Tail-call optimization
+- [ ] Performance within 2x of C -O0 on compute benchmarks
+- [ ] Real-world CLI tools compiled as validation
+- [ ] Apple notarization for direct downloads (codesign + notarytool)
+- [ ] Installation / packaging documentation for the supported host platforms
 
 ## v1.0.x — Stabilization and release gate
 
@@ -407,38 +442,60 @@ Proper type system for PHP compatibility.
 - [x] Full test coverage (>500 focused checks across lexer/parser/codegen/error suites)
 - [x] Documentation: language subset spec, architecture guide
 - [x] CI/CD with release binaries
+- [x] PHP case-insensitive symbol parity for keywords, built-in/user function calls, class/interface/trait names, and method lookup while preserving PHP's case-sensitive variables, object properties, string array keys, and user constants
 - [ ] Freeze the documented language/runtime contract for the supported target matrix
 - [ ] Run a dedicated release-candidate stabilization pass across compiler, runtime, docs, and examples
 - [ ] Ship 1.0 once the pre-1.0 roadmap is reduced to true post-1.0 work only
 
 ---
 
-## Future ideas
+## Post-1.0 product tracks
 
-Features that are feasible but complex. Not currently planned for any specific version — they will be considered when a concrete use case justifies the implementation effort.
+These are valuable directions, but they should build on a frozen 1.0 language
+and runtime contract instead of competing with PHP parity work before 1.0.
+
+## v1.1.x — Shared and static libraries (C ABI)
+
+- [ ] `--lib` flag, export PHP functions as C-callable symbols
+- [ ] `--export` flag for symbol selection
+- [ ] `.dylib` / `.so` / `.a` output
+- [ ] Multi-file library compilation
+- [ ] Symbol visibility control
+- [ ] Auto-generated C header file
+- [ ] Null-terminated string convention for C interop
+- [ ] `pkg-config` generation
+- [ ] FFI documentation for C, Rust, Python, Go
+
+## v1.2.x — WebAssembly target
+
+- [ ] WASM codegen backend
+- [ ] `.wat` / `.wasm` emission
+- [ ] WASI support for I/O
+- [ ] NPM package generation
+
+## v1.3.x — PHP extension bridge (experimental)
+
+- [ ] `zval` pack/unpack routines (convert elephc values ↔ PHP `zval` structs)
+- [ ] Link against PHP extension `.so` / `.dylib` shared libraries
+- [ ] Bridge for string, int, float, bool, array types
+- [ ] Proof of concept with one extension (e.g., `mbstring` or `curl`)
+- [ ] `--ext` flag to specify extension libraries at compile time
+- [ ] Documentation: how to bridge a PHP extension
+
+## Deferred ideas
+
+Features that are feasible but intentionally not on the pre-1.0 path. They are
+either product-specific, very high complexity, or better justified by concrete
+post-1.0 use cases.
 
 | Feature | Complexity | Notes |
 |---|---|---|
-| PHP case-insensitive symbol parity | Medium | Extend PHP-compatible case-insensitive matching beyond magic constants to keywords, built-in/user function calls, class/interface/trait names, and method lookup while preserving PHP's case-sensitive variables, object properties, string array keys, and user constants. |
-| Dynamic `instanceof` targets | Medium | Support PHP forms such as `$obj instanceof $className` once class-string/object target expressions and their runtime validation semantics are modeled. Current support is for named class/interface targets plus `self`, `parent`, and `static`. |
-| Mixed nullsafe/member chains | Medium | Match PHP's full chain semantics for forms that mix `?->` and `->`, such as `$a?->b->c`. Current support handles nullsafe hops written explicitly with `?->` and short-circuits each nullsafe receiver. |
-| Full PHP list destructuring | Medium | Extend `[$a, $b] = ...` beyond plain variables and indexed RHS values to cover skipped entries, nested patterns, and associative-key destructuring. |
-| Heterogeneous indexed arrays | Medium | Allow mixed payloads in indexed arrays instead of requiring homogeneous indexed values. This would complete PHP array-union edge cases such as non-empty indexed arrays whose missing right-side numeric keys have a different value type. |
-| Mixed indexed/associative array union | Medium | Model `array + array` cases where one operand is represented as an indexed array and the other as an associative hash, preserving PHP's shared int/string key space and left-key precedence. |
-| Named-argument parity for built-ins, extern calls, and spread | Medium | Extend call validation/lowering so named arguments work outside user-defined calls and interact correctly with spread arguments. |
-| Captured closures as callback values | Medium | Forward hidden `use (...)` capture environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`. |
-| Full first-class callable targets | Medium | Support `static::method(...)` and `$object->method(...)` first-class callable syntax in addition to function, `ClassName::`, `self::`, and `parent::` targets. |
-| OOP property parity v2 | High | Cover abstract properties, `readonly static` properties, instance property redeclaration rules, and the remaining by-reference constructor-promotion gaps (`readonly` and default values). |
 | Buffer ergonomics v2 | Medium | Consider dynamic resize/push/pop, `foreach`, array conversion, and automatic cleanup for `buffer<T>` while keeping the hot-path POD contract explicit. |
-| Broader date, regex, and JSON PHP parity | High | Expand `strtotime()` relative formats, PCRE-compatible regex features/captures/backreferences, and `json_decode()` structured array/object decoding. |
-| Runtime-dynamic include paths | Low | Model or explicitly reject runtime-evaluated `include`/`require` path expressions beyond the current compile-time string-folder (`$path`, function calls, ternaries, property access). |
-| Runtime-order-aware include_once / require_once | Medium | Add runtime guards for `include_once` / `require_once` inside functions, methods, loops, and conditional branches so skipped files match PHP execution order rather than only compile-time traversal order. |
-| PHP resource type compatibility | Medium | Model resources separately from integers so file handles and future extension handles can more closely match PHP behavior. |
-| Runtime-value compatibility polishing v2 | Medium | Continue with PHP's uninitialized typed-property state, integer overflow promotion, broader loose-comparison semantics, and future warning/notice sites as they are added. |
 | String-capable FFI callbacks | Medium | Allow C callback signatures that pass or return strings once ownership and temporary C-string lifetimes are modeled safely across callback boundaries. |
 | Generators / `yield` | High | Requires compile-time state machine transformation: every yield point becomes a switch case, all locals promoted to heap-allocated generator object. Edge cases with yield inside try/catch/finally are significant. |
 | `yield from` delegation | High | Depends on generators. Forwards iteration to an inner generator, propagating values and return. |
 | Fiber parity v2 | Medium | MVP delivered in v0.20.x for ARM64 and Linux x86_64. Remaining parity work: arithmetic auto-unboxing on `mixed` payloads received from `suspend()`, true variadic `start(...$args)` beyond seven args, dynamic callback targets, by-reference callback start parameters, configurable stack sizing, and PHP-exact `FiberError` hierarchy. See `docs/php/fibers.md`. |
+| Conditional include class-like variants | High | Keep class/interface/trait/enum duplicate detection strict for now. Supporting branch-selected class-like declarations would require runtime class metadata/layout dispatch, while modern PHP can avoid the ambiguity with namespaces. |
 
 ---
 
