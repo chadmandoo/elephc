@@ -166,6 +166,23 @@ echo $result[1];
 }
 
 #[test]
+fn test_captured_closure_variable_array_map_string_values() {
+    let out = compile_and_run(
+        r#"<?php
+$prefix = "a";
+$starts = function(string $value) use ($prefix): int {
+    return str_starts_with($value, $prefix) ? 1 : 0;
+};
+$result = array_map($starts, ["aa", "bb", "ab"]);
+echo $result[0];
+echo $result[1];
+echo $result[2];
+"#,
+    );
+    assert_eq!(out, "101");
+}
+
+#[test]
 fn test_closure_array_filter() {
     let out = compile_and_run(
         r#"<?php
@@ -187,6 +204,22 @@ foreach ($filtered as $value) { echo $value; }
 "#,
     );
     assert_eq!(out, "259");
+}
+
+#[test]
+fn test_captured_closure_variable_array_filter_string_values() {
+    let out = compile_and_run(
+        r#"<?php
+$prefix = "a";
+$starts = function(string $value) use ($prefix) {
+    return str_starts_with($value, $prefix);
+};
+$filtered = array_filter(["aa", "bb", "ab"], $starts);
+echo count($filtered);
+foreach ($filtered as $value) { echo $value; }
+"#,
+    );
+    assert_eq!(out, "2aaab");
 }
 
 #[test]

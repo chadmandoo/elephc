@@ -37,8 +37,7 @@ pub fn emit(
 
     // -- evaluate the array argument (first arg) --
     let arr_ty = emit_expr(&args[0], emitter, ctx, data);
-    let uses_refcounted_runtime =
-        matches!(&arr_ty, PhpType::Array(inner) if inner.is_refcounted());
+    let uses_refcounted_runtime = filter_uses_payload_runtime(&arr_ty);
 
     // -- save array pointer, then resolve the callback address into the target scratch register --
     abi::emit_push_reg(emitter, result_reg);                                    // push the source array pointer onto the temporary stack
@@ -148,4 +147,12 @@ fn filter_elem_type(arr_ty: &PhpType) -> PhpType {
         PhpType::Array(elem_ty) => elem_ty.codegen_repr(),
         _ => PhpType::Int,
     }
+}
+
+fn filter_uses_payload_runtime(arr_ty: &PhpType) -> bool {
+    matches!(
+        &arr_ty,
+        PhpType::Array(inner)
+            if inner.is_refcounted() || matches!(inner.codegen_repr(), PhpType::Str)
+    )
 }
