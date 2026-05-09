@@ -210,6 +210,122 @@ echo $y[0];
 }
 
 #[test]
+fn test_first_class_callable_instance_method_indirect_call() {
+    let out = compile_and_run(
+        r#"<?php
+class Greeter {
+    public function greet($name) {
+        return "Hello " . $name;
+    }
+}
+
+$greeter = new Greeter();
+$fn = $greeter->greet(...);
+echo $fn("Ada");
+"#,
+    );
+    assert_eq!(out, "Hello Ada");
+}
+
+#[test]
+fn test_first_class_callable_instance_method_preserves_by_ref_params() {
+    let out = compile_and_run(
+        r#"<?php
+class Counter {
+    public function bump(&$n) {
+        $n = $n + 2;
+    }
+}
+
+$counter = new Counter();
+$fn = $counter->bump(...);
+$value = 5;
+$fn($value);
+echo $value;
+"#,
+    );
+    assert_eq!(out, "7");
+}
+
+#[test]
+fn test_first_class_callable_instance_method_receiver_name_can_match_param() {
+    let out = compile_and_run(
+        r#"<?php
+class Box {
+    public function add($box) {
+        return $box + 1;
+    }
+}
+
+$box = new Box();
+$fn = $box->add(...);
+echo $fn(10);
+"#,
+    );
+    assert_eq!(out, "11");
+}
+
+#[test]
+fn test_first_class_callable_static_late_bound_method_indirect_call() {
+    let out = compile_and_run(
+        r#"<?php
+class BaseMaker {
+    public static function run() {
+        $fn = static::label(...);
+        return $fn();
+    }
+
+    public static function label() {
+        return "base";
+    }
+}
+
+class ChildMaker extends BaseMaker {
+    public static function label() {
+        return "child";
+    }
+}
+
+echo BaseMaker::run();
+echo ":";
+echo ChildMaker::run();
+"#,
+    );
+    assert_eq!(out, "base:child");
+}
+
+#[test]
+fn test_first_class_callable_static_late_bound_from_instance_method() {
+    let out = compile_and_run(
+        r#"<?php
+class BaseInstanceMaker {
+    public function run() {
+        $fn = static::label(...);
+        return $fn();
+    }
+
+    public static function label() {
+        return "base";
+    }
+}
+
+class ChildInstanceMaker extends BaseInstanceMaker {
+    public static function label() {
+        return "child";
+    }
+}
+
+$base = new BaseInstanceMaker();
+$child = new ChildInstanceMaker();
+echo $base->run();
+echo ":";
+echo $child->run();
+"#,
+    );
+    assert_eq!(out, "base:child");
+}
+
+#[test]
 fn test_first_class_callable_variadic_function_call() {
     let out = compile_and_run(
         r#"<?php
