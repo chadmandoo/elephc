@@ -4,7 +4,7 @@ use super::*;
 mod basics;
 #[path = "expressions/operators.rs"]
 mod operators;
-#[path = "expressions/modern_ops.rs"]
+#[path = "expressions/modern_ops/mod.rs"]
 mod modern_ops;
 #[path = "expressions/assignments.rs"]
 mod assignments;
