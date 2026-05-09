@@ -10,7 +10,7 @@ mod inheritance;
 mod interfaces;
 #[path = "oop/modifiers_and_properties.rs"]
 mod modifiers_and_properties;
-#[path = "oop/callables.rs"]
+#[path = "oop/callables/mod.rs"]
 mod callables;
 #[path = "oop/union_types.rs"]
 mod union_types;
