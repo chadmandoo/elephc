@@ -1,6 +1,7 @@
 mod arrays;
 mod locals;
 mod properties;
+mod properties_null_coalesce;
 mod static_properties;
 
 use crate::errors::CompileError;
