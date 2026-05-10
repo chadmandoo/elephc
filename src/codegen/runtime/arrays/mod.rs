@@ -1,3 +1,13 @@
+//! Purpose:
+//! Collects array, hash, heap, GC, iterable, and Mixed runtime emitters.
+//! The module owns re-export wiring for helpers that are emitted by the runtime orchestrator.
+//!
+//! Called from:
+//! - `crate::codegen::runtime::emitters::emit_runtime()` during the array runtime section.
+//!
+//! Key details:
+//! - Array, hash, heap, GC, and Mixed helpers must preserve runtime layout, refcounts, and COW rules before mutating shared storage.
+
 mod array_chunk;
 mod array_chunk_refcounted;
 mod array_column;

@@ -1,8 +1,12 @@
-//! Fiber public-API runtime helpers.
+//! Purpose:
+//! Wires runtime helpers for PHP Fiber public API methods.
+//! Owns architecture selection for start, resume, suspend, throw, and state-query helpers.
 //!
-//! These are the functions the codegen will call when lowering Fiber method
-//! invocations. The dispatcher keeps architecture selection here while the
-//! target-specific emitters live in dedicated modules.
+//! Called from:
+//! - `crate::codegen::runtime::fibers::emit_fiber_runtime()`.
+//!
+//! Key details:
+//! - API helpers must preserve Fiber state transitions and delegate target-specific assembly to focused emitters.
 
 mod arm64;
 mod common;

@@ -1,3 +1,13 @@
+//! Purpose:
+//! Coordinates emission of all runtime helper labels for non-minimal targets.
+//! Orders strings, system helpers, exceptions, arrays, buffers, I/O, pointers, and fibers so dependencies are available.
+//!
+//! Called from:
+//! - `crate::codegen::runtime::emit_runtime()`.
+//!
+//! Key details:
+//! - Emission order is part of the runtime contract because helpers branch to labels and data symbols emitted elsewhere.
+
 use super::arrays;
 use super::buffers;
 use super::diagnostics;

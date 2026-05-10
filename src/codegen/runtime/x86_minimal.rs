@@ -1,3 +1,13 @@
+//! Purpose:
+//! Emits the current minimal Linux x86_64 runtime surface from the category emitters.
+//! This keeps x86_64 output intentionally narrow while target-specific helpers are being completed.
+//!
+//! Called from:
+//! - `crate::codegen::runtime::emitters::emit_runtime()` for Linux x86_64 targets.
+//!
+//! Key details:
+//! - The allowlist must stay explicit so unsupported x86_64 helpers are not emitted accidentally.
+
 use super::arrays;
 use super::buffers;
 use super::diagnostics;

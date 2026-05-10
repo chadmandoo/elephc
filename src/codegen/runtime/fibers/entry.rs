@@ -1,8 +1,12 @@
-//! Fiber entry trampoline.
+//! Purpose:
+//! Emits the runtime trampoline that runs a Fiber body the first time it is switched into.
+//! Owns callable invocation, return capture, termination marking, and transfer back to the caller.
 //!
-//! Runs once per fiber, the first time it is switched into. Reads the captured
-//! callable from the Fiber object, invokes it, captures the return value, marks
-//! the fiber terminated, and switches back to the caller.
+//! Called from:
+//! - `crate::codegen::runtime::fibers::emit_fiber_runtime()`.
+//!
+//! Key details:
+//! - The trampoline must keep Fiber object state, pending throws, try handlers, and transfer values balanced across switches.
 
 use crate::codegen::abi;
 use crate::codegen::context::{TRY_HANDLER_JMP_BUF_OFFSET, TRY_HANDLER_SLOT_SIZE};

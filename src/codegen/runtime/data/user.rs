@@ -1,3 +1,13 @@
+//! Purpose:
+//! Builds user-program runtime metadata as assembly text.
+//! This owns class, interface, vtable, enum, static-property, and source-location tables generated from analysis.
+//!
+//! Called from:
+//! - `crate::codegen::runtime::data::emit_runtime_data_user()`.
+//!
+//! Key details:
+//! - User data is program-specific and must match class ids, static property slots, and generated call sites.
+
 use std::collections::{HashMap, HashSet};
 
 use crate::names::{
