@@ -11,6 +11,7 @@
 mod array_chunk;
 mod array_chunk_refcounted;
 mod array_column;
+mod array_column_mixed;
 mod array_column_ref;
 mod array_column_str;
 mod array_combine;
@@ -125,6 +126,7 @@ mod usort;
 pub use array_chunk::emit_array_chunk;
 pub use array_chunk_refcounted::emit_array_chunk_refcounted;
 pub use array_column::emit_array_column;
+pub use array_column_mixed::emit_array_column_mixed;
 pub use array_column_ref::emit_array_column_ref;
 pub use array_column_str::emit_array_column_str;
 pub use array_combine::emit_array_combine;

@@ -192,6 +192,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     arrays::emit_array_chunk(emitter);
     arrays::emit_array_chunk_refcounted(emitter);
     arrays::emit_array_column(emitter);
+    arrays::emit_array_column_mixed(emitter);
     arrays::emit_array_column_ref(emitter);
     arrays::emit_array_column_str(emitter);
     arrays::emit_array_splice(emitter);
