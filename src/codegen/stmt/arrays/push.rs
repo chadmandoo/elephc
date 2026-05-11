@@ -57,23 +57,39 @@ pub(super) fn emit_array_push_stmt(
     let mut val_ty = emit_expr(value, emitter, ctx, data);
     let boxed_iterable =
         crate::codegen::emit_box_iterable_value_for_mixed_container(emitter, &mut val_ty);
-    if !boxed_iterable
-        && matches!(elem_ty, PhpType::Mixed)
+    let effective_elem_ty = effective_indexed_push_type(&elem_ty, &val_ty, ctx);
+    let converted_to_mixed =
+        matches!(effective_elem_ty, PhpType::Mixed) && !matches!(elem_ty, PhpType::Mixed);
+    if matches!(effective_elem_ty, PhpType::Mixed)
         && !matches!(val_ty, PhpType::Mixed | PhpType::Union(_))
     {
         crate::codegen::emit_box_current_value_as_mixed(emitter, &val_ty);
+        val_ty = PhpType::Mixed;
+    } else if matches!(effective_elem_ty, PhpType::Mixed) && matches!(val_ty, PhpType::Union(_)) {
         val_ty = PhpType::Mixed;
     } else if !boxed_iterable {
         super::super::helpers::retain_borrowed_heap_result(emitter, value, &val_ty);
     }
     emitter.instruction("ldr x9, [sp], #16");                                   // pop saved array pointer into x9
-    if elem_ty != val_ty {
-        let updated_ty = PhpType::Array(Box::new(val_ty.clone()));
+    if elem_ty != effective_elem_ty {
+        let updated_ty = PhpType::Array(Box::new(effective_elem_ty.clone()));
         ctx.update_var_type_and_ownership(
             array,
             updated_ty.clone(),
             super::super::helpers::local_slot_ownership_after_store(&updated_ty),
         );
+    }
+    if converted_to_mixed {
+        emitter.instruction("str x0, [sp, #-16]!");                             // preserve the boxed appended value across mixed-array conversion
+        emitter.instruction("mov x0, x9");                                      // pass the current indexed-array pointer to the mixed conversion helper
+        abi::emit_load_int_immediate(
+            emitter,
+            "x1",
+            super::super::helpers::indexed_array_runtime_value_tag(&elem_ty),
+        );
+        abi::emit_call_label(emitter, "__rt_array_to_mixed");                   // box existing typed slots before appending a heterogeneous value
+        emitter.instruction("mov x9, x0");                                      // keep the converted indexed-array pointer as the append receiver
+        emitter.instruction("ldr x0, [sp], #16");                               // restore the boxed appended value after conversion
     }
     match &val_ty {
         PhpType::Int | PhpType::Bool => {
@@ -90,7 +106,7 @@ pub(super) fn emit_array_push_stmt(
             emitter.instruction("mov x0, x9");                                  // move array pointer to x0
             emitter.instruction("bl __rt_array_push_str");                      // call runtime: persist + append string to array
         }
-        PhpType::Mixed | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
+        PhpType::Mixed | PhpType::Union(_) | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
             emitter.instruction("mov x1, x0");                                  // move nested array/object pointer to x1
             emitter.instruction("mov x0, x9");                                  // move outer array pointer to x0
             emitter.instruction("bl __rt_array_push_refcounted");               // append retained pointer and stamp array metadata
@@ -136,23 +152,39 @@ fn emit_array_push_stmt_linux_x86_64(
     let mut val_ty = emit_expr(value, emitter, ctx, data);
     let boxed_iterable =
         crate::codegen::emit_box_iterable_value_for_mixed_container(emitter, &mut val_ty);
-    if !boxed_iterable
-        && matches!(elem_ty, PhpType::Mixed)
+    let effective_elem_ty = effective_indexed_push_type(&elem_ty, &val_ty, ctx);
+    let converted_to_mixed =
+        matches!(effective_elem_ty, PhpType::Mixed) && !matches!(elem_ty, PhpType::Mixed);
+    if matches!(effective_elem_ty, PhpType::Mixed)
         && !matches!(val_ty, PhpType::Mixed | PhpType::Union(_))
     {
         crate::codegen::emit_box_current_value_as_mixed(emitter, &val_ty);
+        val_ty = PhpType::Mixed;
+    } else if matches!(effective_elem_ty, PhpType::Mixed) && matches!(val_ty, PhpType::Union(_)) {
         val_ty = PhpType::Mixed;
     } else if !boxed_iterable {
         super::super::helpers::retain_borrowed_heap_result(emitter, value, &val_ty);
     }
     abi::emit_pop_reg(emitter, "r11");                                            // restore the indexed-array pointer after evaluating the appended value
-    if elem_ty != val_ty {
-        let updated_ty = PhpType::Array(Box::new(val_ty.clone()));
+    if elem_ty != effective_elem_ty {
+        let updated_ty = PhpType::Array(Box::new(effective_elem_ty.clone()));
         ctx.update_var_type_and_ownership(
             array,
             updated_ty.clone(),
             super::super::helpers::local_slot_ownership_after_store(&updated_ty),
         );
+    }
+    if converted_to_mixed {
+        abi::emit_push_reg(emitter, "rax");                                      // preserve the boxed appended value across mixed-array conversion
+        emitter.instruction("mov rdi, r11");                                    // pass the current indexed-array pointer to the mixed conversion helper
+        abi::emit_load_int_immediate(
+            emitter,
+            "rsi",
+            super::super::helpers::indexed_array_runtime_value_tag(&elem_ty),
+        );
+        abi::emit_call_label(emitter, "__rt_array_to_mixed");                   // box existing typed slots before appending a heterogeneous value
+        emitter.instruction("mov r11, rax");                                    // keep the converted indexed-array pointer as the append receiver
+        abi::emit_pop_reg(emitter, "rax");                                      // restore the boxed appended value after conversion
     }
     match &val_ty {
         PhpType::Int | PhpType::Bool => {
@@ -175,7 +207,7 @@ fn emit_array_push_stmt_linux_x86_64(
             emitter.instruction("mov rdi, r11");                                // place the indexed-array pointer in the x86_64 runtime receiver register
             abi::emit_call_label(emitter, "__rt_array_push_int");                 // append the callable pointer bits as a plain scalar slot
         }
-        PhpType::Mixed | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
+        PhpType::Mixed | PhpType::Union(_) | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
             emitter.instruction("mov rsi, rax");                                // place the retained refcounted payload pointer in the x86_64 runtime child register
             emitter.instruction("mov rdi, r11");                                // place the indexed-array pointer in the x86_64 runtime receiver register
             abi::emit_call_label(emitter, "__rt_array_push_refcounted");          // append the retained heap payload and stamp the indexed-array value_type metadata
@@ -187,5 +219,27 @@ fn emit_array_push_stmt_linux_x86_64(
         abi::emit_store_to_address(emitter, "rax", "r11", 0);                   // store the updated indexed-array pointer through the by-reference slot
     } else {
         abi::store_at_offset(emitter, "rax", offset);                              // save the possibly-grown indexed-array pointer back into the local slot
+    }
+}
+
+fn effective_indexed_push_type(existing: &PhpType, value: &PhpType, ctx: &Context) -> PhpType {
+    if matches!(existing, PhpType::Never) {
+        return if matches!(value, PhpType::Union(_)) {
+            PhpType::Mixed
+        } else {
+            value.clone()
+        };
+    }
+    if matches!(value, PhpType::Never) {
+        return existing.clone();
+    }
+    if matches!(existing, PhpType::Mixed) || matches!(value, PhpType::Mixed | PhpType::Union(_)) {
+        PhpType::Mixed
+    } else if existing == value {
+        existing.clone()
+    } else if let (PhpType::Object(left), PhpType::Object(right)) = (existing, value) {
+        ctx.common_object_type(left, right).unwrap_or(PhpType::Mixed)
+    } else {
+        PhpType::Mixed
     }
 }

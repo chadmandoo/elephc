@@ -208,6 +208,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     arrays::emit_array_reduce(emitter);
     arrays::emit_array_walk(emitter);
     arrays::emit_usort(emitter);
+    arrays::emit_array_to_mixed(emitter);
     arrays::emit_array_merge_into(emitter);
     arrays::emit_array_merge_into_refcounted(emitter);
     arrays::emit_decref_any(emitter);
