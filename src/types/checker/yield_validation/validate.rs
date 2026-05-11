@@ -363,7 +363,7 @@ fn visit_expr(expr: &Expr, st: &mut State) {
         | ExprKind::PreDecrement(_)
         | ExprKind::PostDecrement(_)
         | ExprKind::ConstRef(_)
-        | ExprKind::EnumCase { .. }
+        | ExprKind::ScopedConstantAccess { .. }
         | ExprKind::This
         | ExprKind::FirstClassCallable(_)
         | ExprKind::StaticPropertyAccess { .. }

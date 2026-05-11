@@ -172,6 +172,12 @@ fn check_object_property_write(
             if class_info.methods.contains_key("__set") {
                 return Ok(());
             }
+            if class_info.allow_dynamic_properties {
+                // PHP 8.2 #[\AllowDynamicProperties]: writes to undeclared
+                // properties are routed at codegen time to a per-object
+                // hashtable side-table. The value is stored as `Mixed`.
+                return Ok(());
+            }
             return Err(CompileError::new(
                 span,
                 &format!("Undefined property: {}::{}", class_name, property),
@@ -364,7 +370,7 @@ fn updated_array_property_push_type(
             } else {
                 let merged_ty = checker
                     .merge_array_element_type(elem_ty, val_ty)
-                    .unwrap_or_else(|| val_ty.clone());
+                    .unwrap_or(PhpType::Mixed);
                 Ok(PhpType::Array(Box::new(merged_ty)))
             }
         }
@@ -406,7 +412,7 @@ fn updated_array_property_assign_type(
             } else {
                 let merged_ty = checker
                     .merge_array_element_type(elem_ty, val_ty)
-                    .unwrap_or_else(|| val_ty.clone());
+                    .unwrap_or(PhpType::Mixed);
                 Ok(PhpType::Array(Box::new(merged_ty)))
             }
         }

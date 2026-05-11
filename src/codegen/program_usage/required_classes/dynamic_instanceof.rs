@@ -225,11 +225,11 @@ fn expr_has_dynamic_instanceof(expr: &Expr) -> bool {
         | ExprKind::PreDecrement(_)
         | ExprKind::PostDecrement(_)
         | ExprKind::ConstRef(_)
-        | ExprKind::EnumCase { .. }
         | ExprKind::StaticPropertyAccess { .. }
         | ExprKind::FirstClassCallable(_)
         | ExprKind::This
-        | ExprKind::ClassConstant { .. } => false,
+        | ExprKind::ClassConstant { .. }
+        | ExprKind::ScopedConstantAccess { .. } => false,
         ExprKind::Yield { key, value } => {
             key.as_ref().is_some_and(|k| expr_has_dynamic_instanceof(k))
                 || value

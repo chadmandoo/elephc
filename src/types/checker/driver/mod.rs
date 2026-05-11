@@ -65,6 +65,7 @@ pub(super) fn check_types_impl(
             name,
             extends,
             methods,
+            constants,
         } = &stmt.kind
         {
             let interface_key = php_symbol_key(name);
@@ -91,6 +92,7 @@ pub(super) fn check_types_impl(
                         .collect(),
                     methods: methods.clone(),
                     span: stmt.span,
+                    constants: constants.clone(),
                 },
             );
         }

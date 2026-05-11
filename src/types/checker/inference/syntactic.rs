@@ -111,6 +111,12 @@ pub(crate) fn wider_type_syntactic(a: &PhpType, b: &PhpType) -> PhpType {
     if a == b {
         return a.clone();
     }
+    if *a == PhpType::Never {
+        return b.clone();
+    }
+    if *b == PhpType::Never {
+        return a.clone();
+    }
     if *a == PhpType::Str || *b == PhpType::Str {
         return PhpType::Str;
     }
@@ -261,7 +267,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
             let mut elem_ty = elems
                 .first()
                 .map(infer_expr_type_syntactic)
-                .unwrap_or(PhpType::Mixed);
+                .unwrap_or(PhpType::Never);
             for elem in elems.iter().skip(1) {
                 elem_ty = wider_type_syntactic(&elem_ty, &infer_expr_type_syntactic(elem));
             }
@@ -290,8 +296,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
         }
         ExprKind::NewObject { class_name, .. } => PhpType::Object(class_name.as_str().to_string()),
         ExprKind::NewScopedObject { .. } => PhpType::Object(String::new()),
-        ExprKind::ClassConstant { .. } => PhpType::Str,
-        ExprKind::EnumCase { enum_name, .. } => PhpType::Object(enum_name.as_str().to_string()),
+        ExprKind::ClassConstant { .. } | ExprKind::ScopedConstantAccess { .. } => PhpType::Str,
         ExprKind::This => PhpType::Object(String::new()),
         ExprKind::PtrCast { target_type, .. } => PhpType::Pointer(Some(target_type.clone())),
         ExprKind::BinaryOp { left, op, right } => match op {

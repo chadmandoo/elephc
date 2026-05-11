@@ -55,6 +55,7 @@ pub(crate) fn inject_builtin_iterators(
                 builtin_iterator_method("rewind", TypeExpr::Void),
             ],
             span: crate::span::Span::dummy(),
+            constants: Vec::new(),
         },
     );
 
@@ -68,6 +69,7 @@ pub(crate) fn inject_builtin_iterators(
                 TypeExpr::Named(Name::unqualified("Iterator")),
             )],
             span: crate::span::Span::dummy(),
+            constants: Vec::new(),
         },
     );
 
@@ -91,6 +93,8 @@ pub(crate) fn inject_builtin_iterators(
                 stub_method_returning_null_with_param("throw", "exception"),
                 stub_method_returning_null("getReturn"),
             ],
+            attributes: Vec::new(),
+            constants: Vec::new(),
         },
     );
 
@@ -110,6 +114,7 @@ fn builtin_iterator_method(name: &str, return_type: TypeExpr) -> ClassMethod {
         return_type: Some(return_type),
         body: Vec::new(),
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
     }
 }
 
@@ -133,6 +138,7 @@ fn stub_method_returning_null(name: &str) -> ClassMethod {
             crate::span::Span::dummy(),
         )],
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
     }
 }
 
@@ -152,6 +158,7 @@ fn stub_method_returning_null_with_param(name: &str, param: &str) -> ClassMethod
             crate::span::Span::dummy(),
         )],
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
     }
 }
 
@@ -174,6 +181,7 @@ fn stub_method_returning_false(name: &str) -> ClassMethod {
             crate::span::Span::dummy(),
         )],
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
     }
 }
 
@@ -190,6 +198,7 @@ fn stub_void_method(name: &str) -> ClassMethod {
         return_type: Some(TypeExpr::Void),
         body: Vec::new(),
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
     }
 }
 
