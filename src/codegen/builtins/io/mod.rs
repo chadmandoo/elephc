@@ -20,8 +20,10 @@ mod fclose;
 mod fdatasync;
 mod feof;
 mod fflush;
+mod fgetc;
 mod fgetcsv;
 mod fgets;
+mod flock;
 mod fnmatch;
 mod file;
 mod file_exists;
@@ -37,8 +39,10 @@ mod fileperms;
 mod filesize;
 mod filetype;
 mod fopen;
+mod fpassthru;
 mod fputcsv;
 mod fread;
+mod readfile;
 mod fseek;
 mod fsync;
 mod ftell;
@@ -68,6 +72,7 @@ mod stat_result;
 mod stream_arg;
 mod sys_get_temp_dir;
 mod tempnam;
+mod tmpfile;
 mod touch;
 mod umask;
 mod unlink;
@@ -94,6 +99,11 @@ pub fn emit(
         "fread" => fread::emit(name, args, emitter, ctx, data),
         "fwrite" => fwrite::emit(name, args, emitter, ctx, data),
         "fgets" => fgets::emit(name, args, emitter, ctx, data),
+        "fgetc" => fgetc::emit(name, args, emitter, ctx, data),
+        "fpassthru" => fpassthru::emit(name, args, emitter, ctx, data),
+        "flock" => flock::emit(name, args, emitter, ctx, data),
+        "tmpfile" => tmpfile::emit(name, args, emitter, ctx, data),
+        "readfile" => readfile::emit(name, args, emitter, ctx, data),
         "feof" => feof::emit(name, args, emitter, ctx, data),
         "readline" => readline::emit(name, args, emitter, ctx, data),
         "fseek" => fseek::emit(name, args, emitter, ctx, data),

@@ -25,3 +25,5 @@ mod stat_ext;
 mod paths;
 #[path = "io/modify.rs"]
 mod modify;
+#[path = "io/streams_ext.rs"]
+mod streams_ext;

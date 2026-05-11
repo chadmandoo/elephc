@@ -146,6 +146,40 @@ pub(super) fn check_builtin(
             ensure_stream_resource(checker, name, &args[0], env)?;
             Ok(Some(PhpType::Bool))
         }
+        "fgetc" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(span, "fgetc() takes exactly 1 argument"));
+            }
+            ensure_stream_resource(checker, name, &args[0], env)?;
+            Ok(Some(PhpType::Str))
+        }
+        "fpassthru" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(
+                    span,
+                    "fpassthru() takes exactly 1 argument",
+                ));
+            }
+            ensure_stream_resource(checker, name, &args[0], env)?;
+            Ok(Some(PhpType::Int))
+        }
+        "flock" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(span, "flock() takes exactly 2 arguments"));
+            }
+            ensure_stream_resource(checker, name, &args[0], env)?;
+            checker.infer_type(&args[1], env)?;
+            Ok(Some(PhpType::Bool))
+        }
+        "tmpfile" => {
+            if !args.is_empty() {
+                return Err(CompileError::new(span, "tmpfile() takes no arguments"));
+            }
+            Ok(Some(checker.normalize_union_type(vec![
+                PhpType::stream_resource(),
+                PhpType::Bool,
+            ])))
+        }
         _ => Ok(None),
     }
 }

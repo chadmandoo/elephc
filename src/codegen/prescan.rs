@@ -80,6 +80,22 @@ pub(super) fn collect_constants(
         "STDERR".to_string(),
         (ExprKind::IntLiteral(2), PhpType::stream_resource()),
     );
+    constants.insert(
+        "LOCK_SH".to_string(),
+        (ExprKind::IntLiteral(1), PhpType::Int),
+    );
+    constants.insert(
+        "LOCK_EX".to_string(),
+        (ExprKind::IntLiteral(2), PhpType::Int),
+    );
+    constants.insert(
+        "LOCK_UN".to_string(),
+        (ExprKind::IntLiteral(3), PhpType::Int),
+    );
+    constants.insert(
+        "LOCK_NB".to_string(),
+        (ExprKind::IntLiteral(4), PhpType::Int),
+    );
     for stmt in program {
         match &stmt.kind {
             StmtKind::ConstDecl { name, value } => {
