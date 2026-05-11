@@ -119,6 +119,15 @@ File handles are PHP `resource` values, not integers. `gettype(fopen(...))` retu
 | `tempnam()` | `tempnam($dir, $prefix): string` | Create temp filename |
 | `sys_get_temp_dir()` | `sys_get_temp_dir(): string` | System temp directory |
 
+## Symbolic links
+
+| Function | Signature | Description |
+|---|---|---|
+| `symlink()` | `symlink($target, $link): bool` | Create a symbolic link at `$link` pointing at `$target`. |
+| `link()` | `link($target, $link): bool` | Create a hard link `$link` for an existing path `$target`. |
+| `readlink()` | `readlink($path): string\|false` | Read the target of a symbolic link. Returns `false` on failure. |
+| `linkinfo()` | `linkinfo($path): int` | Returns the device id (`st_dev`) of the link, or `0` on failure. |
+
 ## File metadata
 
 | Function | Signature | Description |

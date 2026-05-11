@@ -261,6 +261,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         | "fstat" | "fsync" | "fflush" | "fdatasync" => Some(fixed(&["stream"])),
         "flock" => Some(fixed(&["stream", "operation"])),
         "readfile" => Some(fixed(&["filename"])),
+        "symlink" | "link" => Some(fixed(&["target", "link"])),
+        "readlink" | "linkinfo" => Some(fixed(&["path"])),
         "fread" => Some(fixed(&["stream", "length"])),
         "fwrite" => Some(fixed(&["stream", "data"])),
         "fseek" => Some(optional(&["stream", "offset", "whence"], 2, vec![int_lit(0)])),

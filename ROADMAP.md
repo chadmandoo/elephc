@@ -394,6 +394,7 @@ product mode. This is also the series that delivered the Fibers MVP.
 - [x] Full first-class callable targets — support `static::method(...)` and `$object->method(...)` in addition to function, `ClassName::`, `self::`, and `parent::` targets
 - [x] Captured closures as callback values — forward hidden `use (...)` environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`
 - [x] Filesystem stream extensions: `fgetc()` (thin wrapper over `fread`, length 1), `readfile()` (open + chunked read+write to stdout + close, returns bytes copied or 0 on failure), `fpassthru()` (same loop on an already-open fd), `flock()` (libc `flock` with PHP→POSIX `LOCK_UN` translation, preserves the `LOCK_NB` flag), and `tmpfile()` (`mkstemp("/tmp/elephc-XXXXXX")` + immediate `unlink` so the file auto-deletes on close, returns a PHP `resource|false`). Also predefines `LOCK_SH=1`, `LOCK_EX=2`, `LOCK_UN=3`, `LOCK_NB=4` constants matching PHP's numbering.
+- [x] Filesystem symbolic links: `symlink($target, $link)`, `link($target, $link)`, `readlink($path)` (returns owned heap string boxed as Mixed for the `string|false` convention), and `linkinfo($path)` (returns `st_dev` or `0` on failure). All routed through libc to avoid per-syscall remapping work.
 
 ## v0.21.x — PHP array and type-model parity
 

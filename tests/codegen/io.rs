@@ -27,3 +27,5 @@ mod paths;
 mod modify;
 #[path = "io/streams_ext.rs"]
 mod streams_ext;
+#[path = "io/symlinks.rs"]
+mod symlinks;

@@ -43,6 +43,7 @@ mod fpassthru;
 mod fputcsv;
 mod fread;
 mod readfile;
+mod readlink;
 mod fseek;
 mod fsync;
 mod ftell;
@@ -56,6 +57,8 @@ mod is_file;
 mod is_link;
 mod is_readable;
 mod is_writable;
+mod link;
+mod linkinfo;
 mod mkdir;
 mod pathinfo;
 mod print_r;
@@ -70,6 +73,7 @@ mod scandir;
 mod stat;
 mod stat_result;
 mod stream_arg;
+mod symlink;
 mod sys_get_temp_dir;
 mod tempnam;
 mod tmpfile;
@@ -104,6 +108,10 @@ pub fn emit(
         "flock" => flock::emit(name, args, emitter, ctx, data),
         "tmpfile" => tmpfile::emit(name, args, emitter, ctx, data),
         "readfile" => readfile::emit(name, args, emitter, ctx, data),
+        "symlink" => symlink::emit(name, args, emitter, ctx, data),
+        "link" => link::emit(name, args, emitter, ctx, data),
+        "readlink" => readlink::emit(name, args, emitter, ctx, data),
+        "linkinfo" => linkinfo::emit(name, args, emitter, ctx, data),
         "feof" => feof::emit(name, args, emitter, ctx, data),
         "readline" => readline::emit(name, args, emitter, ctx, data),
         "fseek" => fseek::emit(name, args, emitter, ctx, data),
