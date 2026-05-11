@@ -1,14 +1,16 @@
-//! Codegen for `#[\AllowDynamicProperties]` (PHP 8.2).
+//! Purpose:
+//! Lowers reads and writes for undeclared properties on classes marked with
+//! PHP 8.2 `#[\AllowDynamicProperties]`.
 //!
-//! Each instance of an `#[\AllowDynamicProperties]` class carries an
-//! associative-array hashtable in a dedicated slot at the end of its
-//! property layout (offset `8 + num_props * 16`). Writes and reads of
-//! undeclared properties are routed through this side-table — values
-//! are stored as boxed `Mixed` cells so heterogeneous types are supported.
+//! Called from:
+//! - `crate::codegen::stmt::assignments::properties::assign`
+//! - `crate::codegen::expr::objects::access`
 //!
-//! The hashtable is allocated eagerly in the object constructor (see
-//! `expr/objects/allocation.rs`) and freed when the object is destroyed
-//! (see `runtime/arrays/object_free_deep.rs`).
+//! Key details:
+//! - Dynamic values are stored in a per-object hashtable as boxed `Mixed`
+//!   cells at offset `8 + num_props * 16`.
+//! - Allocation and cleanup are owned by object construction and deep-free
+//!   runtime paths.
 
 use crate::codegen::abi;
 use crate::codegen::context::Context;
@@ -47,16 +49,16 @@ pub(super) fn emit_dynamic_property_set(
     if *val_ty == PhpType::Void {
         match emitter.target.arch {
             Arch::AArch64 => {
-                emitter.instruction("mov x0, #8");                               // runtime tag 8 = null payload for Mixed boxing
-                emitter.instruction("mov x1, xzr");                              // null mixed payloads carry no low word
-                emitter.instruction("mov x2, xzr");                              // null mixed payloads carry no high word
-                emitter.instruction("bl __rt_mixed_from_value");                 // box null into an owned Mixed cell
+                emitter.instruction("mov x0, #8");                              // runtime tag 8 = null payload for Mixed boxing
+                emitter.instruction("mov x1, xzr");                             // null mixed payloads carry no low word
+                emitter.instruction("mov x2, xzr");                             // null mixed payloads carry no high word
+                emitter.instruction("bl __rt_mixed_from_value");                // box null into an owned Mixed cell
             }
             Arch::X86_64 => {
-                emitter.instruction("mov rdi, 9223372036854775806");             // runtime null sentinel as the boxed null payload low word
-                emitter.instruction("xor rsi, rsi");                             // null mixed payloads carry no high word
-                emitter.instruction("mov rax, 8");                               // runtime tag 8 = null payload for Mixed boxing
-                emitter.instruction("call __rt_mixed_from_value");               // box null into an owned Mixed cell
+                emitter.instruction("mov rdi, 9223372036854775806");            // runtime null sentinel as the boxed null payload low word
+                emitter.instruction("xor rsi, rsi");                            // null mixed payloads carry no high word
+                emitter.instruction("mov rax, 8");                              // runtime tag 8 = null payload for Mixed boxing
+                emitter.instruction("call __rt_mixed_from_value");              // box null into an owned Mixed cell
             }
         }
         abi::emit_pop_reg(emitter, object_reg); // reload $this after Mixed boxing helper
@@ -65,7 +67,7 @@ pub(super) fn emit_dynamic_property_set(
             PhpType::Float => {
                 match emitter.target.arch {
                     Arch::AArch64 => {
-                        emitter.instruction("ldr d0, [sp, #16]");                // reload the saved float for Mixed boxing
+                        emitter.instruction("ldr d0, [sp, #16]");               // reload the saved float for Mixed boxing
                     }
                     Arch::X86_64 => {
                         emitter.instruction("movsd xmm0, QWORD PTR [rsp + 16]"); // reload the saved float for Mixed boxing
@@ -76,11 +78,11 @@ pub(super) fn emit_dynamic_property_set(
             PhpType::Str => {
                 match emitter.target.arch {
                     Arch::AArch64 => {
-                        emitter.instruction("ldp x1, x2, [sp, #16]");            // reload the saved string payload for Mixed boxing
+                        emitter.instruction("ldp x1, x2, [sp, #16]");           // reload the saved string payload for Mixed boxing
                     }
                     Arch::X86_64 => {
-                        emitter.instruction("mov rax, QWORD PTR [rsp + 16]");    // reload the saved string pointer for Mixed boxing
-                        emitter.instruction("mov rdx, QWORD PTR [rsp + 24]");    // reload the saved string length for Mixed boxing
+                        emitter.instruction("mov rax, QWORD PTR [rsp + 16]");   // reload the saved string pointer for Mixed boxing
+                        emitter.instruction("mov rdx, QWORD PTR [rsp + 24]");   // reload the saved string length for Mixed boxing
                     }
                 }
                 crate::codegen::emit_box_current_value_as_mixed(emitter, val_ty);
@@ -114,11 +116,11 @@ pub(super) fn emit_dynamic_property_set(
             // (possibly realloc'd) hashtable pointer in x0.
             abi::emit_push_reg(emitter, object_reg);                             // save $this for the post-call slot store
             abi::emit_symbol_address(emitter, "x1", &label);                     // x1 = property-name string address
-            emitter.instruction(&format!("mov x2, #{}", key_len));               // x2 = property-name length
-            emitter.instruction(&format!("mov x3, {}", boxed_reg));              // x3 = boxed Mixed cell pointer (value_lo)
-            emitter.instruction("mov x4, xzr");                                  // x4 = value_hi (unused for Mixed)
-            emitter.instruction("mov x5, #7");                                   // x5 = value tag = 7 (mixed)
-            emitter.instruction("bl __rt_hash_set");                             // store entry; x0 = (possibly realloc'd) hashtable pointer
+            emitter.instruction(&format!("mov x2, #{}", key_len));              // x2 = property-name length
+            emitter.instruction(&format!("mov x3, {}", boxed_reg));             // x3 = boxed Mixed cell pointer (value_lo)
+            emitter.instruction("mov x4, xzr");                                 // x4 = value_hi (unused for Mixed)
+            emitter.instruction("mov x5, #7");                                  // x5 = value tag = 7 (mixed)
+            emitter.instruction("bl __rt_hash_set");                            // store entry; x0 = (possibly realloc'd) hashtable pointer
             abi::emit_pop_reg(emitter, object_reg);                              // restore $this for the dyn_props slot update
             emitter.instruction(&format!("str x0, [{}, #{}]", object_reg, dyn_slot_offset)); // write the (possibly realloc'd) hashtable pointer back into the slot
         }
@@ -126,11 +128,11 @@ pub(super) fn emit_dynamic_property_set(
             emitter.instruction(&format!("mov rdi, QWORD PTR [{} + {}]", object_reg, dyn_slot_offset)); // rdi = hashtable pointer from the receiver slot
             abi::emit_push_reg(emitter, object_reg);                             // save $this for the post-call slot store
             abi::emit_symbol_address(emitter, "rsi", &label);                    // rsi = property-name string address
-            emitter.instruction(&format!("mov rdx, {}", key_len));               // rdx = property-name length
-            emitter.instruction(&format!("mov rcx, {}", boxed_reg));             // rcx = boxed Mixed pointer (value_lo)
-            emitter.instruction("xor r8, r8");                                   // r8  = value_hi (unused for Mixed)
-            emitter.instruction("mov r9, 7");                                    // r9  = value tag = 7 (mixed)
-            emitter.instruction("call __rt_hash_set");                           // store entry; rax = (possibly realloc'd) hashtable pointer
+            emitter.instruction(&format!("mov rdx, {}", key_len));              // rdx = property-name length
+            emitter.instruction(&format!("mov rcx, {}", boxed_reg));            // rcx = boxed Mixed pointer (value_lo)
+            emitter.instruction("xor r8, r8");                                  // r8  = value_hi (unused for Mixed)
+            emitter.instruction("mov r9, 7");                                   // r9  = value tag = 7 (mixed)
+            emitter.instruction("call __rt_hash_set");                          // store entry; rax = (possibly realloc'd) hashtable pointer
             abi::emit_pop_reg(emitter, object_reg);                              // restore $this for the dyn_props slot update
             emitter.instruction(&format!("mov QWORD PTR [{} + {}], rax", object_reg, dyn_slot_offset)); // write the (possibly realloc'd) hashtable pointer back into the slot
         }
@@ -154,46 +156,46 @@ pub(crate) fn emit_dynamic_property_get(
 
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("mov {}, x0", object_reg));             // copy $this into the scratch register so we can clobber x0 for hash_get args
+            emitter.instruction(&format!("mov {}, x0", object_reg));            // copy $this into the scratch register so we can clobber x0 for hash_get args
             emitter.instruction(&format!("ldr x0, [{}, #{}]", object_reg, dyn_slot_offset)); // x0 = hashtable pointer from the receiver slot
             abi::emit_symbol_address(emitter, "x1", &label);                     // x1 = property-name string address
-            emitter.instruction(&format!("mov x2, #{}", key_len));               // x2 = property-name length
-            emitter.instruction("bl __rt_hash_get");                             // x0 = found flag; x1=value_lo, x2=value_hi, x3=value_tag
+            emitter.instruction(&format!("mov x2, #{}", key_len));              // x2 = property-name length
+            emitter.instruction("bl __rt_hash_get");                            // x0 = found flag; x1=value_lo, x2=value_hi, x3=value_tag
             // The hash_get result is the boxed Mixed cell pointer when found,
             // or 0 when missing. PHP returns null with a notice for missing
             // dynamic property reads, so we emit a Mixed null in that case.
             let miss_label = ctx.next_label("dyn_get_miss");
             let done_label = ctx.next_label("dyn_get_done");
-            emitter.instruction(&format!("cbz x0, {}", miss_label));             // if not found, jump to the null-return path
+            emitter.instruction(&format!("cbz x0, {}", miss_label));            // if not found, jump to the null-return path
             // Found: x1 holds the Mixed cell pointer (since we stored tag=7 with value_lo=mixed_ptr).
-            emitter.instruction("mov x0, x1");                                   // result = mixed cell pointer
-            emitter.instruction(&format!("b {}", done_label));                   // skip the null-return path
+            emitter.instruction("mov x0, x1");                                  // result = mixed cell pointer
+            emitter.instruction(&format!("b {}", done_label));                  // skip the null-return path
             emitter.label(&miss_label);
             // Allocate a fresh boxed null Mixed for the missing case.
-            emitter.instruction("mov x0, #8");                                   // tag 8 = null
-            emitter.instruction("mov x1, xzr");                                  // value_lo unused for null
-            emitter.instruction("mov x2, xzr");                                  // value_hi unused for null
-            emitter.instruction("bl __rt_mixed_from_value");                     // x0 = boxed null Mixed cell pointer
+            emitter.instruction("mov x0, #8");                                  // tag 8 = null
+            emitter.instruction("mov x1, xzr");                                 // value_lo unused for null
+            emitter.instruction("mov x2, xzr");                                 // value_hi unused for null
+            emitter.instruction("bl __rt_mixed_from_value");                    // x0 = boxed null Mixed cell pointer
             emitter.label(&done_label);
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("mov {}, rax", object_reg));            // copy $this into the scratch register so we can clobber rax for hash_get args
+            emitter.instruction(&format!("mov {}, rax", object_reg));           // copy $this into the scratch register so we can clobber rax for hash_get args
             emitter.instruction(&format!("mov rdi, QWORD PTR [{} + {}]", object_reg, dyn_slot_offset)); // rdi = hashtable pointer from the receiver slot
             abi::emit_symbol_address(emitter, "rsi", &label);                    // rsi = property-name string address
-            emitter.instruction(&format!("mov rdx, {}", key_len));               // rdx = property-name length
-            emitter.instruction("call __rt_hash_get");                           // rax = found flag; r12=value_lo, r13=value_hi, r14=value_tag
+            emitter.instruction(&format!("mov rdx, {}", key_len));              // rdx = property-name length
+            emitter.instruction("call __rt_hash_get");                          // rax = found flag; r12=value_lo, r13=value_hi, r14=value_tag
             let miss_label = ctx.next_label("dyn_get_miss");
             let done_label = ctx.next_label("dyn_get_done");
-            emitter.instruction("test rax, rax");                                // check the hash_get found flag
-            emitter.instruction(&format!("je {}", miss_label));                  // missing entries route to the null-return path
+            emitter.instruction("test rax, rax");                               // check the hash_get found flag
+            emitter.instruction(&format!("je {}", miss_label));                 // missing entries route to the null-return path
             // Found: r12 holds the Mixed cell pointer.
-            emitter.instruction("mov rax, r12");                                 // result = mixed cell pointer
-            emitter.instruction(&format!("jmp {}", done_label));                 // skip the null-return path
+            emitter.instruction("mov rax, r12");                                // result = mixed cell pointer
+            emitter.instruction(&format!("jmp {}", done_label));                // skip the null-return path
             emitter.label(&miss_label);
-            emitter.instruction("mov rdi, 9223372036854775806");                 // null sentinel low word for boxed Mixed null
-            emitter.instruction("xor rsi, rsi");                                 // value_hi unused for null
-            emitter.instruction("mov rax, 8");                                   // tag 8 = null
-            emitter.instruction("call __rt_mixed_from_value");                   // rax = boxed null Mixed cell pointer
+            emitter.instruction("mov rdi, 9223372036854775806");                // null sentinel low word for boxed Mixed null
+            emitter.instruction("xor rsi, rsi");                                // value_hi unused for null
+            emitter.instruction("mov rax, 8");                                  // tag 8 = null
+            emitter.instruction("call __rt_mixed_from_value");                  // rax = boxed null Mixed cell pointer
             emitter.label(&done_label);
         }
     }

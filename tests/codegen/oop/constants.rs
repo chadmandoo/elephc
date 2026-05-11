@@ -1,3 +1,13 @@
+//! Purpose:
+//! End-to-end codegen tests for class, interface, trait, and enum constants.
+//!
+//! Called from:
+//! - `cargo test` through Rust's test harness.
+//!
+//! Key details:
+//! - Constant values are inlined by codegen rather than looked up at runtime.
+//! - Inheritance and visibility cases cover schema/codegen agreement.
+
 use super::*;
 
 #[test]

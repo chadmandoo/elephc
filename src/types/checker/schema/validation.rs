@@ -10,7 +10,7 @@
 
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
-use crate::parser::ast::{ClassMethod, Expr, ExprKind, StmtKind, Visibility};
+use crate::parser::ast::{Attribute, ClassMethod, Expr, ExprKind, StmtKind, Visibility};
 use crate::types::{FunctionSig, PhpType};
 
 use super::super::Checker;
@@ -82,11 +82,7 @@ pub(crate) fn extract_deprecation(
 ) -> Option<String> {
     for group in groups {
         for attr in &group.attributes {
-            let matches = attr
-                .name
-                .last_segment()
-                .is_some_and(|seg| seg.eq_ignore_ascii_case("Deprecated"));
-            if !matches {
+            if !matches_global_builtin_attribute(attr, "Deprecated") {
                 continue;
             }
             let reason = attr.args.iter().find_map(|expr| match &expr.kind {
@@ -97,6 +93,14 @@ pub(crate) fn extract_deprecation(
         }
     }
     None
+}
+
+pub(crate) fn matches_global_builtin_attribute(attr: &Attribute, builtin: &str) -> bool {
+    let name = attr.name.as_canonical();
+    if attr.name.is_fully_qualified() {
+        return name.eq_ignore_ascii_case(builtin);
+    }
+    attr.name.is_unqualified() && name.eq_ignore_ascii_case(builtin)
 }
 
 pub(crate) fn build_constructor_param_map(methods: &[ClassMethod]) -> Vec<Option<String>> {

@@ -16,6 +16,7 @@ use crate::types::{ClassInfo, FunctionSig, PhpType};
 
 #[derive(Default)]
 pub(super) struct ClassBuildState {
+    pub(super) allow_dynamic_properties: bool,
     pub(super) prop_types: Vec<(String, PhpType)>,
     pub(super) property_offsets: HashMap<String, usize>,
     pub(super) property_declaring_classes: HashMap<String, String>,
@@ -57,6 +58,7 @@ impl ClassBuildState {
             state.inherit_methods(parent);
             state.inherit_static_methods(parent);
             state.interfaces = parent.interfaces.clone();
+            state.allow_dynamic_properties = parent.allow_dynamic_properties;
         }
         state
     }
@@ -73,7 +75,8 @@ impl ClassBuildState {
             is_abstract: class.is_abstract,
             is_final: class.is_final,
             is_readonly_class: class.is_readonly_class,
-            allow_dynamic_properties: class_has_allow_dynamic_properties(class),
+            allow_dynamic_properties: self.allow_dynamic_properties
+                || class_has_allow_dynamic_properties(class),
             constants: class
                 .constants
                 .iter()
@@ -121,9 +124,10 @@ impl ClassBuildState {
 pub(super) fn class_has_allow_dynamic_properties(class: &FlattenedClass) -> bool {
     class.attributes.iter().any(|group| {
         group.attributes.iter().any(|attr| {
-            attr.name
-                .last_segment()
-                .is_some_and(|seg| seg.eq_ignore_ascii_case("AllowDynamicProperties"))
+            super::super::validation::matches_global_builtin_attribute(
+                attr,
+                "AllowDynamicProperties",
+            )
         })
     })
 }

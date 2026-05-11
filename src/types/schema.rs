@@ -35,10 +35,9 @@ pub struct ClassInfo {
     pub is_final: bool,
     pub is_readonly_class: bool,
     /// `true` if the class declaration carries the PHP 8.2
-    /// `#[\AllowDynamicProperties]` attribute. The flag is captured for
-    /// future use (runtime dynamic-property storage is not yet implemented),
-    /// so the type checker still rejects assignments to undeclared properties.
-    #[allow(dead_code)]
+    /// `#[\AllowDynamicProperties]` attribute or inherits it from a parent.
+    /// Codegen routes undeclared property storage through a per-object
+    /// side-table when this flag is set.
     pub allow_dynamic_properties: bool,
     /// User-declared class constants (PHP 7.1+). Maps the constant name to
     /// its value expression — codegen inlines the literal at access time.

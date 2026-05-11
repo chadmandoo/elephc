@@ -105,7 +105,7 @@ pub(super) fn emit_new_object(
                 emitter.instruction("mov x1, #7");                              // value type tag = mixed (heterogeneous)
                 emitter.instruction("bl __rt_hash_new");                        // allocate empty hashtable -> x0 = hashtable pointer
                 emitter.instruction("ldr x9, [sp]");                            // peek object pointer for dyn_props slot store
-                emitter.instruction(&format!("str x0, [x9, #{}]", offset));    // store the hashtable pointer in the dyn_props slot
+                emitter.instruction(&format!("str x0, [x9, #{}]", offset));     // store the hashtable pointer in the dyn_props slot
             }
             Arch::X86_64 => {
                 emitter.instruction("mov rdi, 4");                              // initial hashtable capacity for dyn_props

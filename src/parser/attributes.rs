@@ -1,9 +1,13 @@
-//! PHP attribute parsing (`#[Name]`, `#[Name(args)]`, `#[A, B(1)]`, stacked).
+//! Purpose:
+//! Parses PHP attribute groups such as `#[Name]`, `#[Name(args)]`,
+//! comma-separated groups, and stacked groups.
 //!
-//! Attributes are captured into the AST as `Vec<AttributeGroup>` so later
-//! passes can read them (e.g. `#[\Override]` enforcement). Runtime
-//! introspection through `ReflectionAttribute` is not yet wired up — the
-//! type checker and codegen consume the groups for diagnostics only.
+//! Called from:
+//! - `crate::parser::stmt` and closure/parameter parsers.
+//!
+//! Key details:
+//! - Declaration attributes are captured for later passes; parameter and
+//!   closure attributes are currently syntax-validated and discarded.
 //!
 //! The grammar:
 //!

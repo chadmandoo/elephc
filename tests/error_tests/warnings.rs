@@ -166,6 +166,30 @@ fn test_warning_deprecated_unqualified_form_is_recognized() {
 }
 
 #[test]
+fn test_warning_deprecated_import_alias_is_recognized() {
+    expect_warning(
+        "<?php use Deprecated as Old; #[Old] function legacy(): int { return 1; } echo legacy();",
+        "Call to deprecated function: legacy()",
+    );
+}
+
+#[test]
+fn test_warning_no_deprecation_for_qualified_lookalike() {
+    expect_no_warning(
+        "<?php #[Foo\\Deprecated] function legacy(): int { return 1; } echo legacy();",
+        "deprecated function",
+    );
+}
+
+#[test]
+fn test_warning_no_deprecation_for_namespaced_unqualified_lookalike() {
+    expect_no_warning(
+        "<?php namespace N; #[Deprecated] function legacy(): int { return 1; } echo legacy();",
+        "deprecated function",
+    );
+}
+
+#[test]
 fn test_warning_no_deprecation_when_not_called() {
     expect_no_warning(
         "<?php #[\\Deprecated] function legacy(): int { return 1; } echo 1;",

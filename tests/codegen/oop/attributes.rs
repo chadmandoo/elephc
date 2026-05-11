@@ -1,3 +1,14 @@
+//! Purpose:
+//! End-to-end codegen tests for PHP attribute syntax and the compile-time or
+//! runtime behavior of supported built-in attributes.
+//!
+//! Called from:
+//! - `cargo test` through Rust's test harness.
+//!
+//! Key details:
+//! - Most user-defined attributes should not change output.
+//! - Built-in attributes must respect PHP class-name resolution.
+
 use super::*;
 
 #[test]
@@ -263,6 +274,36 @@ echo $b->x;
 "#,
     );
     assert_eq!(out, "99");
+}
+
+#[test]
+fn test_allow_dynamic_properties_import_alias() {
+    let out = compile_and_run(
+        r#"<?php
+use AllowDynamicProperties as DynamicBag;
+#[DynamicBag]
+class Bag {}
+$b = new Bag();
+$b->x = 55;
+echo $b->x;
+"#,
+    );
+    assert_eq!(out, "55");
+}
+
+#[test]
+fn test_allow_dynamic_properties_is_inherited() {
+    let out = compile_and_run(
+        r#"<?php
+#[\AllowDynamicProperties]
+class Base {}
+class Child extends Base {}
+$c = new Child();
+$c->x = 7;
+echo $c->x;
+"#,
+    );
+    assert_eq!(out, "7");
 }
 
 #[test]

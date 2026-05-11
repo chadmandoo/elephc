@@ -1,3 +1,13 @@
+//! Purpose:
+//! Parser regression tests for PHP attribute syntax and AST persistence.
+//!
+//! Called from:
+//! - `cargo test` through Rust's test harness.
+//!
+//! Key details:
+//! - Declaration attributes are preserved where the AST carries metadata.
+//! - Parameter and closure attributes are accepted for syntax parity.
+
 use super::*;
 use elephc::parser::ast::{AttributeGroup, ClassMethod, ClassProperty};
 

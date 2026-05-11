@@ -14,7 +14,10 @@ use crate::parser::ast::{ClassMethod, Visibility};
 use crate::types::traits::FlattenedClass;
 
 use super::super::super::Checker;
-use super::super::validation::{build_method_sig, validate_override_signature, visibility_rank};
+use super::super::validation::{
+    build_method_sig, matches_global_builtin_attribute, validate_override_signature,
+    visibility_rank,
+};
 use super::state::ClassBuildState;
 
 pub(super) fn apply_methods(
@@ -273,11 +276,10 @@ fn method_kind_error(class: &FlattenedClass, method: &ClassMethod) -> CompileErr
 /// to mirror PHP's class-name lookup rules.
 fn has_override_attribute(method: &ClassMethod) -> bool {
     method.attributes.iter().any(|group| {
-        group.attributes.iter().any(|attr| {
-            attr.name
-                .last_segment()
-                .is_some_and(|seg| seg.eq_ignore_ascii_case("Override"))
-        })
+        group
+            .attributes
+            .iter()
+            .any(|attr| matches_global_builtin_attribute(attr, "Override"))
     })
 }
 

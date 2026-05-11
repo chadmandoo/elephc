@@ -1,3 +1,13 @@
+//! Purpose:
+//! Lexer regression tests for PHP attribute open tokens and `#` comments.
+//!
+//! Called from:
+//! - `cargo test` through Rust's test harness.
+//!
+//! Key details:
+//! - `#[` must tokenize as `AttrOpen` outside string/heredoc literals.
+//! - Bare `#` starts a PHP-style line comment.
+
 use super::*;
 
 #[test]
