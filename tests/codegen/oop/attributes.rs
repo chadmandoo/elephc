@@ -425,6 +425,19 @@ echo $names[0];
     assert_eq!(out, "Foo");
 }
 
+#[test]
+fn test_class_attribute_names_supports_named_argument_planning() {
+    let out = compile_and_run(
+        r#"<?php
+#[Foo]
+class Greeter {}
+$names = class_attribute_names(class_name: 'Greeter');
+echo $names[0];
+"#,
+    );
+    assert_eq!(out, "Foo");
+}
+
 // --- class_attribute_args() reflection-style builtin ---
 
 #[test]
@@ -540,6 +553,19 @@ echo $args[0];
     assert_eq!(out, "/x");
 }
 
+#[test]
+fn test_class_attribute_args_supports_named_argument_reordering() {
+    let out = compile_and_run(
+        r#"<?php
+#[Route("/x")]
+class Controller {}
+$args = class_attribute_args(attribute_name: 'Route', class_name: 'Controller');
+echo $args[0];
+"#,
+    );
+    assert_eq!(out, "/x");
+}
+
 // --- ReflectionAttribute synthetic class + class_get_attributes() ---
 
 #[test]
@@ -621,6 +647,19 @@ echo $attrs[0]->getArguments()[0];
 "#,
     );
     assert_eq!(out, "Foo/bar");
+}
+
+#[test]
+fn test_class_get_attributes_supports_static_assoc_spread() {
+    let out = compile_and_run(
+        r#"<?php
+#[Foo("bar")]
+class Greeter {}
+$attrs = class_get_attributes(...["class_name" => "Greeter"]);
+echo $attrs[0]->getName();
+"#,
+    );
+    assert_eq!(out, "Foo");
 }
 
 #[test]
