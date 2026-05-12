@@ -46,6 +46,13 @@ pub(super) fn check_types_impl(
 
     let (flattened_classes, flatten_errors) = flatten_classes(program);
     errors.extend(flatten_errors);
+    let declared_traits: HashSet<String> = program
+        .iter()
+        .filter_map(|stmt| match &stmt.kind {
+            StmtKind::TraitDecl { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
     let mut seen_classes = HashSet::new();
     let mut class_map = HashMap::new();
     for class in &flattened_classes {
@@ -104,7 +111,9 @@ pub(super) fn check_types_impl(
     if let Err(error) = inject_builtin_iterators(&mut interface_map, &mut class_map) {
         errors.extend(error.flatten());
     }
-    if let Err(error) = inject_builtin_reflection(&mut class_map) {
+    if let Err(error) =
+        inject_builtin_reflection(&interface_map, &mut class_map, &declared_traits)
+    {
         errors.extend(error.flatten());
     }
     checker.declared_interfaces = interface_map.keys().cloned().collect();

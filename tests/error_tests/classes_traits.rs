@@ -409,6 +409,22 @@ fn test_error_reflection_attribute_redeclaration() {
 }
 
 #[test]
+fn test_error_reflection_attribute_interface_redeclaration() {
+    expect_error(
+        "<?php interface ReflectionAttribute {}",
+        "Cannot redeclare built-in reflection type: ReflectionAttribute",
+    );
+}
+
+#[test]
+fn test_error_reflection_attribute_trait_redeclaration() {
+    expect_error(
+        "<?php trait ReflectionAttribute {}",
+        "Cannot redeclare built-in reflection type: ReflectionAttribute",
+    );
+}
+
+#[test]
 fn test_error_reflection_attribute_constructor_is_private() {
     expect_error(
         "<?php $r = new ReflectionAttribute();",

@@ -10,7 +10,7 @@
 //! - Property and method bodies are dummies; the runtime semantics are implemented by the
 //!   `class_get_attributes` builtin and private metadata slots.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
@@ -23,12 +23,16 @@ use crate::types::PhpType;
 use super::super::Checker;
 
 pub(crate) fn inject_builtin_reflection(
+    interface_map: &HashMap<String, super::InterfaceDeclInfo>,
     class_map: &mut HashMap<String, FlattenedClass>,
+    trait_names: &HashSet<String>,
 ) -> Result<(), CompileError> {
     let builtin_name = "ReflectionAttribute";
     let builtin_key = php_symbol_key(builtin_name);
-    if class_map
+    if interface_map
         .keys()
+        .chain(class_map.keys())
+        .chain(trait_names.iter())
         .any(|name| php_symbol_key(name) == builtin_key)
     {
         return Err(CompileError::new(
