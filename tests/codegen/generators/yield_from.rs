@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Heap-debug regressions cover ownership of inner generators produced by
+//!    direct `yield from <call>` delegation.
 
 use crate::support::*;
 
@@ -58,6 +62,60 @@ foreach (outer() as $v) { echo $v; echo " "; }
 "#,
     );
     assert_eq!(out, "0 1 2 3 99 ");
+}
+
+#[test]
+fn test_generator_yield_from_call_releases_inner_generator_after_completion() {
+    let baseline = compile_and_run_with_heap_debug(
+        r#"<?php
+function inner() { yield 1; yield 2; }
+foreach (inner() as $v) { echo $v; echo " "; }
+"#,
+    );
+    assert!(baseline.success, "baseline failed: {}", baseline.stderr);
+    assert_eq!(baseline.stdout, "1 2 ");
+
+    let delegated = compile_and_run_with_heap_debug(
+        r#"<?php
+function inner() { yield 1; yield 2; }
+function outer() {
+    yield from inner();
+}
+foreach (outer() as $v) { echo $v; echo " "; }
+"#,
+    );
+    assert!(delegated.success, "program failed: {}", delegated.stderr);
+    assert_eq!(delegated.stdout, "1 2 ");
+    assert_eq!(
+        heap_debug_live_counts(&delegated.stderr),
+        heap_debug_live_counts(&baseline.stderr),
+        "delegated stderr:\n{}\n\nbaseline stderr:\n{}",
+        delegated.stderr,
+        baseline.stderr
+    );
+}
+
+fn heap_debug_live_counts(stderr: &str) -> (u64, u64) {
+    let line = stderr
+        .lines()
+        .find(|line| line.starts_with("HEAP DEBUG: leak summary:"))
+        .unwrap_or_else(|| panic!("missing heap-debug leak summary: {stderr}"));
+    if line.ends_with("clean") {
+        return (0, 0);
+    }
+    let live_blocks = line
+        .split("live_blocks=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("missing live_blocks in heap-debug line: {line}"));
+    let live_bytes = line
+        .split("live_bytes=")
+        .nth(1)
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("missing live_bytes in heap-debug line: {line}"));
+    (live_blocks, live_bytes)
 }
 
 #[test]

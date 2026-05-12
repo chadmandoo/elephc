@@ -104,6 +104,7 @@ pub(super) fn emit_yield_from_generator(
 
     let loop_lbl = ctx.fresh_label("yield_from_loop");
     let end_lbl = ctx.fresh_label("yield_from_end");
+    let owns_delegated_iter = matches!(source, YieldFromSource::Call { .. });
 
     // -- materialise the inner generator pointer in x0 --
     match source {
@@ -158,7 +159,13 @@ pub(super) fn emit_yield_from_generator(
     emitter.instruction(&format!("b {}", loop_lbl));                            // loop back to re-check valid()
 
     emitter.label(&end_lbl);
-    emitter.instruction(&format!("str xzr, [x19, #{}]", gen_frame::OFF_DELEGATED_ITER)); // clear delegated_iter so future yields don't re-enter the loop
+    if owns_delegated_iter {
+        emitter.instruction(&format!("ldr x0, [x19, #{}]", gen_frame::OFF_DELEGATED_ITER)); // load the owned inner generator before clearing delegation state
+        emitter.instruction(&format!("str xzr, [x19, #{}]", gen_frame::OFF_DELEGATED_ITER)); // clear delegated_iter so future yields don't re-enter the loop
+        emitter.instruction("bl __rt_decref_any");                              // release the inner generator produced by yield-from's direct call
+    } else {
+        emitter.instruction(&format!("str xzr, [x19, #{}]", gen_frame::OFF_DELEGATED_ITER)); // clear borrowed delegated_iter without releasing the local owner
+    }
     // Fall through to the caller's continuation of the outer body.
 }
 
@@ -170,6 +177,7 @@ fn emit_yield_from_generator_x86_64(
 ) {
     let loop_lbl = ctx.fresh_label("yield_from_loop");
     let end_lbl = ctx.fresh_label("yield_from_end");
+    let owns_delegated_iter = matches!(source, YieldFromSource::Call { .. });
 
     match source {
         YieldFromSource::Call { fn_name, args } => {
@@ -213,7 +221,13 @@ fn emit_yield_from_generator_x86_64(
     emitter.instruction(&format!("jmp {}", loop_lbl));                          // loop back to re-check valid()
 
     emitter.label(&end_lbl);
-    emitter.instruction(&format!("mov QWORD PTR [r12 + {}], 0", gen_frame::OFF_DELEGATED_ITER)); // clear delegated_iter so future yields do not re-enter
+    if owns_delegated_iter {
+        emitter.instruction(&format!("mov rax, QWORD PTR [r12 + {}]", gen_frame::OFF_DELEGATED_ITER)); // load the owned inner generator before clearing delegation state
+        emitter.instruction(&format!("mov QWORD PTR [r12 + {}], 0", gen_frame::OFF_DELEGATED_ITER)); // clear delegated_iter so future yields do not re-enter
+        emitter.instruction("call __rt_decref_any");                            // release the inner generator produced by yield-from's direct call
+    } else {
+        emitter.instruction(&format!("mov QWORD PTR [r12 + {}], 0", gen_frame::OFF_DELEGATED_ITER)); // clear borrowed delegated_iter without releasing the local owner
+    }
 }
 
 /// After the resume label of a `YieldAssign` whose LHS is an Int slot,

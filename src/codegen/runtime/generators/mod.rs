@@ -99,11 +99,9 @@ fn emit_gen_next(emitter: &mut Emitter) {
     emitter.instruction("ret");                                                 // already terminated — return immediately
 }
 
-/// `send($value): mixed` — stash the sent payload in the frame's
-/// sent_value slot, then resume the body. v1 treats `sent_value` as a raw
-/// int (not a Mixed pointer): callers only pass int arguments, and the
-/// `$a = yield $v` body lowering reads it back as a raw int. Mixed
-/// payload plumbing for send is a follow-up.
+/// `send($value): mixed` — stash the caller-owned boxed Mixed payload in the
+/// frame's `sent_value` slot, then resume the body. The yield-assignment
+/// lowering consumes and clears that box on the resume path.
 fn emit_gen_send(emitter: &mut Emitter) {
     emitter.blank();
     emitter.comment("--- runtime: __rt_gen_send ---");
