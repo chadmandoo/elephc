@@ -83,7 +83,7 @@ pub fn emit(
 }
 
 fn resolve_class_name<'a>(ctx: &'a Context, class_name: &str) -> Option<&'a str> {
-    let class_key = php_symbol_key(class_name);
+    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
     ctx.classes
         .keys()
         .find(|existing| php_symbol_key(existing) == class_key)

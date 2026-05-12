@@ -321,7 +321,7 @@ pub(super) fn check_builtin(
 }
 
 fn resolve_class_name<'a>(checker: &'a Checker, class_name: &str) -> Option<&'a str> {
-    let class_key = php_symbol_key(class_name);
+    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
     checker
         .classes
         .keys()

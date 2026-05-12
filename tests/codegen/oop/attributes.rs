@@ -426,6 +426,20 @@ echo $names[0];
 }
 
 #[test]
+fn test_class_attribute_names_accepts_leading_global_class_string() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+#[Foo]
+class Greeter {}
+$names = class_attribute_names('\App\Greeter');
+echo $names[0];
+"#,
+    );
+    assert_eq!(out, "App\\Foo");
+}
+
+#[test]
 fn test_class_attribute_names_supports_named_argument_planning() {
     let out = compile_and_run(
         r#"<?php
@@ -554,6 +568,19 @@ echo $args[0];
 }
 
 #[test]
+fn test_class_attribute_args_accepts_leading_global_class_string() {
+    let out = compile_and_run(
+        r#"<?php
+#[Route("/x")]
+class Controller {}
+$args = class_attribute_args('\Controller', 'Route');
+echo $args[0];
+"#,
+    );
+    assert_eq!(out, "/x");
+}
+
+#[test]
 fn test_class_attribute_args_supports_named_argument_reordering() {
     let out = compile_and_run(
         r#"<?php
@@ -641,6 +668,21 @@ fn test_class_get_attributes_class_lookup_is_case_insensitive() {
 #[Foo("bar")]
 class Greeter {}
 $attrs = class_get_attributes('greeter');
+echo $attrs[0]->getName();
+echo "/";
+echo $attrs[0]->getArguments()[0];
+"#,
+    );
+    assert_eq!(out, "Foo/bar");
+}
+
+#[test]
+fn test_class_get_attributes_accepts_leading_global_class_string() {
+    let out = compile_and_run(
+        r#"<?php
+#[Foo("bar")]
+class Greeter {}
+$attrs = class_get_attributes('\Greeter');
 echo $attrs[0]->getName();
 echo "/";
 echo $attrs[0]->getArguments()[0];
