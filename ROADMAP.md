@@ -393,6 +393,7 @@ product mode. This is also the series that delivered the Fibers MVP.
 - [x] Fibers MVP — `Fiber` and `FiberError` built-in classes, `start()` / `resume()` / `suspend()` / `throw()` / `getReturn()`, state predicates, `Fiber::getCurrent()`, closure captures, uncaught-exception propagation through the caller, guarded per-fiber `mmap` stacks, and context switching on ARM64 plus Linux x86_64
 - [x] Full first-class callable targets — support `static::method(...)` and `$object->method(...)` in addition to function, `ClassName::`, `self::`, and `parent::` targets
 - [x] Captured closures as callback values — forward hidden `use (...)` environments through callback-style built-ins such as `array_map`, `array_filter`, and `call_user_func`
+- [x] PHP 8.5 pipe operator (`|>`) — left-associative, lower precedence than additive operators, supporting first-class callables, static and instance methods, closures, and variable callables; rejects by-reference callable parameters
 
 ## v0.21.x — PHP array and type-model parity
 

@@ -153,3 +153,38 @@ $fiber = new Fiber($fn);
         "Fiber capture $d exceeds the 7 integer-slot Fiber capture limit",
     );
 }
+
+// --- PHP 8.5 pipe operator ---
+
+#[test]
+fn test_error_pipe_rhs_int_not_callable() {
+    expect_error(
+        "<?php $r = 5 |> 42;",
+        "must be a callable",
+    );
+}
+
+#[test]
+fn test_error_pipe_rhs_string_literal_not_callable() {
+    // elephc treats a bare string literal as Str, not Callable, so this rejects at compile time.
+    expect_error(
+        "<?php $r = 5 |> \"strlen\";",
+        "must be a callable",
+    );
+}
+
+#[test]
+fn test_error_pipe_rejects_by_ref_parameter() {
+    expect_error(
+        "<?php function bump(int &$n): int { return ++$n; } $r = 1 |> bump(...);",
+        "by-reference parameters",
+    );
+}
+
+#[test]
+fn test_error_pipe_target_requires_more_than_one_required_arg() {
+    expect_error(
+        "<?php function pair(int $a, int $b): int { return $a + $b; } $r = 1 |> pair(...);",
+        "expects 2 arguments, got 1",
+    );
+}

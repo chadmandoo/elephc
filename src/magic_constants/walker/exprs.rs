@@ -54,6 +54,10 @@ pub(super) fn walk_expr<P: Pass>(expr: Expr, pass: &mut P) -> Expr {
             value: Box::new(walk_expr(*value, pass)),
             default: Box::new(walk_expr(*default, pass)),
         },
+        ExprKind::Pipe { value, callable } => ExprKind::Pipe {
+            value: Box::new(walk_expr(*value, pass)),
+            callable: Box::new(walk_expr(*callable, pass)),
+        },
         ExprKind::Assignment {
             target,
             value,

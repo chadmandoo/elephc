@@ -469,6 +469,120 @@ impl Checker {
         }
     }
 
+    /// Type-checks the PHP 8.5 pipe operator: `value |> callable`.
+    ///
+    /// Semantics: `callable` must evaluate to a callable, and the result is
+    /// computed by invoking it with `value` as its only positional argument.
+    /// By-reference parameters on the callable are rejected per the RFC.
+    pub(crate) fn infer_pipe_type(
+        &mut self,
+        value: &Expr,
+        callable: &Expr,
+        expr: &Expr,
+        env: &TypeEnv,
+    ) -> Result<PhpType, CompileError> {
+        // Evaluate the LHS — any type is acceptable as the piped value.
+        let _value_ty = self.infer_type(value, env)?;
+
+        // The RHS must be a callable.
+        let callable_ty = self.infer_type(callable, env)?;
+        if callable_ty != PhpType::Callable {
+            return Err(CompileError::new(
+                expr.span,
+                &format!(
+                    "Pipe operator right-hand side must be a callable, got {:?}",
+                    callable_ty
+                ),
+            ));
+        }
+
+        // Synthesize the equivalent call: `callable(value)`.
+        let synth_args = vec![value.clone()];
+
+        // Resolve the callable's signature using the same dispatch as ExprCall.
+        match &callable.kind {
+            ExprKind::Variable(var_name) => {
+                if let Some(sig) = self.callable_sigs.get(var_name).cloned() {
+                    if let Some(target) = self
+                        .first_class_callable_targets
+                        .get(var_name)
+                        .cloned()
+                    {
+                        let specialized_sig = self.specialize_first_class_callable_target(
+                            &target,
+                            &synth_args,
+                            expr.span,
+                            env,
+                        )?;
+                        if specialized_sig.ref_params.iter().any(|is_ref| *is_ref) {
+                            return Err(CompileError::new(
+                                expr.span,
+                                "Pipe operator does not support by-reference parameters",
+                            ));
+                        }
+                        return self.check_known_callable_call(
+                            &specialized_sig,
+                            &synth_args,
+                            expr.span,
+                            env,
+                            &format!("pipe target ${}", var_name),
+                        );
+                    }
+                    if sig.ref_params.iter().any(|is_ref| *is_ref) {
+                        return Err(CompileError::new(
+                            expr.span,
+                            "Pipe operator does not support by-reference parameters",
+                        ));
+                    }
+                    return self.check_known_callable_call(
+                        &sig,
+                        &synth_args,
+                        expr.span,
+                        env,
+                        &format!("pipe target ${}", var_name),
+                    );
+                }
+            }
+            ExprKind::FirstClassCallable(target) => {
+                let sig = self.specialize_first_class_callable_target(
+                    target,
+                    &synth_args,
+                    expr.span,
+                    env,
+                )?;
+                if sig.ref_params.iter().any(|is_ref| *is_ref) {
+                    return Err(CompileError::new(
+                        expr.span,
+                        "Pipe operator does not support by-reference parameters",
+                    ));
+                }
+                return self.check_known_callable_call(
+                    &sig,
+                    &synth_args,
+                    expr.span,
+                    env,
+                    "pipe target",
+                );
+            }
+            _ => {}
+        }
+
+        // No statically-known signature — fall back to syntactic return-type inference
+        // (matches the unknown-callable path in infer_expr_call_type).
+        match &callable.kind {
+            ExprKind::Closure { body, .. } => {
+                return Ok(infer_return_type_syntactic(body));
+            }
+            ExprKind::Variable(var_name) => {
+                if let Some(ret_ty) = self.closure_return_types.get(var_name) {
+                    return Ok(ret_ty.clone());
+                }
+            }
+            _ => {}
+        }
+        Ok(PhpType::Int)
+    }
+
     fn is_nullable_callable_from_nullsafe_chain(callee: &Expr, callee_ty: &PhpType) -> bool {
         let PhpType::Union(members) = callee_ty else {
             return false;
