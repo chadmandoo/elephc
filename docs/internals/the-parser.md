@@ -62,6 +62,8 @@ Things that have a value:
 | `PreDecrement(String)` | `--$i` | |
 | `PostDecrement(String)` | `$i--` | |
 | `FunctionCall { name, args }` | `strlen($s)`, `Tools\fmt($s)`, `\strlen($s)` | Parsed as a structured name so later phases can resolve namespace aliases and fully-qualified names |
+| `Yield { key, value }` | `yield`, `yield $v`, `yield $k => $v` | Yield expression inside a generator body. The parser keeps optional key/value expressions; later checker/codegen turns the enclosing function or closure into a `Generator` state machine. |
+| `YieldFrom(Expr)` | `yield from inner()` | Contextual `yield from` delegation. The lexer leaves `from` as an identifier and the parser recognizes it only immediately after `yield`. |
 | `ArrayLiteral(Vec<Expr>)` | `[1, 2, 3]`, `[...$arr, 4]` | Indexed array; elements may include `Spread` expressions |
 | `ArrayLiteralAssoc(Vec<(Expr, Expr)>)` | `["a" => 1]` | Associative array |
 | `Match { subject, arms, default }` | `match($x) { 1, 2 => "low", 3 => "high" }` | Match expression (returns a value). `arms` is `Vec<(Vec<Expr>, Expr)>`, so each arm can have multiple comma-separated patterns before `=>`, and `default` is optional (`Option<Box<Expr>>`) |
@@ -359,6 +361,7 @@ Before looking for infix operators, the parser handles **prefix** constructs —
 | `Variable` | Return `Variable` node (with postfix `++`/`--` check) |
 | `throw` | Parse the following expression at the lowest precedence and wrap it in `ExprKind::Throw` |
 | `print` | Parse the operand at ternary-level precedence (bp=7, above word logical operators) and wrap it in `ExprKind::Print` |
+| `yield` | Parse `yield`, `yield expr`, `yield key => value`, or contextual `yield from expr` |
 | `-` (minus) | Parse inner expr at unary precedence (bp=35), return `Negate` |
 | `!` (not) | Parse inner expr at unary precedence (bp=35), return `Not` |
 | `~` (bitwise not) | Parse inner expr at unary precedence (bp=35), return `BitNot` |

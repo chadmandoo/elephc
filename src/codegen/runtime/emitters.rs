@@ -13,6 +13,7 @@ use super::buffers;
 use super::diagnostics;
 use super::exceptions;
 use super::fibers;
+use super::generators;
 use super::io;
 use super::pointers;
 use super::strings;
@@ -121,6 +122,9 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     exceptions::emit_throw_current(emitter);
     exceptions::emit_rethrow_current(emitter);
 
+    // Generator runtime helpers for Iterator methods, send/throw, and return-value retrieval.
+    generators::emit_generator_runtime(emitter);
+
     // Array runtime functions
     arrays::emit_heap_alloc(emitter);
     arrays::emit_heap_debug_fail(emitter);
@@ -138,6 +142,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     arrays::emit_array_push_refcounted(emitter);
     arrays::emit_array_push_str(emitter);
     arrays::emit_array_union(emitter);
+    arrays::emit_array_hash_union(emitter);
+    arrays::emit_hash_array_union(emitter);
     arrays::emit_random_u32(emitter);
     arrays::emit_random_uniform(emitter);
     arrays::emit_sort_int(emitter, false);

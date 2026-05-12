@@ -13,6 +13,7 @@ use super::buffers;
 use super::diagnostics;
 use super::exceptions;
 use super::fibers;
+use super::generators;
 use super::io;
 use super::pointers;
 use super::strings;
@@ -115,6 +116,8 @@ pub(super) fn emit_runtime_linux_x86_64_minimal(emitter: &mut Emitter) {
     arrays::emit_array_push_str(emitter);
     arrays::emit_array_to_mixed(emitter);
     arrays::emit_array_union(emitter);
+    arrays::emit_array_hash_union(emitter);
+    arrays::emit_hash_array_union(emitter);
     arrays::emit_array_merge_into(emitter);
     arrays::emit_array_merge_into_refcounted(emitter);
     arrays::emit_range(emitter);
@@ -240,6 +243,7 @@ pub(super) fn emit_runtime_linux_x86_64_minimal(emitter: &mut Emitter) {
     exceptions::emit_exception_matches(emitter);
     exceptions::emit_throw_current(emitter);
     exceptions::emit_rethrow_current(emitter);
+    generators::emit_generator_runtime(emitter);
     fibers::emit_fiber_alloc_stack(emitter);
     fibers::emit_fiber_free_stack(emitter);
     fibers::emit_fiber_switch(emitter);
@@ -305,6 +309,8 @@ mod tests {
         assert!(asm.contains("__rt_exception_matches:\n"));
         assert!(asm.contains("__rt_throw_current:\n"));
         assert!(asm.contains("__rt_rethrow_current:\n"));
+        assert!(asm.contains("__rt_gen_current:\n"));
+        assert!(asm.contains("__rt_gen_send:\n"));
         assert!(asm.contains("__rt_fiber_alloc_stack:\n"));
         assert!(asm.contains("__rt_fiber_free_stack:\n"));
         assert!(asm.contains("__rt_fiber_switch:\n"));
@@ -343,6 +349,8 @@ mod tests {
         assert!(asm.contains("__rt_array_push_refcounted:\n"));
         assert!(asm.contains("__rt_array_push_str:\n"));
         assert!(asm.contains("__rt_array_union:\n"));
+        assert!(asm.contains("__rt_array_hash_union:\n"));
+        assert!(asm.contains("__rt_hash_array_union:\n"));
         assert!(asm.contains("__rt_array_merge_into:\n"));
         assert!(asm.contains("__rt_array_merge_into_refcounted:\n"));
         assert!(asm.contains("__rt_range:\n"));

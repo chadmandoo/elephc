@@ -345,7 +345,7 @@ For floats, `fcmp` replaces `cmp`, but the same `cset`/`csinv` pattern applies.
 
 ### Array union
 
-When both operands of `+` are arrays, codegen routes the expression to PHP array-union lowering instead of numeric addition. Indexed arrays call `__rt_array_union`, which clones the left operand and appends only the right-side numeric suffix whose keys are missing from the left. Associative arrays call `__rt_hash_union`, which clones the left hash, walks the right hash in insertion order, and inserts only keys that are absent from the clone. Mixed indexed/associative operands are rejected by the checker until that compatibility case is modeled.
+When both operands of `+` are arrays, codegen routes the expression to PHP array-union lowering instead of numeric addition. Indexed arrays call `__rt_array_union`, which clones the left operand and appends only the right-side numeric suffix whose keys are missing from the left. Associative arrays call `__rt_hash_union`, which clones the left hash, walks the right hash in insertion order, and inserts only keys that are absent from the clone. Mixed indexed/associative operands return a hash result: `__rt_array_hash_union` maps left indexed positions into integer hash keys before merging the right hash, while `__rt_hash_array_union` clones the left hash and probes right indexed positions as integer keys.
 
 ### Null coalescing operator
 
@@ -495,6 +495,19 @@ Built-in functions like `array_map`, `array_filter`, `array_reduce`, `array_walk
 For captured closures passed through `array_map` / `array_filter`, codegen builds a temporary callback environment containing the original closure pointer plus its hidden `use (...)` values. The runtime passes that environment to a generated callback wrapper, and the wrapper re-materializes the original visible arguments plus hidden captures before calling the closure. `call_user_func()` and `call_user_func_array()` do not need a runtime loop, so they append the hidden capture arguments directly at the indirect call site.
 
 First-class callable wrappers reuse this hidden argument path when the callable target carries context. `$obj->method(...)` records the receiver variable as a hidden capture and the wrapper calls that method with the visible arguments. `static::method(...)` records the forwarded called-class id, or `$this` in an instance method, so late static binding is preserved for direct callable calls and for callback paths that forward an environment, such as `array_map`, `array_filter`, `call_user_func`, and `call_user_func_array`.
+
+## Generator codegen
+
+**Files:** `src/codegen/functions/generator/`, `src/codegen/runtime/generators/`, `src/codegen/expr/objects/dispatch/vtable.rs`
+
+A function or closure body that contains `yield` does not emit as an ordinary function body. Codegen emits two symbols:
+
+1. `_fn_<name>` — a wrapper that allocates a heap `GeneratorFrame`, stamps it as the built-in `Generator` object, copies supported scalar parameters/captures into frame slots, zeroes local slots, and returns the frame pointer.
+2. `_fn_<name>__resume` — a state-machine entry point. State `0` enters the body; each yield gets a numbered resume label. At a yield, the resume function boxes the key/value into Mixed cells, replaces the frame's last key/value slots, stores the next state index, and returns to the caller.
+
+Generator closures reuse the same path as ordinary deferred closures, but their hidden `use (...)` captures are copied into the generator frame alongside visible parameters. `yield from` stores the active inner generator in the frame's `delegated_iter` slot and resumes it through the same `__rt_gen_*` runtime helpers used by user-visible `Generator` methods.
+
+The generated `Generator` object has a custom payload layout rather than ordinary PHP properties. Method dispatch for `current`, `key`, `valid`, `next`, `rewind`, `send`, `throw`, and `getReturn` is intercepted before vtable lookup and routed directly to `__rt_gen_*`. Both AArch64 and Linux `x86_64` follow the same high-level state-machine model; the wrapper, resume dispatcher, and runtime helper emitters select target-specific instruction sequences internally.
 
 ## Fiber codegen
 
