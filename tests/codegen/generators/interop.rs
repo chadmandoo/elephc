@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Ensures Generator support remains compatible with existing Iterator and
+//!    IteratorAggregate dispatch paths.
 
 use crate::support::*;
 

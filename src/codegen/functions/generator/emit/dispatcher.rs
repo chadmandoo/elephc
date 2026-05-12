@@ -51,9 +51,9 @@ pub(in crate::codegen::functions::generator) fn emit_resume(
     let entry_label = format!("{}_entry", label);
 
     emitter.instruction("cmp w10, #0");                                         // state 0 → entry
-    emitter.instruction(&format!("b.eq {}", entry_label));
+    emitter.instruction(&format!("b.eq {}", entry_label));                      // dispatch to body entry on the initial resume
     for k in 1..=highest_state {
-        emitter.instruction(&format!("cmp w10, #{}", k));
+        emitter.instruction(&format!("cmp w10, #{}", k));                       // compare against a generated yield resume state
         emitter.instruction(&format!("b.eq {}_resume_{}", label, k));           // dispatch to yield K's resume label
     }
     emitter.instruction(&format!("b {}", term_label));                          // unknown state → terminate
@@ -76,9 +76,9 @@ pub(in crate::codegen::functions::generator) fn emit_resume(
     // each generator that yielded an array/string into a slot would leak
     // that cell when the generator terminates. The flag is set first so
     // a re-entry via `next()` returns immediately without re-running.
-    emitter.instruction(&format!("ldr w10, [x19, #{}]", gen_frame::OFF_FLAGS));
-    emitter.instruction(&format!("orr w10, w10, #{}", gen_frame::FLAG_TERMINATED));
-    emitter.instruction(&format!("str w10, [x19, #{}]", gen_frame::OFF_FLAGS));
+    emitter.instruction(&format!("ldr w10, [x19, #{}]", gen_frame::OFF_FLAGS)); // load generator flags
+    emitter.instruction(&format!("orr w10, w10, #{}", gen_frame::FLAG_TERMINATED)); // set TERMINATED bit
+    emitter.instruction(&format!("str w10, [x19, #{}]", gen_frame::OFF_FLAGS)); // store updated flags
     for &idx in mixed_slot_indices {
         let off = slot_offset(idx);
         emitter.instruction(&format!("ldr x0, [x19, #{}]", off));               // load the Mixed pointer parked in the local slot

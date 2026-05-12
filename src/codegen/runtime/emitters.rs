@@ -122,8 +122,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     exceptions::emit_throw_current(emitter);
     exceptions::emit_rethrow_current(emitter);
 
-    // Generator runtime helpers (currently stubs that panic until the
-    // state-machine codegen lands).
+    // Generator runtime helpers for Iterator methods, send/throw, and return-value retrieval.
     generators::emit_generator_runtime(emitter);
 
     // Array runtime functions

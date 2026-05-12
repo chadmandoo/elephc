@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Focuses on values produced inside the generated resume state machine,
+//!    including preserved locals and helper-call results.
 
 use crate::support::*;
 

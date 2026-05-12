@@ -29,9 +29,9 @@
 //!    +80  <params then locals, sized per generator function>
 //!    ```
 
-#![allow(dead_code)] // Layout constants will be consumed by the state-machine codegen pass once it lands.
+#![allow(dead_code)] // Some layout constants are only consumed by feature-specific generator paths.
 
-pub const HEAP_KIND_GENERATOR: u8 = 5;
+pub const HEAP_KIND_GENERATOR: u8 = 4;
 
 pub const OFF_CLASS_ID: usize = 0;
 pub const OFF_RESUME_FN: usize = 8;

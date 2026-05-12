@@ -1,3 +1,13 @@
+//! Purpose:
+//! Lexer tests for `yield` and contextual `yield from` tokenization.
+//!
+//! Called from:
+//!  - `cargo test` through Rust's test harness via `tests/lexer_tests.rs`.
+//!
+//! Key details:
+//!  - `from` remains an identifier at lex time; the parser interprets it
+//!    contextually after `yield`.
+
 use super::*;
 
 #[test]

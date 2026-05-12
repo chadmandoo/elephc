@@ -108,7 +108,7 @@ fn emit_gen_send(emitter: &mut Emitter) {
     emitter.label_global("__rt_gen_send");
     emitter.instruction(&format!("ldr w2, [x0, #{}]", f::OFF_FLAGS));           // load flags
     emitter.instruction(&format!("tbnz w2, #1, __rt_gen_send_done"));           // if TERMINATED bit set, skip resume
-    emitter.instruction(&format!("str x1, [x0, #{}]", f::OFF_SENT_VALUE));      // stash the raw sent payload (int) in sent_value
+    emitter.instruction(&format!("str x1, [x0, #{}]", f::OFF_SENT_VALUE));      // stash the boxed sent payload in sent_value
     emitter.instruction(&format!("ldr x9, [x0, #{}]", f::OFF_RESUME_FN));       // load resume function pointer
     emitter.instruction("br x9");                                               // tail-call resume_fn (returns whatever current() now reflects)
     emitter.label_global("__rt_gen_send_done");

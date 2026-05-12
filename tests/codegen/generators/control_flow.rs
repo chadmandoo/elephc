@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Covers resume labels embedded inside structured control flow where
+//!    break/continue/switch paths must preserve generator state.
 
 use crate::support::*;
 

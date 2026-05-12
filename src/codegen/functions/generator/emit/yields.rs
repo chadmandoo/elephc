@@ -250,7 +250,7 @@ pub(super) fn emit_yield_assign_unbox_int(
     emitter.instruction(&format!("cbz x0, {}", null_lbl));                      // jump to null path when no send was performed
     emitter.instruction("bl __rt_mixed_unbox");                                 // x1 = unboxed low payload
     emitter.instruction("mov x9, x1");                                          // save the unboxed int across the next branch
-    emitter.instruction(&format!("b {}", done_lbl));
+    emitter.instruction(&format!("b {}", done_lbl));                            // skip the null default path
     emitter.label(&null_lbl);
     emitter.instruction("mov x9, xzr");                                         // no sent_value → assignment receives 0
     emitter.label(&done_lbl);
@@ -309,7 +309,7 @@ pub(super) fn emit_yield_assign_store_mixed(
     emitter.instruction(&format!("ldr x0, [x19, #{}]", off));                   // x0 = previous slot occupant (or NULL)
     emitter.instruction(&format!("str x20, [x19, #{}]", off));                  // overwrite slot with the sent pointer
     emitter.instruction("bl __rt_decref_mixed");                                // decref the previous occupant (NULL is safe)
-    emitter.instruction(&format!("b {}", done));
+    emitter.instruction(&format!("b {}", done));                                // skip the no-send cleanup path
     emitter.label(&skip);
     emitter.instruction(&format!("str xzr, [x19, #{}]", gen_frame::OFF_SENT_VALUE)); // clear sent_value defensively
     emitter.label(&done);

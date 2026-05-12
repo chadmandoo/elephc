@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Exercises the frame `sent_value` ownership transfer and the runtime
+//!    throw path that terminates the generator before unwinding.
 
 use crate::support::*;
 

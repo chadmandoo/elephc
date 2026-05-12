@@ -4,6 +4,10 @@
 //! Called from:
 //!  - `cargo test` via the integration test harness; aggregated under
 //!    `tests::codegen::generators` in `tests/codegen/generators/mod.rs`.
+//!
+//! Key details:
+//!  - Exercises the public Iterator surface emitted for the built-in
+//!    Generator class before more specialized generator features run.
 
 use crate::support::*;
 

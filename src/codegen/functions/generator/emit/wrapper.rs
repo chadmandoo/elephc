@@ -65,7 +65,7 @@ pub(in crate::codegen::functions::generator) fn emit_wrapper(
     emitter.instruction(&format!("mov x0, #{}", frame_size));                   // total frame size including parameter and local slots
     emitter.instruction("bl __rt_heap_alloc");                                  // x0 = pointer to fresh GeneratorFrame
 
-    emitter.instruction("mov x9, #4");                                          // heap kind 4 = object instance
+    emitter.instruction(&format!("mov x9, #{}", gen_frame::HEAP_KIND_GENERATOR)); // heap kind = object instance for Generator frames
     emitter.instruction("str x9, [x0, #-8]");                                   // write kind into the uniform heap header
 
     emitter.instruction(&format!("mov x9, #{}", class_id));                     // load Generator's compile-time class id
@@ -139,7 +139,7 @@ fn emit_wrapper_x86_64(
     emitter.instruction(&format!("mov rax, {}", frame_size));                   // total frame size including parameter and local slots
     emitter.instruction("call __rt_heap_alloc");                                // rax = pointer to fresh GeneratorFrame
 
-    emitter.instruction(&format!("mov r10, 0x{:x}", (super::X86_64_HEAP_MAGIC_HI32 << 32) | 4)); // heap kind 4 = object instance with x86 heap marker
+    emitter.instruction(&format!("mov r10, 0x{:x}", (super::X86_64_HEAP_MAGIC_HI32 << 32) | u64::from(gen_frame::HEAP_KIND_GENERATOR))); // heap kind = object instance with x86 heap marker
     emitter.instruction("mov QWORD PTR [rax - 8], r10");                        // write kind into the uniform heap header
 
     emitter.instruction(&format!("mov r10, {}", class_id));                     // load Generator's compile-time class id
