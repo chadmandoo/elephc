@@ -583,22 +583,6 @@ echo count($attr->getArguments());
 }
 
 #[test]
-fn test_reflection_attribute_can_be_constructed_directly() {
-    // The synthetic class is a regular PHP class — constructing it without
-    // arguments yields an instance with empty defaults, which user code can
-    // populate by hand.
-    let out = compile_and_run(
-        r#"<?php
-$r = new ReflectionAttribute();
-echo "[" . $r->getName() . "]";
-echo "/";
-echo count($r->getArguments());
-"#,
-    );
-    assert_eq!(out, "[]/0");
-}
-
-#[test]
 fn test_class_attribute_args_matches_attribute_name_case_insensitively() {
     let out = compile_and_run(
         r#"<?php

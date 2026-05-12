@@ -383,3 +383,19 @@ fn test_error_reflection_attribute_redeclaration() {
         "Cannot redeclare built-in reflection type: ReflectionAttribute",
     );
 }
+
+#[test]
+fn test_error_reflection_attribute_constructor_is_private() {
+    expect_error(
+        "<?php $r = new ReflectionAttribute();",
+        "Cannot access private constructor: ReflectionAttribute::__construct",
+    );
+}
+
+#[test]
+fn test_error_reflection_attribute_internal_properties_are_private() {
+    expect_error(
+        "<?php #[A] class C {} $attrs = class_get_attributes('C'); echo $attrs[0]->__name;",
+        "Cannot access private property: ReflectionAttribute::__name",
+    );
+}

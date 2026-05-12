@@ -51,6 +51,7 @@ pub(crate) fn inject_builtin_reflection(
                 builtin_reflection_attribute_args_property(),
             ],
             methods: vec![
+                builtin_reflection_attribute_constructor_method(),
                 builtin_reflection_attribute_get_name_method(),
                 builtin_reflection_attribute_get_arguments_method(),
             ],
@@ -65,7 +66,7 @@ pub(crate) fn inject_builtin_reflection(
 fn builtin_reflection_attribute_name_property() -> ClassProperty {
     ClassProperty {
         name: "__name".to_string(),
-        visibility: Visibility::Public,
+        visibility: Visibility::Private,
         type_expr: Some(TypeExpr::Str),
         readonly: false,
         is_final: false,
@@ -83,7 +84,7 @@ fn builtin_reflection_attribute_name_property() -> ClassProperty {
 fn builtin_reflection_attribute_args_property() -> ClassProperty {
     ClassProperty {
         name: "__args".to_string(),
-        visibility: Visibility::Public,
+        visibility: Visibility::Private,
         type_expr: Some(TypeExpr::Named(crate::names::Name::unqualified("array"))),
         readonly: false,
         is_final: false,
@@ -94,6 +95,24 @@ fn builtin_reflection_attribute_args_property() -> ClassProperty {
             crate::span::Span::dummy(),
         )),
         span: crate::span::Span::dummy(),
+        attributes: Vec::new(),
+    }
+}
+
+fn builtin_reflection_attribute_constructor_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "__construct".to_string(),
+        visibility: Visibility::Private,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        return_type: None,
+        body: Vec::new(),
+        span: dummy_span,
         attributes: Vec::new(),
     }
 }
@@ -154,6 +173,9 @@ fn builtin_reflection_attribute_get_arguments_method() -> ClassMethod {
 
 pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
     if let Some(class_info) = checker.classes.get_mut("ReflectionAttribute") {
+        if let Some(sig) = class_info.methods.get_mut("__construct") {
+            sig.return_type = PhpType::Void;
+        }
         if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getName")) {
             sig.return_type = PhpType::Str;
         }
