@@ -431,7 +431,7 @@ foreach (class_get_attributes('Greeter') as $attr) {
 
 Limitations today:
 - All arguments to `class_attribute_names()`, `class_attribute_args()`, and `class_get_attributes()` must be **string literals** at the call site — dynamic class or attribute names (variables) require a runtime name→id lookup table that is not yet implemented.
-- Only **literal** positional arguments are captured (string, int, bool, null, plus `-N` for negative ints). Float literals, expressions, and named args are rejected until elephc grows compile-time evaluation of attribute argument expressions and named-argument metadata.
+- Only **literal** positional arguments are materialized by reflection helpers today (string, int, bool, null, plus `-N` for negative ints). Other legal PHP attribute arguments can still be parsed and compiled, and `class_attribute_names()` can still list the attribute name, but `class_attribute_args()` / `class_get_attributes()` report an error if they would need unsupported argument metadata.
 - When several attributes share a name on the same class, `class_attribute_args()` returns the args of the first match; `class_get_attributes()` does expose every occurrence as a separate `ReflectionAttribute` in source order.
 - The full `ReflectionClass` API (`getProperties()`, `getMethods()`, `newInstance()`, …) is not yet available.
 

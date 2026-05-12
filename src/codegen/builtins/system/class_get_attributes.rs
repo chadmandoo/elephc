@@ -82,7 +82,10 @@ pub fn emit(
 
     for (idx, attr_name) in attr_names.iter().enumerate() {
         let empty_args = Vec::new();
-        let attr_arg_list = attr_args.get(idx).unwrap_or(&empty_args);
+        let attr_arg_list = attr_args
+            .get(idx)
+            .and_then(Option::as_ref)
+            .unwrap_or(&empty_args);
 
         // -- save the result array pointer below later temporaries --
         abi::emit_push_reg(emitter, result_reg);

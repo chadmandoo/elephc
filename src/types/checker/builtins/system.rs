@@ -163,6 +163,15 @@ pub(super) fn check_builtin(
                     ),
                 ));
             }
+            let ExprKind::StringLiteral(attr_name) = &args[1].kind else {
+                unreachable!("attribute argument literal checked above");
+            };
+            if class_attribute_args_unsupported(checker, class_name, attr_name) {
+                return Err(CompileError::new(
+                    span,
+                    "class_attribute_args(): requested attribute uses argument metadata that is not supported yet",
+                ));
+            }
             Ok(Some(PhpType::Array(Box::new(PhpType::Mixed))))
         }
         "class_get_attributes" => {
@@ -192,6 +201,12 @@ pub(super) fn check_builtin(
                         "class_get_attributes(): undefined class '{}'",
                         class_name
                     ),
+                ));
+            }
+            if class_get_attributes_unsupported(checker, class_name) {
+                return Err(CompileError::new(
+                    span,
+                    "class_get_attributes(): class has attribute argument metadata that is not supported yet",
                 ));
             }
             Ok(Some(PhpType::Array(Box::new(PhpType::Object(
@@ -327,4 +342,28 @@ fn resolve_class_name<'a>(checker: &'a Checker, class_name: &str) -> Option<&'a 
         .keys()
         .find(|existing| php_symbol_key(existing) == class_key)
         .map(String::as_str)
+}
+
+fn class_attribute_args_unsupported(checker: &Checker, class_name: &str, attr_name: &str) -> bool {
+    let Some(resolved_class) = resolve_class_name(checker, class_name) else {
+        return false;
+    };
+    let Some(class_info) = checker.classes.get(resolved_class) else {
+        return false;
+    };
+    let attr_key = php_symbol_key(attr_name.trim_start_matches('\\'));
+    class_info.attribute_names.iter().enumerate().any(|(idx, name)| {
+        php_symbol_key(name.trim_start_matches('\\')) == attr_key
+            && !matches!(class_info.attribute_args.get(idx), Some(Some(_)))
+    })
+}
+
+fn class_get_attributes_unsupported(checker: &Checker, class_name: &str) -> bool {
+    let Some(resolved_class) = resolve_class_name(checker, class_name) else {
+        return false;
+    };
+    checker.classes.get(resolved_class).is_some_and(|class_info| {
+        class_info.attribute_names.len() != class_info.attribute_args.len()
+            || class_info.attribute_args.iter().any(Option::is_none)
+    })
 }

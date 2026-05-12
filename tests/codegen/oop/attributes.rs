@@ -440,6 +440,31 @@ echo $names[0];
 }
 
 #[test]
+fn test_class_attribute_names_does_not_require_reflectable_args() {
+    let out = compile_and_run(
+        r#"<?php
+#[Foo(1 + 2)]
+class C {}
+$names = class_attribute_names('C');
+echo $names[0];
+"#,
+    );
+    assert_eq!(out, "Foo");
+}
+
+#[test]
+fn test_attribute_class_declaration_with_constant_arg_compiles_without_reflection_query() {
+    let out = compile_and_run(
+        r#"<?php
+#[Attribute(Attribute::TARGET_CLASS)]
+class MyAttr {}
+echo "ok";
+"#,
+    );
+    assert_eq!(out, "ok");
+}
+
+#[test]
 fn test_class_attribute_names_supports_named_argument_planning() {
     let out = compile_and_run(
         r#"<?php

@@ -53,7 +53,12 @@ pub fn emit(
             info.attribute_names.iter().enumerate().find_map(|(idx, name)| {
                 let candidate_key = php_symbol_key(name.trim_start_matches('\\'));
                 if candidate_key == attr_key {
-                    info.attribute_args.get(idx).cloned()
+                    Some(
+                        info.attribute_args
+                            .get(idx)
+                            .and_then(Clone::clone)
+                            .unwrap_or_default(),
+                    )
                 } else {
                     None
                 }

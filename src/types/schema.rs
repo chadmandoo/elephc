@@ -16,10 +16,8 @@ use crate::parser::ast::{ClassMethod, Expr, Visibility};
 use super::{FunctionSig, PhpType};
 
 /// Compile-time attribute argument literal. Captures the subset of PHP
-/// attribute argument expressions that we can evaluate at compile time:
-/// strings, ints, bools, null, and negative int literals. Anything else is
-/// rejected at schema collection time so runtime reflection metadata cannot
-/// silently diverge from source.
+/// attribute argument expressions that reflection helpers can currently
+/// materialize: strings, ints, bools, null, and negative int literals.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttrArgValue {
     Null,
@@ -62,11 +60,10 @@ pub struct ClassInfo {
     /// emitted at codegen time.
     pub attribute_names: Vec<String>,
     /// Literal arguments captured for each attribute, in source order and
-    /// aligned with `attribute_names`. Each inner `Vec<AttrArgValue>` holds
-    /// the positional literal args (string, int, bool, null, negative int).
-    /// Non-literal args and named args are rejected until elephc grows
-    /// compile-time evaluation and named-argument metadata for attributes.
-    pub attribute_args: Vec<Vec<AttrArgValue>>,
+    /// aligned with `attribute_names`. `None` means the source uses legal PHP
+    /// attribute arguments that this reflection metadata model cannot
+    /// materialize yet; callers that need arguments report that at query time.
+    pub attribute_args: Vec<Option<Vec<AttrArgValue>>>,
     pub properties: Vec<(String, PhpType)>,
     pub property_offsets: HashMap<String, usize>,
     pub property_declaring_classes: HashMap<String, String>,

@@ -70,7 +70,7 @@ impl ClassBuildState {
         class: &FlattenedClass,
         constructor_param_to_prop: Vec<Option<String>>,
     ) -> Result<ClassInfo, CompileError> {
-        let attribute_args = collect_attribute_args(&class.attributes)?;
+        let attribute_args = collect_attribute_args(&class.attributes);
         Ok(ClassInfo {
             class_id,
             parent: class.extends.clone(),
@@ -147,11 +147,12 @@ pub(super) fn collect_attribute_names(
 /// Collect the positional literal arguments of every attribute, in the
 /// same order as `collect_attribute_names`. Captures strings, ints, bools,
 /// and null directly. Negation (`-N`) of an int literal is folded so PHP's
-/// `#[Status(-1)]` survives parsing. Anything else is rejected instead of
-/// emitting incomplete runtime reflection metadata.
+/// `#[Status(-1)]` survives parsing. Unsupported metadata is marked as
+/// `None` so legal PHP attribute syntax can still compile until a runtime
+/// reflection helper needs the missing argument payload.
 pub(super) fn collect_attribute_args(
     groups: &[crate::parser::ast::AttributeGroup],
-) -> Result<Vec<Vec<crate::types::AttrArgValue>>, CompileError> {
+) -> Vec<Option<Vec<crate::types::AttrArgValue>>> {
     use crate::parser::ast::ExprKind;
     use crate::types::AttrArgValue;
 
@@ -159,6 +160,7 @@ pub(super) fn collect_attribute_args(
     for group in groups {
         for attr in &group.attributes {
             let mut args = Vec::new();
+            let mut supported = true;
             for arg_expr in &attr.args {
                 match &arg_expr.kind {
                     ExprKind::StringLiteral(value) => {
@@ -171,29 +173,24 @@ pub(super) fn collect_attribute_args(
                         if let ExprKind::IntLiteral(n) = &inner.kind {
                             args.push(AttrArgValue::Int(n.wrapping_neg()));
                         } else {
-                            return Err(unsupported_attribute_arg(arg_expr));
+                            supported = false;
+                            break;
                         }
                     }
                     ExprKind::NamedArg { .. } => {
-                        return Err(CompileError::new(
-                            arg_expr.span,
-                            "Named attribute arguments are not supported by runtime reflection metadata yet",
-                        ));
+                        supported = false;
+                        break;
                     }
-                    _ => return Err(unsupported_attribute_arg(arg_expr)),
+                    _ => {
+                        supported = false;
+                        break;
+                    }
                 }
             }
-            out.push(args);
+            out.push(if supported { Some(args) } else { None });
         }
     }
-    Ok(out)
-}
-
-fn unsupported_attribute_arg(arg_expr: &Expr) -> CompileError {
-    CompileError::new(
-        arg_expr.span,
-        "Unsupported attribute argument for runtime reflection metadata; only positional string, int, bool, null, and negative int literals are supported",
-    )
+    out
 }
 
 /// Returns `true` if the class declaration carries the PHP 8.2

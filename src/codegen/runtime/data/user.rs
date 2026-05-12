@@ -282,6 +282,7 @@ pub(crate) fn emit_runtime_data_user(
                 let args = info
                     .attribute_args
                     .get(idx)
+                    .and_then(Option::as_ref)
                     .unwrap_or(&empty_fallback);
                 let args_label = if args.is_empty() {
                     None
