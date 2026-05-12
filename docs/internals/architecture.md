@@ -180,7 +180,7 @@ src/
 │       ├── mod.rs             Type-checker orchestration boundary
 │       ├── driver/            Main checker driver and program passes
 │       ├── builtin_iterators.rs Built-in Iterator / IteratorAggregate metadata
-│       ├── builtin_types.rs   Shared builtin/type helper predicates
+│       ├── builtin_types/     Shared builtin class/type helper predicates
 │       ├── builtins/          Built-in function type signatures
 │       ├── callables.rs       Closure and first-class callable signature resolution
 │       ├── extern_decl.rs     Extern declaration validation
@@ -193,6 +193,7 @@ src/
 │       ├── stmt_check/        Assignment and control-flow statement checks
 │       ├── type_compat.rs     Type-compatibility module root
 │       ├── type_compat/       Declaration, object, pointer, and union compatibility helpers
+│       ├── yield_validation/  Generator return coercion and yield-scope validation
 │       └── ...
 │
 ├── codegen/
@@ -205,6 +206,7 @@ src/
 │   ├── prescan.rs             Pre-pass that collects program-wide codegen metadata
 │   ├── program_usage.rs       Program-usage analysis feeding metadata emission
 │   ├── program_usage/         Required-class and variable usage scanners
+│   ├── functions/generator/   Generator wrapper and resume state-machine lowering
 │   ├── expr.rs                Expression codegen dispatcher
 │   ├── expr/                  Expression submodules
 │   │   ├── arrays.rs          Array-expression dispatch
@@ -277,7 +279,7 @@ src/
 │   │
 │   └── runtime/               Runtime routines and target-specific emission helpers
 │       ├── mod.rs             Emits all runtime functions into assembly
-│       ├── data.rs            Emits runtime .data / .bss symbols and metadata tables
+│       ├── data/              Fixed and user-program runtime data/metadata tables (4 files)
 │       ├── diagnostics.rs     Suppressible runtime-warning channel used by `@`
 │       ├── emitters.rs        Shared emit helpers used across runtime categories
 │       ├── x86_minimal.rs     Minimal x86_64 runtime slice for the Linux x86_64 target
@@ -289,7 +291,8 @@ src/
 │       ├── exceptions/        cleanup_frames, dynamic_instanceof, matches, throw_current, rethrow_current helpers (5 files)
 │       ├── system/            build_argv, time, getenv, shell_exec, php_uname, date, mktime, strtotime, match_unhandled, enum_from_fail, json_encode_*, json_decode, preg_*, ... (29 files)
 │       ├── pointers/          ptoa, ptr_check_nonnull, str_to_cstr, cstr_to_str, ... (5 files)
-│       └── fibers/            stack allocation/free, context switch, entry trampoline, public API helpers (4 files)
+│       ├── fibers/            stack allocation/free, context switch, entry trampoline, public API helpers (4 files)
+│       └── generators/        Generator frame layout and __rt_gen_* helpers (2 files)
 │
 │
 └── errors/
@@ -385,7 +388,7 @@ Offset  Size  Field
 
 ### Runtime BSS and data symbols
 
-The runtime data emission in `src/codegen/runtime/data.rs` is split into `emit_runtime_data_fixed()` (shared heap buffers, diagnostics, lookup tables) and `emit_runtime_data_user()` (globals, statics, enum-case storage, and metadata derived from the user's program):
+The runtime data emission in `src/codegen/runtime/data/` is split into `emit_runtime_data_fixed()` (shared heap buffers, diagnostics, lookup tables) and `emit_runtime_data_user()` (globals, statics, enum-case storage, and metadata derived from the user's program):
 
 | Symbol group | Symbols | Purpose |
 |---|---|---|
@@ -401,7 +404,7 @@ The runtime data emission in `src/codegen/runtime/data.rs` is split into `emit_r
 | String/regex tables | `_fmt_g`, `_b64_encode_tbl`, `_b64_decode_tbl`, `_pcre_*` | Formatting and lookup tables for runtime helpers |
 | JSON/date tables | `_json_true`, `_json_false`, `_json_null`, `_day_names`, `_month_names` | Static data used by JSON and date routines |
 | User-dependent storage | `_gvar_<name>`, `_static_<func>_<name>`, `_static_<func>_<name>_init`, `_static_prop_<class>_<prop>`, enum-case `.comm` symbols via `enum_case_symbol(...)` | Global/static local storage, class static-property storage, plus singleton backing slots for enum cases |
-| Class/interface metadata tables | `_instanceof_target_count`, `_instanceof_target_entries`, `_instanceof_name_*`, `_interface_count`, `_interface_method_ptrs`, `_interface_methods_<id>`, `_class_interface_ptrs`, `_class_interfaces_<id>`, `_class_interface_impl_<class>_<iface>`, `_class_gc_desc_count`, `_class_gc_desc_ptrs`, `_class_gc_desc_<id>`, `_class_vtable_ptrs`, `_class_vtable_<id>`, `_class_static_vtable_ptrs`, `_class_static_vtable_<id>` | Dynamic `instanceof` lookup names, per-interface method-order metadata, per-class property traversal metadata, and instance/static dispatch tables |
+| Class/interface metadata tables | `_instanceof_target_count`, `_instanceof_target_entries`, `_instanceof_name_*`, `_interface_count`, `_interface_method_ptrs`, `_interface_methods_<id>`, `_class_interface_ptrs`, `_class_interfaces_<id>`, `_class_interface_impl_<class>_<iface>`, `_generator_class_id`, `_fiber_class_id`, `_fiber_error_class_id`, `_class_gc_desc_count`, `_class_gc_desc_ptrs`, `_class_gc_desc_<id>`, `_class_vtable_ptrs`, `_class_vtable_<id>`, `_class_static_vtable_ptrs`, `_class_static_vtable_<id>` | Dynamic `instanceof` lookup names, built-in runtime-managed class ids, per-interface method-order metadata, per-class property traversal metadata, and instance/static dispatch tables |
 
 ### Heap allocator
 

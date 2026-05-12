@@ -339,7 +339,8 @@ The following are **not yet supported** inside generator bodies:
 - `yield from` over an `Iterator` interface instance whose static
   class is unknown (only `yield from <generator_function(args)>` and
   `yield from $local` where the local holds a Generator pointer work).
-- Fibers — explicitly out of scope (separate feature in the roadmap).
+- Fiber suspension/resume operations inside generator bodies are outside
+  the v1 generator-body lowering subset.
 
 Generator bodies *do* support Mixed-typed locals: `$msg = "hello";
 yield $msg;` works, with the resume function reading/writing the
