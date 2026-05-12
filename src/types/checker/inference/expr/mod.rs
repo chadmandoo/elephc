@@ -485,6 +485,35 @@ impl Checker {
                 };
                 self.infer_new_object_type(&class_name, args, expr, env)
             }
+            ExprKind::Yield { key, value } => {
+                if let Some(k) = key {
+                    self.infer_type(k, env)?;
+                }
+                if let Some(v) = value {
+                    self.infer_type(v, env)?;
+                }
+                Ok(PhpType::Mixed)
+            }
+            ExprKind::YieldFrom(inner) => {
+                let inner_ty = self.infer_type(inner, env)?;
+                let supported = match &inner.kind {
+                    ExprKind::ArrayLiteral(_) => true,
+                    ExprKind::FunctionCall { .. } | ExprKind::Variable(_) => {
+                        self.type_accepts(&PhpType::Object("Generator".to_string()), &inner_ty)
+                    }
+                    _ => false,
+                };
+                if !supported {
+                    return Err(CompileError::new(
+                        inner.span,
+                        &format!(
+                            "yield from expects an array literal or Generator, got {:?}",
+                            inner_ty
+                        ),
+                    ));
+                }
+                Ok(PhpType::Mixed)
+            }
             ExprKind::MagicConstant(_) => {
                 unreachable!("MagicConstant must be lowered before type inference")
             }

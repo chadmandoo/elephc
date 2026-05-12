@@ -1,11 +1,11 @@
 ---
 title: "The Runtime"
-description: "Hand-written assembly routines for strings, arrays, system calls, exceptions, and I/O."
+description: "Hand-written assembly routines for strings, arrays, generators, fibers, system calls, exceptions, and I/O."
 sidebar:
   order: 8
 ---
 
-**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `exceptions.rs`, `exceptions/`, `io/`, `system/`, `pointers/`, `fibers/`
+**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `exceptions.rs`, `exceptions/`, `io/`, `system/`, `pointers/`, `fibers/`, `generators/`
 
 The runtime is a collection of **hand-written assembly routines** that handle operations too complex for inline code generation. When the [code generator](the-codegen.md) needs to convert an integer to a string or concatenate two strings, it emits a `bl __rt_itoa` or `bl __rt_concat` — a call to a runtime routine.
 
@@ -378,7 +378,7 @@ All regex routines use **POSIX extended regular expressions** via libc's `regcom
 
 ## I/O routines
 
-**Source:** `src/codegen/runtime/io/` (27 files)
+**Source:** `src/codegen/runtime/io/` (28 files)
 
 These routines handle file and filesystem operations through target-aware libc/syscall helpers. PHP strings (pointer + length) must be converted to null-terminated C strings before passing to C or OS APIs — `__rt_cstr` handles the primary buffer and also emits `__rt_cstr2` for routines that need a second simultaneous C string.
 
@@ -461,9 +461,28 @@ These helpers support the compiler-specific `buffer<T>` hot-path data type.
 | `__rt_match_unhandled` | Abort with `Fatal error: unhandled match case` | — | does not return |
 | `__rt_enum_from_fail` | Abort with `Fatal error: enum case not found` when `Enum::from()` has no match | — | does not return |
 
+## Generator routines
+
+**Source:** `src/codegen/runtime/generators/` (2 files)
+
+These helpers back the built-in `Generator` class. Generator functions emit a heap-allocated frame and a generated resume function; the runtime helpers read/write that frame for the public Iterator surface and coroutine operations.
+
+| Routine | What it does | Input | Output |
+|---|---|---|---|
+| `__rt_gen_current` | Return an owned ref to the boxed Mixed value from the most recent yield | `GeneratorFrame*` | boxed `mixed` payload |
+| `__rt_gen_key` | Return an owned ref to the boxed Mixed key from the most recent yield | `GeneratorFrame*` | boxed `mixed` key |
+| `__rt_gen_valid` | Report whether the generator is not terminated | `GeneratorFrame*` | bool |
+| `__rt_gen_next` | Resume the state machine past the current yield unless terminated | `GeneratorFrame*` | — |
+| `__rt_gen_send` | Store a boxed Mixed sent value, then resume the state machine | `GeneratorFrame*`, boxed `mixed` value | boxed `mixed` payload |
+| `__rt_gen_rewind` | Run the generator to its first yield once | `GeneratorFrame*` | — |
+| `__rt_gen_throw` | Mark the generator terminated and throw through the normal exception runtime | `GeneratorFrame*`, throwable object | does not return |
+| `__rt_gen_get_return` | Return an owned ref to the boxed terminal return value | `GeneratorFrame*` | boxed `mixed` payload |
+
+Generator frames are stamped as object heap blocks because `Generator` is a built-in class implementing `Iterator`. `__rt_object_free_deep` detects the built-in Generator class id and releases the frame's custom Mixed slots plus any active `yield from` delegate instead of treating the payload as ordinary class properties.
+
 ## Fiber routines
 
-**Source:** `src/codegen/runtime/fibers/` (5 files including `mod.rs`)
+**Source:** `src/codegen/runtime/fibers/` (4 top-level files plus `api/` target helpers)
 
 These helpers implement PHP 8.1-style cooperative coroutines. They are emitted on AArch64 and in the Linux x86_64 runtime slice.
 
@@ -500,11 +519,12 @@ pub fn emit_runtime(emitter: &mut Emitter) {
     // buffers: contiguous buffer allocation, bounds checking, UAF traps
     // io: c-string buffers, file I/O, stat/fs helpers, scandir/glob/tempnam, CSV
     // pointers: ptoa, null check, str_to_cstr, cstr_to_str
+    // generators: Generator current/key/valid/next/send/rewind/throw/getReturn helpers
     // fibers: guarded stack allocation, context switch, entry trampoline, Fiber API
 }
 ```
 
-Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_instanceof_lookup`, `__rt_instanceof_invalid_target`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_iterable_write_stdout`, `__rt_iterable_unsupported_kind`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, `__rt_cstr_to_str`, `__rt_fiber_switch`, and `__rt_fiber_entry` in addition to the more user-visible helpers.
+Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_instanceof_lookup`, `__rt_instanceof_invalid_target`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_iterable_write_stdout`, `__rt_iterable_unsupported_kind`, `__rt_gen_current`, `__rt_gen_send`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, `__rt_cstr_to_str`, `__rt_fiber_switch`, and `__rt_fiber_entry` in addition to the more user-visible helpers.
 
 Every routine in the selected target runtime slice is linked into the binary, even if unused by the current program. elephc already does AST-side control-flow pruning and dead-code elimination before codegen, but runtime-specific dead stripping is still future work.
 
@@ -562,6 +582,7 @@ Additionally, the runtime emits static data tables:
 - `_diag_fopen_failed_msg`, `_diag_file_get_contents_failed_msg`, `_diag_define_already_defined_msg` — suppressible runtime warning text routed through `__rt_diag_warning`
 - `_fiber_msg_already_started`, `_fiber_msg_not_suspended`, `_fiber_msg_throw_not_suspended`, `_fiber_msg_not_terminated`, `_fiber_msg_suspend_outside`, `_fiber_msg_unsupported_callable`, `_fiber_msg_stack_alloc_failed` — messages used by `FiberError` runtime paths
 - `_fiber_class_id`, `_fiber_error_class_id` — per-program class ids used by Fiber object cleanup and `FiberError` construction
+- `_generator_class_id` — per-program class id used to recognize Generator frames during object deep-free
 - `_php_uname_mode_len_msg`, `_php_uname_mode_value_msg` — fatal `php_uname()` argument diagnostics for invalid mode strings
 - `_pcre_space`, `_pcre_digit`, `_pcre_word`, `_pcre_nspace`, `_pcre_ndigit`, `_pcre_nword` — PCRE shorthand replacement strings for regex translation
 - `_json_true`, `_json_false`, `_json_null` — JSON keyword strings used by `__rt_json_encode_bool` and `__rt_json_encode_null`
@@ -576,6 +597,6 @@ Additionally, the runtime emits static data tables:
 
 When `--heap-debug` is enabled, the runtime also activates `__rt_heap_debug_check_live`, `__rt_heap_debug_validate_free_list`, and `__rt_heap_debug_report`. These helpers turn allocator corruption into immediate fatal errors for duplicate frees, zero-refcount `incref`/`decref` paths, and malformed free-list or small-bin state, poison freed payload bytes with `0xA5`, and print an end-of-process summary with alloc/free counts, live block count, live bytes, leak summary, and the peak live-byte watermark.
 
-Every heap allocation now also carries a uniform 8-byte kind tag in its 16-byte allocator header. The current runtime uses `0=raw/untyped`, `1=string`, `2=indexed array`, `3=assoc/hash`, `4=object`, and `5=boxed mixed`, which lets runtime dispatch stay independent from each payload's internal layout. The low 16 bits keep the persistent container metadata: low byte = heap kind, bits `8..14` = indexed-array runtime `value_type`, and bit `15` = copy-on-write container flag. The collector reuses higher bits for transient reachable/incoming-edge metadata during `__rt_gc_collect_cycles`. Runtime data also now includes `_gc_collecting`, `_gc_release_suppressed`, `_class_gc_desc_count`, `_class_gc_desc_ptrs`, `_class_vtable_ptrs`, `_class_static_vtable_ptrs`, and static-property storage slots so deep-free / cycle-collection paths can coordinate nested releases, discover class property traversal metadata, and support inherited instance dispatch, static-property reads/writes, and late static binding.
+Every heap allocation now also carries a uniform 8-byte kind tag in its 16-byte allocator header. The current runtime uses `0=raw/untyped`, `1=string`, `2=indexed array`, `3=assoc/hash`, `4=object`, and `5=boxed mixed`, which lets runtime dispatch stay independent from each payload's internal layout. Generator frames use heap kind `4` because `Generator` is a built-in object with a custom payload layout. The low 16 bits keep the persistent container metadata: low byte = heap kind, bits `8..14` = indexed-array runtime `value_type`, and bit `15` = copy-on-write container flag. The collector reuses higher bits for transient reachable/incoming-edge metadata during `__rt_gc_collect_cycles`. Runtime data also now includes `_gc_collecting`, `_gc_release_suppressed`, `_class_gc_desc_count`, `_class_gc_desc_ptrs`, `_class_vtable_ptrs`, `_class_static_vtable_ptrs`, and static-property storage slots so deep-free / cycle-collection paths can coordinate nested releases, discover class property traversal metadata, and support inherited instance dispatch, static-property reads/writes, and late static binding.
 
 See [Memory Model](memory-model.md) for details on how these buffers work.

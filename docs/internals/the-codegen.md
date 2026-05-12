@@ -496,6 +496,19 @@ For captured closures passed through `array_map` / `array_filter`, codegen build
 
 First-class callable wrappers reuse this hidden argument path when the callable target carries context. `$obj->method(...)` records the receiver variable as a hidden capture and the wrapper calls that method with the visible arguments. `static::method(...)` records the forwarded called-class id, or `$this` in an instance method, so late static binding is preserved for direct callable calls and for callback paths that forward an environment, such as `array_map`, `array_filter`, `call_user_func`, and `call_user_func_array`.
 
+## Generator codegen
+
+**Files:** `src/codegen/functions/generator/`, `src/codegen/runtime/generators/`, `src/codegen/expr/objects/dispatch/vtable.rs`
+
+A function or closure body that contains `yield` does not emit as an ordinary function body. Codegen emits two symbols:
+
+1. `_fn_<name>` — a wrapper that allocates a heap `GeneratorFrame`, stamps it as the built-in `Generator` object, copies supported scalar parameters/captures into frame slots, zeroes local slots, and returns the frame pointer.
+2. `_fn_<name>__resume` — a state-machine entry point. State `0` enters the body; each yield gets a numbered resume label. At a yield, the resume function boxes the key/value into Mixed cells, replaces the frame's last key/value slots, stores the next state index, and returns to the caller.
+
+Generator closures reuse the same path as ordinary deferred closures, but their hidden `use (...)` captures are copied into the generator frame alongside visible parameters. `yield from` stores the active inner generator in the frame's `delegated_iter` slot and resumes it through the same `__rt_gen_*` runtime helpers used by user-visible `Generator` methods.
+
+The generated `Generator` object has a custom payload layout rather than ordinary PHP properties. Method dispatch for `current`, `key`, `valid`, `next`, `rewind`, `send`, `throw`, and `getReturn` is intercepted before vtable lookup and routed directly to `__rt_gen_*`. Both AArch64 and Linux `x86_64` follow the same high-level state-machine model; the wrapper, resume dispatcher, and runtime helper emitters select target-specific instruction sequences internally.
+
 ## Fiber codegen
 
 **Files:** `src/codegen/expr/objects/allocation.rs`, `src/codegen/expr/objects/dispatch.rs`, `src/codegen/expr/objects/fiber_wrapper.rs`, `src/codegen/functions/fiber_wrapper.rs`, `src/codegen/runtime/fibers/`
