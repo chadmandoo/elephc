@@ -82,6 +82,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             Some(sig)
         }
         "function_exists" => Some(fixed(&["function"])),
+        "class_attribute_names" | "class_get_attributes" => Some(fixed(&["class_name"])),
+        "class_attribute_args" => Some(fixed(&["class_name", "attribute_name"])),
 
         "is_nan" | "is_finite" | "is_infinite" | "abs" | "floor" | "ceil" | "sqrt"
         | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh"
