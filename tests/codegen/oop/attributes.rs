@@ -730,6 +730,26 @@ echo $attrs[0]->getName();
 }
 
 #[test]
+fn test_attribute_reflection_builtins_are_case_insensitive_and_namespaced() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+#[Route("/home")]
+class Controller {}
+$names = CLASS_ATTRIBUTE_NAMES('App\Controller');
+echo $names[0];
+echo "/";
+$args = Class_Attribute_Args('App\Controller', 'App\Route');
+echo $args[0];
+echo "/";
+$attrs = Class_Get_Attributes('App\Controller');
+echo $attrs[0]->getName();
+"#,
+    );
+    assert_eq!(out, "App\\Route//home/App\\Route");
+}
+
+#[test]
 fn test_class_attribute_args_matches_attribute_name_case_insensitively() {
     let out = compile_and_run(
         r#"<?php
