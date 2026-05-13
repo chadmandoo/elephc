@@ -217,6 +217,18 @@ echo ($cb = second(...)) |> $cb;
 }
 
 #[test]
+fn test_pipe_result_string_assignment_uses_callable_return_type() {
+    let out = compile_and_run(
+        r#"<?php
+function label(int $n): string { return "v" . $n; }
+$result = 7 |> label(...);
+echo $result;
+"#,
+    );
+    assert_eq!(out, "v7");
+}
+
+#[test]
 fn test_pipe_in_arithmetic_context() {
     let out = compile_and_run(
         r#"<?php
