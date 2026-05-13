@@ -1,25 +1,14 @@
-//! Runtime helpers for the built-in `stdClass`.
+//! Purpose:
+//! Emits runtime helpers for built-in `stdClass` dynamic-property storage and JSON object access.
+//! Handles construction, hash-backed property get/set, and Mixed property dispatch.
 //!
-//! `stdClass` instances are 16-byte heap allocations laid out as
-//! `[class_id:8][hash_ptr:8]`. The hash table at offset 8 holds dynamic
-//! property name → boxed-`Mixed` mappings (hash value type 7) and is allocated
-//! lazily on the first property write so empty instances stay cheap.
+//! Called from:
+//! - `crate::codegen::runtime::objects`.
+//! - JSON decode/object property codegen paths that materialize or access `stdClass`.
 //!
-//! User code reaches these helpers through the codegen lowering of
-//! `$obj->name` and `$obj->name = $val` once the receiver type resolves to
-//! `Object("stdClass")`. The decoder produces stdClass instances directly
-//! through `__rt_stdclass_from_hash` when `json_decode($json, false)` is the
-//! caller-visible default.
-//!
-//! # Calling convention
-//!
-//! ARM64 (AArch64) follows the standard PCS register order used elsewhere
-//! in this runtime. x86_64 uses the SysV convention so codegen can prepare
-//! the same set of `mov` sequences it already uses for `__rt_hash_set` and
-//! the other multi-argument array helpers. The codegen lowering for
-//! stdClass property access therefore copies the receiver from the result
-//! register (`rax`) into `rdi` before issuing the call on x86_64; on ARM64
-//! the receiver is already in `x0`.
+//! Key details:
+//! - `stdClass` layout is `[class_id:8][hash_ptr:8]`; properties live in a hash of boxed Mixed values.
+//! - ARM64 uses the project PCS convention; x86_64 uses SysV register materialization.
 
 use crate::codegen::abi;
 use crate::codegen::emit::Emitter;

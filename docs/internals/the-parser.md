@@ -78,7 +78,6 @@ Things that have a value:
 | `ExprCall { callee, args }` | `$arr[0](1, 2)` | Calling the result of an expression (e.g., array access returning a callable) |
 | `Spread(Expr)` | `...$arr` | Spread/unpack operator — expands an array into individual arguments or elements |
 | `ConstRef(Name)` | `MAX_RETRIES`, `Config\PORT`, `\App\Config\PORT` | Reference to a user-defined constant |
-| `EnumCase { enum_name, case_name }` | `Color::Red`, `App\Status::Ok` | Reference to a declared enum case before later phases lower it to enum metadata |
 | `NewObject { class_name, args }` | `new Point(1, 2)`, `new App\Model\User()` | Object instantiation |
 | `NewScopedObject { receiver, args }` | `new self()`, `new static()`, `new parent()` | Object instantiation against a static receiver. Distinct from `NewObject` (which carries a fixed `Name`) so codegen can honour late static binding for `static`. |
 | `PropertyAccess { object, property }` | `$p->x` | Property access via `->` |
@@ -137,7 +136,6 @@ Each `Stmt` also carries a source `span` and an `attributes` list. The list is p
 | `ClassDecl { name, extends, implements, is_abstract, is_final, is_readonly_class, trait_uses, properties, constants, methods }` | `final readonly class Point extends Shape implements Named { use NamedTrait; ... }` |
 | `EnumDecl { name, backing_type, cases }` | `enum Status: int { case Ok = 1; case Err = 2; }` |
 | `PackedClassDecl { name, fields }` | `packed class Vec2 { public float $x; public float $y; }` |
-| `InterfaceDecl { name, extends, constants, methods }` | `interface Named extends Jsonable { public const KIND = "name"; public function name(); }` |
 | `TraitDecl { name, trait_uses, properties, constants, methods }` | `trait Named { public const KIND = "name"; ... }` |
 | `PropertyAssign { object, property, value }` | `$p->x = 10;` |
 | `StaticPropertyAssign { receiver, property, value }` | `Counter::$count = 10;`, `self::$count = 10;` |

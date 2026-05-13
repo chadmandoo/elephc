@@ -1,8 +1,13 @@
-//! JSON constants exposed as PHP integer constants.
+//! Purpose:
+//! Defines JSON constants exposed as PHP integer constants.
+//! Keeps `ext/json` flag and error-code values in one source of truth.
 //!
-//! Values match PHP's `ext/json` constants exactly. Both the type checker
-//! (which only needs the type) and codegen prescan (which needs the literal
-//! value) consume this single source of truth.
+//! Called from:
+//! - `crate::types::checker` when registering predefined constants.
+//! - `crate::codegen::prescan` when materializing constant literal values.
+//!
+//! Key details:
+//! - Values must match PHP's `ext/json` constants exactly for bitmask and error-code parity.
 
 pub(crate) const JSON_INT_CONSTANTS: &[(&str, i64)] = &[
     // Encoding flags (bitmask passed to json_encode).

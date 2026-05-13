@@ -154,7 +154,7 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `array_key_exists()` | `array_key_exists($key, $arr): bool` | Check if key exists |
 | `array_search()` | `array_search($needle, $arr): int\|string\|false` | Search for value, returning an integer index for indexed arrays, the first matching associative-array key, or `false` if not found |
 | `array_slice()` | `array_slice($arr, $offset [, $length]): array` | Extract a slice |
-| `array_splice()` | `array_splice($arr, $offset [, $length]): array` | Remove/replace part |
+| `array_splice()` | `array_splice($arr, $offset [, $length]): array` | Remove a slice in place and return the removed elements |
 | `array_chunk()` | `array_chunk($arr, $size): array` | Split into chunks |
 | `array_merge()` | `array_merge($arr1, $arr2): array` | Merge two arrays |
 | `array_combine()` | `array_combine($keys, $values): array` | Create array from keys/values |
@@ -194,7 +194,6 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `call_user_func()` | `call_user_func($callback, ...): mixed` | Call a callback value |
 | `call_user_func_array()` | `call_user_func_array($callback, $args): mixed` | Call with args from array |
 | `function_exists()` | `function_exists("name"): bool` | Check if function is defined |
-| `is_callable()` | `is_callable($value): bool` | True for closures, first-class callables, and string literals naming a known builtin / user function. Non-literal strings, `[$obj, "method"]` arrays, and `__invoke` objects are tracked as follow-ups. |
 | `isset()` | `isset($var): int` | Check if variable is defined |
 
 > Callback arguments can be string literals, first-class callable values, anonymous functions, arrow functions, or variables holding captured closures.

@@ -1,26 +1,13 @@
-//! Runtime helper for `$mixed[$key]` access.
+//! Purpose:
+//! Emits the `__rt_mixed_array_get` runtime helper for `$mixed[$key]` access.
+//! Routes boxed JSON-style values to indexed-array, hash, or stdClass lookup paths.
 //!
-//! Reading an index/key on a Mixed receiver is the prevalent
-//! `json_decode($json, true)["k"]` (or `[0]`) idiom. This helper unboxes
-//! the cell and routes to the right container access path:
+//! Called from:
+//! - `crate::codegen::runtime::objects::emit_mixed_array_get()`.
 //!
-//! - tag 4 (indexed array) — integer key only; out-of-bounds → Mixed(null)
-//! - tag 5 (associative array) — int or string key via `__rt_hash_get`
-//! - tag 6 (object) — only stdClass; string key dispatches to
-//!   `__rt_stdclass_get`. Other classes return Mixed(null).
-//! - any other payload (scalar, null, …) returns Mixed(null), matching
-//!   PHP's quiet "Trying to access array offset on …" warning behavior.
-//!
-//! # ABI
-//!
-//! ARM64: `x0 = mixed_ptr, x1 = key_lo, x2 = key_hi (-1 for int keys,
-//! string length otherwise).` Result lives in x0.
-//!
-//! x86_64 (SysV): `rdi = mixed_ptr, rsi = key_lo, rdx = key_hi.` Result
-//! lives in rax.
-//!
-//! The (key_lo, key_hi) tuple matches the convention emitted by
-//! `emit_normalized_hash_key`, so callers can pipe its output straight in.
+//! Key details:
+//! - The key tuple matches `emit_normalized_hash_key`: int keys use `key_hi = -1`.
+//! - Unsupported payloads and missing keys return boxed `Mixed(null)` for PHP-like quiet access.
 
 use crate::codegen::abi;
 use crate::codegen::emit::Emitter;

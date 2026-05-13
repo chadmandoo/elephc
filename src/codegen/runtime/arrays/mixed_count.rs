@@ -1,15 +1,13 @@
-//! Runtime helper for `count()` on a Mixed receiver.
+//! Purpose:
+//! Emits the `__rt_mixed_count` runtime helper for `count()` on a boxed Mixed receiver.
+//! Provides quiet container-aware counting for JSON-decoded mixed values.
 //!
-//! PHP's `count()` on a non-countable produces a warning and returns 1 in
-//! older PHP and 0 with a warning in PHP 8+. elephc collapses both edges to
-//! the quiet zero — the most common idiom is `count(json_decode($json, true))`
-//! and a defensive zero matches what user code typically expects.
+//! Called from:
+//! - `crate::codegen::runtime::arrays::emit_mixed_count()`.
 //!
-//! For boxed indexed arrays (tag 4) and associative hashes (tag 5) we read
-//! the entry count from the payload header (offset 0). Objects (tag 6) only
-//! support count when they implement Countable in PHP — elephc does not yet
-//! model Countable, so objects fall through to zero. All other tags
-//! (scalars, null, boxed mixed, …) also return zero.
+//! Key details:
+//! - Boxed indexed arrays and hashes read the entry count from their payload header.
+//! - Non-countable tags return zero instead of modeling PHP's warning surface.
 
 use crate::codegen::abi;
 use crate::codegen::emit::Emitter;

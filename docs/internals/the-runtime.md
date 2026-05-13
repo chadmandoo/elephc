@@ -5,7 +5,7 @@ sidebar:
   order: 8
 ---
 
-**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `exceptions.rs`, `exceptions/`, `io/`, `system/`, `pointers/`, `fibers/`, `generators/`
+**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `exceptions.rs`, `exceptions/`, `io/`, `objects/`, `system/`, `pointers/`, `fibers/`, `generators/`
 
 The runtime is a collection of **hand-written assembly routines** that handle operations too complex for inline code generation. When the [code generator](the-codegen.md) needs to convert an integer to a string or concatenate two strings, it emits a `bl __rt_itoa` or `bl __rt_concat` — a call to a runtime routine.
 
@@ -170,7 +170,7 @@ Each routine follows the same pattern — inputs in registers, output in standar
 
 ## Array routines
 
-**Source:** `src/codegen/runtime/arrays/` (117 files)
+**Source:** `src/codegen/runtime/arrays/` (118 files)
 
 ### Core allocation
 
@@ -251,7 +251,7 @@ See [Memory Model](memory-model.md) for the hash table memory layout.
 | `__rt_array_shift` / `__rt_array_unshift` | Remove/add at beginning |
 | `__rt_array_merge` | Concatenate two indexed arrays into a new array |
 | `__rt_array_merge_into` | Append all elements from source array into dest array (in-place) |
-| `__rt_array_slice` / `__rt_array_splice` | Extract/replace subarray |
+| `__rt_array_slice` / `__rt_array_splice` | Extract slices and remove splice windows from indexed arrays |
 | `__rt_array_unique` | Remove duplicate values |
 | `__rt_array_diff` / `__rt_array_intersect` | Set difference/intersection by value |
 | `__rt_array_diff_key` / `__rt_array_intersect_key` | Set operations by key |
@@ -296,7 +296,7 @@ Refcounts are stored as a 32-bit value in the uniform 16-byte heap header, at `[
 
 ## System routines
 
-**Source:** `src/codegen/runtime/system/` (29 files)
+**Source:** `src/codegen/runtime/system/` (34 files)
 
 ### `__rt_build_argv` — Build $argv array
 
@@ -387,7 +387,7 @@ All regex routines use **POSIX extended regular expressions** via libc's `regcom
 
 ## I/O routines
 
-**Source:** `src/codegen/runtime/io/` (28 files)
+**Source:** `src/codegen/runtime/io/` (30 files)
 
 These routines handle file and filesystem operations through target-aware libc/syscall helpers. PHP strings (pointer + length) must be converted to null-terminated C strings before passing to C or OS APIs — `__rt_cstr` handles the primary buffer and also emits `__rt_cstr2` for routines that need a second simultaneous C string.
 
@@ -464,11 +464,29 @@ These helpers support the compiler-specific `buffer<T>` hot-path data type.
 | `__rt_mixed_is_empty` | Check emptiness of a mixed cell (PHP semantics) | `x0` = mixed cell pointer | `x0` = 0 or 1 |
 | `__rt_mixed_strict_eq` | Compare two mixed cells by tag and value | `x0`, `x1` = mixed pointers | `x0` = 0 or 1 |
 | `__rt_mixed_unbox` | Extract the raw payload from a mixed cell | `x0` = mixed cell pointer | `x0`/`x1`/`x2` depending on type |
+| `__rt_mixed_count` | Count boxed indexed arrays and hashes, returning zero for non-countable payloads | `x0` = mixed cell pointer | `x0` = count |
 | `__rt_iterable_write_stdout` | Print iterable arrays and hashes as PHP's `"Array"` display string | `x0` = iterable heap pointer | — |
 | `__rt_iterable_unsupported_kind` | Abort when runtime iterable dispatch sees an unsupported heap kind | — | does not return |
 | `__rt_hash_may_have_cyclic_values` | Scan hash entries to check if any contain refcounted children | `x0` = hash pointer | `x0` = 0 (scalar-only) or 1 (has cycles) |
 | `__rt_match_unhandled` | Abort with `Fatal error: unhandled match case` | — | does not return |
 | `__rt_enum_from_fail` | Abort with `Fatal error: enum case not found` when `Enum::from()` has no match | — | does not return |
+
+## Object and stdClass routines
+
+**Source:** `src/codegen/runtime/objects/` (3 files)
+
+These helpers support `stdClass`, `json_decode()` object results, and boxed Mixed property/index access. `stdClass` instances use a compact `[class_id][hash_ptr]` payload, with dynamic properties stored in a hash of boxed `Mixed` values.
+
+| Routine | What it does | Input | Output |
+|---|---|---|---|
+| `__rt_stdclass_new` | Allocate an empty stdClass object with hash-backed dynamic property storage | stdClass class id from runtime data | object pointer |
+| `__rt_stdclass_from_hash` | Wrap a decoded JSON object hash in a stdClass instance | hash pointer | object pointer |
+| `__rt_stdclass_get` | Read a dynamic property and return a boxed Mixed value, or Mixed(null) when missing | object pointer + property string | boxed `mixed` payload |
+| `__rt_stdclass_set` | Store a boxed Mixed value into a dynamic property hash | object pointer + property string + boxed value | — |
+| `__rt_mixed_property_get` | Unbox a Mixed object payload and dispatch stdClass property reads | boxed `mixed` + property string | boxed `mixed` payload |
+| `__rt_mixed_property_set` | Unbox a Mixed object payload and dispatch stdClass property writes | boxed `mixed` + property string + boxed value | — |
+| `__rt_mixed_array_get` | Unbox Mixed array/hash/stdClass payloads for `$mixed[$key]` access | boxed `mixed` + normalized key tuple | boxed `mixed` payload |
+| `__rt_json_encode_stdclass` | Encode the dynamic-property hash backing stdClass as a JSON object | stdClass hash pointer | `x1`/`x2` = JSON string |
 
 ## Generator routines
 
@@ -491,7 +509,7 @@ Generator frames are stamped as object heap blocks because `Generator` is a buil
 
 ## Fiber routines
 
-**Source:** `src/codegen/runtime/fibers/` (4 top-level files plus `api/` target helpers)
+**Source:** `src/codegen/runtime/fibers/` (4 files)
 
 These helpers implement PHP 8.1-style cooperative coroutines. They are emitted on AArch64 and in the Linux x86_64 runtime slice.
 
@@ -527,6 +545,7 @@ pub fn emit_runtime(emitter: &mut Emitter) {
     // arrays: heap alloc/free, array/hash helpers, sort, callbacks, refcount
     // buffers: contiguous buffer allocation, bounds checking, UAF traps
     // io: c-string buffers, file I/O, stat/fs helpers, scandir/glob/tempnam, CSV
+    // objects: stdClass dynamic properties and boxed Mixed property/index dispatch
     // pointers: ptoa, null check, str_to_cstr, cstr_to_str
     // generators: Generator current/key/valid/next/send/rewind/throw/getReturn helpers
     // fibers: guarded stack allocation, context switch, entry trampoline, Fiber API
