@@ -293,6 +293,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter) {
     io::emit_pathinfo_str(emitter);
     io::emit_pathinfo_array(emitter);
     io::emit_modify(emitter);
+    io::emit_streams_ext(emitter);
+    io::emit_symlink(emitter);
 
     // Pointer runtime functions
     pointers::emit_ptoa(emitter);

@@ -236,6 +236,8 @@ pub(super) fn emit_runtime_linux_x86_64_minimal(emitter: &mut Emitter) {
     io::emit_pathinfo_str(emitter);
     io::emit_pathinfo_array(emitter);
     io::emit_modify(emitter);
+    io::emit_streams_ext(emitter);
+    io::emit_symlink(emitter);
     pointers::emit_ptoa(emitter);
     pointers::emit_ptr_check_nonnull(emitter);
     pointers::emit_str_to_cstr(emitter);

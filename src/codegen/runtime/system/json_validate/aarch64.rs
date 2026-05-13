@@ -696,4 +696,3 @@ fn emit_object_parser_aarch64(emitter: &mut Emitter) {
 }
 
 // x86_64 implementation ----------------------------------------------------
-

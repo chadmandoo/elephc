@@ -32,6 +32,10 @@ impl Checker {
         constants.insert("STDIN".to_string(), PhpType::stream_resource());
         constants.insert("STDOUT".to_string(), PhpType::stream_resource());
         constants.insert("STDERR".to_string(), PhpType::stream_resource());
+        constants.insert("LOCK_SH".to_string(), PhpType::Int);
+        constants.insert("LOCK_EX".to_string(), PhpType::Int);
+        constants.insert("LOCK_UN".to_string(), PhpType::Int);
+        constants.insert("LOCK_NB".to_string(), PhpType::Int);
         for (name, _value) in JSON_INT_CONSTANTS {
             constants.insert((*name).to_string(), PhpType::Int);
         }
