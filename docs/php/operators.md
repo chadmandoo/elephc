@@ -270,10 +270,11 @@ $cb = $inner->method(...);
 $value |> $cb;
 ```
 
-Precedence is left-associative and sits between concatenation (`.`) and the additive operators (`+`, `-`). Arithmetic binds tighter than `|>`, while comparisons, `??`, ternary, logical operators, and assignment all bind looser:
+Precedence is left-associative and sits below concatenation (`.`), bit shifts, and the additive operators (`+`, `-`). Comparisons, `??`, ternary, logical operators, and assignment all bind looser than `|>`:
 
 ```php
 echo 5 + 2 |> double(...);          // (5 + 2) |> double(...)
+echo "a" . "b" |> wrap(...);        // ("a" . "b") |> wrap(...)
 echo "beep" |> strlen(...) == 4;    // (...|> strlen(...)) == 4
 echo $id |> get(...) ?? "default";  // (...|> get(...)) ?? "default"
 ```

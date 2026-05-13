@@ -1,7 +1,7 @@
 //! Purpose:
 //! Integration or regression tests for parser AST coverage of the PHP 8.5 pipe operator (`|>`),
 //! including AST shape, left-associative chaining, and precedence against arithmetic, comparison,
-//! concat, null coalesce, and ternary operators.
+//! concat, shifts, null coalesce, ternary, logical, and assignment operators.
 //!
 //! Called from:
 //! - `cargo test` through Rust's test harness.
@@ -99,15 +99,76 @@ fn test_pipe_higher_precedence_than_null_coalesce() {
 }
 
 #[test]
-fn test_pipe_higher_precedence_than_concat() {
-    // `'a' . 'b' |> f(...)` must parse as `'a' . ('b' |> f(...))`.
-    let stmts = parse_source("<?php echo 'a' . 'b' |> f(...);");
+fn test_pipe_lower_precedence_than_concat() {
+    // `"a" . "b" |> f(...)` must parse as `("a" . "b") |> f(...)`.
+    let stmts = parse_source(r#"<?php echo "a" . "b" |> f(...);"#);
     let expr = unwrap_echo(&stmts);
     match &expr.kind {
-        ExprKind::BinaryOp { op: BinOp::Concat, right, .. } => {
-            assert!(matches!(right.kind, ExprKind::Pipe { .. }));
+        ExprKind::Pipe { value, callable } => {
+            assert!(matches!(callable.kind, ExprKind::FirstClassCallable(_)));
+            match &value.kind {
+                ExprKind::BinaryOp { op: BinOp::Concat, left, right } => {
+                    assert_eq!(left.kind, ExprKind::StringLiteral("a".into()));
+                    assert_eq!(right.kind, ExprKind::StringLiteral("b".into()));
+                }
+                other => panic!("expected Concat inside Pipe, got {:?}", other),
+            }
         }
-        other => panic!("expected Concat with Pipe on right, got {:?}", other),
+        other => panic!("expected Pipe with Concat value, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_pipe_lower_precedence_than_shift() {
+    // `1 << 2 |> f(...)` must parse as `(1 << 2) |> f(...)`.
+    let stmts = parse_source("<?php echo 1 << 2 |> f(...);");
+    let expr = unwrap_echo(&stmts);
+    match &expr.kind {
+        ExprKind::Pipe { value, .. } => match &value.kind {
+            ExprKind::BinaryOp { op: BinOp::ShiftLeft, .. } => {}
+            other => panic!("expected ShiftLeft inside Pipe, got {:?}", other),
+        },
+        other => panic!("expected Pipe at top, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_pipe_higher_precedence_than_ternary() {
+    // `$x |> f(...) ? 1 : 0` must parse as `($x |> f(...)) ? 1 : 0`.
+    let stmts = parse_source("<?php echo $x |> f(...) ? 1 : 0;");
+    let expr = unwrap_echo(&stmts);
+    match &expr.kind {
+        ExprKind::Ternary { condition, .. } => {
+            assert!(matches!(condition.kind, ExprKind::Pipe { .. }));
+        }
+        other => panic!("expected Ternary with Pipe condition, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_pipe_higher_precedence_than_logical() {
+    // `$x |> f(...) && $ok` must parse as `($x |> f(...)) && $ok`.
+    let stmts = parse_source("<?php echo $x |> f(...) && $ok;");
+    let expr = unwrap_echo(&stmts);
+    match &expr.kind {
+        ExprKind::BinaryOp { op: BinOp::And, left, .. } => {
+            assert!(matches!(left.kind, ExprKind::Pipe { .. }));
+        }
+        other => panic!("expected And with Pipe on left, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_pipe_higher_precedence_than_assignment() {
+    // `$out = $x |> f(...)` must parse as `$out = ($x |> f(...))`.
+    let stmts = parse_source("<?php echo $out = $x |> f(...);");
+    let expr = unwrap_echo(&stmts);
+    match &expr.kind {
+        ExprKind::Assignment { target, value, .. } => {
+            assert!(matches!(target.kind, ExprKind::Variable(ref name) if name == "out"));
+            assert!(matches!(value.kind, ExprKind::Pipe { .. }));
+        }
+        other => panic!("expected Assignment with Pipe value, got {:?}", other),
     }
 }
 

@@ -296,14 +296,14 @@ pub(super) fn parse_expr_bp(
             continue;
         }
 
-        // PHP 8.5 pipe operator `|>`: left-associative, BP (28, 29) — sits between
-        // concat (27, 28) and additive (29, 30), matching the PHP RFC v3 precedence
-        // (lower than `+`/`-`, higher than `.`, shifts, comparisons, `??`, ternary,
-        // and assignment). Built as a dedicated `ExprKind::Pipe` node, not a `BinOp`,
-        // so that LHS-first evaluation order and pipe-specific diagnostics are
+        // PHP 8.5 pipe operator `|>`: left-associative, BP (24, 25) — sits between
+        // comparisons (23, 24) and shifts (25, 26), matching php-src/RFC precedence
+        // (lower than `.`, shifts, `+`/`-`, higher than comparisons, `??`, ternary,
+        // logical, and assignment). Built as a dedicated `ExprKind::Pipe` node, not a
+        // `BinOp`, so that LHS-first evaluation order and pipe-specific diagnostics are
         // preserved through later passes.
         if matches!(tokens[*pos].0, Token::PipeArrow) {
-            let (l_bp, r_bp) = (28u8, 29u8);
+            let (l_bp, r_bp) = (24u8, 25u8);
             if l_bp < min_bp {
                 break;
             }

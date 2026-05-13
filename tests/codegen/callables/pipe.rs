@@ -115,6 +115,18 @@ echo 5 + 2 |> double(...);
 }
 
 #[test]
+fn test_pipe_precedence_with_concat() {
+    // "a" . "b" |> wrap(...) must parse as ("a" . "b") |> wrap(...).
+    let out = compile_and_run(
+        r#"<?php
+function wrap(string $s): string { return "[" . $s . "]"; }
+echo "a" . "b" |> wrap(...);
+"#,
+    );
+    assert_eq!(out, "[ab]");
+}
+
+#[test]
 fn test_pipe_precedence_with_comparison() {
     // 'beep' |> strlen(...) == 4 must compute strlen('beep')==4 -> "1".
     let out = compile_and_run(
