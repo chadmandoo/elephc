@@ -272,10 +272,10 @@ src/
 │   │   ├── strings/           strlen, substr, strpos, explode, sprintf, md5, ... (58 files)
 │   │   ├── arrays/            count, array_push, buffer_len/free, sort, array_map, usort, ... (59 files)
 │   │   ├── math/              abs, floor, pow, rand, fmod, fdiv, round, min, max, sin, cos, ... (32 files)
-│   │   ├── types/             is_*, gettype, empty, unset, settype, ... (17 files)
+│   │   ├── types/             is_*, gettype, empty, unset, settype, ... (18 files)
 │   │   ├── io/                fopen, fwrite, file_get_contents, scandir, ... (65 files)
 │   │   ├── pointers/          ptr, ptr_get, ptr_set, ptr_read8, ptr_write8, ptr_offset, ... (12 files)
-│   │   └── system/            exit, define, time, date, mktime, json_encode, preg_match, attribute reflection, ... (28 files)
+│   │   └── system/            exit, define, time, date, mktime, json_encode, preg_match, attribute reflection, ... (30 files)
 │   │
 │   └── runtime/               Runtime routines and target-specific emission helpers
 │       ├── mod.rs             Emits all runtime functions into assembly
@@ -284,14 +284,15 @@ src/
 │       ├── emitters.rs        Shared emit helpers used across runtime categories
 │       ├── x86_minimal.rs     Minimal x86_64 runtime slice for the Linux x86_64 target
 │       ├── strings/           itoa, concat, resource display, ftoa, sprintf, md5, sha1, str_persist, ... (56 files)
-│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (117 files)
+│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (118 files)
 │       ├── io/                fopen, fgets, fread, stat, scandir, ... (28 files)
 │       ├── buffers/           buffer_new, buffer_len, bounds_fail, use_after_free helpers (5 files incl. mod.rs)
 │       ├── exceptions.rs      Exception runtime module root / re-exports
 │       ├── exceptions/        cleanup_frames, dynamic_instanceof, matches, throw_current, rethrow_current helpers (5 files)
-│       ├── system/            build_argv, time, getenv, shell_exec, php_uname, date, mktime, strtotime, match_unhandled, enum_from_fail, json_encode_*, json_decode, preg_*, ... (29 files)
+│       ├── system/            build_argv, time, getenv, shell_exec, php_uname, date, mktime, strtotime, match_unhandled, enum_from_fail, json_encode_*, json_decode, preg_*, ... (34 files)
 │       ├── pointers/          ptoa, ptr_check_nonnull, str_to_cstr, cstr_to_str, ... (5 files)
 │       ├── fibers/            stack allocation/free, context switch, entry trampoline, public API helpers (4 files)
+│       ├── objects/           stdClass, Mixed property/index access, JSON stdClass encoding helpers (3 files)
 │       └── generators/        Generator frame layout and __rt_gen_* helpers (2 files)
 │
 │
@@ -402,7 +403,7 @@ The runtime data emission in `src/codegen/runtime/data/` is split into `emit_run
 | Include-loaded function variants | `_fn_variant_active_<function>` | Active hidden implementation pointer for a function loaded through an include point |
 | I/O scratch | `_cstr_buf`, `_cstr_buf2`, `_eof_flags` | Syscall-oriented C-string scratch buffers and EOF bookkeeping |
 | String/regex tables | `_fmt_g`, `_b64_encode_tbl`, `_b64_decode_tbl`, `_pcre_*` | Formatting and lookup tables for runtime helpers |
-| JSON/date tables | `_json_true`, `_json_false`, `_json_null`, `_day_names`, `_month_names` | Static data used by JSON and date routines |
+| JSON/date state and tables | `_json_last_error`, `_json_active_flags`, `_json_active_depth`, `_json_depth_limit`, `_json_validate_*`, `_json_decode_assoc`, `_json_true`, `_json_false`, `_json_null`, `_json_err_msg_*`, `_json_err_msg_table`, `_json_int_max_str`, `_json_int_min_str`, `_day_names`, `_month_names` | Runtime JSON state, JSON literal/error lookup data, bigint thresholds, and date lookup tables |
 | User-dependent storage | `_gvar_<name>`, `_static_<func>_<name>`, `_static_<func>_<name>_init`, `_static_prop_<class>_<prop>`, enum-case `.comm` symbols via `enum_case_symbol(...)` | Global/static local storage, class static-property storage, plus singleton backing slots for enum cases |
 | Class/interface metadata tables | `_instanceof_target_count`, `_instanceof_target_entries`, `_instanceof_name_*`, `_interface_count`, `_interface_method_ptrs`, `_interface_methods_<id>`, `_class_interface_ptrs`, `_class_interfaces_<id>`, `_class_interface_impl_<class>_<iface>`, `_generator_class_id`, `_fiber_class_id`, `_fiber_error_class_id`, `_class_gc_desc_count`, `_class_gc_desc_ptrs`, `_class_gc_desc_<id>`, `_class_vtable_ptrs`, `_class_vtable_<id>`, `_class_static_vtable_ptrs`, `_class_static_vtable_<id>` | Dynamic `instanceof` lookup names, built-in runtime-managed class ids, per-interface method-order metadata, per-class property traversal metadata, and instance/static dispatch tables |
 
