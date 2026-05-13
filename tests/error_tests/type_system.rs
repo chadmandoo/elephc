@@ -329,6 +329,14 @@ fn test_error_json_encode_flag_must_be_int() {
 }
 
 #[test]
+fn test_error_json_encode_depth_must_be_int() {
+    expect_error(
+        r#"<?php json_encode("a", 0, "deep");"#,
+        "json_encode() flags and depth must be integers",
+    );
+}
+
+#[test]
 fn test_error_json_encode_too_many_args() {
     expect_error(
         "<?php json_encode(1, 2, 3, 4);",
@@ -345,6 +353,38 @@ fn test_error_json_decode_too_many_args() {
 }
 
 #[test]
+fn test_error_json_decode_json_arg_must_be_string_compatible() {
+    expect_error(
+        r#"<?php json_decode([]);"#,
+        "json_decode() json argument must be string-compatible",
+    );
+}
+
+#[test]
+fn test_error_json_decode_associative_must_be_bool_compatible() {
+    expect_error(
+        r#"<?php json_decode("{}", []);"#,
+        "json_decode() associative argument must be bool-compatible or null",
+    );
+}
+
+#[test]
+fn test_error_json_decode_depth_must_be_int() {
+    expect_error(
+        r#"<?php json_decode("{}", false, "deep");"#,
+        "json_decode() depth and flags must be integers",
+    );
+}
+
+#[test]
+fn test_error_json_decode_flags_must_be_int() {
+    expect_error(
+        r#"<?php json_decode("{}", false, 512, "flags");"#,
+        "json_decode() depth and flags must be integers",
+    );
+}
+
+#[test]
 fn test_error_json_validate_too_many_args() {
     expect_error(
         r#"<?php json_validate("1", 1, 0, 99);"#,
@@ -353,10 +393,34 @@ fn test_error_json_validate_too_many_args() {
 }
 
 #[test]
+fn test_error_json_validate_json_arg_must_be_string_compatible() {
+    expect_error(
+        r#"<?php json_validate([]);"#,
+        "json_validate() json argument must be string-compatible",
+    );
+}
+
+#[test]
 fn test_error_json_validate_flag_must_be_int() {
     expect_error(
         r#"<?php json_validate("1", "deep");"#,
         "json_validate() depth and flags must be integers",
+    );
+}
+
+#[test]
+fn test_error_json_validate_rejects_throw_on_error_flag() {
+    expect_error(
+        r#"<?php json_validate("1", 512, JSON_THROW_ON_ERROR);"#,
+        "json_validate() flags must be 0 or JSON_INVALID_UTF8_IGNORE",
+    );
+}
+
+#[test]
+fn test_error_json_validate_rejects_combined_invalid_flags() {
+    expect_error(
+        r#"<?php json_validate("1", 512, JSON_INVALID_UTF8_IGNORE | JSON_THROW_ON_ERROR);"#,
+        "json_validate() flags must be 0 or JSON_INVALID_UTF8_IGNORE",
     );
 }
 

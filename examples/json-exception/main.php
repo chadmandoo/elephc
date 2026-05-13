@@ -43,9 +43,9 @@ echo "RuntimeException::getMessage = " . $r->getMessage() . "\n";
 echo "RuntimeException is Exception: "
     . ($r instanceof Exception ? "yes" : "no") . "\n";
 
-// JSON_THROW_ON_ERROR makes json_validate throw a JsonException on failure
-// instead of returning false. Without the flag, json_last_error reports the
-// failure as JSON_ERROR_SYNTAX while the function returns false.
+// JSON_THROW_ON_ERROR makes json_decode throw a JsonException on failure
+// instead of returning null. Without the flag, json_last_error reports the
+// failure as JSON_ERROR_SYNTAX while json_decode returns null.
 
 echo "\n-- JSON_THROW_ON_ERROR demo --\n";
 echo "valid input ([1,2,3]):    "
@@ -56,7 +56,7 @@ echo "json_last_error after invalid: " . json_last_error()
     . " (" . json_last_error_msg() . ")\n";
 
 try {
-    json_validate("garbage", 512, JSON_THROW_ON_ERROR);
+    json_decode("garbage", null, 512, JSON_THROW_ON_ERROR);
     echo "did not throw\n";
 } catch (JsonException $err) {
     echo "JSON_THROW_ON_ERROR caught: " . $err->getMessage() . "\n";
@@ -65,7 +65,7 @@ try {
 // The JsonException raised by JSON_THROW_ON_ERROR is the same class as one
 // the user can throw manually, so it can be caught at any parent level.
 try {
-    json_validate("", 512, JSON_THROW_ON_ERROR);
+    json_decode("", null, 512, JSON_THROW_ON_ERROR);
 } catch (RuntimeException $err) {
     echo "caught at RuntimeException level: " . $err->getMessage() . "\n";
 }

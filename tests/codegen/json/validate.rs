@@ -76,75 +76,22 @@ fn test_json_validate_success_clears_error_state() {
     assert_eq!(out, "0");
 }
 
-// --- JSON_THROW_ON_ERROR ---
+// --- JSON_INVALID_UTF8_IGNORE flag ---
 
 #[test]
-fn test_json_validate_throw_on_error_flag_throws_jsonexception() {
+fn test_json_validate_accepts_invalid_utf8_ignore_flag_for_valid_input() {
     let out = compile_and_run(
-        r#"<?php
-try {
-    json_validate("garbage", 512, JSON_THROW_ON_ERROR);
-    echo "no throw";
-} catch (JsonException $e) {
-    echo "caught: " . $e->getMessage();
-}
-"#,
-    );
-    assert_eq!(out, "caught: Syntax error");
-}
-
-#[test]
-fn test_json_validate_throw_on_error_caught_as_runtime_exception() {
-    let out = compile_and_run(
-        r#"<?php
-try {
-    json_validate("garbage", 512, JSON_THROW_ON_ERROR);
-} catch (RuntimeException $e) {
-    echo $e->getMessage();
-}
-"#,
-    );
-    assert_eq!(out, "Syntax error");
-}
-
-#[test]
-fn test_json_validate_throw_on_error_caught_as_exception() {
-    let out = compile_and_run(
-        r#"<?php
-try {
-    json_validate("", 512, JSON_THROW_ON_ERROR);
-} catch (Exception $e) {
-    echo $e->getMessage();
-}
-"#,
-    );
-    assert_eq!(out, "Syntax error");
-}
-
-#[test]
-fn test_json_validate_throw_on_error_does_not_throw_for_valid_input() {
-    let out = compile_and_run(
-        r#"<?php
-try {
-    $r = json_validate("[1,2,3]", 512, JSON_THROW_ON_ERROR);
-    echo ($r ? "ok" : "no");
-} catch (JsonException $e) {
-    echo "unexpected throw";
-}
-"#,
+        r#"<?php echo json_validate("[1,2,3]", 512, JSON_INVALID_UTF8_IGNORE) ? "ok" : "no";"#,
     );
     assert_eq!(out, "ok");
 }
 
 #[test]
-fn test_json_validate_throw_on_error_clears_state_on_success() {
+fn test_json_validate_invalid_utf8_ignore_does_not_throw_on_invalid_json() {
     let out = compile_and_run(
-        r#"<?php
-json_validate("[1]", 512, JSON_THROW_ON_ERROR);
-echo json_last_error();
-"#,
+        r#"<?php echo json_validate("garbage", 512, JSON_INVALID_UTF8_IGNORE) ? "ok" : "no";"#,
     );
-    assert_eq!(out, "0");
+    assert_eq!(out, "no");
 }
 
 // --- RFC 8259 grammar coverage: scalar values ---
@@ -484,17 +431,14 @@ echo json_last_error();
 }
 
 #[test]
-fn test_json_validate_depth_overflow_throws_when_flag_set() {
+fn test_json_validate_depth_overflow_with_allowed_flag_sets_depth_error() {
     let out = compile_and_run(
         r#"<?php
-try {
-    json_validate("[[[[[[1]]]]]]", 3, JSON_THROW_ON_ERROR);
-} catch (JsonException $e) {
-    echo $e->getMessage();
-}
+json_validate("[[[[[[1]]]]]]", 3, JSON_INVALID_UTF8_IGNORE);
+echo json_last_error();
 "#,
     );
-    assert_eq!(out, "Maximum stack depth exceeded");
+    assert_eq!(out, "1");
 }
 
 #[test]
