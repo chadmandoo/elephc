@@ -309,6 +309,12 @@ pub(super) fn parse_expr_bp(
             }
             let span = tokens[*pos].1;
             *pos += 1;
+            if starts_unparenthesized_arrow_function(tokens, *pos) {
+                return Err(CompileError::new(
+                    tokens[*pos].1,
+                    "Arrow functions used as pipe targets must be parenthesized",
+                ));
+            }
             let rhs = parse_expr_bp(tokens, pos, r_bp)?;
             lhs = Expr::new(
                 ExprKind::Pipe {
@@ -353,6 +359,12 @@ pub(super) fn parse_expr_bp(
     }
 
     Ok(lhs)
+}
+
+fn starts_unparenthesized_arrow_function(tokens: &[(Token, Span)], pos: usize) -> bool {
+    matches!(tokens.get(pos).map(|(token, _)| token), Some(Token::Fn))
+        || (matches!(tokens.get(pos).map(|(token, _)| token), Some(Token::Static))
+            && matches!(tokens.get(pos + 1).map(|(token, _)| token), Some(Token::Fn)))
 }
 
 #[derive(Debug, Clone, PartialEq)]

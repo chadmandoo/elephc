@@ -202,3 +202,13 @@ fn test_pipe_with_static_method_callable() {
         other => panic!("expected Pipe, got {:?}", other),
     }
 }
+
+#[test]
+fn test_pipe_rejects_unparenthesized_arrow_function_target() {
+    assert!(parse_fails("<?php echo 1 |> fn($v) => $v + 1;"));
+}
+
+#[test]
+fn test_pipe_rejects_unparenthesized_static_arrow_function_target() {
+    assert!(parse_fails("<?php echo 1 |> static fn($v) => $v + 1;"));
+}
