@@ -62,6 +62,8 @@ Things that have a value:
 | `PreDecrement(String)` | `--$i` | |
 | `PostDecrement(String)` | `$i--` | |
 | `FunctionCall { name, args }` | `strlen($s)`, `Tools\fmt($s)`, `\strlen($s)` | Parsed as a structured name so later phases can resolve namespace aliases and fully-qualified names |
+| `Yield { key, value }` | `yield`, `yield $v`, `yield $k => $v` | Yield expression inside a generator body. The parser keeps optional key/value expressions; later checker/codegen turns the enclosing function or closure into a `Generator` state machine. |
+| `YieldFrom(Expr)` | `yield from inner()` | Contextual `yield from` delegation. The lexer leaves `from` as an identifier and the parser recognizes it only immediately after `yield`. |
 | `ArrayLiteral(Vec<Expr>)` | `[1, 2, 3]`, `[...$arr, 4]` | Indexed array; elements may include `Spread` expressions |
 | `ArrayLiteralAssoc(Vec<(Expr, Expr)>)` | `["a" => 1]` | Associative array |
 | `Match { subject, arms, default }` | `match($x) { 1, 2 => "low", 3 => "high" }` | Match expression (returns a value). `arms` is `Vec<(Vec<Expr>, Expr)>`, so each arm can have multiple comma-separated patterns before `=>`, and `default` is optional (`Option<Box<Expr>>`) |
@@ -76,7 +78,6 @@ Things that have a value:
 | `ExprCall { callee, args }` | `$arr[0](1, 2)` | Calling the result of an expression (e.g., array access returning a callable) |
 | `Spread(Expr)` | `...$arr` | Spread/unpack operator — expands an array into individual arguments or elements |
 | `ConstRef(Name)` | `MAX_RETRIES`, `Config\PORT`, `\App\Config\PORT` | Reference to a user-defined constant |
-| `EnumCase { enum_name, case_name }` | `Color::Red`, `App\Status::Ok` | Reference to a declared enum case before later phases lower it to enum metadata |
 | `NewObject { class_name, args }` | `new Point(1, 2)`, `new App\Model\User()` | Object instantiation |
 | `NewScopedObject { receiver, args }` | `new self()`, `new static()`, `new parent()` | Object instantiation against a static receiver. Distinct from `NewObject` (which carries a fixed `Name`) so codegen can honour late static binding for `static`. |
 | `PropertyAccess { object, property }` | `$p->x` | Property access via `->` |
@@ -135,7 +136,6 @@ Each `Stmt` also carries a source `span` and an `attributes` list. The list is p
 | `ClassDecl { name, extends, implements, is_abstract, is_final, is_readonly_class, trait_uses, properties, constants, methods }` | `final readonly class Point extends Shape implements Named { use NamedTrait; ... }` |
 | `EnumDecl { name, backing_type, cases }` | `enum Status: int { case Ok = 1; case Err = 2; }` |
 | `PackedClassDecl { name, fields }` | `packed class Vec2 { public float $x; public float $y; }` |
-| `InterfaceDecl { name, extends, constants, methods }` | `interface Named extends Jsonable { public const KIND = "name"; public function name(); }` |
 | `TraitDecl { name, trait_uses, properties, constants, methods }` | `trait Named { public const KIND = "name"; ... }` |
 | `PropertyAssign { object, property, value }` | `$p->x = 10;` |
 | `StaticPropertyAssign { receiver, property, value }` | `Counter::$count = 10;`, `self::$count = 10;` |
@@ -221,7 +221,7 @@ forms such as `?T|U` and normalize accepted declarations.
 | Type | Fields | Description |
 |---|---|---|
 | `Visibility` | `Public`, `Protected`, `Private` | Enum for property/method visibility |
-| `Attribute` | `name`, `args`, `span` | A PHP 8 attribute entry from a `#[...]` group. The parser validates names and optional argument expressions, but runtime reflection is not implemented yet. |
+| `Attribute` | `name`, `args`, `span` | A PHP 8 attribute entry from a `#[...]` group. The parser validates names and optional argument expressions. Class-level names and supported literal args feed `class_attribute_names()`, `class_attribute_args()`, and `class_get_attributes()`; method/property/parameter reflection is not implemented yet. |
 | `AttributeGroup` | `attributes`, `span` | One bracketed attribute group. Declaration sites can carry one or more groups. |
 | `EnumCaseDecl` | `name`, `value`, `span`, `attributes` | A backed or unit enum case declaration, with declaration-level attributes preserved in the AST. |
 | `ClassConst` | `name`, `visibility`, `is_final`, `value`, `span`, `attributes` | A class, interface, or trait constant declaration. |
@@ -359,6 +359,7 @@ Before looking for infix operators, the parser handles **prefix** constructs —
 | `Variable` | Return `Variable` node (with postfix `++`/`--` check) |
 | `throw` | Parse the following expression at the lowest precedence and wrap it in `ExprKind::Throw` |
 | `print` | Parse the operand at ternary-level precedence (bp=7, above word logical operators) and wrap it in `ExprKind::Print` |
+| `yield` | Parse `yield`, `yield expr`, `yield key => value`, or contextual `yield from expr` |
 | `-` (minus) | Parse inner expr at unary precedence (bp=35), return `Negate` |
 | `!` (not) | Parse inner expr at unary precedence (bp=35), return `Not` |
 | `~` (bitwise not) | Parse inner expr at unary precedence (bp=35), return `BitNot` |

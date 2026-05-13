@@ -309,6 +309,8 @@ fn collect_assignment_target_dependencies(expr: &Expr, dependencies: &mut HashSe
         | ExprKind::BufferNew { .. }
         | ExprKind::ClassConstant { .. } | ExprKind::ScopedConstantAccess { .. }
         | ExprKind::NewScopedObject { .. }
+        | ExprKind::Yield { .. }
+        | ExprKind::YieldFrom(_)
         | ExprKind::MagicConstant(_) => {}
     }
 }
@@ -435,7 +437,10 @@ fn expr_may_write_dependency(expr: &Expr, dependencies: &HashSet<String>) -> boo
         | ExprKind::StaticPropertyAccess { .. }
         | ExprKind::FirstClassCallable(_)
         | ExprKind::This
-        | ExprKind::ClassConstant { .. } | ExprKind::ScopedConstantAccess { .. }
+        | ExprKind::ClassConstant { .. }
+        | ExprKind::ScopedConstantAccess { .. }
+        | ExprKind::Yield { .. }
+        | ExprKind::YieldFrom(_)
         | ExprKind::MagicConstant(_) => false,
     }
 }
