@@ -18,6 +18,7 @@ use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::emit_expr;
+use crate::names::php_symbol_key;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
@@ -61,8 +62,9 @@ fn static_relation_holds(
     };
     let obj_class = obj_class.trim_start_matches('\\');
     let target = target.trim_start_matches('\\');
+    let target_key = php_symbol_key(target);
 
-    if !exclude_self && obj_class == target {
+    if !exclude_self && php_symbol_key(obj_class) == target_key {
         return true;
     }
 
@@ -71,7 +73,7 @@ fn static_relation_holds(
     while let Some(info) = ctx.classes.get(&current) {
         if let Some(parent) = &info.parent {
             let parent_clean = parent.trim_start_matches('\\');
-            if parent_clean == target {
+            if php_symbol_key(parent_clean) == target_key {
                 return true;
             }
             current = parent.clone();
@@ -83,7 +85,7 @@ fn static_relation_holds(
     // Walk implemented (and transitively-inherited) interfaces.
     if let Some(info) = ctx.classes.get(obj_class) {
         for iface in &info.interfaces {
-            if iface.trim_start_matches('\\') == target {
+            if php_symbol_key(iface.trim_start_matches('\\')) == target_key {
                 return true;
             }
         }

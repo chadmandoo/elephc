@@ -1152,6 +1152,23 @@ echo is_subclass_of($d, "Animal") ? "y" : "n";
 }
 
 #[test]
+fn test_is_a_target_string_is_case_insensitive() {
+    let out = compile_and_run(
+        r#"<?php
+interface Pettable {}
+class Animal {}
+class Dog extends Animal implements Pettable {}
+$dog = new Dog();
+echo is_a($dog, "dog") ? "d" : "n";
+echo is_a($dog, "animal") ? "a" : "n";
+echo is_a($dog, "pettable") ? "p" : "n";
+echo is_subclass_of($dog, "animal") ? "s" : "n";
+"#,
+    );
+    assert_eq!(out, "daps");
+}
+
+#[test]
 fn test_is_a_walks_implemented_interface() {
     let out = compile_and_run(
         r#"<?php
