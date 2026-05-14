@@ -1,13 +1,13 @@
-//! Top-level `class_alias("Original", "Alias")` collection.
+//! Purpose:
+//! Collects top-level literal `class_alias("Original", "Alias")` calls.
+//! Synthesizes subclass declarations that approximate alias use in the AOT class table.
 //!
-//! At compile time we synthesise `class Alias extends Original {}` for each
-//! collected pair. This isn't strictly identical to PHP's runtime
-//! class_alias (the alias becomes a *subclass* with its own class id rather
-//! than a true name alias), but for the autoload-related cases — `new
-//! Alias()`, `Alias::CONST`, `instanceof Alias`, `instanceof Original` — it
-//! behaves the same as the user expects. The only divergence is `(new
-//! Original()) instanceof Alias`, which would be `true` under real
-//! class_alias and is `false` under the subclass model.
+//! Called from:
+//! - `crate::autoload::registry::Registry::build()`
+//!
+//! Key details:
+//! - Runtime-dynamic alias calls are left in the program and rejected by the checker.
+//! - The alias is a subclass, not a true PHP runtime alias, so identity checks differ in documented cases.
 
 use crate::names::{Name, NameKind};
 use crate::parser::ast::{Expr, ExprKind, Program, Stmt, StmtKind};
@@ -15,7 +15,8 @@ use crate::parser::ast::{Expr, ExprKind, Program, Stmt, StmtKind};
 /// Walk top-level statements for `class_alias("Orig", "Alias")` calls
 /// (with literal arguments). Strip every collected call and append a
 /// synthesized `class Alias extends Orig {}` declaration. Calls with
-/// non-literal arguments stay in the program and reach the runtime stub.
+/// non-literal or runtime-dependent arguments stay in the program and are
+/// rejected by the checker.
 pub fn collect_aliases(program: Program) -> Program {
     let mut alias_decls: Vec<Stmt> = Vec::new();
     let mut cleaned: Program = program
@@ -40,8 +41,21 @@ fn extract_class_alias(stmt: &Stmt) -> Option<(String, String)> {
         return None;
     };
     let canonical = name.as_canonical();
-    if canonical.trim_start_matches('\\') != "class_alias" {
+    if !canonical
+        .trim_start_matches('\\')
+        .eq_ignore_ascii_case("class_alias")
+    {
         return None;
+    }
+    if args.len() < 2 || args.len() > 3 {
+        return None;
+    }
+    if let Some(autoload_arg) = args.get(2) {
+        match &autoload_arg.kind {
+            ExprKind::BoolLiteral(true) => {}
+            ExprKind::IntLiteral(n) if *n != 0 => {}
+            _ => return None,
+        }
     }
     let orig = literal_string(args.first()?)?.to_string();
     let alias = literal_string(args.get(1)?)?.to_string();

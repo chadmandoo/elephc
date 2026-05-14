@@ -1,10 +1,13 @@
-//! Compile-time autoload state.
+//! Purpose:
+//! Owns compile-time autoload state for Composer mappings and supported SPL rules.
+//! Builds the registry and returns the program with consumed autoload setup stripped.
 //!
-//! The Registry is the single source of truth for everything the autoload
-//! pass needs: the static composer.json PSR-4 index, the user-registered
-//! closure rules (extracted from `spl_autoload_register` calls), and the
-//! current value of `spl_autoload_extensions`. It is built once after name
-//! resolution and consumed by `autoload::run`.
+//! Called from:
+//! - `crate::pipeline::compile()`
+//!
+//! Key details:
+//! - Built before resolver and name resolution so unsupported register calls stay in the program.
+//! - `autoload.files` entries are exposed separately because their execution order is special.
 
 use std::path::{Path, PathBuf};
 
@@ -69,7 +72,7 @@ impl Registry {
         &self.extensions
     }
 
-    /// True when the registry has nothing to contribute — no PSR-4 mappings
+    /// True when the registry has nothing to contribute: no PSR-4 mappings
     /// and no closure rules. Used by `run` to short-circuit when the program
     /// has no autoload to do.
     pub fn is_empty(&self) -> bool {
@@ -83,7 +86,7 @@ impl Registry {
         self.rules.len()
     }
 
-    /// Compile-time warnings produced by the rule collector — typically
+    /// Compile-time warnings produced by the rule collector, typically
     /// `spl_autoload_register` calls whose closure was rejected because
     /// of `use(...)` captures or other constraints we can't reason
     /// about. main.rs prints these alongside type-checker warnings.

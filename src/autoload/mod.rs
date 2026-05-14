@@ -1,14 +1,13 @@
-//! Static autoload via composer.json PSR-4.
+//! Purpose:
+//! Resolves static Composer autoload mappings and supported SPL registration patterns.
+//! Prefixes Composer `autoload.files` and inlines class files discovered by the AOT autoload registry.
 //!
-//! Composer's `autoload.psr-4` section maps each namespace prefix to one or
-//! more directories on disk. PSR-4 turns `App\Foo\Bar` into
-//! `<dir>/Foo/Bar.php`. Because elephc is an AOT compiler, we cannot run
-//! `spl_autoload_register` callbacks at runtime — instead we **pre-resolve**
-//! every PSR-4 mapping at compile time: build an index of FQN → file path,
-//! and after the resolver/name-resolver passes, walk the AST for class
-//! references that aren't yet declared and inline the corresponding file.
+//! Called from:
+//! - `crate::pipeline::compile()`
 //!
-//! This matches `composer dump-autoload --classmap-authoritative` semantically.
+//! Key details:
+//! - Runtime autoload callbacks cannot run in native binaries; supported rules are interpreted at compile time.
+//! - Composer files execute before the entry program while class-triggered files append at discovery points.
 
 mod alias;
 mod index;
@@ -29,6 +28,45 @@ use crate::span::Span;
 
 use walk::{collect_declared_fqns, collect_referenced_fqns};
 
+const BUILTIN_CLASS_LIKE_NAMES: &[&str] = &[
+    "ArrayAccess",
+    "BadFunctionCallException",
+    "BadMethodCallException",
+    "Countable",
+    "DomainException",
+    "Exception",
+    "Fiber",
+    "FiberError",
+    "Generator",
+    "InvalidArgumentException",
+    "Iterator",
+    "IteratorAggregate",
+    "JsonException",
+    "JsonSerializable",
+    "LengthException",
+    "LogicException",
+    "OutOfBoundsException",
+    "OutOfRangeException",
+    "OuterIterator",
+    "OverflowException",
+    "RangeException",
+    "RecursiveIterator",
+    "ReflectionAttribute",
+    "ReflectionClass",
+    "ReflectionMethod",
+    "ReflectionProperty",
+    "RuntimeException",
+    "SeekableIterator",
+    "SplObserver",
+    "SplSubject",
+    "Stringable",
+    "Throwable",
+    "Traversable",
+    "UnderflowException",
+    "UnexpectedValueException",
+    "stdClass",
+];
+
 /// Run the autoload pass over a fully resolver+name_resolver-processed
 /// program. For every canonical class reference that isn't declared in
 /// the program, look it up first in the composer.json PSR-4 index and
@@ -45,19 +83,25 @@ pub fn run(
     let mut included: HashSet<PathBuf> = HashSet::new();
     const MAX_ITERATIONS: usize = 64;
 
-    // -- splice always-included files first --
+    // -- prefix always-included files first --
     // composer.json's `autoload.files` declares files that must always be
-    // included. Splice them up front so any classes/functions they declare
-    // are present before the iterative class-reference loop begins.
+    // included. Prefix them in Composer order so their top-level statements
+    // execute before the entry program.
+    let mut prefix: Program = Vec::new();
     for path in registry.always_included_files() {
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         if included.insert(canonical.clone()) {
-            program = splice_autoloaded_file(program, &canonical, base_dir)?;
+            prefix.extend(load_autoloaded_file(&canonical, base_dir)?);
         }
+    }
+    if !prefix.is_empty() {
+        prefix.extend(program);
+        program = prefix;
     }
 
     for _ in 0..MAX_ITERATIONS {
-        let declared = collect_declared_fqns(&program);
+        let mut declared = collect_declared_fqns(&program);
+        seed_builtin_declared_fqns(&mut declared);
         let referenced = collect_referenced_fqns(&program);
         let mut new_paths: Vec<PathBuf> = Vec::new();
         for fqn in &referenced {
@@ -81,6 +125,12 @@ pub fn run(
     Ok(program)
 }
 
+fn seed_builtin_declared_fqns(declared: &mut HashSet<String>) {
+    for name in BUILTIN_CLASS_LIKE_NAMES {
+        declared.insert((*name).to_string());
+    }
+}
+
 /// Try the resolution chain in order: composer.json PSR-4 first, then each
 /// user-registered closure rule. Returns the first rule that produces a
 /// path matching an existing file on disk.
@@ -99,13 +149,19 @@ fn resolve_class(fqn: &str, registry: &Registry) -> Option<PathBuf> {
 }
 
 /// Parse, resolve includes, and name-resolve a single file, then append the
-/// resulting statements to `program`. Shared by PSR-4 lookups and (later)
-/// closure-rule resolutions.
+/// resulting statements to `program`. Used by class-triggered autoloads whose
+/// top-level effects happen at the point the class is first referenced.
 pub(super) fn splice_autoloaded_file(
     mut program: Program,
     path: &Path,
     base_dir: &Path,
 ) -> Result<Program, CompileError> {
+    let canonicalized = load_autoloaded_file(path, base_dir)?;
+    program.extend(canonicalized);
+    Ok(program)
+}
+
+fn load_autoloaded_file(path: &Path, base_dir: &Path) -> Result<Program, CompileError> {
     let content = std::fs::read_to_string(path).map_err(|e| {
         CompileError::new(
             Span::dummy(),
@@ -121,6 +177,5 @@ pub(super) fn splice_autoloaded_file(
     // name_resolver has already flattened namespace nodes and canonicalized
     // declarations, so we splice the statements directly into the top-level
     // program.
-    program.extend(canonicalized);
-    Ok(program)
+    Ok(canonicalized)
 }

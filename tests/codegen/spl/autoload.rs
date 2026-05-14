@@ -1,3 +1,12 @@
+//! Purpose:
+//! End-to-end codegen tests for SPL helpers and AOT autoload behavior.
+//!
+//! Called from:
+//! - `cargo test --test codegen_tests` through Rust's test harness.
+//!
+//! Key details:
+//! - Multi-file fixtures exercise composer.json autoload sections and compile-time SPL rule extraction.
+
 use crate::support::*;
 
 #[test]
@@ -197,6 +206,46 @@ fn test_register_with_concat_closure_loads_class() {
         "main.php",
     );
     assert_eq!(out, "widget");
+}
+
+#[test]
+fn test_register_name_is_case_insensitive_before_name_resolver() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "lib/MixedCase.php",
+                "<?php\nclass MixedCase { public function tag(): string { return \"case\"; } }\n",
+            ),
+            (
+                "main.php",
+                r#"<?php
+SPL_AUTOLOAD_REGISTER(function ($name) {
+    require_once __DIR__ . '/lib/' . $name . '.php';
+});
+$m = new MixedCase();
+echo $m->tag();
+"#,
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "case");
+}
+
+#[test]
+fn test_unregister_name_is_case_insensitive_before_name_resolver() {
+    let out = compile_and_run(
+        r#"<?php
+spl_autoload_register(function ($name) {
+    require_once __DIR__ . '/missing/' . $name . '.php';
+});
+sPl_AuToLoAd_UnReGiStEr(function ($name) {
+    require_once __DIR__ . '/missing/' . $name . '.php';
+});
+echo count(spl_autoload_functions());
+"#,
+    );
+    assert_eq!(out, "0");
 }
 
 #[test]
@@ -445,6 +494,23 @@ fn test_autoload_files_section_always_inlines() {
 }
 
 #[test]
+fn test_autoload_files_section_executes_before_main_in_composer_order() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "composer.json",
+                r#"{"autoload":{"files":["src/a.php","src/b.php"]}}"#,
+            ),
+            ("src/a.php", "<?php\necho \"a\";\n"),
+            ("src/b.php", "<?php\necho \"b\";\n"),
+            ("main.php", "<?php\necho \"m\";\n"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "abm");
+}
+
+#[test]
 fn test_autoload_classmap_explicit_file() {
     // classmap entry pointing directly at a .php file: the compiler
     // scans it for class declarations and indexes them under their FQN.
@@ -645,6 +711,52 @@ fn test_class_exists_with_explicit_true_triggers_autoload() {
         "main.php",
     );
     assert_eq!(out, "f");
+}
+
+#[test]
+fn test_class_exists_with_int_nonzero_triggers_autoload() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "composer.json",
+                r#"{"autoload":{"psr-4":{"App\\":"src/"}}}"#,
+            ),
+            (
+                "src/IntFlag.php",
+                "<?php\nnamespace App;\nclass IntFlag { public function tag(): string { return \"int\"; } }\n",
+            ),
+            (
+                "main.php",
+                "<?php\nclass_exists(\"App\\\\IntFlag\", 1);\n$i = new App\\IntFlag();\necho $i->tag();\n",
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "int");
+}
+
+#[test]
+fn test_class_exists_dynamic_autoload_arg_does_not_trigger_aot_autoload() {
+    let result = std::panic::catch_unwind(|| {
+        compile_and_run_files(
+            &[
+                (
+                    "composer.json",
+                    r#"{"autoload":{"psr-4":{"App\\":"src/"}}}"#,
+                ),
+                (
+                    "src/DynamicFlag.php",
+                    "<?php\nnamespace App;\nclass DynamicFlag {}\n",
+                ),
+                (
+                    "main.php",
+                    "<?php\n$autoload = true;\nclass_exists(\"App\\\\DynamicFlag\", $autoload);\n$d = new App\\DynamicFlag();\necho \"loaded\";\n",
+                ),
+            ],
+            "main.php",
+        )
+    });
+    assert!(result.is_err());
 }
 
 #[test]
@@ -1027,6 +1139,21 @@ echo $a->tag();
 }
 
 #[test]
+fn test_class_alias_name_is_case_insensitive_before_name_resolver() {
+    let out = compile_and_run(
+        r#"<?php
+class Original {
+    public function tag(): string { return "alias-case"; }
+}
+CLASS_ALIAS("Original", "AliasCase");
+$a = new AliasCase();
+echo $a->tag();
+"#,
+    );
+    assert_eq!(out, "alias-case");
+}
+
+#[test]
 fn test_psr4_empty_prefix_root_namespace() {
     let out = compile_and_run_files(
         &[
@@ -1046,6 +1173,28 @@ fn test_psr4_empty_prefix_root_namespace() {
         "main.php",
     );
     assert_eq!(out, "root");
+}
+
+#[test]
+fn test_autoload_does_not_shadow_builtin_exception() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "composer.json",
+                r#"{"autoload":{"psr-4":{"":"src/"}}}"#,
+            ),
+            (
+                "src/Exception.php",
+                "<?php\nclass Exception { public function broken(): string { return \"wrong\"; } }\n",
+            ),
+            (
+                "main.php",
+                "<?php\ntry {\n    throw new Exception(\"core\");\n} catch (Exception $e) {\n    echo $e->getMessage();\n}\n",
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "core");
 }
 
 #[test]

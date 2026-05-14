@@ -1,26 +1,13 @@
-//! User-registered autoload closures, extracted from `spl_autoload_register`
-//! calls in the program's top-level code.
+//! Purpose:
+//! Extracts supported user autoload closures from top-level `spl_autoload_register` calls.
+//! Converts literal, variable-stored, and named-function loaders into compile-time rules.
 //!
-//! Each rule pairs a closure parameter name (typically `$name` or `$class`)
-//! with the closure body. At lookup time, the symbolic interpreter (in
-//! `super::interpret`) binds the parameter to the candidate class name and
-//! evaluates the body to produce an optional file path.
+//! Called from:
+//! - `crate::autoload::registry::Registry::build()`
 //!
-//! Three call shapes are recognised:
-//!   1. `spl_autoload_register(function ($name) { ... })` — closure literal.
-//!   2. `$cb = function ($name) { ... }; spl_autoload_register($cb);` —
-//!      closure stored in a top-level variable.
-//!   3. `function myAutoloader($name) { ... } spl_autoload_register('myAutoloader');`
-//!      — first-class callable referenced by name (string literal).
-//!
-//! When a rule is extracted, the source statement (closure-assignment or
-//! function-decl) is stripped from the program along with the
-//! `spl_autoload_register` call itself. Closure / function bodies typically
-//! contain `require_once $path` whose `$path` isn't compile-time-foldable;
-//! leaving them in the program would trip the type checker. The trade-off
-//! is that the closure variable / autoloader function can no longer be
-//! referenced from elsewhere in the program — an explicit limitation,
-//! documented in `docs/php/namespaces.md`.
+//! Key details:
+//! - Matching unregister calls remove earlier rules, and consumed loader sources are stripped from the program.
+//! - `spl_autoload_*` builtin names are matched case-insensitively before name resolution runs.
 
 use std::collections::{HashMap, HashSet};
 
@@ -259,37 +246,29 @@ fn classify_call(
     };
     let canonical = name.as_canonical();
     let trimmed = canonical.trim_start_matches('\\');
-    match trimmed {
-        "spl_autoload_register" => {
-            let first = args.first()?;
-            match resolve_callable(first, var_bindings, function_rules) {
-                Resolved::Rule { rule, consumes } => {
-                    let prepend = args.get(2).is_some_and(|arg| literal_bool(&arg.kind));
-                    Some(CallKind::Register {
-                        rule,
-                        prepend,
-                        consumes,
-                    })
-                }
-                Resolved::StripUnmatched(reason) => {
-                    Some(CallKind::StripUnmatchedClosure { reason })
-                }
-                Resolved::Unknown => None,
+    if trimmed.eq_ignore_ascii_case("spl_autoload_register") {
+        let first = args.first()?;
+        match resolve_callable(first, var_bindings, function_rules) {
+            Resolved::Rule { rule, consumes } => {
+                let prepend = args.get(2).is_some_and(|arg| literal_bool(&arg.kind));
+                Some(CallKind::Register {
+                    rule,
+                    prepend,
+                    consumes,
+                })
             }
+            Resolved::StripUnmatched(reason) => Some(CallKind::StripUnmatchedClosure { reason }),
+            Resolved::Unknown => None,
         }
-        "spl_autoload_unregister" => {
-            let first = args.first()?;
-            match resolve_callable(first, var_bindings, function_rules) {
-                Resolved::Rule { rule, consumes } => {
-                    Some(CallKind::Unregister { rule, consumes })
-                }
-                Resolved::StripUnmatched(reason) => {
-                    Some(CallKind::StripUnmatchedClosure { reason })
-                }
-                Resolved::Unknown => None,
-            }
+    } else if trimmed.eq_ignore_ascii_case("spl_autoload_unregister") {
+        let first = args.first()?;
+        match resolve_callable(first, var_bindings, function_rules) {
+            Resolved::Rule { rule, consumes } => Some(CallKind::Unregister { rule, consumes }),
+            Resolved::StripUnmatched(reason) => Some(CallKind::StripUnmatchedClosure { reason }),
+            Resolved::Unknown => None,
         }
-        _ => None,
+    } else {
+        None
     }
 }
 
@@ -395,7 +374,7 @@ fn build_rule(
         return Err("variadic closures aren't supported");
     }
     if params.is_empty() {
-        return Err("closure must have one parameter — the candidate class name");
+        return Err("closure must have one parameter: the candidate class name");
     }
     if params.len() > 1 {
         return Err("closure must have exactly one parameter");
@@ -432,7 +411,7 @@ fn flatten_foldable_ifs(program: Program) -> Program {
                     out.extend(flatten_foldable_ifs(body));
                 }
                 BranchOutcome::None => {
-                    // Condition folded to false and no else branch — drop entirely.
+                    // Condition folded to false and no else branch: drop entirely.
                 }
                 BranchOutcome::Unfoldable => {
                     out.push(stmt);

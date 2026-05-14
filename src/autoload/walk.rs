@@ -1,6 +1,13 @@
-//! AST walker that collects declared and referenced fully-qualified class
-//! names. Used by the autoload pass to know which classes are still missing
-//! and need to be loaded from disk.
+//! Purpose:
+//! Collects declared and referenced fully-qualified class-like names from the AST.
+//! Gives the autoload pass the missing symbols it can try to resolve from disk.
+//!
+//! Called from:
+//! - `crate::autoload::run()`
+//!
+//! Key details:
+//! - Literal `class_exists(..., true)` shapes are treated as compile-time autoload demands.
+//! - Dynamic autoload flags are not guessed because the checker rejects them in AOT mode.
 
 use std::collections::HashSet;
 
@@ -383,12 +390,14 @@ fn collect_refs_expr(expr: &Expr, out: &mut HashSet<String>) {
                     push_literal_fqn(args.first(), out);
                 }
                 "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
-                    // Default of the autoload-controlling second arg is true.
+                    // The autoload-controlling second arg only triggers when
+                    // omitted or when it is a literal truthy value. A dynamic
+                    // expression must not be guessed as true at AOT time.
                     let triggers_autoload = match args.get(1).map(|arg| &arg.kind) {
                         None => true,
                         Some(ExprKind::BoolLiteral(b)) => *b,
                         Some(ExprKind::IntLiteral(n)) => *n != 0,
-                        Some(_) => true,
+                        Some(_) => false,
                     };
                     if triggers_autoload {
                         push_literal_fqn(args.first(), out);
