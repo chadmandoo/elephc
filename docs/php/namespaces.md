@@ -194,7 +194,7 @@ if (class_exists("App\\Probe", true)) {     // App\Probe is autoloaded at compil
 }
 ```
 
-If `$autoload` is `false`, no compile-time load is forced — the call returns whether the class is otherwise compiled in. `function_exists` is intentionally not in this list: PHP doesn't autoload functions, and Composer's `autoload.files` is the right tool for forced function inclusion.
+If `$autoload` is `false`, no compile-time load is forced; the call returns whether the class is otherwise compiled in. The class/interface/trait/enum name and the optional `$autoload` flag must be literals in the current AOT model. `function_exists` is intentionally not in this list: PHP doesn't autoload functions, and Composer's `autoload.files` is the right tool for forced function inclusion.
 
 ### Introspection helpers
 
@@ -210,7 +210,7 @@ If `$autoload` is `false`, no compile-time load is forced — the call returns w
 | `get_parent_class($obj)` | Returns the parent class name from `ctx.classes[name].parent`, or empty string when the class has no parent |
 | `is_a($obj, "Foo")` | Compile-time fold when the second argument is a string literal: returns `true` when the object's static type equals `Foo`, descends from it, or implements it as an interface |
 | `is_subclass_of($obj, "Foo")` | Same as `is_a` but excludes the case where the static type *is* `Foo` |
-| `class_alias($original, $alias)` | At compile time, synthesizes `class $alias extends $original {}`. The alias is realised as a *subclass* rather than a true name alias: `new $alias()`, `$obj instanceof $alias`, and `$alias::CONST` work; `(new $original()) instanceof $alias` returns `false` (it would be `true` under PHP runtime semantics). Calls with non-literal arguments fall through to a runtime stub returning `true` |
+| `class_alias($original, $alias)` | At compile time, top-level literal calls synthesize `class $alias extends $original {}`. The alias is realised as a *subclass* rather than a true name alias: `new $alias()`, `$obj instanceof $alias`, and `$alias::CONST` work; `(new $original()) instanceof $alias` returns `false` (it would be `true` under PHP runtime semantics). Runtime-dynamic call shapes are rejected because elephc cannot mutate the class table after compilation |
 
 ### Closure-based autoload (`spl_autoload_register`)
 
@@ -271,7 +271,7 @@ Anything else — loops, exceptions, `new`, method calls, ternaries, match, capt
 | `spl_autoload_register($cb, $throw = true, $prepend = false)` | Closure literal → registered as a compile-time rule (chain prepended when `$prepend = true`). Closures with captures or multiple parameters are silently rejected. Returns `true` either way |
 | `spl_autoload_unregister($cb)` | Removes a previously registered rule when the closure AST matches. Returns `true` |
 | `spl_autoload_functions()` | Returns an indexed array with one int placeholder per registered rule. `count()` and `foreach` reflect the rule count. The values are rule indexes (0..N-1), not actual callables |
-| `spl_autoload_extensions($ext = null)` | Read or read+write a runtime-mutable string. With no arg or `null`, returns the current value (default `".inc,.php"`). With a string arg, writes the new value and returns the previous one |
+| `spl_autoload_extensions($ext = null)` | Read or read+write a runtime-mutable string. With no arg or literal `null`, returns the current value (default `".inc,.php"`). With a string literal arg, writes the new value and returns the previous one |
 | `spl_autoload_call($name)` | Literal class name → forces compile-time autoload for that class. Variable argument → no-op |
 | `spl_autoload($name, $ext = null)` | Same as `spl_autoload_call` |
 
@@ -282,7 +282,7 @@ Anything else — loops, exceptions, `new`, method calls, ternaries, match, capt
 - When the compiler consumes a closure assignment (`$cb = function ...`) or an autoloader function declaration (`function myAutoloader ...`), the source statement is **stripped from the program**. If the closure variable or function is referenced elsewhere, you'll get a clear "undefined variable / function" error at compile time. Use a separate variable / function if you need to reuse the same body outside autoloading.
 - `spl_autoload_register` calls inside function bodies, methods, loops, or non-top-level positions other than foldable `if`/`else` are ignored. Only top-level (or top-level-via-foldable-if) callsites contribute rules.
 - `spl_autoload_functions()` returns the same value regardless of where in the program it's called: in the AOT model the rule chain is finalized at compile time, so there is no temporal "before/after register" distinction.
-- `spl_autoload_extensions()` writes are not refcount-tracked. Storing a heap-allocated string and letting it die before a later read will dangle; literal strings (which live in `.data`) and the default value are always safe.
+- `spl_autoload_extensions()` setter calls must use a string literal. Dynamic string setters are rejected until the runtime stores the value with refcount ownership.
 - Real runtime autoload (loading new code after the binary starts) is not possible in an AOT compiler.
 
 ## Constants
