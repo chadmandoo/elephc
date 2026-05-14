@@ -75,6 +75,7 @@ fn builtin_reflection_attribute_name_property() -> ClassProperty {
         readonly: false,
         is_final: false,
         is_static: false,
+        is_abstract: false,
         by_ref: false,
         default: Some(Expr::new(
             ExprKind::StringLiteral(String::new()),
@@ -93,6 +94,7 @@ fn builtin_reflection_attribute_args_property() -> ClassProperty {
         readonly: false,
         is_final: false,
         is_static: false,
+        is_abstract: false,
         by_ref: false,
         default: Some(Expr::new(
             ExprKind::ArrayLiteral(Vec::new()),
