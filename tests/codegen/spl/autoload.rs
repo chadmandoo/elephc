@@ -103,6 +103,47 @@ fn test_psr4_static_property_assignment_triggers_autoload() {
 }
 
 #[test]
+fn test_psr4_scoped_constant_access_triggers_autoload() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "composer.json",
+                r#"{"autoload":{"psr-4":{"App\\":"src/"}}}"#,
+            ),
+            (
+                "src/Config.php",
+                "<?php\nnamespace App;\nclass Config { public const NAME = \"cfg\"; }\n",
+            ),
+            ("main.php", "<?php\necho App\\Config::NAME;\n"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "cfg");
+}
+
+#[test]
+fn test_psr4_pipe_value_triggers_autoload() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "composer.json",
+                r#"{"autoload":{"psr-4":{"App\\":"src/"}}}"#,
+            ),
+            (
+                "src/PipeClass.php",
+                "<?php\nnamespace App;\nclass PipeClass { public function tag(): string { return \"pipe\"; } }\n",
+            ),
+            (
+                "main.php",
+                "<?php\nfunction id(App\\PipeClass $p): string { return $p->tag(); }\necho (new App\\PipeClass()) |> id(...);\n",
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "pipe");
+}
+
+#[test]
 fn test_psr4_vendor_autoload() {
     let out = compile_and_run_files(
         &[

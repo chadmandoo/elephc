@@ -410,6 +410,7 @@ fn collect_refs_expr(expr: &Expr, out: &mut HashSet<String>) {
             }
         }
         ExprKind::ClassConstant { receiver, .. }
+        | ExprKind::ScopedConstantAccess { receiver, .. }
         | ExprKind::StaticPropertyAccess { receiver, .. } => {
             collect_static_receiver(receiver, out);
         }
@@ -438,6 +439,10 @@ fn collect_refs_expr(expr: &Expr, out: &mut HashSet<String>) {
         | ExprKind::ShortTernary { value, default } => {
             collect_refs_expr(value, out);
             collect_refs_expr(default, out);
+        }
+        ExprKind::Pipe { value, callable } => {
+            collect_refs_expr(value, out);
+            collect_refs_expr(callable, out);
         }
         ExprKind::Ternary {
             condition,
@@ -535,13 +540,30 @@ fn collect_refs_expr(expr: &Expr, out: &mut HashSet<String>) {
                 collect_refs_expr(a, out);
             }
         }
-        ExprKind::NewScopedObject { args, .. } => {
+        ExprKind::NewScopedObject { receiver, args } => {
+            collect_static_receiver(receiver, out);
             for a in args {
                 collect_refs_expr(a, out);
             }
         }
         ExprKind::NamedArg { value, .. } => collect_refs_expr(value, out),
-        ExprKind::Closure { body, .. } => {
+        ExprKind::Closure {
+            params,
+            return_type,
+            body,
+            ..
+        } => {
+            for (_, type_expr, default, _) in params {
+                if let Some(t) = type_expr {
+                    collect_type_expr(t, out);
+                }
+                if let Some(d) = default {
+                    collect_refs_expr(d, out);
+                }
+            }
+            if let Some(rt) = return_type {
+                collect_type_expr(rt, out);
+            }
             for s in body {
                 collect_refs_stmt(s, out);
             }
@@ -551,6 +573,15 @@ fn collect_refs_expr(expr: &Expr, out: &mut HashSet<String>) {
             collect_type_expr(element_type, out);
             collect_refs_expr(len, out);
         }
+        ExprKind::Yield { key, value } => {
+            if let Some(k) = key {
+                collect_refs_expr(k, out);
+            }
+            if let Some(v) = value {
+                collect_refs_expr(v, out);
+            }
+        }
+        ExprKind::YieldFrom(inner) => collect_refs_expr(inner, out),
         _ => {}
     }
 }
