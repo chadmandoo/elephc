@@ -1,5 +1,6 @@
 //! Purpose:
-//! Emits the ISO `YYYY-MM-DD[ HH:MM[:SS]]` parser sub-routine consumed by the `__rt_strtotime` dispatcher.
+//! Emits the ISO date/datetime parser sub-routine consumed by the `__rt_strtotime` dispatcher.
+//! Accepts `YYYY-MM-DD`, `YYYY-MM-DD HH:MM[:SS]`, and `YYYY-MM-DDTHH:MM[:SS]` shapes.
 //! Parses fixed-offset ASCII digits and builds a `struct tm` in the dispatcher-owned scratch slot.
 //!
 //! Called from:
@@ -59,8 +60,13 @@ fn emit_iso_date_arm64(emitter: &mut Emitter) {
     // -- validate separators before fixed-offset digit parsing --
     emitter.label("__rt_strtotime_iso_validate_datetime");
     emitter.instruction("ldrb w9, [x1, #10]");                                  // load date/time separator
-    emitter.instruction("cmp w9, #32");                                         // require a space separator
+    emitter.instruction("cmp w9, #32");                                         // accept a space separator
+    emitter.instruction("b.eq __rt_strtotime_iso_datetime_separator_ok");       // continue after space separator
+    emitter.instruction("cmp w9, #84");                                         // accept uppercase ISO T separator
+    emitter.instruction("b.eq __rt_strtotime_iso_datetime_separator_ok");       // continue after uppercase T separator
+    emitter.instruction("cmp w9, #116");                                        // accept lowercase ISO t separator
     emitter.instruction("b.ne __rt_strtotime_fail");                            // reject unsupported date/time separator
+    emitter.label("__rt_strtotime_iso_datetime_separator_ok");
     emitter.instruction("ldrb w9, [x1, #13]");                                  // load hour/minute separator
     emitter.instruction("cmp w9, #58");                                         // require ':' after the hour
     emitter.instruction("b.ne __rt_strtotime_fail");                            // reject malformed hour/minute separator
@@ -216,8 +222,13 @@ fn emit_iso_date_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_strtotime_iso_validate_datetime_linux_x86_64");
     emitter.instruction("movzx eax, BYTE PTR [r8 + 10]");                       // load date/time separator
-    emitter.instruction("cmp eax, 32");                                         // require a space separator
+    emitter.instruction("cmp eax, 32");                                         // accept a space separator
+    emitter.instruction("je __rt_strtotime_iso_datetime_separator_ok_linux_x86_64"); // continue after space separator
+    emitter.instruction("cmp eax, 84");                                         // accept uppercase ISO T separator
+    emitter.instruction("je __rt_strtotime_iso_datetime_separator_ok_linux_x86_64"); // continue after uppercase T separator
+    emitter.instruction("cmp eax, 116");                                        // accept lowercase ISO t separator
     emitter.instruction("jne __rt_strtotime_fail_linux_x86_64");                // reject unsupported date/time separator
+    emitter.label("__rt_strtotime_iso_datetime_separator_ok_linux_x86_64");
     emitter.instruction("movzx eax, BYTE PTR [r8 + 13]");                       // load hour/minute separator
     emitter.instruction("cmp eax, 58");                                         // require ':' after the hour
     emitter.instruction("jne __rt_strtotime_fail_linux_x86_64");                // reject malformed hour/minute separator

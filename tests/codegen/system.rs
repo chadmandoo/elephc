@@ -147,6 +147,19 @@ echo date("Y-m-d H:i:s", $ts);
 }
 
 #[test]
+fn test_strtotime_datetime_t_separator() {
+    let out = compile_and_run(
+        r#"<?php
+$upper = strtotime("2024-06-15T12:00:00");
+$lower = strtotime("2024-06-15t12:30");
+echo date("Y-m-d H:i:s", $upper) . ",";
+echo date("Y-m-d H:i:s", $lower);
+"#,
+    );
+    assert_eq!(out, "2024-06-15 12:00:00,2024-06-15 12:30:00");
+}
+
+#[test]
 fn test_strtotime_rejects_malformed_iso_datetime() {
     let out = compile_and_run(
         r#"<?php
