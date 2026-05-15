@@ -86,6 +86,21 @@ fn test_non_local_assignment_expression_parses_array_target() {
 }
 
 #[test]
+fn test_non_local_assignment_expression_snapshots_rhs_container() {
+    let stmts = parse_source("<?php echo ($items[0] = $items);");
+    match &stmts[0].kind {
+        StmtKind::Echo(expr) => match &expr.kind {
+            ExprKind::Assignment { value, prelude, .. } => {
+                assert_eq!(prelude.len(), 1);
+                assert!(matches!(value.kind, ExprKind::Variable(_)));
+            }
+            other => panic!("expected assignment expression, got {:?}", other),
+        },
+        other => panic!("expected Echo, got {:?}", other),
+    }
+}
+
+#[test]
 fn test_non_local_assignment_expression_parses_property_target() {
     let stmts = parse_source("<?php echo ($box->value += 2);");
     match &stmts[0].kind {
@@ -228,4 +243,3 @@ fn test_null_coalesce_assignment_expression_stabilizes_computed_mutated_index() 
         other => panic!("expected Echo, got {:?}", other),
     }
 }
-
