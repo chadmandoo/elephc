@@ -130,6 +130,8 @@ class Square extends Shape {
 
 The concrete redeclaration reuses the parent's slot (offsets are stable across the inheritance chain), so the property is accessible to both parent and child methods.
 
+Current scope: elephc supports abstract property declarations in abstract classes only. PHP 8.4 property hooks (`{ get; }` / `{ set; }`), interface property contracts, and abstract properties in traits are not yet supported.
+
 ## Final classes, methods, and properties
 ```php
 <?php
@@ -369,6 +371,8 @@ Same parameter count, same pass-by-reference positions, same default layout, sam
 
 ## Traits
 Flattened at compile time. Support: `use Trait;`, multiple traits, `insteadof`, `as`, trait properties, static trait methods.
+
+Abstract properties in traits are not yet supported; use an abstract base class for property requirements until PHP 8.4 property-hook contracts are implemented.
 
 ## Property access
 `->` for properties and methods.

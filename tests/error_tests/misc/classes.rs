@@ -509,6 +509,14 @@ fn test_error_abstract_property_in_non_abstract_class() {
 }
 
 #[test]
+fn test_error_abstract_property_in_trait_is_not_yet_supported() {
+    expect_error(
+        "<?php trait HasValue { abstract public int $value; }",
+        "Abstract properties in traits are not yet supported",
+    );
+}
+
+#[test]
 fn test_error_abstract_property_with_default() {
     expect_error(
         "<?php abstract class Box { abstract public int $value = 1; }",

@@ -245,9 +245,14 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
             }
             if modifiers.is_abstract {
                 if !enclosing_is_abstract {
+                    let message = if owner_kind == "trait" {
+                        "Abstract properties in traits are not yet supported"
+                    } else {
+                        "Abstract properties can only be declared in abstract classes"
+                    };
                     return Err(CompileError::new(
                         member_span,
-                        "Abstract properties can only be declared in abstract classes",
+                        message,
                     ));
                 }
                 if modifiers.is_static {
