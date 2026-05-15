@@ -271,6 +271,19 @@ echo $ts;
 }
 
 #[test]
+fn test_strtotime_rejects_keyword_and_weekday_suffix_junk() {
+    let out = compile_and_run(
+        r#"<?php
+echo strtotime("today123") . ",";
+echo strtotime("today!") . ",";
+echo strtotime("Monday2") . ",";
+echo strtotime("next Monday2");
+"#,
+    );
+    assert_eq!(out, "-1,-1,-1,-1");
+}
+
+#[test]
 fn test_strtotime_time_only_hhmm() {
     let out = compile_and_run(
         r#"<?php

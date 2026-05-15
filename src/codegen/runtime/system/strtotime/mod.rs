@@ -122,14 +122,23 @@ fn emit_dispatcher_arm64(emitter: &mut Emitter) {
 
     emitter.instruction("cbz x10, __rt_strtotime_fail");                        // no match → fail
     emitter.instruction("cmp x9, #5");                                          // kind in 0..5 = bare keyword ?
-    emitter.instruction("b.ls __rt_strtotime_kw_entry");                        // → keyword strategy
+    emitter.instruction("b.hi __rt_strtotime_alpha_not_keyword");               // no → check modifiers/weekdays
+    emitter.instruction("ldr x8, [sp, #56]");                                   // reload trimmed input length
+    emitter.instruction("cmp x10, x8");                                         // keyword consumed the whole input ?
+    emitter.instruction("b.ne __rt_strtotime_fail");                            // trailing junk after keyword → fail
+    emitter.instruction("b __rt_strtotime_kw_entry");                           // → keyword strategy
+
+    emitter.label("__rt_strtotime_alpha_not_keyword");
     emitter.instruction("cmp x9, #8");                                          // kind 6..8 = next/last/this modifier ?
     emitter.instruction("b.ls __rt_strtotime_weekdays_entry");                  // → weekdays strategy with modifier
     emitter.instruction("cmp x9, #10");                                         // kind 9 = bare "ago" (not a top-level term)
     emitter.instruction("b.lt __rt_strtotime_fail");                            // → fail
     emitter.instruction("cmp x9, #16");                                         // kind 10..16 = weekday name ?
-    emitter.instruction("b.le __rt_strtotime_weekdays_entry");                  // → weekdays strategy (implicit "next")
-    emitter.instruction("b __rt_strtotime_fail");                               // unknown kind → fail
+    emitter.instruction("b.gt __rt_strtotime_fail");                            // unknown kind → fail
+    emitter.instruction("ldr x8, [sp, #56]");                                   // reload trimmed input length
+    emitter.instruction("cmp x10, x8");                                         // weekday consumed the whole input ?
+    emitter.instruction("b.ne __rt_strtotime_fail");                            // trailing junk after weekday → fail
+    emitter.instruction("b __rt_strtotime_weekdays_entry");                     // → weekdays strategy
 }
 
 fn emit_epilogue_arm64(emitter: &mut Emitter) {
@@ -216,14 +225,21 @@ fn emit_dispatcher_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("test rax, rax");                                       // no match ?
     emitter.instruction("jz __rt_strtotime_fail_linux_x86_64");                 // yes → fail
     emitter.instruction("cmp rdx, 5");                                          // kind in 0..5 = bare keyword ?
-    emitter.instruction("jbe __rt_strtotime_kw_entry_linux_x86_64");            // yes → keyword strategy
+    emitter.instruction("ja __rt_strtotime_alpha_not_keyword_linux_x86_64");    // no → check modifiers/weekdays
+    emitter.instruction("cmp rax, QWORD PTR [rbp - 72]");                       // keyword consumed the whole input ?
+    emitter.instruction("jne __rt_strtotime_fail_linux_x86_64");                // trailing junk after keyword → fail
+    emitter.instruction("jmp __rt_strtotime_kw_entry_linux_x86_64");            // yes → keyword strategy
+
+    emitter.label("__rt_strtotime_alpha_not_keyword_linux_x86_64");
     emitter.instruction("cmp rdx, 8");                                          // kind 6..8 = modifier ?
     emitter.instruction("jbe __rt_strtotime_weekdays_entry_linux_x86_64");      // yes → weekdays with modifier
     emitter.instruction("cmp rdx, 10");                                         // kind 9 = bare "ago" → fail
     emitter.instruction("jl __rt_strtotime_fail_linux_x86_64");                 // below 10 → fail
     emitter.instruction("cmp rdx, 16");                                         // weekday name ?
-    emitter.instruction("jle __rt_strtotime_weekdays_entry_linux_x86_64");      // yes → weekdays
-    emitter.instruction("jmp __rt_strtotime_fail_linux_x86_64");                // unknown kind → fail
+    emitter.instruction("jg __rt_strtotime_fail_linux_x86_64");                 // unknown kind → fail
+    emitter.instruction("cmp rax, QWORD PTR [rbp - 72]");                       // weekday consumed the whole input ?
+    emitter.instruction("jne __rt_strtotime_fail_linux_x86_64");                // trailing junk after weekday → fail
+    emitter.instruction("jmp __rt_strtotime_weekdays_entry_linux_x86_64");      // yes → weekdays
 }
 
 fn emit_epilogue_linux_x86_64(emitter: &mut Emitter) {

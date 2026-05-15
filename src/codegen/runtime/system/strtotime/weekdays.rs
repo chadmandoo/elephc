@@ -57,6 +57,9 @@ fn emit_weekdays_arm64(emitter: &mut Emitter) {
     emitter.instruction("b.lt __rt_strtotime_fail");                            // below 10 → not a weekday
     emitter.instruction("cmp w9, #16");                                         // above 16 ?
     emitter.instruction("b.gt __rt_strtotime_fail");                            // out of weekday range
+    emitter.instruction("add x3, x3, x10");                                     // advance past weekday
+    emitter.instruction("cmp x3, x4");                                          // consumed the whole input ?
+    emitter.instruction("b.ne __rt_strtotime_fail");                            // trailing junk after weekday → fail
     emitter.instruction("sub w11, w9, #10");                                    // target_wday = kind - 10
     emitter.instruction("ldr w12, [sp, #84]");                                  // reload modifier kind
     emitter.instruction("b __rt_strtotime_weekdays_compute");                   // continue to delta computation
@@ -141,6 +144,7 @@ fn emit_weekdays_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jge __rt_strtotime_fail_linux_x86_64");                // no → fail
 
     emitter.instruction("call __rt_strtotime_lc_cursor_linux_x86_64");          // lowercase next 16 bytes
+    emitter.instruction("mov QWORD PTR [rsp + 112], rdi");                      // save weekday cursor before match
     emitter.instruction("lea rdi, [rbp - 64]");                                 // candidate ptr = lc16 base
     emitter.instruction("lea rsi, [rip + _strtotime_keyword_tab]");             // keyword table base
     emitter.instruction("mov rcx, r10");                                        // copy end
@@ -156,6 +160,12 @@ fn emit_weekdays_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jl __rt_strtotime_fail_linux_x86_64");                 // below → fail
     emitter.instruction("cmp rdx, 16");                                         // above ?
     emitter.instruction("jg __rt_strtotime_fail_linux_x86_64");                 // out of range
+    emitter.instruction("mov rdi, QWORD PTR [rsp + 112]");                      // restore weekday cursor
+    emitter.instruction("add rdi, rax");                                        // advance past weekday
+    emitter.instruction("mov r10, QWORD PTR [rbp - 80]");                       // reload trimmed pointer
+    emitter.instruction("add r10, QWORD PTR [rbp - 72]");                       // recompute end pointer
+    emitter.instruction("cmp rdi, r10");                                        // consumed the whole input ?
+    emitter.instruction("jne __rt_strtotime_fail_linux_x86_64");                // trailing junk after weekday → fail
     emitter.instruction("sub edx, 10");                                         // target_wday
     emitter.instruction("mov DWORD PTR [rsp + 80], edx");                       // save target_wday
     emitter.instruction("jmp __rt_strtotime_weekdays_compute_linux_x86_64");    // continue
