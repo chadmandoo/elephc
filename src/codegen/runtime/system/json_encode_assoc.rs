@@ -74,6 +74,7 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("strb w12, [x11]");                                     // write the provisional opening brace
     emitter.instruction("add x11, x11, #1");                                    // advance
     emitter.instruction("str x11, [sp, #16]");                                  // save write pos
+    emitter.instruction("bl __rt_json_pretty_push");                            // enter one pretty-print indentation level after the container opens
 
     // -- get hash table count --
     emitter.instruction("ldr x0, [sp, #0]");                                    // reload hash ptr
@@ -133,6 +134,9 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     // never contains JSON-significant bytes. If the completed object is still
     // list-shaped, this key prefix is removed by the compaction pass.
     emitter.label("__rt_json_assoc_key");
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload write pos before optional pretty indentation
+    emitter.instruction("bl __rt_json_pretty_line");                            // append newline and indentation for this entry when pretty-printing
+    emitter.instruction("str x11, [sp, #16]");                                  // save the write pos after any pretty indentation
     emitter.instruction("ldr x1, [sp, #48]");                                   // load key ptr (or integer payload when len = -1)
     emitter.instruction("ldr x2, [sp, #56]");                                   // load key len (or -1 sentinel for integer keys)
     emitter.instruction("cmn x2, #1");                                          // is this an integer key?
@@ -158,6 +162,10 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("strb w12, [x11]");                                     // opening quote for the integer key
     emitter.instruction("add x11, x11, #1");                                    // advance past the opening quote
     emitter.instruction("str x11, [sp, #80]");                                  // park the JSON write pointer across the itoa call
+    crate::codegen::abi::emit_symbol_address(emitter, "x10", "_concat_buf");
+    emitter.instruction("sub x12, x11, x10");                                   // compute scratch-safe concat offset from the current key write position
+    crate::codegen::abi::emit_symbol_address(emitter, "x9", "_concat_off");
+    emitter.instruction("str x12, [x9]");                                       // move itoa scratch after the pretty-printed key prefix
     emitter.instruction("mov x0, x1");                                          // move the integer key payload into the decimal-formatter input register
     emitter.instruction("bl __rt_itoa");                                        // x1=ptr to digits in itoa's scratch area, x2=digit count
     emitter.instruction("ldr x11, [sp, #80]");                                  // reload the parked JSON write pointer
@@ -180,6 +188,7 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("mov w12, #58");                                        // ASCII ':'
     emitter.instruction("strb w12, [x11]");                                     // write ':'
     emitter.instruction("add x11, x11, #1");                                    // advance
+    emitter.instruction("bl __rt_json_pretty_colon_space");                     // append the pretty-print key/value space when requested
     emitter.instruction("str x11, [sp, #16]");                                  // save write pos after emitting the JSON key prefix
 
     emitter.label("__rt_json_assoc_after_key_prefix");
@@ -280,6 +289,11 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     // -- write closing brace; list-shape arrays rewrite it to ']' after the walk --
     emitter.label("__rt_json_assoc_close");
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload write pos
+    emitter.instruction("bl __rt_json_pretty_pop");                             // leave the container indentation level before closing it
+    emitter.instruction("ldr x5, [sp, #40]");                                   // reload written item count to decide whether closing needs its own line
+    emitter.instruction("cbz x5, __rt_json_assoc_close_choose");                // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("bl __rt_json_pretty_line");                            // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_assoc_close_choose");
     emitter.instruction("mov w12, #125");                                       // ASCII '}'
     emitter.instruction("strb w12, [x11]");                                     // write the provisional closing brace
     emitter.instruction("add x11, x11, #1");                                    // advance
@@ -299,6 +313,16 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("cmp w12, #125");                                       // was the object empty?
     emitter.instruction("b.eq __rt_json_assoc_compact_close");                  // empty object compacts directly to []
     emitter.label("__rt_json_assoc_compact_key");
+    emitter.instruction("ldrb w12, [x9]");                                      // inspect the byte before the skipped key prefix
+    emitter.instruction("cmp w12, #125");                                       // did pretty output reach the closing object brace?
+    emitter.instruction("b.eq __rt_json_assoc_compact_close");                  // replace the object close with an array close
+    emitter.instruction("cmp w12, #34");                                        // reached the opening quote of the integer key?
+    emitter.instruction("b.eq __rt_json_assoc_compact_key_start");              // skip the generated key prefix itself
+    emitter.instruction("strb w12, [x10]");                                     // preserve pretty-print whitespace before the array value
+    emitter.instruction("add x9, x9, #1");                                      // advance the read cursor over the copied whitespace
+    emitter.instruction("add x10, x10, #1");                                    // advance the compacted write cursor
+    emitter.instruction("b __rt_json_assoc_compact_key");                       // keep copying whitespace until the generated key starts
+    emitter.label("__rt_json_assoc_compact_key_start");
     emitter.instruction("add x9, x9, #1");                                      // skip the opening quote of the integer key
     emitter.label("__rt_json_assoc_compact_key_scan");
     emitter.instruction("ldrb w12, [x9]");                                      // load the next key byte
@@ -306,6 +330,13 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("cmp w12, #34");                                        // reached the closing key quote?
     emitter.instruction("b.ne __rt_json_assoc_compact_key_scan");               // keep skipping key digits
     emitter.instruction("add x9, x9, #1");                                      // skip the colon after the key
+    emitter.label("__rt_json_assoc_compact_value_ws");
+    emitter.instruction("ldrb w12, [x9]");                                      // inspect whitespace between the object colon and value
+    emitter.instruction("cmp w12, #32");                                        // pretty-print object form inserts a single space after `:`
+    emitter.instruction("b.ne __rt_json_assoc_compact_value_init");             // first non-space byte belongs to the value
+    emitter.instruction("add x9, x9, #1");                                      // drop the key/value separator space for array output
+    emitter.instruction("b __rt_json_assoc_compact_value_ws");                  // continue through any repeated separator spaces
+    emitter.label("__rt_json_assoc_compact_value_init");
     emitter.instruction("mov x13, #0");                                         // nested container depth = 0
     emitter.instruction("mov x14, #0");                                         // string-mode flag = false
     emitter.label("__rt_json_assoc_compact_value");
@@ -423,6 +454,7 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 123");                             // ASCII '{'
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the opening bracket
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer before entering the hash iteration loop
+    emitter.instruction("call __rt_json_pretty_push");                          // enter one pretty-print indentation level after the container opens
     emitter.instruction("mov QWORD PTR [rbp - 32], 0");                         // initialize the hash iterator cursor to the insertion-order start sentinel
     emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // initialize the number of encoded key/value pairs to zero
 
@@ -464,6 +496,9 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     // the completed object is still list-shaped, this key prefix is removed
     // by the compaction pass.
     emitter.label("__rt_json_assoc_key");
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload write pos before optional pretty indentation
+    emitter.instruction("call __rt_json_pretty_line");                          // append newline and indentation for this entry when pretty-printing
+    emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the write pos after any pretty indentation
     emitter.instruction("mov rax, QWORD PTR [rbp - 48]");                       // load the key pointer (or integer payload when len = -1)
     emitter.instruction("mov rdx, QWORD PTR [rbp - 56]");                       // load the key length (or -1 sentinel for integer keys)
     emitter.instruction("cmp rdx, -1");                                         // is this an integer key?
@@ -489,6 +524,10 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 34");                              // write the opening JSON key quote
     emitter.instruction("add r11, 1");                                          // advance past the opening quote
     emitter.instruction("mov QWORD PTR [rbp - 88], r11");                       // park the JSON write pointer across the itoa call
+    emitter.instruction("lea r10, [rip + _concat_buf]");                        // materialize the concat-buffer base before positioning itoa scratch
+    emitter.instruction("mov rcx, r11");                                        // copy the current key write pointer for the concat-offset calculation
+    emitter.instruction("sub rcx, r10");                                        // compute scratch-safe concat offset from the current key write position
+    emitter.instruction("mov QWORD PTR [rip + _concat_off], rcx");              // move itoa scratch after the pretty-printed key prefix
     emitter.instruction("call __rt_itoa");                                      // rax = ptr to digits in itoa's scratch area, rdx = digit count
     emitter.instruction("mov r10, rax");                                        // remember the source pointer before the copy loop
     emitter.instruction("mov rcx, rdx");                                        // remember the digit count for the copy loop bound
@@ -509,6 +548,7 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_key_colon");
     emitter.instruction("mov BYTE PTR [r11], 58");                              // write the JSON colon separator between the encoded key and encoded value
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the colon separator
+    emitter.instruction("call __rt_json_pretty_colon_space");                   // append the pretty-print key/value space when requested
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer after emitting the full JSON key prefix
 
     emitter.label("__rt_json_assoc_after_key_prefix");
@@ -603,6 +643,11 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_close");
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload the concat-buffer write pointer after the final encoded JSON entry
     // Write the closing brace; list-shape arrays rewrite it to ']' after the walk.
+    emitter.instruction("call __rt_json_pretty_pop");                           // leave the container indentation level before closing it
+    emitter.instruction("cmp QWORD PTR [rbp - 40], 0");                         // did the container contain any entries?
+    emitter.instruction("je __rt_json_assoc_close_choose_x");                   // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("call __rt_json_pretty_line");                          // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_assoc_close_choose_x");
     emitter.instruction("mov BYTE PTR [r11], 125");                             // ASCII '}'
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the closing bracket
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // checkpoint the write pointer across the depth-exit helper call
@@ -617,6 +662,16 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp BYTE PTR [r10], 125");                             // was the object empty?
     emitter.instruction("je __rt_json_assoc_compact_close_x");                  // empty object compacts directly to []
     emitter.label("__rt_json_assoc_compact_key_x");
+    emitter.instruction("mov r8b, BYTE PTR [r10]");                             // inspect the byte before the skipped key prefix
+    emitter.instruction("cmp r8b, 125");                                        // did pretty output reach the closing object brace?
+    emitter.instruction("je __rt_json_assoc_compact_close_x");                  // replace the object close with an array close
+    emitter.instruction("cmp r8b, 34");                                         // reached the opening quote of the integer key?
+    emitter.instruction("je __rt_json_assoc_compact_key_start_x");              // skip the generated key prefix itself
+    emitter.instruction("mov BYTE PTR [r11], r8b");                             // preserve pretty-print whitespace before the array value
+    emitter.instruction("add r10, 1");                                          // advance the read cursor over the copied whitespace
+    emitter.instruction("add r11, 1");                                          // advance the compacted write cursor
+    emitter.instruction("jmp __rt_json_assoc_compact_key_x");                   // keep copying whitespace until the generated key starts
+    emitter.label("__rt_json_assoc_compact_key_start_x");
     emitter.instruction("add r10, 1");                                          // skip the opening quote of the integer key
     emitter.label("__rt_json_assoc_compact_key_scan_x");
     emitter.instruction("mov r8b, BYTE PTR [r10]");                             // load the next key byte
@@ -624,6 +679,13 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp r8b, 34");                                         // reached the closing key quote?
     emitter.instruction("jne __rt_json_assoc_compact_key_scan_x");              // keep skipping key digits
     emitter.instruction("add r10, 1");                                          // skip the colon after the key
+    emitter.label("__rt_json_assoc_compact_value_ws_x");
+    emitter.instruction("mov r8b, BYTE PTR [r10]");                             // inspect whitespace between the object colon and value
+    emitter.instruction("cmp r8b, 32");                                         // pretty-print object form inserts a single space after `:`
+    emitter.instruction("jne __rt_json_assoc_compact_value_init_x");            // first non-space byte belongs to the value
+    emitter.instruction("add r10, 1");                                          // drop the key/value separator space for array output
+    emitter.instruction("jmp __rt_json_assoc_compact_value_ws_x");              // continue through any repeated separator spaces
+    emitter.label("__rt_json_assoc_compact_value_init_x");
     emitter.instruction("xor ecx, ecx");                                        // nested container depth = 0
     emitter.instruction("xor r9d, r9d");                                        // string-mode flag = false
     emitter.label("__rt_json_assoc_compact_value_x");

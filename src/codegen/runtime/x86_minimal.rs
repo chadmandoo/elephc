@@ -279,7 +279,7 @@ pub(super) fn emit_runtime_linux_x86_64_minimal(emitter: &mut Emitter) {
     system::emit_json_depth_enter(emitter);
     system::emit_json_depth_exit(emitter);
     system::emit_json_throw_error(emitter);
-    system::emit_json_pretty_apply(emitter);
+    system::emit_json_pretty_helpers(emitter);
     objects::emit_stdclass_new(emitter);
     objects::emit_stdclass_from_hash(emitter);
     objects::emit_stdclass_get(emitter);
