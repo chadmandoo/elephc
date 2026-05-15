@@ -312,6 +312,9 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("ldrb w12, [x9]");                                      // inspect the first byte after the opening brace
     emitter.instruction("cmp w12, #125");                                       // was the object empty?
     emitter.instruction("b.eq __rt_json_assoc_compact_close");                  // empty object compacts directly to []
+    // The provisional object can already contain pretty-print whitespace.
+    // Copy whitespace before each generated `"index":` key, then drop the
+    // key prefix itself so pretty list-shape output remains an array layout.
     emitter.label("__rt_json_assoc_compact_key");
     emitter.instruction("ldrb w12, [x9]");                                      // inspect the byte before the skipped key prefix
     emitter.instruction("cmp w12, #125");                                       // did pretty output reach the closing object brace?
@@ -330,6 +333,9 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("cmp w12, #34");                                        // reached the closing key quote?
     emitter.instruction("b.ne __rt_json_assoc_compact_key_scan");               // keep skipping key digits
     emitter.instruction("add x9, x9, #1");                                      // skip the colon after the key
+    // Pretty object output inserts a key/value space after `:`, but the
+    // compacted array form has no key/value separator. Drop only that local
+    // separator; value-owned spaces still copy through the value scanner.
     emitter.label("__rt_json_assoc_compact_value_ws");
     emitter.instruction("ldrb w12, [x9]");                                      // inspect whitespace between the object colon and value
     emitter.instruction("cmp w12, #32");                                        // pretty-print object form inserts a single space after `:`
@@ -339,6 +345,9 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_compact_value_init");
     emitter.instruction("mov x13, #0");                                         // nested container depth = 0
     emitter.instruction("mov x14, #0");                                         // string-mode flag = false
+    // Commas and braces only delimit the synthetic top-level object while
+    // depth == 0 and we are not inside a JSON string. Nested arrays/objects
+    // and string contents must be copied verbatim into the compacted value.
     emitter.label("__rt_json_assoc_compact_value");
     emitter.instruction("ldrb w12, [x9]");                                      // load the next value/delimiter byte
     emitter.instruction("cbnz x14, __rt_json_assoc_compact_in_string");         // strings copy bytes until an unescaped quote
@@ -661,6 +670,9 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("lea r11, [rax + 1]");                                  // write cursor starts after the opening byte
     emitter.instruction("cmp BYTE PTR [r10], 125");                             // was the object empty?
     emitter.instruction("je __rt_json_assoc_compact_close_x");                  // empty object compacts directly to []
+    // The provisional object can already contain pretty-print whitespace.
+    // Copy whitespace before each generated `"index":` key, then drop the
+    // key prefix itself so pretty list-shape output remains an array layout.
     emitter.label("__rt_json_assoc_compact_key_x");
     emitter.instruction("mov r8b, BYTE PTR [r10]");                             // inspect the byte before the skipped key prefix
     emitter.instruction("cmp r8b, 125");                                        // did pretty output reach the closing object brace?
@@ -679,6 +691,9 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp r8b, 34");                                         // reached the closing key quote?
     emitter.instruction("jne __rt_json_assoc_compact_key_scan_x");              // keep skipping key digits
     emitter.instruction("add r10, 1");                                          // skip the colon after the key
+    // Pretty object output inserts a key/value space after `:`, but the
+    // compacted array form has no key/value separator. Drop only that local
+    // separator; value-owned spaces still copy through the value scanner.
     emitter.label("__rt_json_assoc_compact_value_ws_x");
     emitter.instruction("mov r8b, BYTE PTR [r10]");                             // inspect whitespace between the object colon and value
     emitter.instruction("cmp r8b, 32");                                         // pretty-print object form inserts a single space after `:`
@@ -688,6 +703,9 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_compact_value_init_x");
     emitter.instruction("xor ecx, ecx");                                        // nested container depth = 0
     emitter.instruction("xor r9d, r9d");                                        // string-mode flag = false
+    // Commas and braces only delimit the synthetic top-level object while
+    // depth == 0 and we are not inside a JSON string. Nested arrays/objects
+    // and string contents must be copied verbatim into the compacted value.
     emitter.label("__rt_json_assoc_compact_value_x");
     emitter.instruction("mov r8b, BYTE PTR [r10]");                             // load the next value/delimiter byte
     emitter.instruction("test r9, r9");                                         // currently inside a JSON string?

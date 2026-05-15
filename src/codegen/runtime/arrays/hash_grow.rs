@@ -124,6 +124,10 @@ fn emit_hash_grow_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rdi, QWORD PTR [rbp - 24]");                       // destination table for hash_insert_owned
                                                                                  // rdx/rcx/r8/r9 still hold key_len/value_lo/value_hi/value_tag
     emitter.instruction("call __rt_hash_insert_owned");                         // rehash and move existing entry ownership
+    // The new table is allocated at 2x old capacity, so reinserting exactly
+    // old_count entries should not need another grow. Still retain the return
+    // value because hash_insert_owned is allowed to grow defensively if the
+    // load-factor invariant changes later.
     emitter.instruction("mov QWORD PTR [rbp - 24], rax");                       // keep the latest destination table pointer
     emitter.instruction("jmp __rt_hash_grow_loop_x");                           // continue rehashing entries
 
