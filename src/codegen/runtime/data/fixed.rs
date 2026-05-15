@@ -150,6 +150,7 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize) -> String {
     out.push_str(".globl _pcre_nword\n_pcre_nword:\n    .ascii \"[^[:alnum:]_]\"\n");
     out.push_str(&system::emit_json_data());
     out.push_str(&system::emit_date_data());
+    out.push_str(&system::emit_strtotime_data());
     out.push_str(&emit_php_uname_data());
 
     out
@@ -172,7 +173,7 @@ fn emit_spl_autoload_extensions_data() -> String {
     out.push_str(".globl _spl_autoload_exts_default\n");
     out.push_str("_spl_autoload_exts_default:\n");
     out.push_str(&format!("    .ascii \"{}\"\n", default));
-    out.push_str(".align 3\n");
+    out.push_str(".p2align 3\n");
     out.push_str(".globl _spl_autoload_exts_ptr\n");
     out.push_str("_spl_autoload_exts_ptr:\n");
     out.push_str("    .quad _spl_autoload_exts_default\n");
