@@ -173,7 +173,7 @@ fn emit_spl_autoload_extensions_data() -> String {
     out.push_str(".globl _spl_autoload_exts_default\n");
     out.push_str("_spl_autoload_exts_default:\n");
     out.push_str(&format!("    .ascii \"{}\"\n", default));
-    out.push_str(".align 3\n");
+    out.push_str(".p2align 3\n");
     out.push_str(".globl _spl_autoload_exts_ptr\n");
     out.push_str("_spl_autoload_exts_ptr:\n");
     out.push_str("    .quad _spl_autoload_exts_default\n");
