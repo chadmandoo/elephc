@@ -57,6 +57,7 @@ pub(crate) fn emit_json_encode_array_dynamic(emitter: &mut Emitter) {
     emitter.instruction("strb w13, [x11]");                                     // emit the chosen opening byte
     emitter.instruction("add x11, x11, #1");                                    // advance past the opening byte
     emitter.instruction("str x11, [sp, #16]");                                  // persist the updated write pointer
+    emitter.instruction("bl __rt_json_pretty_push");                            // enter one pretty-print indentation level after the container opens
 
     // -- cache array length and packed value_type tag --
     emitter.instruction("ldr x0, [sp, #0]");                                    // reload the source array pointer
@@ -83,6 +84,9 @@ pub(crate) fn emit_json_encode_array_dynamic(emitter: &mut Emitter) {
     emitter.instruction("str x11, [sp, #16]");                                  // persist the updated write pointer
 
     emitter.label("__rt_json_arr_dyn_elem");
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload write pos before optional pretty indentation
+    emitter.instruction("bl __rt_json_pretty_line");                            // append newline and indentation for this element/key when pretty-printing
+    emitter.instruction("str x11, [sp, #16]");                                  // save the write pos after any pretty indentation
     // -- when JSON_FORCE_OBJECT is set, prefix every element with `"<idx>":` --
     emitter.instruction("ldr x12, [sp, #48]");                                  // reload the cached force-object flag
     emitter.instruction("cbz x12, __rt_json_arr_dyn_elem_no_key");              // skip the key prefix when the flag is clear
@@ -116,6 +120,7 @@ pub(crate) fn emit_json_encode_array_dynamic(emitter: &mut Emitter) {
     emitter.instruction("mov w13, #58");                                        // ASCII ':'
     emitter.instruction("strb w13, [x11, #1]");                                 // emit the colon between key and value
     emitter.instruction("add x11, x11, #2");                                    // advance the running write pointer past `":`
+    emitter.instruction("bl __rt_json_pretty_colon_space");                     // append the pretty-print key/value space when requested
     emitter.instruction("str x11, [sp, #16]");                                  // persist the updated write pointer
     emitter.label("__rt_json_arr_dyn_elem_no_key");
 
@@ -238,6 +243,11 @@ pub(crate) fn emit_json_encode_array_dynamic(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_arr_dyn_close");
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload the current concat_buf write pointer
+    emitter.instruction("bl __rt_json_pretty_pop");                             // leave the container indentation level before closing it
+    emitter.instruction("ldr x3, [sp, #24]");                                   // reload array length to decide whether closing needs its own line
+    emitter.instruction("cbz x3, __rt_json_arr_dyn_close_choose");              // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("bl __rt_json_pretty_line");                            // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_arr_dyn_close_choose");
     emitter.instruction("ldr x12, [sp, #48]");                                  // reload the cached force-object flag
     emitter.instruction("mov w13, #93");                                        // ASCII ']' (default for indexed arrays)
     emitter.instruction("cbz x12, __rt_json_arr_dyn_close_emit");               // skip the brace override when the flag is clear
@@ -292,6 +302,7 @@ fn emit_json_encode_array_dynamic_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], cl");                              // emit the chosen opening byte
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the opening byte
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer before entering the element loop
+    emitter.instruction("call __rt_json_pretty_push");                          // enter one pretty-print indentation level after the container opens
     emitter.instruction("mov rax, QWORD PTR [rbp - 8]");                        // reload the source array pointer (depth_enter clobbered rax)
     emitter.instruction("mov r10, QWORD PTR [rax]");                            // load the indexed-array length from the first field of the array header
     emitter.instruction("mov QWORD PTR [rbp - 32], r10");                       // save the array length across nested JSON helper calls
@@ -313,6 +324,9 @@ fn emit_json_encode_array_dynamic_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer after appending the comma separator
 
     emitter.label("__rt_json_arr_dyn_elem");
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload write pos before optional pretty indentation
+    emitter.instruction("call __rt_json_pretty_line");                          // append newline and indentation for this element/key when pretty-printing
+    emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the write pos after any pretty indentation
     // -- when JSON_FORCE_OBJECT is set, prefix every element with `"<idx>":` --
     emitter.instruction("mov rcx, QWORD PTR [rbp - 56]");                       // reload the cached force-object flag
     emitter.instruction("test rcx, rcx");                                       // is the flag clear?
@@ -344,6 +358,7 @@ fn emit_json_encode_array_dynamic_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 34");                              // emit the closing quote of the synthetic key
     emitter.instruction("mov BYTE PTR [r11 + 1], 58");                          // emit the colon between key and value
     emitter.instruction("add r11, 2");                                          // advance the running write pointer past `":`
+    emitter.instruction("call __rt_json_pretty_colon_space");                   // append the pretty-print key/value space when requested
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer
     emitter.label("__rt_json_arr_dyn_elem_no_key_x");
 
@@ -462,6 +477,11 @@ fn emit_json_encode_array_dynamic_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_arr_dyn_close");
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload the concat-buffer write pointer after the final encoded JSON element
+    emitter.instruction("call __rt_json_pretty_pop");                           // leave the container indentation level before closing it
+    emitter.instruction("cmp QWORD PTR [rbp - 32], 0");                         // did the array contain any elements?
+    emitter.instruction("je __rt_json_arr_dyn_close_choose_x");                 // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("call __rt_json_pretty_line");                          // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_arr_dyn_close_choose_x");
     emitter.instruction("mov rcx, QWORD PTR [rbp - 56]");                       // reload the cached force-object flag
     emitter.instruction("mov rax, 93");                                         // ASCII ']' (default for indexed arrays)
     emitter.instruction("test rcx, rcx");                                       // is the force-object flag clear?

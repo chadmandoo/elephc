@@ -78,6 +78,7 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("strb w12, [x11]");                                     // write the opening bracket
     emitter.instruction("add x11, x11, #1");                                    // advance
     emitter.instruction("str x11, [sp, #16]");                                  // save write pos
+    emitter.instruction("bl __rt_json_pretty_push");                            // enter one pretty-print indentation level after the container opens
 
     // -- get hash table count --
     emitter.instruction("ldr x0, [sp, #0]");                                    // reload hash ptr
@@ -124,6 +125,9 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     // copied into place inline because their decimal representation
     // never contains JSON-significant bytes.
     emitter.label("__rt_json_assoc_key");
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload write pos before optional pretty indentation
+    emitter.instruction("bl __rt_json_pretty_line");                            // append newline and indentation for this entry when pretty-printing
+    emitter.instruction("str x11, [sp, #16]");                                  // save the write pos after any pretty indentation
     emitter.instruction("ldr x12, [sp, #112]");                                 // reload the list_mode flag
     emitter.instruction("cbnz x12, __rt_json_assoc_after_key_prefix");          // list mode skips the key + colon prefix
     emitter.instruction("ldr x1, [sp, #48]");                                   // load key ptr (or integer payload when len = -1)
@@ -151,6 +155,10 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("strb w12, [x11]");                                     // opening quote for the integer key
     emitter.instruction("add x11, x11, #1");                                    // advance past the opening quote
     emitter.instruction("str x11, [sp, #80]");                                  // park the JSON write pointer across the itoa call
+    crate::codegen::abi::emit_symbol_address(emitter, "x10", "_concat_buf");
+    emitter.instruction("sub x12, x11, x10");                                   // compute scratch-safe concat offset from the current key write position
+    crate::codegen::abi::emit_symbol_address(emitter, "x9", "_concat_off");
+    emitter.instruction("str x12, [x9]");                                       // move itoa scratch after the pretty-printed key prefix
     emitter.instruction("mov x0, x1");                                          // move the integer key payload into the decimal-formatter input register
     emitter.instruction("bl __rt_itoa");                                        // x1=ptr to digits in itoa's scratch area, x2=digit count
     emitter.instruction("ldr x11, [sp, #80]");                                  // reload the parked JSON write pointer
@@ -173,6 +181,7 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     emitter.instruction("mov w12, #58");                                        // ASCII ':'
     emitter.instruction("strb w12, [x11]");                                     // write ':'
     emitter.instruction("add x11, x11, #1");                                    // advance
+    emitter.instruction("bl __rt_json_pretty_colon_space");                     // append the pretty-print key/value space when requested
     emitter.instruction("str x11, [sp, #16]");                                  // save write pos after emitting the JSON key prefix
 
     emitter.label("__rt_json_assoc_after_key_prefix");
@@ -273,6 +282,11 @@ pub(crate) fn emit_json_encode_assoc(emitter: &mut Emitter) {
     // -- write closing bracket: ']' for list-shape, '}' otherwise --
     emitter.label("__rt_json_assoc_close");
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload write pos
+    emitter.instruction("bl __rt_json_pretty_pop");                             // leave the container indentation level before closing it
+    emitter.instruction("ldr x5, [sp, #40]");                                   // reload written item count to decide whether closing needs its own line
+    emitter.instruction("cbz x5, __rt_json_assoc_close_choose");                // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("bl __rt_json_pretty_line");                            // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_assoc_close_choose");
     emitter.instruction("ldr x10, [sp, #112]");                                 // reload the list_mode flag
     emitter.instruction("cbz x10, __rt_json_assoc_close_obj");                  // 0 → object form
     emitter.instruction("mov w12, #93");                                        // ASCII ']'
@@ -387,6 +401,7 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_open_emit_x");
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the opening bracket
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer before entering the hash iteration loop
+    emitter.instruction("call __rt_json_pretty_push");                          // enter one pretty-print indentation level after the container opens
     emitter.instruction("mov QWORD PTR [rbp - 32], 0");                         // initialize the hash iterator cursor to the insertion-order start sentinel
     emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // initialize the number of encoded key/value pairs to zero
 
@@ -418,6 +433,9 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     // List-mode skips the key + colon prefix and jumps straight to the
     // value emission.
     emitter.label("__rt_json_assoc_key");
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload write pos before optional pretty indentation
+    emitter.instruction("call __rt_json_pretty_line");                          // append newline and indentation for this entry when pretty-printing
+    emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the write pos after any pretty indentation
     emitter.instruction("mov rdx, QWORD PTR [rbp - 96]");                       // reload the list_mode flag
     emitter.instruction("test rdx, rdx");                                       // check the current JSON object encoder condition
     emitter.instruction("jne __rt_json_assoc_after_key_prefix");                // list mode skips the key + colon prefix
@@ -446,6 +464,10 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 34");                              // write the opening JSON key quote
     emitter.instruction("add r11, 1");                                          // advance past the opening quote
     emitter.instruction("mov QWORD PTR [rbp - 88], r11");                       // park the JSON write pointer across the itoa call
+    emitter.instruction("lea r10, [rip + _concat_buf]");                        // materialize the concat-buffer base before positioning itoa scratch
+    emitter.instruction("mov rcx, r11");                                        // copy the current key write pointer for the concat-offset calculation
+    emitter.instruction("sub rcx, r10");                                        // compute scratch-safe concat offset from the current key write position
+    emitter.instruction("mov QWORD PTR [rip + _concat_off], rcx");              // move itoa scratch after the pretty-printed key prefix
     emitter.instruction("call __rt_itoa");                                      // rax = ptr to digits in itoa's scratch area, rdx = digit count
     emitter.instruction("mov r10, rax");                                        // remember the source pointer before the copy loop
     emitter.instruction("mov rcx, rdx");                                        // remember the digit count for the copy loop bound
@@ -466,6 +488,7 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_json_assoc_key_colon");
     emitter.instruction("mov BYTE PTR [r11], 58");                              // write the JSON colon separator between the encoded key and encoded value
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer write pointer past the colon separator
+    emitter.instruction("call __rt_json_pretty_colon_space");                   // append the pretty-print key/value space when requested
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // persist the updated write pointer after emitting the full JSON key prefix
 
     emitter.label("__rt_json_assoc_after_key_prefix");
@@ -559,6 +582,11 @@ fn emit_json_encode_assoc_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_assoc_close");
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload the concat-buffer write pointer after the final encoded JSON entry
+    emitter.instruction("call __rt_json_pretty_pop");                           // leave the container indentation level before closing it
+    emitter.instruction("cmp QWORD PTR [rbp - 40], 0");                         // did the container contain any entries?
+    emitter.instruction("je __rt_json_assoc_close_choose_x");                   // empty containers stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("call __rt_json_pretty_line");                          // append the closing-line indentation for non-empty pretty containers
+    emitter.label("__rt_json_assoc_close_choose_x");
     // Write the closing bracket: ']' for list-shape, '}' otherwise.
     emitter.instruction("mov rdx, QWORD PTR [rbp - 96]");                       // reload the list_mode flag
     emitter.instruction("test rdx, rdx");                                       // check the current JSON object encoder condition
