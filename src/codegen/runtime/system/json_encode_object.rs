@@ -152,6 +152,7 @@ pub(crate) fn emit_json_encode_object(emitter: &mut Emitter) {
     emitter.instruction("strb w12, [x11]");                                     // emit the opening brace before the first property
     emitter.instruction("add x11, x11, #1");                                    // advance past the opening brace
     emitter.instruction("str x11, [sp, #16]");                                  // save the running write pointer after the opening brace
+    emitter.instruction("bl __rt_json_pretty_push");                            // enter one pretty-print indentation level after the object opens
     emitter.instruction("str xzr, [sp, #32]");                                  // initialize the property loop index to zero
 
     emitter.label("__rt_json_obj_loop");
@@ -185,6 +186,8 @@ pub(crate) fn emit_json_encode_object(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_obj_key");
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload the running write pointer for the key prefix
+    emitter.instruction("bl __rt_json_pretty_line");                            // append newline and indentation for this property when pretty-printing
+    emitter.instruction("str x11, [sp, #16]");                                  // save the write pointer after any pretty indentation
     emitter.instruction("mov w12, #34");                                        // ASCII '"'
     emitter.instruction("strb w12, [x11]");                                     // emit the opening quote for the property name
     emitter.instruction("add x11, x11, #1");                                    // advance past the opening quote
@@ -207,6 +210,7 @@ pub(crate) fn emit_json_encode_object(emitter: &mut Emitter) {
     emitter.instruction("mov w12, #58");                                        // ASCII ':'
     emitter.instruction("strb w12, [x11]");                                     // emit the colon separating key and value
     emitter.instruction("add x11, x11, #1");                                    // advance past the colon
+    emitter.instruction("bl __rt_json_pretty_colon_space");                     // append the pretty-print key/value space when requested
     emitter.instruction("str x11, [sp, #16]");                                  // save the running write pointer after the key prefix
 
     // Sync concat_off so nested encoders append after the existing prefix.
@@ -320,6 +324,11 @@ pub(crate) fn emit_json_encode_object(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_obj_close");
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload the running write pointer for the closing brace
+    emitter.instruction("bl __rt_json_pretty_pop");                             // leave the object indentation level before closing it
+    emitter.instruction("ldr x14, [sp, #40]");                                  // reload public property count to decide whether closing needs its own line
+    emitter.instruction("cbz x14, __rt_json_obj_close_emit");                   // empty objects stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("bl __rt_json_pretty_line");                            // append the closing-line indentation for non-empty pretty objects
+    emitter.label("__rt_json_obj_close_emit");
     emitter.instruction("mov w12, #125");                                       // ASCII '}'
     emitter.instruction("strb w12, [x11]");                                     // emit the closing brace after the last property
     emitter.instruction("add x11, x11, #1");                                    // advance past the closing brace
@@ -458,6 +467,7 @@ fn emit_json_encode_object_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 123");                             // emit the opening brace before the first property
     emitter.instruction("add r11, 1");                                          // advance past the opening brace
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the running write pointer after the opening brace
+    emitter.instruction("call __rt_json_pretty_push");                          // enter one pretty-print indentation level after the object opens
     emitter.instruction("mov QWORD PTR [rbp - 40], 0");                         // initialize the property loop index to zero
 
     emitter.label("__rt_json_obj_loop_x");
@@ -493,6 +503,8 @@ fn emit_json_encode_object_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_obj_key_x");
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload the running write pointer for the key prefix
+    emitter.instruction("call __rt_json_pretty_line");                          // append newline and indentation for this property when pretty-printing
+    emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the write pointer after any pretty indentation
     emitter.instruction("mov BYTE PTR [r11], 34");                              // emit the opening quote for the property name
     emitter.instruction("add r11, 1");                                          // advance past the opening quote
     emitter.instruction("mov rsi, QWORD PTR [rbp - 88]");                       // reload the property name pointer
@@ -513,6 +525,7 @@ fn emit_json_encode_object_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("add r11, 1");                                          // advance past the closing quote
     emitter.instruction("mov BYTE PTR [r11], 58");                              // emit the colon separating key and value
     emitter.instruction("add r11, 1");                                          // advance past the colon
+    emitter.instruction("call __rt_json_pretty_colon_space");                   // append the pretty-print key/value space when requested
     emitter.instruction("mov QWORD PTR [rbp - 24], r11");                       // save the running write pointer after the key prefix
 
     // Sync concat_off so nested encoders append after the existing prefix.
@@ -622,6 +635,11 @@ fn emit_json_encode_object_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_json_obj_close_x");
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload the running write pointer for the closing brace
+    emitter.instruction("call __rt_json_pretty_pop");                           // leave the object indentation level before closing it
+    emitter.instruction("cmp QWORD PTR [rbp - 48], 0");                         // did the object contain any public properties?
+    emitter.instruction("je __rt_json_obj_close_emit_x");                       // empty objects stay compact even under JSON_PRETTY_PRINT
+    emitter.instruction("call __rt_json_pretty_line");                          // append the closing-line indentation for non-empty pretty objects
+    emitter.label("__rt_json_obj_close_emit_x");
     emitter.instruction("mov BYTE PTR [r11], 125");                             // emit the closing brace after the last property
     emitter.instruction("add r11, 1");                                          // advance past the closing brace
 
