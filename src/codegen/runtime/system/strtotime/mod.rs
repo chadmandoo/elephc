@@ -215,7 +215,7 @@ fn emit_dispatcher_linux_x86_64(emitter: &mut Emitter) {
     // Args (caller-saved): rdi = candidate ptr, rsi = table base, rcx = available bytes.
     // Returns: rax = consumed bytes (0 = no match), rdx = kind (-1 = no match).
     emitter.instruction("lea rdi, [rbp - 64]");                                 // rdi = candidate prefix (lc16 buffer)
-    emitter.instruction("lea rsi, [rip + _strtotime_keyword_tab]");                    // rsi = keyword table base
+    emitter.instruction("lea rsi, [rip + _strtotime_keyword_tab]");             // rsi = keyword table base
     emitter.instruction("mov rcx, QWORD PTR [rbp - 72]");                       // rcx = trimmed input length
     emitter.instruction("mov r8, 16");                                          // cap candidate window to 16
     emitter.instruction("cmp rcx, r8");                                         // len > 16 ?

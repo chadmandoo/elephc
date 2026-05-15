@@ -264,7 +264,7 @@ fn emit_offsets_linux_x86_64(emitter: &mut Emitter) {
 
     // -- set up match_word args (rdi=cand, rsi=table, rcx=avail) --
     emitter.instruction("lea rdi, [rbp - 64]");                                 // cand_ptr = lc16 base
-    emitter.instruction("lea rsi, [rip + _strtotime_unit_tab]");                       // table base
+    emitter.instruction("lea rsi, [rip + _strtotime_unit_tab]");                // table base
     emitter.instruction("mov rcx, r10");                                        // rcx = end
     emitter.instruction("sub rcx, QWORD PTR [rsp + 112]");                      // rcx = end - saved_cursor = remaining
     emitter.instruction("mov r8, 16");                                          // cap window
