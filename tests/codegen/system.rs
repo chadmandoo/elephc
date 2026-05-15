@@ -1004,3 +1004,109 @@ fn test_is_callable_bool_returns_false() {
     let out = compile_and_run(r#"<?php echo is_callable(true) ? "y" : "n";"#);
     assert_eq!(out, "n");
 }
+
+#[test]
+fn test_is_callable_dynamic_builtin_string_returns_true() {
+    let out = compile_and_run(
+        r#"<?php
+            function check(string $name) {
+                return is_callable($name) ? "y" : "n";
+            }
+            echo check("JSON_ENCODE");
+        "#,
+    );
+    assert_eq!(out, "y");
+}
+
+#[test]
+fn test_is_callable_dynamic_user_function_string_returns_true() {
+    let out = compile_and_run(
+        r#"<?php
+            function target_fn() { return 1; }
+            function check(string $name) {
+                return is_callable($name) ? "y" : "n";
+            }
+            echo check("target_fn");
+        "#,
+    );
+    assert_eq!(out, "y");
+}
+
+#[test]
+fn test_is_callable_dynamic_unknown_string_returns_false() {
+    let out = compile_and_run(
+        r#"<?php
+            function check(string $name) {
+                return is_callable($name) ? "y" : "n";
+            }
+            echo check("missing_callable_name");
+        "#,
+    );
+    assert_eq!(out, "n");
+}
+
+#[test]
+fn test_is_callable_object_method_array_returns_true() {
+    let out = compile_and_run(
+        r#"<?php
+            class Greeter {
+                public function hello() {
+                    return "hi";
+                }
+            }
+            $obj = new Greeter();
+            $cb = [$obj, "hello"];
+            echo is_callable($cb) ? "y" : "n";
+        "#,
+    );
+    assert_eq!(out, "y");
+}
+
+#[test]
+fn test_is_callable_object_method_array_missing_method_returns_false() {
+    let out = compile_and_run(
+        r#"<?php
+            class Greeter {
+                public function hello() {
+                    return "hi";
+                }
+            }
+            $obj = new Greeter();
+            $cb = [$obj, "missing"];
+            echo is_callable($cb) ? "y" : "n";
+        "#,
+    );
+    assert_eq!(out, "n");
+}
+
+#[test]
+fn test_is_callable_invokable_object_returns_true() {
+    let out = compile_and_run(
+        r#"<?php
+            class Task {
+                public function __invoke() {
+                    return 1;
+                }
+            }
+            $task = new Task();
+            echo is_callable($task) ? "y" : "n";
+        "#,
+    );
+    assert_eq!(out, "y");
+}
+
+#[test]
+fn test_is_callable_plain_object_returns_false() {
+    let out = compile_and_run(
+        r#"<?php
+            class Task {
+                public function run() {
+                    return 1;
+                }
+            }
+            $task = new Task();
+            echo is_callable($task) ? "y" : "n";
+        "#,
+    );
+    assert_eq!(out, "n");
+}

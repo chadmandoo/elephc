@@ -1,12 +1,12 @@
 //! Purpose:
 //! Emits codegen for `is_callable()`.
-//! Handles compile-time callable shapes and known literal function names while preserving side effects for dynamic values.
+//! Handles compile-time callable shapes and delegates dynamic PHP callable forms to runtime helpers.
 //!
 //! Called from:
 //! - `crate::codegen::builtins::types::emit()` when lowering type/introspection builtins.
 //!
 //! Key details:
-//! - Runtime callable lookup is intentionally conservative; unsupported dynamic callable shapes evaluate then return false.
+//! - Runtime fallback covers non-literal strings, callable arrays, invokable objects, Mixed, and erased iterables.
 
 use crate::codegen::abi;
 use crate::codegen::context::Context;
@@ -21,10 +21,8 @@ use crate::types::PhpType;
 ///
 /// Static evaluation when the argument's compile-time type is Callable
 /// (closures, first-class callables) or a string literal that resolves
-/// to a known builtin / user function. Non-literal strings, arrays, and
-/// other dynamic shapes return false here pending runtime lookup
-/// (PHP also accepts `[$obj, "method"]` pairs and objects implementing
-/// `__invoke` — those routes are tracked as follow-ups).
+/// to a known builtin / user function. Dynamic strings, callable arrays,
+/// objects, and type-erased payloads route to runtime metadata lookup.
 pub fn emit(
     _name: &str,
     args: &[Expr],
@@ -47,10 +45,44 @@ pub fn emit(
         return Some(PhpType::Bool);
     }
 
-    // Otherwise evaluate the expression for side effects and decide
-    // statically based on its compile-time type.
     let ty = emit_expr(&args[0], emitter, ctx, data);
-    let val: i64 = if ty == PhpType::Callable { 1 } else { 0 };
-    abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), val);
+    match ty.codegen_repr() {
+        PhpType::Callable => {
+            abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 1);
+        }
+        PhpType::Str => emit_dynamic_string_lookup(emitter),
+        PhpType::Array(_) => {
+            abi::emit_call_label(emitter, "__rt_is_callable_array");            // inspect indexed array shape for [$obj, "method"] callables
+        }
+        PhpType::AssocArray { .. } => {
+            abi::emit_call_label(emitter, "__rt_is_callable_assoc");            // inspect hash shape for numeric 0/1 callable-array entries
+        }
+        PhpType::Object(_) => {
+            abi::emit_call_label(emitter, "__rt_is_callable_object");           // check whether the object's runtime class exposes public __invoke
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            abi::emit_call_label(emitter, "__rt_is_callable_mixed");            // unwrap Mixed and dispatch to the dynamic callable checks
+        }
+        PhpType::Iterable => {
+            abi::emit_call_label(emitter, "__rt_is_callable_heap");             // inspect erased iterable heap kind before choosing array/object fallback
+        }
+        _ => {
+            abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
+        }
+    }
     Some(PhpType::Bool)
+}
+
+fn emit_dynamic_string_lookup(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        crate::codegen::platform::Arch::AArch64 => {
+            emitter.instruction("mov x0, x1");                                  // move dynamic string pointer into runtime helper argument 0
+            emitter.instruction("mov x1, x2");                                  // move dynamic string length into runtime helper argument 1
+        }
+        crate::codegen::platform::Arch::X86_64 => {
+            emitter.instruction("mov rdi, rax");                                // move dynamic string pointer into SysV helper argument 0
+            emitter.instruction("mov rsi, rdx");                                // move dynamic string length into SysV helper argument 1
+        }
+    }
+    abi::emit_call_label(emitter, "__rt_is_callable_string");                   // resolve dynamic function-name string against builtin and user metadata
 }
