@@ -16,6 +16,23 @@ use super::super::Checker;
 
 type BuiltinResult = Result<Option<PhpType>, CompileError>;
 
+fn validate_call_user_func_array_ref_args(
+    sig: &crate::types::FunctionSig,
+    arg_array: &Expr,
+    span: crate::span::Span,
+) -> Result<(), CompileError> {
+    if !sig.ref_params.iter().any(|is_ref| *is_ref) {
+        return Ok(());
+    }
+    if matches!(arg_array.kind, ExprKind::ArrayLiteral(_)) {
+        return Ok(());
+    }
+    Err(CompileError::new(
+        span,
+        "call_user_func_array() requires a literal argument array when the callback has pass-by-reference parameters",
+    ))
+}
+
 pub(super) fn check_builtin(
     checker: &mut Checker,
     name: &str,
@@ -142,12 +159,7 @@ pub(super) fn check_builtin(
                     _ => &[],
                 };
                 let sig = checker.specialize_first_class_callable_target(target, elems, span, env)?;
-                if sig.ref_params.iter().any(|is_ref| *is_ref) {
-                    return Err(CompileError::new(
-                        span,
-                        "call_user_func_array() does not support pass-by-reference callback parameters yet",
-                    ));
-                }
+                validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
                 if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                     let ret_ty = checker.check_known_callable_call(
                         &sig,
@@ -172,12 +184,7 @@ pub(super) fn check_builtin(
                     checker
                         .closure_return_types
                         .insert(var_name.clone(), sig.return_type.clone());
-                    if sig.ref_params.iter().any(|is_ref| *is_ref) {
-                        return Err(CompileError::new(
-                            span,
-                            "call_user_func_array() does not support pass-by-reference callback parameters yet",
-                        ));
-                    }
+                    validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
                     if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                         let ret_ty = checker.check_known_callable_call(
                             &sig,
@@ -193,12 +200,7 @@ pub(super) fn check_builtin(
             }
             if let ExprKind::StringLiteral(cb_name) = &args[0].kind {
                 if let Some(sig) = checker.functions.get(cb_name.as_str()).cloned() {
-                    if sig.ref_params.iter().any(|is_ref| *is_ref) {
-                        return Err(CompileError::new(
-                            span,
-                            "call_user_func_array() does not support pass-by-reference callback parameters yet",
-                        ));
-                    }
+                    validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
                     if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                         let ret_ty = checker.check_known_callable_call(
                             &sig,
@@ -212,10 +214,12 @@ pub(super) fn check_builtin(
                     return Ok(Some(sig.return_type.clone()));
                 }
                 if let Some(decl) = checker.fn_decls.get(cb_name.as_str()).cloned() {
-                    if decl.ref_params.iter().any(|is_ref| *is_ref) {
+                    if decl.ref_params.iter().any(|is_ref| *is_ref)
+                        && !matches!(args[1].kind, ExprKind::ArrayLiteral(_))
+                    {
                         return Err(CompileError::new(
                             span,
-                            "call_user_func_array() does not support pass-by-reference callback parameters yet",
+                            "call_user_func_array() requires a literal argument array when the callback has pass-by-reference parameters",
                         ));
                     }
                 }
@@ -234,12 +238,7 @@ pub(super) fn check_builtin(
                 }
             }
             if let Some(sig) = checker.resolve_expr_callable_sig(&args[0], env)? {
-                if sig.ref_params.iter().any(|is_ref| *is_ref) {
-                    return Err(CompileError::new(
-                        span,
-                        "call_user_func_array() does not support pass-by-reference callback parameters yet",
-                    ));
-                }
+                validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
                 if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                     let ret_ty = checker.check_known_callable_call(
                         &sig,

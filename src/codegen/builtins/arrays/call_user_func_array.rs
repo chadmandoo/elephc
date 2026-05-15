@@ -129,6 +129,10 @@ pub fn emit(
         _ => PhpType::Int,
     };
     let elem_size = args::array_element_stride(&elem_ty);
+    let literal_arg_elems = match &args[1].kind {
+        ExprKind::ArrayLiteral(elems) => Some(elems.as_slice()),
+        _ => None,
+    };
 
     emitter.instruction(&format!("mov {}, {}", array_reg, abi::int_result_reg(emitter))); // preserve the callback-argument array pointer across element boxing
     abi::emit_load_from_address(emitter, len_reg, array_reg, 0);                // load callback-argument array length
@@ -142,6 +146,26 @@ pub fn emit(
         visible_param_count
     };
     for i in 0..regular_param_count {
+        let is_ref = sig.ref_params.get(i).copied().unwrap_or(false);
+        if is_ref {
+            if let Some(Expr {
+                kind: ExprKind::Variable(var_name),
+                ..
+            }) = literal_arg_elems.and_then(|elems| elems.get(i))
+            {
+                if !args::emit_ref_arg_variable_address(
+                    var_name,
+                    "call_user_func_array ref arg",
+                    emitter,
+                    ctx,
+                ) {
+                    panic!("call_user_func_array() by-reference callback argument variable not found");
+                }
+                args::push_arg_value(emitter, &PhpType::Int);
+                arg_types.push(PhpType::Int);
+                continue;
+            }
+        }
         let has_default = sig.defaults.get(i).and_then(|d| d.as_ref()).is_some();
         let target_ty = if args::declared_target_ty(Some(&sig), i).is_some() || has_default {
             sig.params.get(i).map(|(_, ty)| ty)

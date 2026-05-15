@@ -57,6 +57,18 @@ foreach ($formatted as $v) { echo $v . " "; }
 echo "\n";
 echo "method callable call_user_func_array: " . call_user_func_array($format, ["cb"]) . "\n";
 
+function bump(&$value) {
+    $value = $value + 1;
+}
+
+$bump = bump(...);
+$counter_value = 10;
+call_user_func_array($bump, [$counter_value]);
+echo "call_user_func_array by-ref: " . $counter_value . "\n";
+
+$trim = trim(...);
+echo "builtin callable trim: " . $trim("  ready  ") . "\n";
+
 class OffsetCallbacks {
     public function add_offset($carry, $item) {
         return $carry + $item + 10;

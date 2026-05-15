@@ -402,17 +402,17 @@ fn test_indexed_array_unrelated_object_values_widen_to_mixed() {
 }
 
 #[test]
-fn test_error_call_user_func_array_rejects_ref_callback_params() {
+fn test_error_call_user_func_array_ref_callback_requires_literal_argument_array() {
     expect_error(
-        "<?php function bump(&$n) { $n = $n + 1; } $f = bump(...); $value = 1; call_user_func_array($f, [$value]);",
-        "does not support pass-by-reference callback parameters yet",
+        "<?php function bump(&$n) { $n = $n + 1; } $value = 1; $args = [$value]; call_user_func_array(\"bump\", $args);",
+        "requires a literal argument array when the callback has pass-by-reference parameters",
     );
 }
 
 #[test]
-fn test_error_call_user_func_array_string_literal_rejects_ref_callback_params() {
+fn test_error_call_user_func_array_ref_callback_param_requires_variable() {
     expect_error(
-        "<?php function bump(&$n) { $n = $n + 1; } $value = 1; call_user_func_array(\"bump\", [$value]);",
-        "does not support pass-by-reference callback parameters yet",
+        "<?php function bump(&$n) { $n = $n + 1; } call_user_func_array(\"bump\", [1]);",
+        "parameter $n must be passed a variable",
     );
 }

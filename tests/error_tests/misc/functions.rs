@@ -36,8 +36,8 @@ fn test_error_first_class_callable_method_requires_object_receiver() {
 #[test]
 fn test_error_first_class_callable_rejects_unsupported_builtin() {
     expect_error(
-        "<?php $f = trim(...);",
-        "does not support builtin 'trim' yet",
+        "<?php $f = isset(...);",
+        "does not support builtin 'isset' yet",
     );
 }
 
