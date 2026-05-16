@@ -489,7 +489,7 @@ impl Checker {
         }
     }
 
-    fn expr_call_complex_callee_needs_runtime_capture(&self, callee: &Expr) -> bool {
+    pub(crate) fn expr_call_complex_callee_needs_runtime_capture(&self, callee: &Expr) -> bool {
         match &callee.kind {
             ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_) | ExprKind::Variable(_) => {
                 false
