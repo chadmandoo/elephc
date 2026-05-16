@@ -247,12 +247,14 @@ fn emit_mixed_numeric_binop(
     right_ty: &PhpType,
     emitter: &mut Emitter,
 ) -> PhpType {
-    if !matches!(right_ty, PhpType::Mixed | PhpType::Union(_)) {
+    let right_was_boxed = !matches!(right_ty, PhpType::Mixed | PhpType::Union(_));
+    let left_was_boxed = !matches!(left_stack_ty, PhpType::Mixed | PhpType::Union(_));
+    if right_was_boxed {
         crate::codegen::emit_box_current_value_as_mixed(emitter, right_ty);
     }
     abi::emit_push_reg(emitter, abi::int_result_reg(emitter));
     load_saved_numeric_operand(emitter, left_stack_ty, 16);
-    if !matches!(left_stack_ty, PhpType::Mixed | PhpType::Union(_)) {
+    if left_was_boxed {
         crate::codegen::emit_box_current_value_as_mixed(emitter, left_stack_ty);
     }
     match emitter.target.arch {
@@ -270,8 +272,46 @@ fn emit_mixed_numeric_binop(
         BinOp::Mul => "__rt_mixed_numeric_mul",
         _ => unreachable!(),
     };
+    if left_was_boxed {
+        abi::emit_push_reg(emitter, abi::int_result_reg(emitter));
+    }
+    if right_was_boxed {
+        match emitter.target.arch {
+            Arch::AArch64 => {
+                abi::emit_push_reg(emitter, "x1");
+            }
+            Arch::X86_64 => {
+                abi::emit_push_reg(emitter, "rdi");
+            }
+        }
+    }
     abi::emit_call_label(emitter, helper);
+    release_temporary_numeric_operand_boxes(emitter, left_was_boxed, right_was_boxed);
     PhpType::Mixed
+}
+
+fn release_temporary_numeric_operand_boxes(
+    emitter: &mut Emitter,
+    left_was_boxed: bool,
+    right_was_boxed: bool,
+) {
+    if !left_was_boxed && !right_was_boxed {
+        return;
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));
+    let mut offset = 16;
+    if right_was_boxed {
+        abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), offset);
+        abi::emit_decref_if_refcounted(emitter, &PhpType::Mixed);
+        offset += 16;
+    }
+    if left_was_boxed {
+        abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), offset);
+        abi::emit_decref_if_refcounted(emitter, &PhpType::Mixed);
+    }
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));
+    let operand_stack_bytes = 16 * usize::from(left_was_boxed) + 16 * usize::from(right_was_boxed);
+    abi::emit_release_temporary_stack(emitter, operand_stack_bytes);
 }
 
 fn load_saved_numeric_operand(emitter: &mut Emitter, ty: &PhpType, offset: usize) {

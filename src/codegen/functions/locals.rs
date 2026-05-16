@@ -8,7 +8,7 @@
 //! Key details:
 //! - Any lowering path that introduces storage must be represented here before stack offsets are assigned.
 
-use crate::codegen::context::{Context, HeapOwnership};
+use crate::codegen::context::Context;
 use crate::parser::ast::{BinOp, CallableTarget, Expr, ExprKind, InstanceOfTarget, StmtKind};
 use crate::types::{FunctionSig, PhpType};
 use super::types::{codegen_declared_type, codegen_static_type, infer_local_type};
@@ -38,18 +38,6 @@ pub fn collect_local_vars(
                         static_ty.codegen_repr()
                     };
                     ctx.alloc_var_with_static_type(name, slot_ty, static_ty);
-                } else if needs_mixed_numeric_slot {
-                    let static_ty = ctx
-                        .variables
-                        .get(name)
-                        .map(|var| var.static_ty.clone())
-                        .unwrap_or_else(|| infer_local_type(value, sig, Some(ctx)));
-                    ctx.update_var_type_static_and_ownership(
-                        name,
-                        PhpType::Mixed,
-                        static_ty,
-                        HeapOwnership::for_type(&PhpType::Mixed),
-                    );
                 }
             }
             StmtKind::TypedAssign {

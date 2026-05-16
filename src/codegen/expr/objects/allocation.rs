@@ -257,6 +257,7 @@ pub(super) fn emit_new_object_core(
             regular_param_count,
             "constructor ref arg",
             false,
+            true,
             emitter,
             ctx,
             data,
