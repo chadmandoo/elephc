@@ -218,7 +218,7 @@ pub fn emit_expr(
             objects::emit_nullsafe_property_access(object, property, emitter, ctx, data)
         }
         ExprKind::StaticPropertyAccess { receiver, property } => {
-            objects::emit_static_property_access(receiver, property, emitter, ctx)
+            objects::emit_static_property_access(receiver, property, emitter, ctx, data)
         }
         ExprKind::MethodCall {
             object,

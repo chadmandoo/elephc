@@ -106,6 +106,7 @@ pub(crate) fn emit_static_property_array_push_stmt(
     } else {
         let symbol = static_property_symbol(&declaring_class, property);
         abi::emit_store_reg_to_symbol(emitter, abi::int_result_reg(emitter), &symbol, 0);
+        abi::emit_store_zero_to_symbol(emitter, &symbol, 8);
     }
 }
 

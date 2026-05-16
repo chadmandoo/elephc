@@ -113,6 +113,7 @@ pub(super) fn emit_dynamic_store_result_to_static_property(
     }
     let fallback_symbol = static_property_symbol(fallback_declaring_class, property);
     abi::emit_store_result_to_symbol(emitter, &fallback_symbol, ty, release_previous);
+    clear_uninitialized_marker_after_static_store(emitter, &fallback_symbol, ty);
     emit_jump(emitter, &done);
     for (label, branch) in labels {
         emitter.label(&label);
@@ -122,6 +123,7 @@ pub(super) fn emit_dynamic_store_result_to_static_property(
         }
         let symbol = static_property_symbol(&branch.declaring_class, property);
         abi::emit_store_result_to_symbol(emitter, &symbol, ty, release_previous);
+        clear_uninitialized_marker_after_static_store(emitter, &symbol, ty);
         emit_jump(emitter, &done);
     }
     emitter.label(&done);
@@ -145,6 +147,7 @@ pub(super) fn emit_dynamic_store_reg_to_static_property(
     }
     let fallback_symbol = static_property_symbol(fallback_declaring_class, property);
     abi::emit_store_reg_to_symbol(emitter, source_reg, &fallback_symbol, 0);
+    abi::emit_store_zero_to_symbol(emitter, &fallback_symbol, 8);
     emit_jump(emitter, &done);
     for (label, branch) in labels {
         emitter.label(&label);
@@ -154,9 +157,16 @@ pub(super) fn emit_dynamic_store_reg_to_static_property(
         }
         let symbol = static_property_symbol(&branch.declaring_class, property);
         abi::emit_store_reg_to_symbol(emitter, source_reg, &symbol, 0);
+        abi::emit_store_zero_to_symbol(emitter, &symbol, 8);
         emit_jump(emitter, &done);
     }
     emitter.label(&done);
+}
+
+fn clear_uninitialized_marker_after_static_store(emitter: &mut Emitter, symbol: &str, ty: &PhpType) {
+    if !matches!(ty.codegen_repr(), PhpType::Str) {
+        abi::emit_store_zero_to_symbol(emitter, symbol, 8);
+    }
 }
 
 fn emit_branch_if_class_id_matches(

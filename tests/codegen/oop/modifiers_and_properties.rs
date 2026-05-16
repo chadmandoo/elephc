@@ -129,6 +129,72 @@ echo $user->email;
 }
 
 #[test]
+fn test_uninitialized_typed_instance_property_is_fatal() {
+    let err = compile_and_run_expect_failure(
+        r#"<?php
+class Box {
+    public int $value;
+}
+
+$box = new Box();
+echo $box->value;
+"#,
+    );
+    assert!(
+        err.contains("Fatal error: Typed property Box::$value must not be accessed before initialization"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_typed_instance_property_initialized_to_zero_reads_normally() {
+    let out = compile_and_run(
+        r#"<?php
+class Box {
+    public int $value;
+}
+
+$box = new Box();
+$box->value = 0;
+echo $box->value;
+"#,
+    );
+    assert_eq!(out, "0");
+}
+
+#[test]
+fn test_uninitialized_typed_static_property_is_fatal() {
+    let err = compile_and_run_expect_failure(
+        r#"<?php
+class Box {
+    public static int $value;
+}
+
+echo Box::$value;
+"#,
+    );
+    assert!(
+        err.contains("Fatal error: Typed static property Box::$value must not be accessed before initialization"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_typed_static_property_initialized_to_zero_reads_normally() {
+    let out = compile_and_run(
+        r#"<?php
+class Box {
+    public static int $value;
+}
+
+Box::$value = 0;
+echo Box::$value;
+"#,
+    );
+    assert_eq!(out, "0");
+}
+
+#[test]
 fn test_readonly_class_static_property_is_mutable() {
     let out = compile_and_run(
         r#"<?php

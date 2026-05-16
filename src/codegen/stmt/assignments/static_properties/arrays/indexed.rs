@@ -147,6 +147,7 @@ fn publish_static_array_pointer(
     } else {
         let symbol = static_property_symbol(declaring_class, property);
         abi::emit_store_reg_to_symbol(emitter, source_reg, &symbol, 0);
+        abi::emit_store_zero_to_symbol(emitter, &symbol, 8);
     }
 }
 
