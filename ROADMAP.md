@@ -449,6 +449,7 @@ runtime helpers, and standard-library surfaces.
 - [x] JSON pretty-print optimization — inline indent emission inside each container encoder (assoc, array_int/str/dynamic, object) and retire the `__rt_json_pretty_apply` post-processor. Eliminates the second buffer walk for JSON_PRETTY_PRINT workloads. Multi-day refactor completed with a `_json_indent_depth` BSS slot, balanced normal-path formatting depth maintenance, reset-at-entry protection across throws, and bytewise PHP cross-check coverage on representative payloads.
 - [x] `is_callable()` runtime fallback — handle non-literal strings, `[$obj, "method"]` arrays, and objects implementing `__invoke`. The string-literal + Callable-typed compile-time path is already in place.
 - [x] Case-insensitive user-function lookup — `function_exists("USER_FN")` and `is_callable("USER_FN")` accept any case for user functions through a shared lookup path, matching PHP's function-name rules.
+- [ ] OOP property parity v2 — finish PHP 8.4 property-hook contracts, including interface properties and abstract properties in traits; cover `readonly static` properties, instance property redeclaration rules, and the remaining by-reference constructor-promotion gaps (`readonly` and default values)
 
 ### Standard PHP Library (SPL)
 
@@ -487,14 +488,7 @@ PHP-compatible Standard PHP Library coverage, rolled out in phases.
 
 `Serializable` is intentionally not implemented — it has been deprecated since PHP 8.1.
 
-## v0.22.x — PHP OOP parity finish
-
-Close the remaining class/property compatibility gaps before freezing the 1.0
-language contract.
-
-- [ ] OOP property parity v2 — finish PHP 8.4 property-hook contracts, including interface properties and abstract properties in traits; cover `readonly static` properties, instance property redeclaration rules, and the remaining by-reference constructor-promotion gaps (`readonly` and default values)
-
-## v0.23.x — Optimization and release performance pass (superseded)
+## v0.22.x — Optimization and release performance pass (superseded)
 
 This section was reorganized when the EIR plan landed. The items that
 required an intermediate representation were absorbed into v0.24.x (EIR
@@ -504,7 +498,7 @@ The remaining release-track and AST-level optimizer items moved to v0.26.x.
 The v0.23.x label is preserved here so that any external references stay
 resolvable. No new work is planned under this label.
 
-## v0.24.x — EIR introduction and register allocation
+## v0.23.x — EIR introduction and register allocation
 
 Introduce a domain-specific intermediate representation (EIR) between the
 AST-level optimizer and the assembly emitter, then add a real register
@@ -530,7 +524,7 @@ imposed. See `docs/internals/the-ir.md`.
 Expected outcome: feature parity at end of v0.24.0; ≥15% performance
 improvement on compute benchmarks at end of v0.24.x.
 
-## v0.25.x — EIR optimization passes
+## v0.24.x — EIR optimization passes
 
 Build the IR-level passes that the AST optimizer could not reach.
 
@@ -549,7 +543,7 @@ Expected outcome: additional 10–20% performance gain on loop-heavy and
 call-heavy benchmarks; cumulative ≥30% improvement vs end-of-v0.23
 baseline.
 
-## v0.26.x — Performance closure, legacy cleanup, and release stabilization
+## v0.25.x — Performance closure, legacy cleanup, and release stabilization
 
 Optimization work should now be driven by benchmarks, generated assembly size,
 and release-candidate validation rather than by speculative pass work.
