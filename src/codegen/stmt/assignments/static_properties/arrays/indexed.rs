@@ -25,6 +25,7 @@ pub(super) fn emit_static_indexed_array_assign(
     declaring_class: &str,
     branches: &[StaticPropertyBranch],
     class_id_saved: bool,
+    prop_ty: &PhpType,
     elem_ty: &PhpType,
     index: &Expr,
     value: &Expr,
@@ -41,6 +42,7 @@ pub(super) fn emit_static_indexed_array_assign(
                 branches,
                 class_id_saved,
                 0,
+                prop_ty,
                 "x0",
                 emitter,
                 ctx,
@@ -61,6 +63,7 @@ pub(super) fn emit_static_indexed_array_assign(
                 branches,
                 class_id_saved,
                 64,
+                prop_ty,
                 "x10",
                 emitter,
                 ctx,
@@ -82,6 +85,7 @@ pub(super) fn emit_static_indexed_array_assign(
                 branches,
                 class_id_saved,
                 0,
+                prop_ty,
                 "rax",
                 emitter,
                 ctx,
@@ -101,6 +105,7 @@ pub(super) fn emit_static_indexed_array_assign(
                 branches,
                 class_id_saved,
                 48,
+                prop_ty,
                 "r10",
                 emitter,
                 ctx,
@@ -121,6 +126,7 @@ fn publish_static_array_pointer(
     branches: &[StaticPropertyBranch],
     class_id_saved: bool,
     class_id_stack_offset: usize,
+    prop_ty: &PhpType,
     source_reg: &str,
     emitter: &mut Emitter,
     ctx: &mut Context,
@@ -141,13 +147,14 @@ fn publish_static_array_pointer(
             source_reg,
             declaring_class,
             branches,
+            prop_ty,
             emitter,
             ctx,
         );
     } else {
         let symbol = static_property_symbol(declaring_class, property);
         abi::emit_store_reg_to_symbol(emitter, source_reg, &symbol, 0);
-        abi::emit_store_zero_to_symbol(emitter, &symbol, 8);
+        late_bound::clear_uninitialized_marker_after_static_store(emitter, &symbol, prop_ty);
     }
 }
 

@@ -102,8 +102,6 @@ pub(crate) fn emit_static_property_assign_stmt(
     } else {
         let symbol = static_property_symbol(&declaring_class, property);
         abi::emit_store_result_to_symbol(emitter, &symbol, &val_ty, true);
-        if !matches!(val_ty.codegen_repr(), PhpType::Str) {
-            abi::emit_store_zero_to_symbol(emitter, &symbol, 8);
-        }
+        late_bound::clear_uninitialized_marker_after_static_store(emitter, &symbol, &val_ty);
     }
 }
