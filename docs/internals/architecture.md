@@ -222,6 +222,8 @@ src/
 │   ├── class_methods.rs       Instance/static method emission orchestration
 │   ├── function_variants.rs   Include-loaded function variant dispatchers
 │   ├── interface_wrappers.rs  Interface dispatch return-shape adapters
+│   ├── callables.rs           Top-level callable metadata and indirect-call helpers
+│   ├── reflection.rs          Shared ReflectionAttribute materialization helpers
 │   ├── prescan.rs             Pre-pass that collects program-wide codegen metadata
 │   ├── program_usage.rs       Program-usage analysis feeding metadata emission
 │   ├── program_usage/         Required-class and variable usage scanners
@@ -303,8 +305,8 @@ src/
 │       ├── diagnostics.rs     Suppressible runtime-warning channel used by `@`
 │       ├── emitters.rs        Shared emit helpers used across runtime categories
 │       ├── x86_minimal.rs     Minimal x86_64 runtime slice for the Linux x86_64 target
-│       ├── strings/           itoa, concat, resource display, ftoa, sprintf, md5, sha1, str_persist, ... (56 files)
-│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (118 files)
+│       ├── strings/           itoa, concat, resource display, ftoa, sprintf, md5, sha1, str_persist, ... (58 files)
+│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (119 files)
 │       ├── io/                fopen, fgets, fread, stat, scandir, ... (30 files)
 │       ├── buffers/           buffer_new, buffer_len, bounds_fail, use_after_free helpers (5 files incl. mod.rs)
 │       ├── exceptions.rs      Exception runtime module root / re-exports

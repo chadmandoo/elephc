@@ -425,7 +425,9 @@ src/
 │   ├── class_methods.rs # Class/static method emission orchestration
 │   ├── function_variants.rs # Include-loaded function dispatchers
 │   ├── interface_wrappers.rs # Interface dispatch return-shape adapters
+│   ├── callables.rs     # Top-level callable metadata and indirect-call helpers
 │   ├── ffi.rs           # Extern function/global/class codegen
+│   ├── reflection.rs    # Shared ReflectionAttribute materialization helpers
 │   ├── context.rs       # Variables, labels, loop/finally stacks, ownership lattice
 │   ├── data_section.rs  # String/float literal .data section
 │   ├── emit.rs          # Assembly text buffer

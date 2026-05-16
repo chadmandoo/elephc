@@ -96,9 +96,9 @@ echo gettype($p);             // "pointer"
 | `ptr_read32($p)` | `ptr_read32($p): int` | Read 4 bytes |
 | `ptr_write32($p, $v)` | `ptr_write32($p, $v): void` | Write 4 bytes |
 
-:::note
+Notes:
+
 - `ptr()` only accepts variables. `ptr(1 + 2)` is a compile-time error.
 - `ptr_set()` writes a single 8-byte word (int, bool, null, or pointer).
 - `ptr_cast<T>()` accepts builtin types, classes, packed classes, and extern classes.
 - Use `===` and `!==` for comparison. `==`/`!=` is rejected.
-:::
