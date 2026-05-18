@@ -16,6 +16,8 @@ use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
+const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
+
 pub fn emit(
     _name: &str,
     args: &[Expr],
@@ -66,7 +68,7 @@ fn emit_isset_arg(
         match &array_ty {
             PhpType::Str => {
                 emit_expr(arg, emitter, ctx, data);
-                emit_string_offset_result_isset(emitter);
+                emit_string_offset_isset_result(emitter);
                 return;
             }
             PhpType::Array(elem_ty) => {
@@ -94,6 +96,7 @@ fn emit_loaded_result_isset(ty: &PhpType, emitter: &mut Emitter) {
     match ty.codegen_repr() {
         PhpType::Void | PhpType::Never => emit_bool_result(false, emitter),
         PhpType::Mixed => emit_mixed_result_not_null(emitter),
+        PhpType::Int | PhpType::Bool => emit_scalar_result_not_null(emitter),
         _ => emit_bool_result(true, emitter),
     }
 }
@@ -169,19 +172,21 @@ fn emit_assoc_array_isset(
     data: &mut DataSection,
 ) {
     emit_expr(array, emitter, ctx, data);
-    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the associative array pointer while evaluating the key expression
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                 // preserve the hash-table pointer while evaluating the offset expression
     crate::codegen::emit_normalized_hash_key(index, emitter, ctx, data);
+    let (key_ptr_reg, key_len_reg) = abi::string_result_regs(emitter);
+    abi::emit_push_reg_pair(emitter, key_ptr_reg, key_len_reg);                // preserve the normalized key while restoring the hash-table pointer
     match emitter.target.arch {
         Arch::AArch64 => {
-            abi::emit_pop_reg(emitter, "x0");                                   // restore the hash pointer as the first hash-get argument
-            abi::emit_call_label(emitter, "__rt_hash_get");                     // probe the associative array and return found flag plus value tag
+            abi::emit_pop_reg_pair(emitter, "x1", "x2");                       // restore the normalized key into hash-get argument registers
+            abi::emit_pop_reg(emitter, "x0");                                  // restore the hash-table pointer into the hash-get receiver argument
         }
         Arch::X86_64 => {
-            emitter.instruction("mov rsi, rax");                                // move the normalized key low word into the second SysV argument
-            abi::emit_pop_reg(emitter, "rdi");                                  // restore the hash pointer as the first SysV hash-get argument
-            abi::emit_call_label(emitter, "__rt_hash_get");                     // probe the associative array and return found flag plus value tag
+            abi::emit_pop_reg_pair(emitter, "rsi", "rdx");                     // restore the normalized key into hash-get argument registers
+            abi::emit_pop_reg(emitter, "rdi");                                 // restore the hash-table pointer into the hash-get receiver argument
         }
     }
+    abi::emit_call_label(emitter, "__rt_hash_get");                            // return the hash lookup found flag plus borrowed payload metadata
     emit_hash_found_and_not_null(emitter, ctx);
 }
 
@@ -208,16 +213,17 @@ fn emit_hash_found_and_not_null(emitter: &mut Emitter, ctx: &mut Context) {
     emitter.label(&done_label);
 }
 
-fn emit_string_offset_result_isset(emitter: &mut Emitter) {
+fn emit_string_offset_isset_result(emitter: &mut Emitter) {
+    let (_, len_reg) = abi::string_result_regs(emitter);
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction("cmp x2, #0");                                  // string offset probes are set only when indexing returned one byte
-            emitter.instruction("cset x0, ne");                                 // normalize the string-offset existence result into a PHP boolean
+            emitter.instruction(&format!("cmp {}, #0", len_reg));               // check whether string offset access produced a character
+            emitter.instruction("cset x0, ne");                                 // return true only when the string offset is in bounds
         }
         Arch::X86_64 => {
-            emitter.instruction("cmp rdx, 0");                                  // string offset probes are set only when indexing returned one byte
-            emitter.instruction("setne al");                                    // set the low result byte when the string offset exists
-            emitter.instruction("movzx rax, al");                               // widen the string-offset existence result into the integer result register
+            emitter.instruction(&format!("cmp {}, 0", len_reg));                // check whether string offset access produced a character
+            emitter.instruction("setne al");                                    // return true only when the string offset is in bounds
+            emitter.instruction("movzx eax, al");                               // widen the boolean byte into the canonical integer result
         }
     }
 }
@@ -233,6 +239,22 @@ fn emit_mixed_result_not_null(emitter: &mut Emitter) {
             emitter.instruction("cmp rax, 8");                                  // runtime tag 8 means the Mixed payload is PHP null
             emitter.instruction("setne al");                                    // set the low result byte when the Mixed payload is not null
             emitter.instruction("movzx rax, al");                               // widen the Mixed null-check result into the integer result register
+        }
+    }
+}
+
+fn emit_scalar_result_not_null(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_int_immediate(emitter, "x9", NULL_SENTINEL);
+            emitter.instruction("cmp x0, x9");                                  // compare the scalar result against the shared null sentinel
+            emitter.instruction("cset x0, ne");                                 // return true only when the scalar result is not null
+        }
+        Arch::X86_64 => {
+            abi::emit_load_int_immediate(emitter, "r10", NULL_SENTINEL);
+            emitter.instruction("cmp rax, r10");                                // compare the scalar result against the shared null sentinel
+            emitter.instruction("setne al");                                    // set the low result byte when the scalar result is not null
+            emitter.instruction("movzx rax, al");                               // widen the scalar null-check result into the integer result register
         }
     }
 }

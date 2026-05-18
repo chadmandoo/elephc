@@ -55,6 +55,14 @@ fn test_string_indexing_with_variable_offset() {
 }
 
 #[test]
+fn test_string_indexing_accepts_numeric_string_offsets() {
+    let out = compile_and_run(
+        r#"<?php $s = "abcd"; echo $s["0"]; echo $s["01"]; echo $s["+2"]; echo $s[" -1 "]; echo "\n"; echo isset($s["3"]) ? "y" : "n"; echo isset($s["4"]) ? "y\n" : "n\n";"#,
+    );
+    assert_eq!(out, "abcd\nyn\n");
+}
+
+#[test]
 fn test_string_indexing_empty_string_returns_empty_string() {
     let out = compile_and_run(r#"<?php $s = ""; $i = 0; echo "[" . $s[$i] . "]";"#);
     assert_eq!(out, "[]");
@@ -349,6 +357,38 @@ echo isset($b) ? "b\n" : "nb\n";
 "#,
     );
     assert_eq!(out, "na\nnb\n");
+}
+
+#[test]
+fn test_isset_string_offset_respects_bounds() {
+    let out = compile_and_run(
+        r#"<?php
+$s = "abc";
+echo isset($s[0]) ? "y\n" : "n\n";
+echo isset($s[3]) ? "y\n" : "n\n";
+echo isset($s[-1]) ? "y\n" : "n\n";
+echo isset($s[-4]) ? "y\n" : "n\n";
+"#,
+    );
+    assert_eq!(out, "y\nn\ny\nn\n");
+}
+
+#[test]
+fn test_isset_array_offset_respects_bounds_for_non_scalar_elements() {
+    let out = compile_and_run(
+        r#"<?php
+$a = ["x"];
+echo isset($a[0]) ? "y\n" : "n\n";
+echo isset($a[1]) ? "y\n" : "n\n";
+"#,
+    );
+    assert_eq!(out, "y\nn\n");
+}
+
+#[test]
+fn test_isset_null_variable_is_false() {
+    let out = compile_and_run("<?php $x = null; $y = 0; echo isset($x); echo isset($y);");
+    assert_eq!(out, "01");
 }
 
 #[test]
