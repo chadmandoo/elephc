@@ -15,4 +15,10 @@ fn test_string_escaped_dollar() {
     assert_eq!(out, "price is $5");
 }
 
+#[test]
+fn test_multibyte_string_literal_before_ascii_digits_round_trips() {
+    let out = compile_and_run("<?php echo '日本語123';");
+    assert_eq!(out, "日本語123");
+}
+
 // --- md5 / sha1 ---
