@@ -73,6 +73,10 @@ impl Checker {
 
         let stmt = Stmt::new(stmt_kind, span);
         self.check_assignment_like_stmt(&stmt, env)?;
-        self.infer_type(result_target.unwrap_or(target), env)
+        let result_expr = match result_target {
+            Some(result_target) if result_target != target => result_target,
+            _ => value,
+        };
+        self.infer_type(result_expr, env)
     }
 }

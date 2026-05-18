@@ -16,9 +16,7 @@ use crate::parser::stmt::parse_name;
 use crate::span::Span;
 
 use super::assignment_targets::{
-    AssignmentExpressionLowerer,
-    assignment_value_may_mutate_target_dependency, assignment_value_reads_target_container,
-    is_assignment_expression_target, is_non_local_assignment_target,
+    AssignmentExpressionLowerer, is_assignment_expression_target, is_non_local_assignment_target,
 };
 use super::calls::parse_first_class_callable_parens;
 use super::parse_args;
@@ -256,30 +254,44 @@ pub(super) fn parse_expr_bp(
             let rhs = parse_expr_bp(tokens, pos, r_bp)?;
             if is_non_local_assignment_target(&lhs) {
                 let null_coalesce_assign = matches!(op, AssignmentOperator::NullCoalesce);
-                let needs_conditional_value_temp =
-                    null_coalesce_assign
-                        && (assignment_value_may_mutate_target_dependency(&lhs, &rhs)
-                            || assignment_value_reads_target_container(&lhs, &rhs));
 
                 let mut lowerer = AssignmentExpressionLowerer::new(span);
                 let target = lowerer.stabilize_non_local_target(lhs, &rhs);
-                let conditional_value_temp = needs_conditional_value_temp
-                    .then(|| lowerer.reserve_value_temp());
+                let conditional_value_temp =
+                    null_coalesce_assign.then(|| lowerer.reserve_value_temp());
                 let rhs = if null_coalesce_assign {
                     rhs
                 } else {
                     lowerer.bind_value(&target, rhs)
                 };
-                let value = match op {
-                    AssignmentOperator::Assign => rhs,
-                    op => assignment_value(target.clone(), op, rhs, span),
+                let (value, result_target) = match op {
+                    AssignmentOperator::Assign => (rhs.clone(), rhs),
+                    AssignmentOperator::NullCoalesce => {
+                        let value = assignment_value(
+                            target.clone(),
+                            AssignmentOperator::NullCoalesce,
+                            rhs,
+                            span,
+                        );
+                        (value, target.clone())
+                    }
+                    AssignmentOperator::Compound(op) => {
+                        let value = assignment_value(
+                            target.clone(),
+                            AssignmentOperator::Compound(op),
+                            rhs,
+                            span,
+                        );
+                        let result_value = lowerer.bind_result_value(value);
+                        (result_value.clone(), result_value)
+                    }
                 };
                 let prelude = lowerer.finish();
                 lhs = Expr::new(
                     ExprKind::Assignment {
                         target: Box::new(target.clone()),
                         value: Box::new(value),
-                        result_target: Some(Box::new(target)),
+                        result_target: Some(Box::new(result_target)),
                         prelude,
                         conditional_value_temp,
                     },
