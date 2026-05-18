@@ -78,6 +78,7 @@ const C_SYMBOLS: &[&str] = &[
     "regexec",
     "regfree",
     "setjmp",
+    "setlocale",
     "sin",
     "sinh",
     "sleep",

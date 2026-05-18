@@ -87,7 +87,7 @@ impl DataSection {
                     b'\\' => out.push_str("\\\\"),
                     b'"' => out.push_str("\\\""),
                     0x20..=0x7e => out.push(b as char),
-                    _ => out.push_str(&format!("\\x{:02x}", b)),
+                    _ => out.push_str(&format!("\\{:03o}", b)),
                 }
             }
             out.push_str("\"\n");

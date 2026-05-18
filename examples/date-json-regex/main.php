@@ -46,9 +46,17 @@ $text = "The quick brown fox jumps over the lazy dog";
 $words = preg_match_all("/[a-z]+/", $text);
 echo "Word count: " . $words . "\n";
 
+$unicode = "日本語123";
+if (preg_match("/\p{L}+/u", $unicode)) {
+    echo "Unicode letters detected\n";
+}
+
 // Replace
 $cleaned = preg_replace("/[ ]+/", " ", "hello    world    test");
 echo "Cleaned: " . $cleaned . "\n";
+
+$numberGroups = preg_replace("/\p{N}+/u", "X", "abc123def456");
+echo "Unicode property replace: " . $numberGroups . "\n";
 
 $name = preg_replace("/([a-z]+) ([a-z]+)/", '$2, $1', "ada lovelace");
 echo "Name swap: " . $name . "\n";

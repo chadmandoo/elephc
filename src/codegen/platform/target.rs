@@ -251,6 +251,13 @@ impl Platform {
         }
     }
 
+    pub fn lc_ctype(&self) -> u32 {
+        match self {
+            Platform::MacOS => 2,
+            Platform::Linux => 0,
+        }
+    }
+
     pub fn regmatch_t_size(&self) -> usize {
         match self {
             Platform::MacOS => 16,

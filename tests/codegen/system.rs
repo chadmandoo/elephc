@@ -903,6 +903,24 @@ fn test_preg_match_no_digits() {
 }
 
 #[test]
+fn test_preg_match_unicode_property_letter() {
+    let out = compile_and_run(r#"<?php echo preg_match("/\p{L}+/u", "日本語123");"#);
+    assert_eq!(out, "1");
+}
+
+#[test]
+fn test_preg_match_unicode_property_case_aliases() {
+    let out = compile_and_run(r#"<?php echo preg_match("/^\p{Lu}\p{Ll}+$/u", "Hello");"#);
+    assert_eq!(out, "1");
+}
+
+#[test]
+fn test_preg_match_negated_unicode_property() {
+    let out = compile_and_run(r#"<?php echo preg_match("/^\P{N}+$/u", "abc");"#);
+    assert_eq!(out, "1");
+}
+
+#[test]
 fn test_preg_match_all_count() {
     let out = compile_and_run(r#"<?php echo preg_match_all("/[0-9]+/", "a1b2c3");"#);
     assert_eq!(out, "3");
@@ -924,6 +942,12 @@ fn test_preg_replace_simple() {
 fn test_preg_replace_pattern() {
     let out = compile_and_run(r#"<?php echo preg_replace("/[0-9]+/", "X", "a1b2c3");"#);
     assert_eq!(out, "aXbXcX");
+}
+
+#[test]
+fn test_preg_replace_unicode_property_number() {
+    let out = compile_and_run(r#"<?php echo preg_replace("/\p{N}+/u", "X", "abc123def456");"#);
+    assert_eq!(out, "abcXdefX");
 }
 
 #[test]

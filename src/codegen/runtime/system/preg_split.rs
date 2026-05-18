@@ -57,6 +57,9 @@ pub(crate) fn emit_preg_split(emitter: &mut Emitter) {
     emitter.instruction("bl __rt_pcre_to_posix");                               // → x0=C string with PCRE shorthands converted
     emitter.instruction(&format!("str x0, [sp, #{}]", pattern_cstr_off));       // save pattern C string
 
+    // -- prepare locale-sensitive POSIX character classes --
+    super::emit_prepare_regex_locale(emitter);
+
     // -- compile regex --
     emitter.instruction("mov x0, sp");                                          // regex_t at sp
     emitter.instruction(&format!("ldr x1, [sp, #{}]", pattern_cstr_off));       // pattern
@@ -193,6 +196,7 @@ fn emit_preg_split_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction(&format!("mov QWORD PTR [rsp + {}], rcx", flags_off));  // preserve the delimiter-strip helper flags for the later regcomp() call
     emitter.instruction("call __rt_pcre_to_posix");                             // translate PCRE shorthands into a POSIX-compatible null-terminated pattern string
     emitter.instruction(&format!("mov QWORD PTR [rsp + {}], rax", pattern_cstr_off)); // preserve the converted POSIX pattern C string across compilation and splitting
+    super::emit_prepare_regex_locale(emitter);
     emitter.instruction("lea rdi, [rsp]");                                      // pass the local regex_t storage as the first regcomp() argument
     emitter.instruction(&format!("mov rsi, QWORD PTR [rsp + {}]", pattern_cstr_off)); // pass the converted POSIX pattern C string as the second regcomp() argument
     emitter.instruction("mov edx, 1");                                          // start from REG_EXTENDED when compiling the POSIX regex pattern

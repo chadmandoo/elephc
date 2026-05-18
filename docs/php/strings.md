@@ -137,7 +137,7 @@ Read-only. Negative indices count from end. Out-of-bounds returns empty string.
 
 ### Regex limitations
 
-- Uses POSIX extended regex via libc, with translation of common PCRE shorthands (`\s`, `\d`, `\w`)
+- Uses POSIX extended regex via libc, with translation of common PCRE shorthands (`\s`, `\d`, `\w`) and common Unicode property shims (`\p{L}`, `\p{N}`, `\p{Lu}`, `\p{Ll}`, and `\P{...}`)
 - `preg_replace()` expands `$0`..`$9` and `\0`..`\9` to captured groups; unmatched optional groups expand to an empty string
 - Lookahead, lookbehind, non-greedy quantifiers are not supported
 - `preg_match()` does not support `$matches` capture parameter

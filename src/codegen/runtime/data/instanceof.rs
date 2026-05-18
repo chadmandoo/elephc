@@ -90,7 +90,7 @@ pub(super) fn escaped_ascii(value: &str) -> String {
             b'\\' => escaped.push_str("\\\\"),
             b'"' => escaped.push_str("\\\""),
             0x20..=0x7e => escaped.push(byte as char),
-            _ => escaped.push_str(&format!("\\x{:02x}", byte)),
+            _ => escaped.push_str(&format!("\\{:03o}", byte)),
         }
     }
     escaped

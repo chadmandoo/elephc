@@ -134,7 +134,7 @@ Encoding rules for objects:
 | `preg_replace()` | `preg_replace($pattern, $replacement, $subject): string` | Replace all regex matches; `$0`..`$9` and `\0`..`\9` replacement backreferences expand captured groups |
 | `preg_split()` | `preg_split($pattern, $subject): array` | Split string by regex |
 
-Uses POSIX extended regex with common PCRE shorthand translation (`\s`, `\d`, `\w`). Replacement backreferences `$0`..`$9` and `\0`..`\9` are expanded by `preg_replace()`. Lookahead, lookbehind, non-greedy quantifiers, and the `$matches` output parameter for `preg_match()` are not supported.
+Uses POSIX extended regex with common PCRE shorthand translation (`\s`, `\d`, `\w`) and common Unicode property shims (`\p{L}`, `\p{N}`, `\p{Lu}`, `\p{Ll}` and negated `\P{...}` forms). Replacement backreferences `$0`..`$9` and `\0`..`\9` are expanded by `preg_replace()`. Lookahead, lookbehind, non-greedy quantifiers, and the `$matches` output parameter for `preg_match()` are not supported.
 
 ## File I/O
 
