@@ -105,9 +105,17 @@ fn test_non_local_assignment_expression_parses_property_target() {
     let stmts = parse_source("<?php echo ($box->value += 2);");
     match &stmts[0].kind {
         StmtKind::Echo(expr) => match &expr.kind {
-            ExprKind::Assignment { target, value, .. } => {
+            ExprKind::Assignment {
+                target,
+                value,
+                result_target,
+                prelude,
+                ..
+            } => {
                 assert!(matches!(target.kind, ExprKind::PropertyAccess { .. }));
-                assert!(matches!(value.kind, ExprKind::BinaryOp { op: BinOp::Add, .. }));
+                assert_eq!(prelude.len(), 1);
+                assert!(matches!(value.kind, ExprKind::Variable(_)));
+                assert!(result_target.is_some());
             }
             other => panic!("expected assignment expression, got {:?}", other),
         },

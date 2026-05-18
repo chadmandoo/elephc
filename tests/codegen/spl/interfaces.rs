@@ -244,9 +244,6 @@ echo $b->jsonSerialize();
 
 #[test]
 fn test_array_access_interface_typechecks() {
-    // ArrayAccess subscript syntax ($obj[$k]) is deferred to a follow-up
-    // PR; this test verifies the interface contract is enforced and methods
-    // are callable directly.
     let out = compile_and_run(
         r#"<?php
 class Box implements ArrayAccess {
@@ -263,4 +260,149 @@ var_dump($b instanceof ArrayAccess);
 "#,
     );
     assert_eq!(out, "vbool(true)\n");
+}
+
+#[test]
+fn test_array_access_subscript_read_write_isset_unset() {
+    let out = compile_and_run(
+        r#"<?php
+class Box implements ArrayAccess {
+    private string $stored = "";
+    public function offsetExists(mixed $offset): bool { echo "E"; return $this->stored !== ""; }
+    public function offsetGet(mixed $offset): mixed { echo "G"; return $this->stored; }
+    public function offsetSet(mixed $offset, mixed $value): void { echo "S"; $this->stored = (string)$value; }
+    public function offsetUnset(mixed $offset): void { echo "U"; $this->stored = ""; }
+}
+$b = new Box();
+$b["k"] = "v";
+echo $b["k"];
+echo isset($b["k"]);
+unset($b["k"]);
+echo isset($b["k"]);
+"#,
+    );
+    assert_eq!(out, "SGvE1UE0");
+}
+
+#[test]
+fn test_array_access_subscript_dispatches_through_interface_type() {
+    let out = compile_and_run(
+        r#"<?php
+class Box implements ArrayAccess {
+    private string $stored = "";
+    public function offsetExists(mixed $offset): bool { return $this->stored !== ""; }
+    public function offsetGet(mixed $offset): mixed { return $this->stored; }
+    public function offsetSet(mixed $offset, mixed $value): void { $this->stored = (string)$value; }
+    public function offsetUnset(mixed $offset): void { $this->stored = ""; }
+}
+function use_box_slot(ArrayAccess $box): void {
+    $box["k"] = "v";
+    echo $box["k"];
+    echo isset($box["k"]);
+    unset($box["k"]);
+    echo isset($box["k"]);
+}
+use_box_slot(new Box());
+"#,
+    );
+    assert_eq!(out, "v10");
+}
+
+#[test]
+fn test_array_access_subscript_property_and_static_property_writes() {
+    let out = compile_and_run(
+        r#"<?php
+class Box implements ArrayAccess {
+    private string $stored = "";
+    public function offsetExists(mixed $offset): bool { return $this->stored !== ""; }
+    public function offsetGet(mixed $offset): mixed { return $this->stored; }
+    public function offsetSet(mixed $offset, mixed $value): void { $this->stored = (string)$value; }
+    public function offsetUnset(mixed $offset): void { $this->stored = ""; }
+}
+class Holder {
+    public Box $box;
+    public static Box $staticBox;
+    public function __construct() {
+        $this->box = new Box();
+    }
+}
+$holder = new Holder();
+$holder->box["k"] = "p";
+echo $holder->box["k"];
+Holder::$staticBox = new Box();
+Holder::$staticBox["k"] = "s";
+echo Holder::$staticBox["k"];
+"#,
+    );
+    assert_eq!(out, "ps");
+}
+
+#[test]
+fn test_array_access_assignment_expression_returns_computed_value() {
+    let out = compile_and_run(
+        r#"<?php
+class AssignBox implements ArrayAccess {
+    private int $stored = 0;
+    public function offsetExists(mixed $offset): bool { return true; }
+    public function offsetGet(mixed $offset): mixed { echo "G"; return $this->stored; }
+    public function offsetSet(mixed $offset, mixed $value): void { echo "S"; $this->stored = 99; }
+    public function offsetUnset(mixed $offset): void {}
+}
+$b = new AssignBox();
+echo "=";
+echo ($b["k"] = 5);
+echo "|";
+class CounterBox implements ArrayAccess {
+    private int $stored = 15;
+    public function offsetExists(mixed $offset): bool { return true; }
+    public function offsetGet(mixed $offset): int { echo "G"; return $this->stored; }
+    public function offsetSet(mixed $offset, mixed $value): void { echo "S"; $this->stored = 99; }
+    public function offsetUnset(mixed $offset): void {}
+}
+$counter = new CounterBox();
+echo ($counter["k"] += 2);
+echo "|";
+class MaybeBox implements ArrayAccess {
+    private int $stored = 0;
+    public function offsetExists(mixed $offset): bool { return false; }
+    public function offsetGet(mixed $offset): mixed { echo "G"; return null; }
+    public function offsetSet(mixed $offset, mixed $value): void { echo "S"; $this->stored = 1; }
+    public function offsetUnset(mixed $offset): void {}
+}
+$c = new MaybeBox();
+echo ($c["k"] ??= 3);
+"#,
+    );
+    assert_eq!(out, "=S5|GS17|GS3");
+}
+
+#[test]
+fn test_array_access_union_uses_interface_dispatch() {
+    let out = compile_and_run(
+        r#"<?php
+class LeftBox implements ArrayAccess {
+    public function offsetExists(mixed $offset): bool { return (string)$offset === "k"; }
+    public function offsetGet(mixed $offset): mixed { return "L"; }
+    public function offsetSet(mixed $offset, mixed $value): void {}
+    public function offsetUnset(mixed $offset): void {}
+}
+class RightBox implements ArrayAccess {
+    public function beforeOne(): string { return "x"; }
+    public function beforeTwo(): string { return "y"; }
+    public function offsetExists(mixed $offset): bool { return (string)$offset === "k"; }
+    public function offsetGet(mixed $offset): mixed { return "R"; }
+    public function offsetSet(mixed $offset, mixed $value): void {}
+    public function offsetUnset(mixed $offset): void {}
+}
+function choose_box(bool $left): LeftBox|RightBox {
+    if ($left) {
+        return new LeftBox();
+    }
+    return new RightBox();
+}
+echo choose_box(true)["k"];
+echo choose_box(false)["k"];
+"#,
+    );
+    assert_eq!(out, "LR");
 }

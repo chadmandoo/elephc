@@ -39,6 +39,14 @@ fn test_error_undefined_method() {
 }
 
 #[test]
+fn test_error_object_subscript_requires_array_access() {
+    expect_error(
+        "<?php class Box {} $b = new Box(); echo $b[\"k\"];",
+        "Cannot index non-array",
+    );
+}
+
+#[test]
 fn test_error_nullsafe_property_rejects_scalar_receiver() {
     expect_error(
         "<?php ?int $value = null; echo $value?->missing;",

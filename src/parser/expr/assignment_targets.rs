@@ -66,6 +66,10 @@ impl AssignmentExpressionLowerer {
         self.bind_temp(value)
     }
 
+    pub(super) fn bind_result_value(&mut self, value: Expr) -> Expr {
+        self.bind_temp(value)
+    }
+
     pub(super) fn reserve_value_temp(&mut self) -> String {
         self.next_temp_name()
     }

@@ -94,17 +94,48 @@ fn emit_conditional_non_local_null_coalesce_assignment(
     let current_ty = super::emit_expr(current, emitter, ctx, data);
     let keep_label = (current_ty != PhpType::Void)
         .then(|| ctx.next_label("nca_expr_keep"));
+    let done_label = keep_label
+        .as_ref()
+        .map(|_| ctx.next_label("nca_expr_done"));
+    let saved_current_bytes = if matches!(current_ty, PhpType::Mixed | PhpType::Union(_)) {
+        crate::codegen::abi::emit_push_reg(
+            emitter,
+            crate::codegen::abi::int_result_reg(emitter),
+        ); // preserve the boxed current value while the null check unboxes its tag
+        16
+    } else {
+        0
+    };
     if let Some(label) = &keep_label {
         super::super::stmt::emit_branch_if_result_non_null(&current_ty, label, emitter);
     }
     super::super::stmt::emit_assign_stmt(temp_name, default, emitter, ctx, data);
     let temp_value = Expr::new(ExprKind::Variable(temp_name.to_string()), default.span);
     emit_non_local_assignment_write(target, &temp_value, emitter, ctx, data);
+    let default_ty = super::emit_expr(&temp_value, emitter, ctx, data);
+    let result_ty = super::widen_codegen_type(&current_ty, &default_ty);
+    super::coerce_result_to_type(emitter, ctx, data, &default_ty, &result_ty);
+    if saved_current_bytes != 0 {
+        crate::codegen::abi::emit_release_temporary_stack(emitter, saved_current_bytes); // discard the saved null value on the default-assignment path
+    }
+    if let Some(label) = &done_label {
+        crate::codegen::abi::emit_jump(emitter, label);                         // keep the just-assigned default value as the expression result
+    }
     if let Some(label) = &keep_label {
+        emitter.label(label);
+        if saved_current_bytes != 0 {
+            crate::codegen::abi::emit_pop_reg(
+                emitter,
+                crate::codegen::abi::int_result_reg(emitter),
+            ); // restore the original boxed current value for the keep-existing path
+        }
+        super::coerce_result_to_type(emitter, ctx, data, &current_ty, &result_ty);
+    }
+    if let Some(label) = &done_label {
         emitter.label(label);
     }
 
-    Some(super::emit_expr(result_target.unwrap_or(target), emitter, ctx, data))
+    Some(result_ty)
 }
 
 fn emit_non_local_assignment_write(
