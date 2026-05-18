@@ -113,6 +113,7 @@ pub fn collect_local_vars(
             }
             StmtKind::Foreach {
                 value_var,
+                value_by_ref,
                 body,
                 array,
                 key_var,
@@ -136,7 +137,21 @@ pub fn collect_local_vars(
                         PhpType::Iterable | PhpType::Object(_) => PhpType::Mixed,
                         _ => PhpType::Int,
                     };
-                    ctx.alloc_var_with_static_type(value_var, elem_ty.codegen_repr(), elem_ty);
+                    if *value_by_ref {
+                        ctx.alloc_var_with_static_type(
+                            value_var,
+                            PhpType::Int,
+                            elem_ty.clone(),
+                        );
+                        ctx.update_var_type_static_and_ownership(
+                            value_var,
+                            elem_ty.codegen_repr(),
+                            elem_ty.clone(),
+                            HeapOwnership::borrowed_alias_for_type(&elem_ty),
+                        );
+                    } else {
+                        ctx.alloc_var_with_static_type(value_var, elem_ty.codegen_repr(), elem_ty);
+                    }
                 }
                 collect_local_vars(body, ctx, sig);
             }
