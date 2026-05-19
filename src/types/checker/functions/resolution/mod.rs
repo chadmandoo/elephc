@@ -66,6 +66,7 @@ impl Checker {
                 args,
                 span,
                 &format!("Function '{}'", name),
+                caller_env,
             )?;
             return self.check_normalized_resolved_function_call(
                 name,
@@ -121,6 +122,7 @@ impl Checker {
             args,
             span,
             &format!("Function '{}'", name),
+            caller_env,
         )?;
         let args = normalized_args.as_slice();
         let effective_arg_count = args

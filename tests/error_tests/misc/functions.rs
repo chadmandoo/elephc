@@ -196,6 +196,20 @@ fn test_error_named_arguments_reject_spread_after_named() {
 }
 
 #[test]
+fn test_error_named_arguments_after_positional_spread_still_rejects_missing_required_param() {
+    expect_error(
+        r#"<?php
+function sum3($a, $b, $c) {
+    return $a + $b + $c;
+}
+$args = [10];
+echo sum3(...$args, a: 1, b: 20);
+"#,
+        "Function 'sum3' missing required parameter $c",
+    );
+}
+
+#[test]
 fn test_error_named_arguments_reject_unknown_extern_parameter() {
     expect_error(
         "<?php extern function abs(int $n): int; abs(value: -1);",

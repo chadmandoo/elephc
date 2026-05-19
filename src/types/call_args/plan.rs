@@ -19,6 +19,7 @@ pub(crate) struct CallArgPlan {
     pub(crate) source_values: Vec<PlannedSourceValue>,
     pub(crate) spread_bounds_checks: Vec<SpreadBoundsCheck>,
     pub(crate) first_named_pos: Option<usize>,
+    pub(crate) prefix_has_dynamic_named_spread: bool,
     pub(super) passthrough_args: Option<Vec<Expr>>,
 }
 
@@ -33,6 +34,8 @@ pub(crate) enum PlannedRegularArg {
         spread_span: Span,
         element_idx: usize,
         prefix_element_idx: usize,
+        param_name: Option<String>,
+        prefer_named_key: bool,
         default: Option<Expr>,
         guaranteed_present: bool,
     },
@@ -116,23 +119,39 @@ impl CallArgPlan {
                     spread_expr,
                     spread_span,
                     element_idx,
+                    param_name,
+                    prefer_named_key,
                     default,
                     guaranteed_present,
                     ..
                 } => {
                     if let Some(default) = default {
                         if *guaranteed_present {
-                            spread_element_expr(spread_expr, *element_idx, *spread_span)
+                            spread_element_expr(
+                                spread_expr,
+                                *element_idx,
+                                param_name.as_deref(),
+                                *prefer_named_key,
+                                *spread_span,
+                            )
                         } else {
                             spread_element_or_default_expr(
                                 spread_expr,
                                 *element_idx,
+                                param_name.as_deref(),
+                                *prefer_named_key,
                                 default.clone(),
                                 *spread_span,
                             )
                         }
                     } else {
-                        spread_element_expr(spread_expr, *element_idx, *spread_span)
+                        spread_element_expr(
+                            spread_expr,
+                            *element_idx,
+                            param_name.as_deref(),
+                            *prefer_named_key,
+                            *spread_span,
+                        )
                     }
                 }
                 PlannedRegularArg::Default(default) => default.clone(),
@@ -201,11 +220,26 @@ impl PlannedSourceValue {
     }
 }
 
-fn spread_element_expr(spread_expr: &Expr, element_idx: usize, span: Span) -> Expr {
+fn spread_element_expr(
+    spread_expr: &Expr,
+    element_idx: usize,
+    param_name: Option<&str>,
+    prefer_named_key: bool,
+    span: Span,
+) -> Expr {
+    let index = if prefer_named_key {
+        if let Some(param_name) = param_name {
+            Expr::new(ExprKind::StringLiteral(param_name.to_string()), span)
+        } else {
+            Expr::new(ExprKind::IntLiteral(element_idx as i64), span)
+        }
+    } else {
+        Expr::new(ExprKind::IntLiteral(element_idx as i64), span)
+    };
     Expr::new(
         ExprKind::ArrayAccess {
             array: Box::new(spread_expr.clone()),
-            index: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
+            index: Box::new(index),
         },
         span,
     )
@@ -214,21 +248,51 @@ fn spread_element_expr(spread_expr: &Expr, element_idx: usize, span: Span) -> Ex
 fn spread_element_or_default_expr(
     spread_expr: &Expr,
     element_idx: usize,
+    param_name: Option<&str>,
+    prefer_named_key: bool,
     default_expr: Expr,
     span: Span,
 ) -> Expr {
-    Expr::new(
-        ExprKind::Ternary {
-            condition: Box::new(Expr::new(
-                ExprKind::BinaryOp {
-                    left: Box::new(spread_len_expr(spread_expr, span)),
-                    op: BinOp::Gt,
-                    right: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
+    let condition = if prefer_named_key {
+        if let Some(param_name) = param_name {
+            Expr::new(
+                ExprKind::FunctionCall {
+                    name: Name::unqualified("array_key_exists"),
+                    args: vec![
+                        Expr::new(ExprKind::StringLiteral(param_name.to_string()), span),
+                        spread_expr.clone(),
+                    ],
                 },
                 span,
+            )
+        } else {
+            spread_len_gt_expr(spread_expr, element_idx, span)
+        }
+    } else {
+        spread_len_gt_expr(spread_expr, element_idx, span)
+    };
+    Expr::new(
+        ExprKind::Ternary {
+            condition: Box::new(condition),
+            then_expr: Box::new(spread_element_expr(
+                spread_expr,
+                element_idx,
+                param_name,
+                prefer_named_key,
+                span,
             )),
-            then_expr: Box::new(spread_element_expr(spread_expr, element_idx, span)),
             else_expr: Box::new(default_expr),
+        },
+        span,
+    )
+}
+
+fn spread_len_gt_expr(spread_expr: &Expr, element_idx: usize, span: Span) -> Expr {
+    Expr::new(
+        ExprKind::BinaryOp {
+            left: Box::new(spread_len_expr(spread_expr, span)),
+            op: BinOp::Gt,
+            right: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
         },
         span,
     )

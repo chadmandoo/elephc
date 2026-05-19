@@ -12,8 +12,7 @@ use crate::codegen::emit::Emitter;
 use crate::codegen::{context::Context, data_section::DataSection};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::span::Span;
-use crate::types::call_args;
-use crate::types::FunctionSig;
+use crate::types::{call_args, FunctionSig, PhpType};
 
 use super::final_args::push_final_call_args_from_sources;
 use super::prefix::emit_prefix_array_length_check;
@@ -31,13 +30,15 @@ pub(in crate::codegen::expr::calls::args) fn emit_source_order_named_call_args(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> EmittedCallArgs {
-    let plan = call_args::plan_call_args_with_regular_param_count(
+    let assoc_spread_sources = assoc_spread_sources(args_exprs, ctx);
+    let plan = call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
         sig,
         args_exprs,
         Span::dummy(),
         regular_param_count,
         false,
         true,
+        &assoc_spread_sources,
     )
         .expect("codegen received invalid named call arguments after type checking");
     debug_assert!(plan.has_named_args());
@@ -243,15 +244,17 @@ fn emit_source_order_named_spread_call_args(
         })
         .max()
         .unwrap_or(0);
-    emit_prefix_array_length_check(
-        prefix_temp_idx,
-        &source_temp_types,
-        min_prefix_len,
-        max_prefix_len,
-        emitter,
-        ctx,
-        data,
-    );
+    if !plan.prefix_has_dynamic_named_spread {
+        emit_prefix_array_length_check(
+            prefix_temp_idx,
+            &source_temp_types,
+            min_prefix_len,
+            max_prefix_len,
+            emitter,
+            ctx,
+            data,
+        );
+    }
 
     let prefix_variadic_tail = if sig.variadic.is_some() && max_prefix_len.is_none() {
         Some(PrefixVariadicTail {
@@ -272,6 +275,7 @@ fn emit_source_order_named_spread_call_args(
             }
             call_args::PlannedRegularArg::SpreadElement {
                 prefix_element_idx,
+                prefer_named_key,
                 default,
                 guaranteed_present,
                 ..
@@ -279,6 +283,7 @@ fn emit_source_order_named_spread_call_args(
                 slot_sources.push(Some(FinalArgSource::PrefixElement {
                     prefix_temp_idx,
                     element_idx: *prefix_element_idx,
+                    prefer_named_key: *prefer_named_key,
                     default: if *guaranteed_present {
                         None
                     } else {
@@ -303,4 +308,17 @@ fn emit_source_order_named_spread_call_args(
         ctx,
         data,
     )
+}
+
+fn assoc_spread_sources(args: &[Expr], ctx: &Context) -> Vec<bool> {
+    call_args::expand_static_assoc_spread_args(args)
+        .iter()
+        .map(|arg| match &arg.kind {
+            ExprKind::Spread(inner) => matches!(
+                crate::codegen::functions::infer_contextual_type(inner, ctx),
+                PhpType::AssocArray { .. }
+            ),
+            _ => false,
+        })
+        .collect()
 }

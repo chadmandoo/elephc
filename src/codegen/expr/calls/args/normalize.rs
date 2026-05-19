@@ -13,8 +13,7 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::span::Span;
-use crate::types::call_args;
-use crate::types::FunctionSig;
+use crate::types::{call_args, FunctionSig, PhpType};
 
 use super::{NormalizedCallArgs, PreparedCallArgs};
 
@@ -43,7 +42,7 @@ pub(crate) fn normalize_named_call_args_with_checks(
     args: &[Expr],
     regular_param_count: usize,
 ) -> NormalizedCallArgs {
-    normalize_call_args(sig, args, regular_param_count, false, true)
+    normalize_call_args(sig, args, regular_param_count, false, true, &[])
 }
 
 pub(crate) fn normalize_builtin_call_args_with_checks(
@@ -56,6 +55,7 @@ pub(crate) fn normalize_builtin_call_args_with_checks(
         regular_param_count(Some(sig), args.len()),
         true,
         false,
+        &[],
     )
 }
 
@@ -79,6 +79,7 @@ pub(crate) fn preevaluate_named_call_args_to_temps(
             regular_param_count,
             trim_trailing_defaults,
             false,
+            &[],
         );
     }
 
@@ -95,12 +96,14 @@ pub(crate) fn preevaluate_named_call_args_to_temps(
             data,
         )
     };
+    let assoc_spread_sources = assoc_spread_sources(&rewritten, ctx);
     normalize_call_args(
         sig,
         &rewritten,
         regular_param_count,
         trim_trailing_defaults,
         false,
+        &assoc_spread_sources,
     )
 }
 
@@ -249,20 +252,35 @@ fn normalize_call_args(
     regular_param_count: usize,
     trim_trailing_defaults: bool,
     allow_unknown_named_variadic: bool,
+    assoc_spread_sources: &[bool],
 ) -> NormalizedCallArgs {
-    let plan = call_args::plan_call_args_with_regular_param_count(
+    let plan = call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
         sig,
         args,
         Span::dummy(),
         regular_param_count,
         trim_trailing_defaults,
         allow_unknown_named_variadic,
+        assoc_spread_sources,
     )
     .expect("codegen received invalid call arguments after type checking");
     NormalizedCallArgs {
         args: plan.normalized_args(),
         spread_length_checks: plan.spread_bounds_checks,
     }
+}
+
+fn assoc_spread_sources(args: &[Expr], ctx: &Context) -> Vec<bool> {
+    call_args::expand_static_assoc_spread_args(args)
+        .iter()
+        .map(|arg| match &arg.kind {
+            ExprKind::Spread(inner) => matches!(
+                crate::codegen::functions::infer_contextual_type(inner, ctx),
+                PhpType::AssocArray { .. }
+            ),
+            _ => false,
+        })
+        .collect()
 }
 
 pub(crate) fn prepare_call_args(

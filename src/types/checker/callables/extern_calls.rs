@@ -38,6 +38,7 @@ impl Checker {
             args,
             span,
             &format!("Extern function '{}'", name),
+            env,
         )?;
         let args = normalized_args.as_slice();
 

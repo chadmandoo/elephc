@@ -152,6 +152,137 @@ echo str_repeat(...["string" => "ha", "times" => 3]);
 }
 
 #[test]
+fn test_assoc_spread_variable_maps_string_keys_to_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+function show($a, $b, $c = 0) {
+    echo $a . ":" . $b . ":" . $c;
+}
+$args = ["b" => 2, "a" => 1];
+show(...$args, c: 3);
+"#,
+    );
+    assert_eq!(out, "1:2:3");
+}
+
+#[test]
+fn test_assoc_spread_variable_without_explicit_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+function show($a, $b) {
+    echo $a . ":" . $b;
+}
+$args = ["b" => 20, "a" => 10];
+show(...$args);
+"#,
+    );
+    assert_eq!(out, "10:20");
+}
+
+#[test]
+fn test_assoc_spread_variable_supplies_param_after_explicit_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+function sum3($a, $b, $c) {
+    return $a + $b + $c;
+}
+$args = ["c" => 30];
+echo sum3(...$args, a: 10, b: 20);
+"#,
+    );
+    assert_eq!(out, "60");
+}
+
+#[test]
+fn test_assoc_spread_variable_uses_defaults_for_skipped_params() {
+    let out = compile_and_run(
+        r#"<?php
+function show($a, $b = 20, $c = 30, $d = 40) {
+    echo $a . ":" . $b . ":" . $c . ":" . $d;
+}
+$args = ["d" => 400];
+show(...$args, a: 10);
+"#,
+    );
+    assert_eq!(out, "10:20:30:400");
+}
+
+#[test]
+fn test_assoc_spread_variable_after_positional_spread_supplies_named_gap() {
+    let out = compile_and_run(
+        r#"<?php
+function sum3($a, $b, $c) {
+    return $a + $b + $c;
+}
+$pos = [10];
+$args = ["c" => 30];
+echo sum3(...$pos, ...$args, b: 20);
+"#,
+    );
+    assert_eq!(out, "60");
+}
+
+#[test]
+fn test_assoc_spread_variable_supplies_builtin_param_after_explicit_named_arg() {
+    let out = compile_and_run(
+        r#"<?php
+$args = ["times" => 3];
+echo str_repeat(...$args, string: "ha");
+"#,
+    );
+    assert_eq!(out, "hahaha");
+}
+
+#[test]
+fn test_assoc_spread_variable_supplies_closure_param_after_explicit_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+$sum3 = function ($a, $b, $c) {
+    return $a + $b + $c;
+};
+$args = ["c" => 30];
+echo $sum3(...$args, a: 10, b: 20);
+"#,
+    );
+    assert_eq!(out, "60");
+}
+
+#[test]
+fn test_assoc_spread_variable_supplies_first_class_callable_param_after_explicit_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+function sum3($a, $b, $c) {
+    return $a + $b + $c;
+}
+$sum = sum3(...);
+$args = ["c" => 30];
+echo $sum(...$args, a: 10, b: 20);
+"#,
+    );
+    assert_eq!(out, "60");
+}
+
+#[test]
+fn test_assoc_spread_variable_supplies_constructor_param_after_explicit_named_args() {
+    let out = compile_and_run(
+        r#"<?php
+class Total {
+    public $value;
+
+    public function __construct($a, $b, $c) {
+        $this->value = $a + $b + $c;
+    }
+}
+
+$args = ["c" => 30];
+$total = new Total(...$args, a: 10, b: 20);
+echo $total->value;
+"#,
+    );
+    assert_eq!(out, "60");
+}
+
+#[test]
 fn test_named_arguments_after_spread_rejects_short_spread() {
     let err = compile_and_run_expect_failure(
         r#"<?php

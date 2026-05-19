@@ -83,6 +83,7 @@ impl Checker {
                     args,
                     expr.span,
                     &format!("Constructor '{}::__construct'", class_name),
+                    env,
                 )?;
                 self.check_known_callable_call(
                     &effective_sig,
@@ -141,6 +142,7 @@ impl Checker {
             args,
             expr.span,
             &format!("Constructor '{}::__construct'", class_name),
+            env,
         )?;
         self.check_known_callable_call(
             &sig,

@@ -121,6 +121,7 @@ impl Checker {
                     args,
                     expr.span,
                     &format!("Method {}::{}", class_name, method),
+                    env,
                 )?;
                 self.check_known_callable_call(
                     &effective_sig,
@@ -141,6 +142,7 @@ impl Checker {
                     &magic_args,
                     expr.span,
                     &format!("Method {}::__call", class_name),
+                    env,
                 )?;
                 self.check_known_callable_call(
                     &effective_sig,
@@ -371,6 +373,7 @@ impl Checker {
                     args,
                     expr.span,
                     &format!("Static method {}::{}", class_name, method),
+                    env,
                 )?;
                 self.check_known_callable_call(
                     &effective_sig,
@@ -426,6 +429,7 @@ impl Checker {
                         class_name,
                         method
                     ),
+                    env,
                 )?;
                 self.check_known_callable_call(
                     &effective_sig,

@@ -12,7 +12,7 @@ use super::super::super::context::Context;
 use super::super::super::data_section::DataSection;
 use super::super::super::emit::Emitter;
 use super::super::super::{abi, platform::Arch};
-use super::super::{emit_expr, retain_borrowed_heap_arg, Expr, PhpType};
+use super::super::{emit_expr, retain_borrowed_heap_arg, Expr, ExprKind, PhpType};
 
 pub(crate) fn emit_empty_assoc_array_literal(
     key_ty: PhpType,
@@ -139,6 +139,73 @@ pub(crate) fn emit_assoc_array_literal(
     PhpType::AssocArray {
         key: Box::new(key_ty),
         value: Box::new(val_ty),
+    }
+}
+
+pub(crate) fn emit_array_literal_with_assoc_spread(
+    elems: &[Expr],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    emitter.comment("assoc array literal with spread");
+    let result_reg = abi::int_result_reg(emitter);
+    let value_ty = assoc_spread_literal_value_type(elems, ctx);
+    emit_empty_assoc_array_literal(PhpType::Mixed, value_ty.clone(), emitter);
+    abi::emit_push_reg(emitter, result_reg);                                    // save the merged hash while source-order spread operands are evaluated
+
+    for elem in elems {
+        let elem_ty = match &elem.kind {
+            ExprKind::Spread(inner) => emit_expr(inner, emitter, ctx, data),
+            _ => continue,
+        };
+        let helper = match elem_ty {
+            PhpType::AssocArray { .. } => "__rt_hash_union",
+            PhpType::Array(_) => "__rt_hash_array_union",
+            _ => continue,
+        };
+        match emitter.target.arch {
+            Arch::AArch64 => {
+                emitter.instruction("mov x1, x0");                              // pass the next spread array as the right merge operand
+                abi::emit_pop_reg(emitter, "x0");                               // restore the accumulated named-prefix hash as the left operand
+            }
+            Arch::X86_64 => {
+                emitter.instruction("mov rsi, rax");                            // pass the next spread array as the right merge operand
+                abi::emit_pop_reg(emitter, "rdi");                              // restore the accumulated named-prefix hash as the left operand
+            }
+        }
+        abi::emit_call_label(emitter, helper);                                  // merge this spread operand into the named-prefix hash
+        abi::emit_push_reg(emitter, result_reg);                                // keep the updated hash available for the next spread operand
+    }
+
+    abi::emit_pop_reg(emitter, result_reg);                                     // restore the completed named-prefix hash as the expression result
+    PhpType::AssocArray {
+        key: Box::new(PhpType::Mixed),
+        value: Box::new(value_ty),
+    }
+}
+
+fn assoc_spread_literal_value_type(elems: &[Expr], ctx: &Context) -> PhpType {
+    let mut value_ty = PhpType::Never;
+    for elem in elems {
+        let ExprKind::Spread(inner) = &elem.kind else {
+            continue;
+        };
+        let next = match super::super::super::functions::infer_contextual_type(inner, ctx) {
+            PhpType::Array(elem) => *elem,
+            PhpType::AssocArray { value, .. } => *value,
+            _ => PhpType::Mixed,
+        };
+        if matches!(value_ty, PhpType::Never) {
+            value_ty = next;
+        } else if value_ty != next {
+            value_ty = PhpType::Mixed;
+        }
+    }
+    if matches!(value_ty, PhpType::Never) {
+        PhpType::Mixed
+    } else {
+        value_ty
     }
 }
 

@@ -25,6 +25,7 @@ enum FinalArgSource {
     PrefixElement {
         prefix_temp_idx: usize,
         element_idx: usize,
+        prefer_named_key: bool,
         default: Option<Expr>,
     },
     Default(Expr),

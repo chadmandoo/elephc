@@ -77,6 +77,27 @@ fn call_arg_plan_error(
     }
 }
 
+fn assoc_spread_sources(args: &[Expr], env: &TypeEnv) -> Vec<bool> {
+    call_args::expand_static_assoc_spread_args(args)
+        .iter()
+        .map(|arg| match &arg.kind {
+            ExprKind::Spread(inner) => is_assoc_spread_source(inner, env),
+            _ => false,
+        })
+        .collect()
+}
+
+fn is_assoc_spread_source(expr: &Expr, env: &TypeEnv) -> bool {
+    match &expr.kind {
+        ExprKind::Variable(name) => matches!(env.get(name), Some(PhpType::AssocArray { .. })),
+        ExprKind::ArrayLiteralAssoc(_) => true,
+        _ => matches!(
+            crate::types::checker::infer_expr_type_syntactic(expr),
+            PhpType::AssocArray { .. }
+        ),
+    }
+}
+
 impl Checker {
     pub(crate) fn has_named_args(args: &[Expr]) -> bool {
         call_args::has_named_args(args)
@@ -88,8 +109,9 @@ impl Checker {
         args: &[Expr],
         span: crate::span::Span,
         callee_desc: &str,
+        env: &TypeEnv,
     ) -> Result<Vec<Expr>, CompileError> {
-        self.normalize_call_args(sig, args, span, callee_desc, false, true)
+        self.normalize_call_args(sig, args, span, callee_desc, false, true, env)
     }
 
     pub(crate) fn normalize_builtin_call_args(
@@ -98,8 +120,9 @@ impl Checker {
         args: &[Expr],
         span: crate::span::Span,
         callee_desc: &str,
+        env: &TypeEnv,
     ) -> Result<Vec<Expr>, CompileError> {
-        self.normalize_call_args(sig, args, span, callee_desc, true, false)
+        self.normalize_call_args(sig, args, span, callee_desc, true, false, env)
     }
 
     fn normalize_call_args(
@@ -110,13 +133,17 @@ impl Checker {
         callee_desc: &str,
         trim_trailing_defaults: bool,
         allow_unknown_named_variadic: bool,
+        env: &TypeEnv,
     ) -> Result<Vec<Expr>, CompileError> {
-        let plan = call_args::plan_call_args(
+        let assoc_spread_sources = assoc_spread_sources(args, env);
+        let plan = call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
             sig,
             args,
             span,
+            call_args::regular_param_count(sig),
             trim_trailing_defaults,
             allow_unknown_named_variadic,
+            &assoc_spread_sources,
         )
         .map_err(|err| call_arg_plan_error(sig, callee_desc, err))?;
         Ok(plan.normalized_args())
@@ -183,7 +210,7 @@ impl Checker {
         caller_env: &TypeEnv,
         callee_desc: &str,
     ) -> Result<PhpType, CompileError> {
-        let normalized_args = self.normalize_named_call_args(sig, args, span, callee_desc)?;
+        let normalized_args = self.normalize_named_call_args(sig, args, span, callee_desc, caller_env)?;
         let args = normalized_args.as_slice();
         let effective_arg_count = args
             .iter()

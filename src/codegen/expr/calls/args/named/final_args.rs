@@ -47,10 +47,14 @@ pub(super) fn push_final_call_args_from_sources(
             Some(FinalArgSource::PrefixElement {
                 prefix_temp_idx,
                 element_idx,
+                prefer_named_key,
                 default,
             }) => push_prefix_array_element_arg(
                 prefix_temp_idx,
                 element_idx,
+                prefer_named_key
+                    .then(|| sig.params.get(idx).map(|(name, _)| name.as_str()))
+                    .flatten(),
                 default.as_ref(),
                 target_ty,
                 source_temp_types,

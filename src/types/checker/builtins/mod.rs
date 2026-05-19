@@ -51,6 +51,7 @@ impl Checker {
                 args,
                 span,
                 &format!("Builtin '{}'", name),
+                env,
             )?;
             normalized_args.as_slice()
         } else {
