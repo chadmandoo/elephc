@@ -50,12 +50,12 @@ pub(crate) fn emit_assoc_foreach(
         return;
     }
 
-    let saved_ref_offset = if value_by_ref && value_was_ref {
-        super::push_saved_foreach_ref(value_var, emitter, ctx);
-        Some(48)
+    let ref_fallback = if value_by_ref && !value_was_ref {
+        super::prepare_foreach_value_ref_slot(value_var, val_ty, emitter, ctx)
     } else {
         None
     };
+    let saved_ref_offset = None;
     let ref_flag_offset = if value_by_ref {
         emitter.instruction("str xzr, [sp, #-16]!");                            // reserve and clear the by-reference foreach bound flag
         Some(32)
@@ -74,10 +74,6 @@ pub(crate) fn emit_assoc_foreach(
     emitter.instruction(&format!("b.eq {}", loop_end));                         // exit if done
     emitter.instruction("str x0, [sp]");                                        // store next iterator cursor
     if value_by_ref {
-        super::mark_foreach_value_ref_bound(
-            ref_flag_offset.expect("missing foreach ref flag"),
-            emitter,
-        );
         emitter.instruction("str x6, [sp, #-16]!");                             // preserve current hash value address while storing the optional key
     }
 
@@ -101,6 +97,17 @@ pub(crate) fn emit_assoc_foreach(
 
     if value_by_ref {
         emitter.instruction("ldr x6, [sp], #16");                               // restore current hash value address after optional key storage
+        super::release_foreach_value_ref_cell_before_rebind(
+            value_var,
+            ref_fallback.as_ref(),
+            "x6",
+            emitter,
+            ctx,
+        );
+        super::mark_foreach_value_ref_bound(
+            ref_flag_offset.expect("missing foreach ref flag"),
+            emitter,
+        );
         super::bind_foreach_value_ref(value_var, "x6", val_ty, emitter, ctx);
     } else {
         let val_var_info = match ctx.variables.get(value_var) {
@@ -113,19 +120,36 @@ pub(crate) fn emit_assoc_foreach(
         let v_offset = val_var_info.stack_offset;
         match val_ty {
             PhpType::Int | PhpType::Bool => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "x3", v_offset, "x10");
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "x3",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Str => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "x3", v_offset, "x10");
-                crate::codegen::abi::store_at_offset_scratch(emitter, "x4", v_offset - 8, "x10");
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "x3",
+                    Some("x4"),
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Mixed => {
-                emitter.instruction("str x3, [sp, #-16]!");                     // save iterated value_lo across the decref of the previous loop value
-                emitter.instruction("stp x4, x5, [sp, #-16]!");                 // save iterated value_hi and value_tag across the helper call
-                crate::codegen::abi::load_at_offset_scratch(emitter, "x0", v_offset, "x10"); // load the previous boxed mixed loop value before overwrite
-                emitter.instruction("bl __rt_decref_mixed");                    // release the previous owned mixed loop value if one exists
-                emitter.instruction("ldp x4, x5, [sp], #16");                   // restore iterated value_hi and value_tag after decref
-                emitter.instruction("ldr x3, [sp], #16");                       // restore iterated value_lo after decref
+                if !ctx.ref_params.contains(value_var) {
+                    emitter.instruction("str x3, [sp, #-16]!");                 // save iterated value_lo across the decref of the previous loop value
+                    emitter.instruction("stp x4, x5, [sp, #-16]!");             // save iterated value_hi and value_tag across the helper call
+                    crate::codegen::abi::load_at_offset_scratch(emitter, "x0", v_offset, "x10"); // load the previous boxed mixed loop value before overwrite
+                    emitter.instruction("bl __rt_decref_mixed");                // release the previous owned mixed loop value if one exists
+                    emitter.instruction("ldp x4, x5, [sp], #16");               // restore iterated value_hi and value_tag after decref
+                    emitter.instruction("ldr x3, [sp], #16");                   // restore iterated value_lo after decref
+                }
                 emitter.instruction("cmp x5, #7");                              // does this hash entry already store a boxed mixed value?
                 let reuse_box = ctx.next_label("foreach_assoc_mixed_reuse");
                 let store_box = ctx.next_label("foreach_assoc_mixed_store");
@@ -136,10 +160,26 @@ pub(crate) fn emit_assoc_foreach(
                 emitter.instruction("mov x0, x3");                              // x0 = existing boxed mixed pointer from the hash entry
                 emitter.instruction("bl __rt_incref");                          // retain the shared mixed box for the foreach variable
                 emitter.label(&store_box);
-                crate::codegen::abi::store_at_offset_scratch(emitter, "x0", v_offset, "x10");
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "x0",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             _ => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "x3", v_offset, "x10");
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "x3",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
         }
         ctx.update_var_type_and_ownership(
@@ -197,12 +237,12 @@ fn emit_assoc_foreach_linux_x86_64(
     ctx: &mut Context,
     data: &mut DataSection,
 ) {
-    let saved_ref_offset = if value_by_ref && value_was_ref {
-        super::push_saved_foreach_ref(value_var, emitter, ctx);
-        Some(48)
+    let ref_fallback = if value_by_ref && !value_was_ref {
+        super::prepare_foreach_value_ref_slot(value_var, val_ty, emitter, ctx)
     } else {
         None
     };
+    let saved_ref_offset = None;
     let ref_flag_offset = if value_by_ref {
         emitter.instruction("sub rsp, 16");                                     // reserve stack space for the by-reference foreach bound flag
         emitter.instruction("mov QWORD PTR [rsp], 0");                          // clear the by-reference foreach bound flag
@@ -223,10 +263,6 @@ fn emit_assoc_foreach_linux_x86_64(
     emitter.instruction(&format!("je {}", loop_end));                           // stop the foreach loop once the associative-array iterator is exhausted
     emitter.instruction("mov QWORD PTR [rsp], rax");                            // save the updated associative-array iterator cursor for the next loop step
     if value_by_ref {
-        super::mark_foreach_value_ref_bound(
-            ref_flag_offset.expect("missing foreach ref flag"),
-            emitter,
-        );
         crate::codegen::abi::emit_push_reg(emitter, "r10");                     // preserve current hash value address while storing the optional key
     }
 
@@ -250,6 +286,17 @@ fn emit_assoc_foreach_linux_x86_64(
 
     if value_by_ref {
         crate::codegen::abi::emit_pop_reg(emitter, "r10");                      // restore current hash value address after optional key storage
+        super::release_foreach_value_ref_cell_before_rebind(
+            value_var,
+            ref_fallback.as_ref(),
+            "r10",
+            emitter,
+            ctx,
+        );
+        super::mark_foreach_value_ref_bound(
+            ref_flag_offset.expect("missing foreach ref flag"),
+            emitter,
+        );
         super::bind_foreach_value_ref(value_var, "r10", val_ty, emitter, ctx);
     } else {
         let val_var_info = match ctx.variables.get(value_var) {
@@ -262,19 +309,36 @@ fn emit_assoc_foreach_linux_x86_64(
         let v_offset = val_var_info.stack_offset;
         match val_ty {
             PhpType::Int | PhpType::Bool => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "rcx", v_offset, "r10"); // store the associative-array foreach scalar payload into the loop value slot
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "rcx",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Str => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "rcx", v_offset, "r10"); // store the associative-array foreach string pointer into the loop value slot
-                crate::codegen::abi::store_at_offset_scratch(emitter, "r8", v_offset - 8, "r10"); // store the associative-array foreach string length into the paired loop value slot
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "rcx",
+                    Some("r8"),
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Mixed => {
-                crate::codegen::abi::emit_push_reg(emitter, "rcx");                       // preserve the associative-array foreach mixed low payload word across decref of the previous loop value
-                crate::codegen::abi::emit_push_reg_pair(emitter, "r8", "r9");             // preserve the associative-array foreach mixed high payload word and runtime tag across the decref helper
-                crate::codegen::abi::load_at_offset_scratch(emitter, "rax", v_offset, "r10"); // load the previous boxed mixed foreach value before overwriting the loop variable
-                emitter.instruction("call __rt_decref_mixed");                  // release the previous owned mixed foreach value if one exists
-                crate::codegen::abi::emit_pop_reg_pair(emitter, "r8", "r9");              // restore the associative-array foreach mixed high payload word and runtime tag after decref
-                crate::codegen::abi::emit_pop_reg(emitter, "rcx");                        // restore the associative-array foreach mixed low payload word after decref
+                if !ctx.ref_params.contains(value_var) {
+                    crate::codegen::abi::emit_push_reg(emitter, "rcx");         // preserve the associative-array foreach mixed low payload word across decref of the previous loop value
+                    crate::codegen::abi::emit_push_reg_pair(emitter, "r8", "r9"); // preserve the associative-array foreach mixed high payload word and runtime tag across the decref helper
+                    crate::codegen::abi::load_at_offset_scratch(emitter, "rax", v_offset, "r10"); // load the previous boxed mixed foreach value before overwriting the loop variable
+                    emitter.instruction("call __rt_decref_mixed");              // release the previous owned mixed foreach value if one exists
+                    crate::codegen::abi::emit_pop_reg_pair(emitter, "r8", "r9"); // restore the associative-array foreach mixed high payload word and runtime tag after decref
+                    crate::codegen::abi::emit_pop_reg(emitter, "rcx");          // restore the associative-array foreach mixed low payload word after decref
+                }
                 emitter.instruction("cmp r9, 7");                               // does this associative-array entry already store a boxed mixed value?
                 let reuse_box = ctx.next_label("foreach_assoc_mixed_reuse");
                 let store_box = ctx.next_label("foreach_assoc_mixed_store");
@@ -285,10 +349,26 @@ fn emit_assoc_foreach_linux_x86_64(
                 emitter.instruction("mov rax, rcx");                            // move the existing mixed box pointer into the incref helper input register
                 emitter.instruction("call __rt_incref");                        // retain the shared mixed box for the foreach loop variable
                 emitter.label(&store_box);
-                crate::codegen::abi::store_at_offset_scratch(emitter, "rax", v_offset, "r10"); // store the owned mixed box pointer into the foreach loop variable slot
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "rax",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
             _ => {
-                crate::codegen::abi::store_at_offset_scratch(emitter, "rcx", v_offset, "r10"); // store the associative-array foreach pointer-like payload into the loop value slot
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    val_ty,
+                    "rcx",
+                    None,
+                    v_offset,
+                    emitter,
+                    ctx,
+                );
             }
         }
         ctx.update_var_type_and_ownership(

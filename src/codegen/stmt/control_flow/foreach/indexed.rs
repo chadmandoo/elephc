@@ -48,12 +48,12 @@ pub(crate) fn emit_indexed_foreach(
         return;
     }
 
-    let saved_ref_offset = if value_by_ref && value_was_ref {
-        super::push_saved_foreach_ref(value_var, emitter, ctx);
-        Some(64)
+    let ref_fallback = if value_by_ref && !value_was_ref {
+        super::prepare_foreach_value_ref_slot(value_var, elem_ty, emitter, ctx)
     } else {
         None
     };
+    let saved_ref_offset = None;
     let ref_flag_offset = if value_by_ref {
         emitter.instruction("str xzr, [sp, #-16]!");                            // reserve and clear the by-reference foreach bound flag
         Some(48)
@@ -92,17 +92,41 @@ pub(crate) fn emit_indexed_foreach(
     };
     let val_offset = val_var.stack_offset;
     if value_by_ref {
-        super::mark_foreach_value_ref_bound(
+        bind_indexed_value_ref_aarch64(
+            value_var,
+            elem_ty,
+            ref_fallback.as_ref(),
             ref_flag_offset.expect("missing foreach ref flag"),
             emitter,
+            ctx,
         );
-        bind_indexed_value_ref_aarch64(value_var, val_offset, elem_ty, emitter, ctx);
     } else {
         match elem_ty {
-            PhpType::Int => {
+            PhpType::Int | PhpType::Bool => {
                 emitter.instruction("add x9, x9, #24");                         // skip 24-byte array header to reach data
                 emitter.instruction("ldr x0, [x9, x0, lsl #3]");                // load int at data[index] (8 bytes per element)
-                crate::codegen::abi::store_at_offset(emitter, "x0", val_offset);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "x0",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
+            }
+            PhpType::Float => {
+                emitter.instruction("add x9, x9, #24");                         // skip 24-byte array header to reach data
+                emitter.instruction("ldr d0, [x9, x0, lsl #3]");                // load float at data[index] (8 bytes per element)
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "d0",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Str => {
                 emitter.instruction("lsl x10, x0, #4");                         // multiply index by 16 (string slot size)
@@ -110,13 +134,28 @@ pub(crate) fn emit_indexed_foreach(
                 emitter.instruction("add x9, x9, #24");                         // skip 24-byte array header
                 emitter.instruction("ldr x1, [x9]");                            // load string pointer from slot
                 emitter.instruction("ldr x2, [x9, #8]");                        // load string length from slot+8
-                crate::codegen::abi::store_at_offset(emitter, "x1", val_offset);
-                crate::codegen::abi::store_at_offset(emitter, "x2", val_offset - 8);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "x1",
+                    Some("x2"),
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Mixed | PhpType::Iterable | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
                 emitter.instruction("add x9, x9, #24");                         // skip 24-byte array header to reach data
                 emitter.instruction("ldr x0, [x9, x0, lsl #3]");                // load nested array/object pointer at index
-                crate::codegen::abi::store_at_offset(emitter, "x0", val_offset);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "x0",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             _ => {}
         }
@@ -296,12 +335,12 @@ fn emit_indexed_foreach_linux_x86_64(
     ctx: &mut Context,
     data: &mut DataSection,
 ) {
-    let saved_ref_offset = if value_by_ref && value_was_ref {
-        super::push_saved_foreach_ref(value_var, emitter, ctx);
-        Some(80)
+    let ref_fallback = if value_by_ref && !value_was_ref {
+        super::prepare_foreach_value_ref_slot(value_var, elem_ty, emitter, ctx)
     } else {
         None
     };
+    let saved_ref_offset = None;
     let ref_flag_offset = if value_by_ref {
         emitter.instruction("sub rsp, 16");                                     // reserve stack space for the by-reference foreach bound flag
         emitter.instruction("mov QWORD PTR [rsp], 0");                          // clear the by-reference foreach bound flag
@@ -342,22 +381,41 @@ fn emit_indexed_foreach_linux_x86_64(
     };
     let val_offset = val_var.stack_offset;
     if value_by_ref {
-        super::mark_foreach_value_ref_bound(
+        bind_indexed_value_ref_x86_64(
+            value_var,
+            elem_ty,
+            ref_fallback.as_ref(),
             ref_flag_offset.expect("missing foreach ref flag"),
             emitter,
+            ctx,
         );
-        bind_indexed_value_ref_x86_64(value_var, val_offset, elem_ty, emitter, ctx);
     } else {
         match elem_ty {
             PhpType::Int | PhpType::Bool => {
                 emitter.instruction("add r11, 24");                             // skip the indexed-array header to reach the scalar payload base address
                 emitter.instruction("mov rax, QWORD PTR [r11 + rax * 8]");      // load the current scalar foreach payload from the indexed-array data region
-                crate::codegen::abi::store_at_offset(emitter, "rax", val_offset);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "rax",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Float => {
                 emitter.instruction("add r11, 24");                             // skip the indexed-array header to reach the floating-point payload base address
                 emitter.instruction("movsd xmm0, QWORD PTR [r11 + rax * 8]");   // load the current floating-point foreach payload from the indexed-array data region
-                crate::codegen::abi::store_at_offset(emitter, "xmm0", val_offset);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "xmm0",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Str => {
                 emitter.instruction("mov r10, rax");                            // copy the current foreach loop index before scaling it to the 16-byte string slot size
@@ -366,13 +424,28 @@ fn emit_indexed_foreach_linux_x86_64(
                 emitter.instruction("add r11, 24");                             // skip the indexed-array header to reach the selected string slot payload
                 emitter.instruction("mov rax, QWORD PTR [r11]");                // load the current foreach string pointer from the selected string slot
                 emitter.instruction("mov rdx, QWORD PTR [r11 + 8]");            // load the current foreach string length from the selected string slot
-                crate::codegen::abi::store_at_offset(emitter, "rax", val_offset);
-                crate::codegen::abi::store_at_offset(emitter, "rdx", val_offset - 8);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "rax",
+                    Some("rdx"),
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             PhpType::Mixed | PhpType::Iterable | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
                 emitter.instruction("add r11, 24");                             // skip the indexed-array header to reach the pointer payload base address
                 emitter.instruction("mov rax, QWORD PTR [r11 + rax * 8]");      // load the current pointer-like foreach payload from the indexed-array data region
-                crate::codegen::abi::store_at_offset(emitter, "rax", val_offset);
+                super::store_foreach_value_from_regs(
+                    value_var,
+                    elem_ty,
+                    "rax",
+                    None,
+                    val_offset,
+                    emitter,
+                    ctx,
+                );
             }
             _ => {}
         }
@@ -561,8 +634,9 @@ fn store_runtime_mixed_index_key_x86_64(
 
 fn bind_indexed_value_ref_aarch64(
     value_var: &str,
-    _val_offset: usize,
     elem_ty: &PhpType,
+    fallback: Option<&super::ForeachRefFallback>,
+    ref_flag_offset: usize,
     emitter: &mut Emitter,
     ctx: &mut Context,
 ) {
@@ -573,13 +647,22 @@ fn bind_indexed_value_ref_aarch64(
     }
     emitter.instruction("add x9, x9, #24");                                     // skip the indexed-array header to reach payload storage
     emitter.instruction("add x9, x9, x10");                                     // compute the address of the current indexed-array element
+    super::release_foreach_value_ref_cell_before_rebind(
+        value_var,
+        fallback,
+        "x9",
+        emitter,
+        ctx,
+    );
+    super::mark_foreach_value_ref_bound(ref_flag_offset, emitter);
     super::bind_foreach_value_ref(value_var, "x9", elem_ty, emitter, ctx);
 }
 
 fn bind_indexed_value_ref_x86_64(
     value_var: &str,
-    _val_offset: usize,
     elem_ty: &PhpType,
+    fallback: Option<&super::ForeachRefFallback>,
+    ref_flag_offset: usize,
     emitter: &mut Emitter,
     ctx: &mut Context,
 ) {
@@ -591,5 +674,13 @@ fn bind_indexed_value_ref_x86_64(
     }
     emitter.instruction("add r11, 24");                                         // skip the indexed-array header to reach payload storage
     emitter.instruction("add r11, r10");                                        // compute the address of the current indexed-array element
+    super::release_foreach_value_ref_cell_before_rebind(
+        value_var,
+        fallback,
+        "r11",
+        emitter,
+        ctx,
+    );
+    super::mark_foreach_value_ref_bound(ref_flag_offset, emitter);
     super::bind_foreach_value_ref(value_var, "r11", elem_ty, emitter, ctx);
 }

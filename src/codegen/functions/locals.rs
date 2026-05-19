@@ -140,7 +140,7 @@ pub fn collect_local_vars(
                     if *value_by_ref {
                         ctx.alloc_var_with_static_type(
                             value_var,
-                            PhpType::Int,
+                            elem_ty.codegen_repr(),
                             elem_ty.clone(),
                         );
                         ctx.update_var_type_static_and_ownership(
@@ -152,6 +152,9 @@ pub fn collect_local_vars(
                     } else {
                         ctx.alloc_var_with_static_type(value_var, elem_ty.codegen_repr(), elem_ty);
                     }
+                }
+                if *value_by_ref && !ctx.ref_params.contains(value_var) {
+                    ctx.ensure_local_ref_cell_flag(value_var);
                 }
                 collect_local_vars(body, ctx, sig);
             }
