@@ -489,12 +489,15 @@ fn collect_named_builtin_or_extern_call_temps(
     let Some(call_sig) = call_sig else {
         return;
     };
-    let Ok(plan) = crate::types::call_args::plan_call_args(
+    let assoc_spread_sources = assoc_spread_sources_for_locals(args, current_sig, ctx);
+    let Ok(plan) = crate::types::call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
         &call_sig,
         args,
         call_span,
+        crate::types::call_args::regular_param_count(&call_sig),
         false,
         false,
+        &assoc_spread_sources,
     ) else {
         return;
     };
@@ -557,6 +560,23 @@ fn collect_planned_call_value_temp(
     if !is_ref && !is_side_effect_free_literal(value) {
         collect_call_arg_temp(call_span, arg_idx, value, ctx, current_sig);
     }
+}
+
+fn assoc_spread_sources_for_locals(
+    args: &[Expr],
+    current_sig: &FunctionSig,
+    ctx: &Context,
+) -> Vec<bool> {
+    crate::types::call_args::expand_static_assoc_spread_args(args)
+        .iter()
+        .map(|arg| match &arg.kind {
+            ExprKind::Spread(inner) => matches!(
+                infer_local_type(inner, current_sig, Some(ctx)),
+                PhpType::AssocArray { .. }
+            ),
+            _ => false,
+        })
+        .collect()
 }
 
 fn is_side_effect_free_literal(expr: &Expr) -> bool {

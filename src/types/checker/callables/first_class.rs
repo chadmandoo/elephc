@@ -222,7 +222,7 @@ impl Checker {
                     return Ok(base_sig);
                 }
                 let normalized_args =
-                    self.normalize_named_call_args(&base_sig, args, span, "first-class callable")?;
+                    self.normalize_named_call_args(&base_sig, args, span, "first-class callable", env)?;
                 self.check_function_call_pre_normalized(
                     name.as_str(),
                     &normalized_args,

@@ -27,6 +27,19 @@ pub(crate) fn emit_array_literal(
         return emit_mixed_array_literal(elems, emitter, ctx, data);
     }
 
+    if elems.iter().any(|elem| {
+        matches!(
+            &elem.kind,
+            ExprKind::Spread(inner)
+                if matches!(
+                    super::super::super::functions::infer_contextual_type(inner, ctx),
+                    PhpType::AssocArray { .. }
+                )
+        )
+    }) {
+        return super::assoc::emit_array_literal_with_assoc_spread(elems, emitter, ctx, data);
+    }
+
     if emitter.target.arch == Arch::X86_64
         && !elems.iter().any(|e| matches!(e.kind, ExprKind::Spread(_)))
     {

@@ -74,6 +74,21 @@ pub(super) fn infer_local_type(
             PhpType::Int
         }
         ExprKind::ArrayLiteral(elems) => {
+            if elems.iter().any(|elem| {
+                matches!(
+                    &elem.kind,
+                    ExprKind::Spread(inner)
+                        if matches!(
+                            infer_local_type(inner, sig, ctx),
+                            PhpType::AssocArray { .. }
+                        )
+                )
+            }) {
+                return PhpType::AssocArray {
+                    key: Box::new(PhpType::Mixed),
+                    value: Box::new(assoc_spread_literal_value_type(elems, sig, ctx)),
+                };
+            }
             let mut elem_ty = PhpType::Never;
             for (i, elem) in elems.iter().enumerate() {
                 let next_ty = indexed_literal_element_type(elem, sig, ctx);
@@ -392,6 +407,34 @@ fn array_access_offset_get_type(ctx: &Context, class_name: &str) -> PhpType {
                 .map(|method_sig| method_sig.return_type.clone())
         })
         .unwrap_or(PhpType::Mixed)
+}
+
+fn assoc_spread_literal_value_type(
+    elems: &[Expr],
+    sig: &FunctionSig,
+    ctx: Option<&Context>,
+) -> PhpType {
+    let mut value_ty = PhpType::Never;
+    for elem in elems {
+        let ExprKind::Spread(inner) = &elem.kind else {
+            continue;
+        };
+        let next = match infer_local_type(inner, sig, ctx) {
+            PhpType::Array(elem) => *elem,
+            PhpType::AssocArray { value, .. } => *value,
+            _ => PhpType::Mixed,
+        };
+        if matches!(value_ty, PhpType::Never) {
+            value_ty = next;
+        } else if value_ty != next {
+            value_ty = PhpType::Mixed;
+        }
+    }
+    if matches!(value_ty, PhpType::Never) {
+        PhpType::Mixed
+    } else {
+        value_ty
+    }
 }
 
 fn indexed_literal_element_type(

@@ -120,6 +120,22 @@ impl Checker {
                 if elems.is_empty() {
                     return Ok(PhpType::Array(Box::new(PhpType::Never)));
                 }
+                if elems.iter().any(|elem| {
+                    matches!(
+                        &elem.kind,
+                        ExprKind::Spread(inner)
+                            if matches!(
+                                self.infer_type(inner, env),
+                                Ok(PhpType::AssocArray { .. })
+                            )
+                    )
+                }) {
+                    let value_ty = self.assoc_spread_literal_value_type(elems, env);
+                    return Ok(PhpType::AssocArray {
+                        key: Box::new(PhpType::Mixed),
+                        value: Box::new(value_ty),
+                    });
+                }
                 let mut elem_ty = self.infer_type(&elems[0], env)?;
                 for elem in &elems[1..] {
                     let ty = self.infer_type(elem, env)?;
@@ -556,6 +572,30 @@ impl Checker {
             ExprKind::MagicConstant(_) => {
                 unreachable!("MagicConstant must be lowered before type inference")
             }
+        }
+    }
+
+    fn assoc_spread_literal_value_type(&mut self, elems: &[Expr], env: &TypeEnv) -> PhpType {
+        let mut value_ty = PhpType::Never;
+        for elem in elems {
+            let ExprKind::Spread(inner) = &elem.kind else {
+                continue;
+            };
+            let next = match self.infer_type(inner, env) {
+                Ok(PhpType::Array(elem)) => *elem,
+                Ok(PhpType::AssocArray { value, .. }) => *value,
+                _ => PhpType::Mixed,
+            };
+            if matches!(value_ty, PhpType::Never) {
+                value_ty = next;
+            } else if value_ty != next {
+                value_ty = PhpType::Mixed;
+            }
+        }
+        if matches!(value_ty, PhpType::Never) {
+            PhpType::Mixed
+        } else {
+            value_ty
         }
     }
 

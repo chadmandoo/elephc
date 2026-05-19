@@ -60,6 +60,7 @@ pub(crate) fn plan_call_args_with_regular_param_count(
             source_values: Vec::new(),
             spread_bounds_checks: Vec::new(),
             first_named_pos,
+            prefix_has_dynamic_named_spread: false,
         });
     }
 
@@ -71,6 +72,47 @@ pub(crate) fn plan_call_args_with_regular_param_count(
         trim_trailing_defaults,
         allow_unknown_named_variadic,
         first_named_pos,
+        &[],
+    )
+}
+
+pub(crate) fn plan_call_args_with_regular_param_count_and_assoc_spreads(
+    sig: &FunctionSig,
+    args: &[Expr],
+    call_span: Span,
+    regular_param_count: usize,
+    trim_trailing_defaults: bool,
+    allow_unknown_named_variadic: bool,
+    assoc_spread_sources: &[bool],
+) -> Result<CallArgPlan, CallArgPlanError> {
+    let source_args = expand_static_assoc_spread_args(args);
+    let first_named_pos = source_args
+        .iter()
+        .position(|arg| matches!(arg.kind, ExprKind::NamedArg { .. }));
+
+    if first_named_pos.is_none() {
+        validate_positional_spread_order(&source_args)?;
+        return Ok(CallArgPlan {
+            passthrough_args: Some(source_args.clone()),
+            source_args,
+            regular_args: Vec::new(),
+            variadic_args: Vec::new(),
+            source_values: Vec::new(),
+            spread_bounds_checks: Vec::new(),
+            first_named_pos,
+            prefix_has_dynamic_named_spread: false,
+        });
+    }
+
+    plan_named_call_args(
+        sig,
+        source_args,
+        call_span,
+        regular_param_count,
+        trim_trailing_defaults,
+        allow_unknown_named_variadic,
+        first_named_pos,
+        assoc_spread_sources,
     )
 }
 
@@ -95,6 +137,7 @@ fn plan_named_call_args(
     trim_trailing_defaults: bool,
     allow_unknown_named_variadic: bool,
     first_named_pos: Option<usize>,
+    assoc_spread_sources: &[bool],
 ) -> Result<CallArgPlan, CallArgPlanError> {
     let mut named_values: Vec<Option<NamedValue>> = vec![None; regular_param_count];
     let mut named_tracker = NamedParamTracker::new(regular_param_count);
@@ -163,6 +206,10 @@ fn plan_named_call_args(
                 prefix_args.push(PrefixSourceArg::Spread {
                     expr: (**inner).clone(),
                     span: arg.span,
+                    is_assoc_named_provider: assoc_spread_sources
+                        .get(source_index)
+                        .copied()
+                        .unwrap_or(false),
                 });
             }
             _ => {
@@ -183,6 +230,8 @@ fn plan_named_call_args(
     let mut resolved: Vec<Option<PlannedRegularArg>> = vec![None; regular_param_count];
     let mut positional_idx = 0usize;
     let mut spread_bounds_checks = Vec::new();
+    let dynamic_prefix_expr = dynamic_named_prefix_expr(&prefix_args, call_span);
+    let prefix_has_dynamic_named_spread = dynamic_prefix_expr.is_some();
 
     for prefix_arg in prefix_args {
         match prefix_arg {
@@ -227,7 +276,12 @@ fn plan_named_call_args(
             PrefixSourceArg::Spread {
                 expr,
                 span,
+                is_assoc_named_provider,
+                ..
             } => {
+                if is_assoc_named_provider {
+                    continue;
+                }
                 let next_named_idx = (positional_idx..regular_param_count)
                     .find(|idx| named_values[*idx].is_some())
                     .unwrap_or(regular_param_count);
@@ -259,6 +313,8 @@ fn plan_named_call_args(
                         spread_span: span,
                         element_idx,
                         prefix_element_idx,
+                        param_name: sig.params.get(positional_idx).map(|(name, _)| name.clone()),
+                        prefer_named_key: false,
                         default,
                         guaranteed_present,
                     });
@@ -280,6 +336,25 @@ fn plan_named_call_args(
             resolved[idx] = Some(PlannedRegularArg::Source {
                 source_index: named_value.source_index,
                 expr: named_value.expr,
+            });
+        }
+    }
+
+    if let Some(dynamic_prefix_expr) = dynamic_prefix_expr {
+        for (idx, slot) in resolved.iter_mut().enumerate() {
+            if slot.is_some() {
+                continue;
+            }
+            let default = sig.defaults.get(idx).and_then(|default| default.clone());
+            *slot = Some(PlannedRegularArg::SpreadElement {
+                spread_expr: dynamic_prefix_expr.clone(),
+                spread_span: dynamic_prefix_expr.span,
+                element_idx: idx,
+                prefix_element_idx: idx,
+                param_name: sig.params.get(idx).map(|(name, _)| name.clone()),
+                prefer_named_key: true,
+                default,
+                guaranteed_present: false,
             });
         }
     }
@@ -314,6 +389,7 @@ fn plan_named_call_args(
         source_values: source_values.into_iter().flatten().collect(),
         spread_bounds_checks,
         first_named_pos,
+        prefix_has_dynamic_named_spread,
         passthrough_args: None,
     })
 }
@@ -334,7 +410,18 @@ enum PrefixSourceArg {
     Spread {
         expr: Expr,
         span: Span,
+        is_assoc_named_provider: bool,
     },
+}
+
+fn dynamic_named_prefix_expr(prefix_args: &[PrefixSourceArg], _call_span: Span) -> Option<Expr> {
+    if let Some(PrefixSourceArg::Spread { expr, .. }) = prefix_args
+        .iter()
+        .find(|arg| matches!(arg, PrefixSourceArg::Spread { is_assoc_named_provider: true, .. }))
+    {
+        return Some(expr.clone());
+    }
+    None
 }
 
 fn same_span(left: Span, right: Span) -> bool {
