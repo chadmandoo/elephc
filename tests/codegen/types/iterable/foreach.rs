@@ -236,6 +236,21 @@ fn test_mixed_by_ref_foreach_cow_split_preserves_aliases() {
 }
 
 #[test]
+fn test_by_ref_foreach_nested_json_decode_assoc_payloads() {
+    let out = compile_and_run(
+        r#"<?php
+        $data = json_decode('{"rows":[{"n":1},{"n":2}]}', true);
+        foreach ($data["rows"] as &$row) {
+            $row["n"] = $row["n"] + 100;
+        }
+        unset($row);
+        echo $data["rows"][0]["n"] . "|" . $data["rows"][1]["n"];
+        "#,
+    );
+    assert_eq!(out, "101|102");
+}
+
+#[test]
 fn test_foreach_over_iterable_iterator_object() {
     let out = compile_and_run(
         r#"<?php
