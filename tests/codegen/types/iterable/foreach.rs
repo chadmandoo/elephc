@@ -313,6 +313,32 @@ dump(new Values());
 }
 
 #[test]
+fn test_iterator_aggregate_get_iterator_side_effect_runs_once() {
+    let out = compile_and_run(
+        r#"<?php
+class It implements Iterator {
+    private int $i = 0;
+    public function rewind(): void { $this->i = 0; }
+    public function valid(): bool { return $this->i < 2; }
+    public function current(): mixed { return $this->i; }
+    public function key(): mixed { return $this->i; }
+    public function next(): void { $this->i = $this->i + 1; }
+}
+class Bag implements IteratorAggregate {
+    public function getIterator(): Iterator {
+        echo "G";
+        return new It();
+    }
+}
+foreach (new Bag() as $k => $v) {
+    echo $k . $v;
+}
+"#,
+    );
+    assert_eq!(out, "G0011");
+}
+
+#[test]
 fn test_foreach_over_iterable_iterator_can_reuse_receiver_variable() {
     let out = compile_and_run(
         r#"<?php
