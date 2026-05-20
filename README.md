@@ -20,7 +20,7 @@ A PHP-to-native compiler. Takes a subset of PHP and compiles it directly to nati
 
 An asynchronous HTTP/1.1 server — a non-blocking `poll()` event loop, one Fiber per connection, raw TCP sockets through `extern` FFI, plus an HTTP parser and a router — written entirely in PHP and compiled to a single native binary. No interpreter, no PHP-FPM, no Nginx.
 
-![elephc HTTP server — ApacheBench latency](showcases/http-server/ab.png)
+![elephc HTTP server — ApacheBench latency](showcases/http-server/ab100.png)
 
 See [showcases/http-server/](showcases/http-server/) for full source and build instructions.
 

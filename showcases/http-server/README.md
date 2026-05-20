@@ -108,7 +108,7 @@ other connections, resuming it when more data is available.
 
 Latency distribution from an ApacheBench (`ab`) run against the server:
 
-![ApacheBench latency percentiles](ab.png)
+![ApacheBench latency percentiles](ab100.png)
 
 Half of the requests complete in about 3 ms and 99% within 7 ms, the slowest
 in 10 ms — from a single ahead-of-time compiled binary, with no interpreter
