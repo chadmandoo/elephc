@@ -1,6 +1,6 @@
 <?php
 // Raw C memory via FFI.
-// This example uses libc allocation and byte/word pointer helpers.
+// This example uses libc allocation plus byte, 16-bit word, and raw string helpers.
 
 extern "System" {
     function malloc(int $size): ptr;
@@ -9,22 +9,26 @@ extern "System" {
     function memcpy(ptr $dest, ptr $src, int $count): ptr;
 }
 
-$src = malloc(8);
-$dst = malloc(8);
+$src = malloc(64);
+$dst = malloc(64);
 
 if (ptr_is_null($src) || ptr_is_null($dst)) {
     echo "allocation failed\n";
     exit(1);
 }
 
-memset($src, 0, 8);
+memset($src, 0, 64);
 ptr_write32($src, 305419896); // 0x12345678
 ptr_write8(ptr_offset($src, 4), 90); // ASCII Z
+ptr_write16(ptr_offset($src, 6), 8080);
+$request_len = ptr_write_string(ptr_offset($src, 8), "GET / HTTP/1.1\r\n");
 
-memcpy($dst, $src, 8);
+memcpy($dst, $src, 64);
 
 echo "word = " . ptr_read32($dst) . "\n";
 echo "byte = " . ptr_read8(ptr_offset($dst, 4)) . "\n";
+echo "port = " . ptr_read16(ptr_offset($dst, 6)) . "\n";
+echo "request = " . ptr_read_string(ptr_offset($dst, 8), $request_len);
 
 free($dst);
 free($src);

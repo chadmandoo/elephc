@@ -1,6 +1,6 @@
 ---
 title: "Pointers"
-description: "Low-level memory access with ptr(), ptr_get(), ptr_set(), pointer arithmetic, and typed casting."
+description: "Low-level memory access with ptr(), ptr_get(), ptr_set(), raw byte/string helpers, pointer arithmetic, and typed casting."
 sidebar:
   order: 1
 ---
@@ -61,13 +61,35 @@ echo ptr_sizeof("Point");    // computed from class
 <?php
 ptr_write8($p, 0x41);        // write 1 byte
 echo ptr_read8($p);           // read 1 byte
+ptr_write16($p, 0x1234);     // write 2 bytes, little-endian
+echo ptr_read16($p);          // read 2 bytes, zero-extended
 ptr_write32($p, 12345);      // write 4 bytes
 echo ptr_read32($p);          // read 4 bytes
 ```
 
 ## Null safety
 
-`ptr_get` and `ptr_set` abort on null pointer dereference. Use `ptr_is_null($p)` to check.
+Pointer dereference helpers abort on null pointer dereference. Use `ptr_is_null($p)` to check.
+
+## Raw string copies
+
+```php
+<?php
+extern function malloc(int $size): ptr;
+extern function free(ptr $p): void;
+
+$buf = malloc(64);
+
+$written = ptr_write_string($buf, "HTTP/1.1 200 OK\r\n");
+$line = ptr_read_string($buf, $written);
+
+echo $line;
+free($buf);
+```
+
+`ptr_read_string($p, $len)` copies exactly `$len` bytes into a new PHP string. It does not stop at `\0`, so binary payloads are preserved. `$len < 0` is a fatal error.
+
+`ptr_write_string($p, $str)` copies the raw bytes of `$str` to `$p` without a trailing null terminator and returns the number of bytes written.
 
 ## Echo and comparison
 
@@ -93,8 +115,12 @@ echo gettype($p);             // "pointer"
 | `ptr_sizeof("type")` | `ptr_sizeof($t): int` | Get byte size of a type |
 | `ptr_read8($p)` | `ptr_read8($p): int` | Read 1 byte |
 | `ptr_write8($p, $v)` | `ptr_write8($p, $v): void` | Write 1 byte |
+| `ptr_read16($p)` | `ptr_read16($p): int` | Read 2 little-endian bytes, zero-extended |
+| `ptr_write16($p, $v)` | `ptr_write16($p, $v): void` | Write the low 16 bits as 2 little-endian bytes |
 | `ptr_read32($p)` | `ptr_read32($p): int` | Read 4 bytes |
 | `ptr_write32($p, $v)` | `ptr_write32($p, $v): void` | Write 4 bytes |
+| `ptr_read_string($p, $len)` | `ptr_read_string($p, $len): string` | Copy exactly `$len` bytes into a new PHP string |
+| `ptr_write_string($p, $str)` | `ptr_write_string($p, $str): int` | Copy string bytes into raw memory and return bytes written |
 
 Notes:
 
