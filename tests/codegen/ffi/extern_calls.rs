@@ -187,6 +187,38 @@ $server->loop();
 }
 
 #[test]
+fn test_ffi_extern_poll_after_loop_with_calls_preserves_local_int_arg() {
+    let out = compile_and_run(
+        r#"<?php
+extern "System" {
+    function malloc(int $size): ptr;
+    function free(ptr $p): void;
+    function memset(ptr $dest, int $byte, int $count): ptr;
+    function poll(ptr $fds, int $nfds, int $timeout): int;
+}
+function spin_call(int $x): void {
+    if ($x < 0) {
+        echo "never";
+    }
+}
+$pollfds = malloc(8);
+memset($pollfds, 0, 8);
+$active = 0;
+$i = 0;
+while ($i < 64) {
+    spin_call($i);
+    $i = $i + 1;
+}
+$nfds = $active + 1;
+echo "n=" . $nfds . ";";
+echo "rc=" . poll($pollfds, $nfds, 0);
+free($pollfds);
+"#,
+    );
+    assert_eq!(out, "n=1;rc=0");
+}
+
+#[test]
 fn test_ffi_extern_strlen_frees_borrowed_cstr_temp() {
     let baseline = compile_and_run_with_gc_stats(
         r#"<?php
