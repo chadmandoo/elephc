@@ -182,7 +182,7 @@ impl Checker {
                     .copied()
                     .unwrap_or(false)
                 && param_types[seen_idx].1 == PhpType::Int
-                && actual_ty != PhpType::Int
+                && should_replace_int_fallback_param(&actual_ty)
             {
                 param_types[seen_idx].1 = actual_ty;
                 changed = true;
@@ -192,6 +192,10 @@ impl Checker {
 
         Ok(changed.then_some(param_types))
     }
+}
+
+fn should_replace_int_fallback_param(actual_ty: &PhpType) -> bool {
+    !matches!(actual_ty, PhpType::Int | PhpType::Bool | PhpType::Void)
 }
 
 fn param_types_for_decl(
