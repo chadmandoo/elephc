@@ -57,75 +57,65 @@ pub(crate) fn emit_iterator_foreach(
     ctx: &mut Context,
     data: &mut DataSection,
 ) {
-    let mut dispatch_target = iterator_dispatch_target(class_name, ctx);
-    if !dispatch_target.implements_iterator(ctx) {
-        move_result_to_receiver_arg(emitter);
-        let ret_ty = dispatch_target.dispatch("getiterator", emitter, ctx);
-        dispatch_target = iterator_return_dispatch_target(&ret_ty, ctx);
-    }
+    emit_iterator_loop(
+        class_name,
+        loop_start,
+        loop_end,
+        loop_cont,
+        emitter,
+        ctx,
+        data,
+        |_, emitter, ctx, _| {
+            let mut deferred_receiver_release = None;
+            if let Some(kv) = key_var {
+                deferred_receiver_release =
+                    normalize_iterator_mixed_slot(kv, receiver_var, emitter, ctx);
+            }
+            if key_var.as_deref() != Some(value_var) {
+                let release = normalize_iterator_mixed_slot(value_var, receiver_var, emitter, ctx);
+                if deferred_receiver_release.is_none() {
+                    deferred_receiver_release = release;
+                }
+            }
+            deferred_receiver_release
+        },
+        |dispatch_target, emitter, ctx, data| {
+            if let Some(kv) = key_var {
+                reload_iterator_receiver(emitter);
+                let key_ty = dispatch_target.dispatch("key", emitter, ctx);
+                if let Some(kvar) = ctx.variables.get(kv) {
+                    let k_offset = kvar.stack_offset;
+                    store_iterator_mixed_result(kv, k_offset, &key_ty, emitter, ctx);
+                } else {
+                    emitter.comment(&format!("WARNING: undefined foreach key variable ${}", kv));
+                }
+            }
 
-    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // park iterator receiver pointer in a 16-byte stack slot
-    let mut deferred_receiver_release = None;
-    if let Some(kv) = key_var {
-        deferred_receiver_release =
-            normalize_iterator_mixed_slot(kv, receiver_var, emitter, ctx);
-    }
-    if key_var.as_deref() != Some(value_var) {
-        let release = normalize_iterator_mixed_slot(value_var, receiver_var, emitter, ctx);
-        if deferred_receiver_release.is_none() {
-            deferred_receiver_release = release;
-        }
-    }
+            reload_iterator_receiver(emitter);
+            let current_ty = dispatch_target.dispatch("current", emitter, ctx);
+            if let Some(vvar) = ctx.variables.get(value_var) {
+                let v_offset = vvar.stack_offset;
+                store_iterator_mixed_result(value_var, v_offset, &current_ty, emitter, ctx);
+            } else {
+                emitter.comment(&format!("WARNING: undefined foreach value variable ${}", value_var));
+            }
 
-    reload_iterator_receiver(emitter);
-    dispatch_target.dispatch("rewind", emitter, ctx);
-
-    emitter.label(loop_start);
-
-    reload_iterator_receiver(emitter);
-    dispatch_target.dispatch("valid", emitter, ctx);
-    emit_branch_if_invalid_iterator(emitter, loop_end);
-
-    if let Some(kv) = key_var {
-        reload_iterator_receiver(emitter);
-        let key_ty = dispatch_target.dispatch("key", emitter, ctx);
-        if let Some(kvar) = ctx.variables.get(kv) {
-            let k_offset = kvar.stack_offset;
-            store_iterator_mixed_result(kv, k_offset, &key_ty, emitter, ctx);
-        } else {
-            emitter.comment(&format!("WARNING: undefined foreach key variable ${}", kv));
-        }
-    }
-
-    reload_iterator_receiver(emitter);
-    let current_ty = dispatch_target.dispatch("current", emitter, ctx);
-    if let Some(vvar) = ctx.variables.get(value_var) {
-        let v_offset = vvar.stack_offset;
-        store_iterator_mixed_result(value_var, v_offset, &current_ty, emitter, ctx);
-    } else {
-        emitter.comment(&format!("WARNING: undefined foreach value variable ${}", value_var));
-    }
-
-    ctx.loop_stack.push(LoopLabels {
-        continue_label: loop_cont.to_string(),
-        break_label: loop_end.to_string(),
-        sp_adjust: 16,
-    });
-    for s in body {
-        emit_stmt(s, emitter, ctx, data);
-    }
-    ctx.loop_stack.pop();
-
-    emitter.label(loop_cont);
-    reload_iterator_receiver(emitter);
-    dispatch_target.dispatch("next", emitter, ctx);
-    abi::emit_jump(emitter, loop_start);                                        // continue the iteration
-
-    emitter.label(loop_end);
-    if let Some(release_ty) = deferred_receiver_release.as_ref() {
-        release_saved_iterator_receiver(release_ty, emitter);
-    }
-    abi::emit_release_temporary_stack(emitter, 16);                             // discard the parked receiver slot
+            ctx.loop_stack.push(LoopLabels {
+                continue_label: loop_cont.to_string(),
+                break_label: loop_end.to_string(),
+                sp_adjust: 16,
+            });
+            for s in body {
+                emit_stmt(s, emitter, ctx, data);
+            }
+            ctx.loop_stack.pop();
+        },
+        |deferred_receiver_release, emitter, _, _| {
+            if let Some(release_ty) = deferred_receiver_release.as_ref() {
+                release_saved_iterator_receiver(release_ty, emitter);
+            }
+        },
+    );
 }
 
 pub(crate) fn emit_iterable_object_foreach(
@@ -201,14 +191,66 @@ pub(crate) fn emit_iterable_object_foreach(
     emitter.label(&done);
 }
 
+pub(crate) fn emit_iterator_loop<S, P, B, A>(
+    class_name: &str,
+    loop_start: &str,
+    loop_end: &str,
+    loop_cont: &str,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+    before_rewind: P,
+    mut loop_body: B,
+    after_loop: A,
+) where
+    P: FnOnce(&IteratorDispatchTarget, &mut Emitter, &mut Context, &mut DataSection) -> S,
+    B: FnMut(&IteratorDispatchTarget, &mut Emitter, &mut Context, &mut DataSection),
+    A: FnOnce(S, &mut Emitter, &mut Context, &mut DataSection),
+{
+    let mut dispatch_target = iterator_dispatch_target(class_name, ctx);
+    if !dispatch_target.implements_iterator(ctx) {
+        move_result_to_receiver_arg(emitter);
+        let ret_ty = dispatch_target.dispatch("getiterator", emitter, ctx);
+        dispatch_target = iterator_return_dispatch_target(&ret_ty, ctx);
+    }
+
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // park iterator receiver pointer in a 16-byte stack slot
+    let state = before_rewind(&dispatch_target, emitter, ctx, data);
+
+    reload_iterator_receiver(emitter);
+    dispatch_target.dispatch("rewind", emitter, ctx);
+
+    emitter.label(loop_start);
+
+    reload_iterator_receiver(emitter);
+    dispatch_target.dispatch("valid", emitter, ctx);
+    emit_branch_if_invalid_iterator(emitter, loop_end);
+
+    loop_body(&dispatch_target, emitter, ctx, data);
+
+    emitter.label(loop_cont);
+    reload_iterator_receiver(emitter);
+    dispatch_target.dispatch("next", emitter, ctx);
+    abi::emit_jump(emitter, loop_start);                                        // continue the iteration
+
+    emitter.label(loop_end);
+    after_loop(state, emitter, ctx, data);
+    abi::emit_release_temporary_stack(emitter, 16);                             // discard the parked receiver slot
+}
+
 #[derive(Clone)]
-enum IteratorDispatchTarget {
+pub(crate) enum IteratorDispatchTarget {
     Class(String),
     Interface(String),
 }
 
 impl IteratorDispatchTarget {
-    fn dispatch(&self, method: &str, emitter: &mut Emitter, ctx: &mut Context) -> PhpType {
+    pub(crate) fn dispatch(
+        &self,
+        method: &str,
+        emitter: &mut Emitter,
+        ctx: &mut Context,
+    ) -> PhpType {
         match self {
             IteratorDispatchTarget::Class(class_name) => {
                 emit_dispatch_instance_method(class_name, method, emitter, ctx)
@@ -241,6 +283,9 @@ fn iterator_dispatch_target(name: &str, ctx: &Context) -> IteratorDispatchTarget
 
 fn iterator_return_dispatch_target(ret_ty: &PhpType, ctx: &Context) -> IteratorDispatchTarget {
     match ret_ty {
+        PhpType::Object(name) if name == "Traversable" => {
+            IteratorDispatchTarget::Interface("Iterator".to_string())
+        }
         PhpType::Object(name) if ctx.interfaces.contains_key(name) => {
             IteratorDispatchTarget::Interface(name.clone())
         }
@@ -430,7 +475,7 @@ fn move_result_to_receiver_arg(emitter: &mut Emitter) {
     }
 }
 
-fn reload_iterator_receiver(emitter: &mut Emitter) {
+pub(crate) fn reload_iterator_receiver(emitter: &mut Emitter) {
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("ldr x0, [sp]");                                // reload receiver into x0 for the next Iterator method dispatch

@@ -43,6 +43,9 @@ pub(crate) use assignments::{
     emit_static_property_assign_stmt,
 };
 pub(crate) use io::emit_expr_to_stdout;
+pub(crate) use control_flow::{
+    emit_iterator_loop, reload_iterator_receiver, IteratorDispatchTarget,
+};
 
 fn current_function_name(ctx: &Context) -> String {
     ctx.return_label

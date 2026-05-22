@@ -20,6 +20,10 @@ use crate::parser::ast::{Expr, Stmt};
 use crate::parser::ast::CatchClause;
 use crate::span::Span;
 
+pub(crate) use foreach::{
+    emit_iterator_loop, reload_iterator_receiver, IteratorDispatchTarget,
+};
+
 pub(super) fn emit_if_stmt(
     condition: &Expr,
     then_body: &[Stmt],
