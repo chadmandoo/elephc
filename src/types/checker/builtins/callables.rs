@@ -50,7 +50,7 @@ fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::span::Span) ->
     }
 }
 
-fn check_callback_builtin_call(
+pub(crate) fn check_callback_builtin_call(
     checker: &mut Checker,
     callback: &Expr,
     callback_args: &[Expr],

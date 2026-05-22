@@ -223,6 +223,28 @@ pub(super) fn infer_function_call_type(
                 PhpType::Bool,
             ])
         }
+        "iterator_count" | "iterator_apply" => PhpType::Int,
+        "iterator_to_array" => {
+            if matches!(
+                args.get(1).map(|arg| &arg.kind),
+                Some(ExprKind::BoolLiteral(false)) | Some(ExprKind::IntLiteral(0))
+            ) {
+                PhpType::Array(Box::new(PhpType::Mixed))
+            } else {
+                let source_ty = args
+                    .first()
+                    .map(|arg| infer_local_type(arg, sig, ctx))
+                    .unwrap_or(PhpType::Iterable);
+                match source_ty {
+                    PhpType::Array(elem_ty) => PhpType::Array(elem_ty),
+                    PhpType::AssocArray { key, value } => PhpType::AssocArray { key, value },
+                    _ => PhpType::AssocArray {
+                        key: Box::new(PhpType::Mixed),
+                        value: Box::new(PhpType::Mixed),
+                    },
+                }
+            }
+        }
         _ => {
             if let Some(c) = ctx {
                 if let Some(fn_sig) = c.functions.get(name) {

@@ -20,13 +20,13 @@ use crate::types::PhpType;
 
 use super::super::callable_lookup::{lookup_function, FunctionLookup};
 
-pub(super) struct CallbackEnv {
-    pub(super) wrapper_label: String,
-    pub(super) env_bytes: usize,
-    pub(super) array_slot_offset: usize,
+pub(crate) struct CallbackEnv {
+    pub(crate) wrapper_label: String,
+    pub(crate) env_bytes: usize,
+    pub(crate) array_slot_offset: usize,
 }
 
-pub(super) fn materialize_callback_address(
+pub(crate) fn materialize_callback_address(
     callback: &Expr,
     call_reg: &str,
     emitter: &mut Emitter,
@@ -58,7 +58,7 @@ pub(super) fn materialize_callback_address(
     }
 }
 
-pub(super) fn push_captures_as_hidden_args(
+pub(crate) fn push_captures_as_hidden_args(
     captures: &[(String, PhpType, bool)],
     emitter: &mut Emitter,
     ctx: &Context,
@@ -96,7 +96,7 @@ pub(super) fn push_captures_as_hidden_args(
     }
 }
 
-pub(super) fn emit_captured_callback_env(
+pub(crate) fn emit_captured_callback_env(
     callback_reg: &str,
     array_reg: &str,
     captures: &[(String, PhpType, bool)],
@@ -159,13 +159,13 @@ pub(super) fn emit_captured_callback_env(
     }
 }
 
-pub(super) fn load_env_slot_to_reg(emitter: &mut Emitter, reg: &str, offset: usize) {
+pub(crate) fn load_env_slot_to_reg(emitter: &mut Emitter, reg: &str, offset: usize) {
     let scratch = abi::symbol_scratch_reg(emitter);
     abi::emit_temporary_stack_address(emitter, scratch, offset);
     abi::emit_load_from_address(emitter, reg, scratch, 0);
 }
 
-pub(super) fn load_env_pointer_to_reg(emitter: &mut Emitter, reg: &str) {
+pub(crate) fn load_env_pointer_to_reg(emitter: &mut Emitter, reg: &str) {
     abi::emit_temporary_stack_address(emitter, reg, 0);
 }
 

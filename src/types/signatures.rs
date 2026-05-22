@@ -103,6 +103,17 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             1,
             vec![bool_lit(true)],
         )),
+        "iterator_to_array" => Some(optional(
+            &["iterator", "preserve_keys"],
+            1,
+            vec![bool_lit(true)],
+        )),
+        "iterator_count" => Some(fixed(&["iterator"])),
+        "iterator_apply" => Some(optional(
+            &["iterator", "callback", "args"],
+            2,
+            vec![null_lit()],
+        )),
         "get_class" => Some(optional(&["object"], 0, vec![null_lit()])),
         "get_parent_class" => Some(optional(&["object_or_class"], 0, vec![null_lit()])),
         "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => {
@@ -510,6 +521,21 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             name,
             &[PhpType::Array(Box::new(PhpType::Mixed))],
             PhpType::Mixed,
+        )),
+        "iterator_to_array" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Iterable, PhpType::Bool],
+            PhpType::Array(Box::new(PhpType::Mixed)),
+        )),
+        "iterator_count" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Iterable],
+            PhpType::Int,
+        )),
+        "iterator_apply" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Object("Traversable".to_string())],
+            PhpType::Int,
         )),
         "array_push" | "array_unshift" => Some(typed_first_class_builtin_sig(
             name,

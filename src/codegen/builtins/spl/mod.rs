@@ -18,6 +18,11 @@ use crate::codegen::platform::Arch;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
+mod iterator_common;
+mod iterator_apply;
+mod iterator_count;
+mod iterator_to_array;
+
 const EXTS_PTR_SYMBOL: &str = "_spl_autoload_exts_ptr";
 const EXTS_LEN_SYMBOL: &str = "_spl_autoload_exts_len";
 
@@ -38,6 +43,9 @@ pub fn emit(
         "spl_object_id" => Some(emit_object_id(args, emitter, ctx, data)),
         "spl_object_hash" => Some(emit_object_hash(args, emitter, ctx, data)),
         "spl_classes" => Some(emit_classes(emitter, data)),
+        "iterator_apply" => iterator_apply::emit(name, args, emitter, ctx, data),
+        "iterator_count" => iterator_count::emit(name, args, emitter, ctx, data),
+        "iterator_to_array" => iterator_to_array::emit(name, args, emitter, ctx, data),
         _ => None,
     }
 }
