@@ -185,7 +185,8 @@ SPL autoload and class-introspection helpers are documented in
 [Namespaces](namespaces.md). This includes `spl_autoload_register()`,
 `spl_autoload_unregister()`, `spl_autoload_functions()`,
 `spl_autoload_extensions()`, `spl_autoload_call()`, `spl_classes()`,
-`spl_object_id()`, and `spl_object_hash()`.
+`spl_object_id()`, `spl_object_hash()`, `class_implements()`,
+`class_parents()`, and `class_uses()`.
 
 ## Compatibility Gaps
 

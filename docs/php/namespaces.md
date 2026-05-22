@@ -208,9 +208,18 @@ If `$autoload` is `false`, no compile-time load is forced; the call returns whet
 | `spl_object_hash($obj)` | The object's heap pointer formatted as a decimal string. PHP returns a 32-character hex string; we return a decimal string. Both are unique-per-object and stable per-process — only the textual format differs |
 | `get_class($obj)` | Resolves to the argument's static type name. Inside a method called with no argument, returns the current class context |
 | `get_parent_class($obj)` | Returns the parent class name from `ctx.classes[name].parent`, or empty string when the class has no parent |
+| `class_implements($object_or_class, bool $autoload = true)` | Returns an associative `interface => interface` array for a class/object, including inherited parent interfaces. When the argument names an interface, returns that interface's parent interfaces |
+| `class_parents($object_or_class, bool $autoload = true)` | Returns an associative `parent => parent` array, starting with the immediate parent and then ancestors |
+| `class_uses($object_or_class, bool $autoload = true)` | Returns an associative `trait => trait` array for traits used directly by the class or trait declaration. Parent class traits and traits imported by those traits are not included, matching PHP |
 | `is_a($obj, "Foo")` | Compile-time fold when the second argument is a string literal: returns `true` when the object's static type equals `Foo`, descends from it, or implements it as an interface |
 | `is_subclass_of($obj, "Foo")` | Same as `is_a` but excludes the case where the static type *is* `Foo` |
 | `class_alias($original, $alias)` | At compile time, top-level literal calls synthesize `class $alias extends $original {}`. The alias is realised as a *subclass* rather than a true name alias: `new $alias()`, `$obj instanceof $alias`, and `$alias::CONST` work; `(new $original()) instanceof $alias` returns `false` (it would be `true` under PHP runtime semantics). Runtime-dynamic call shapes are rejected because elephc cannot mutate the class table after compilation |
+
+`class_implements`, `class_parents`, and `class_uses` accept either an object
+expression with a known static class type or a string literal class-like name.
+The optional `$autoload` flag must be a literal bool or int in the current AOT
+model. A string name that is not compiled into the binary returns an empty
+array in this release; PHP returns `false` for that case.
 
 ### Closure-based autoload (`spl_autoload_register`)
 
