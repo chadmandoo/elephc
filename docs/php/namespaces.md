@@ -218,8 +218,8 @@ If `$autoload` is `false`, no compile-time load is forced; the call returns whet
 `class_implements`, `class_parents`, and `class_uses` accept either an object
 expression with a known static class type or a string literal class-like name.
 The optional `$autoload` flag must be a literal bool or int in the current AOT
-model. A string name that is not compiled into the binary returns an empty
-array in this release; PHP returns `false` for that case.
+model. A string name that is not compiled into the binary returns `false`,
+matching PHP's unresolved-name result.
 
 ### Closure-based autoload (`spl_autoload_register`)
 

@@ -16,6 +16,7 @@ use crate::codegen::expr::arrays::{
     emit_assoc_array_literal, emit_empty_assoc_array_literal,
 };
 use crate::codegen::expr::emit_expr;
+use crate::codegen::{abi, emit_box_current_value_as_mixed};
 use crate::names::php_symbol_key;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::span::Span;
@@ -43,9 +44,16 @@ pub fn emit(
     }
 
     let target = resolve_target(args.first(), first_ty.as_ref(), ctx);
+    if matches!(target, ClassLikeTarget::Unknown) {
+        emit_false_result(emitter);
+        return Some(class_relation_return_type());
+    }
+
     let names = relation_names(name, &target, ctx)?;
+    let array_ty = class_relation_array_type();
     emit_assoc_string_set(&names, args.first().map(|arg| arg.span), emitter, ctx, data);
-    Some(class_relation_array_type())
+    emit_box_current_value_as_mixed(emitter, &array_ty);
+    Some(class_relation_return_type())
 }
 
 fn class_relation_array_type() -> PhpType {
@@ -53,6 +61,10 @@ fn class_relation_array_type() -> PhpType {
         key: Box::new(PhpType::Str),
         value: Box::new(PhpType::Str),
     }
+}
+
+fn class_relation_return_type() -> PhpType {
+    PhpType::Union(vec![class_relation_array_type(), PhpType::Bool])
 }
 
 fn resolve_target(arg: Option<&Expr>, arg_ty: Option<&PhpType>, ctx: &Context) -> ClassLikeTarget {
@@ -171,6 +183,11 @@ fn emit_assoc_string_set(
         })
         .collect();
     emit_assoc_array_literal(&pairs, emitter, ctx, data);
+}
+
+fn emit_false_result(emitter: &mut Emitter) {
+    abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
+    emit_box_current_value_as_mixed(emitter, &PhpType::Bool);
 }
 
 fn lookup_class_name(ctx: &Context, raw: &str) -> Option<String> {

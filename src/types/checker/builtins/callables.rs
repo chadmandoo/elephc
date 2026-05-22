@@ -591,10 +591,13 @@ pub(super) fn check_builtin(
                     ));
                 }
             }
-            Ok(Some(PhpType::AssocArray {
-                key: Box::new(PhpType::Str),
-                value: Box::new(PhpType::Str),
-            }))
+            Ok(Some(PhpType::Union(vec![
+                PhpType::AssocArray {
+                    key: Box::new(PhpType::Str),
+                    value: Box::new(PhpType::Str),
+                },
+                PhpType::Bool,
+            ])))
         }
         "get_class" => {
             if args.len() > 1 {

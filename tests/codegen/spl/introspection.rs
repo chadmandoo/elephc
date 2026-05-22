@@ -127,3 +127,15 @@ foreach (class_uses("CombinedTrait") as $name => $value) {
     );
     assert_eq!(out, "BaseTrait=BaseTrait;");
 }
+
+#[test]
+fn test_class_relation_helpers_return_false_for_unknown_literal_names() {
+    let out = compile_and_run(
+        r#"<?php
+var_dump(class_implements("MissingClass"));
+var_dump(class_parents("MissingClass"));
+var_dump(class_uses("MissingClass"));
+"#,
+    );
+    assert_eq!(out, "bool(false)\nbool(false)\nbool(false)\n");
+}
