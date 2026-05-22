@@ -28,8 +28,41 @@ pub(super) fn return_type_for(intrinsic: IntrinsicCall) -> PhpType {
         | IntrinsicCallKind::FiberIsRunning
         | IntrinsicCallKind::FiberIsSuspended
         | IntrinsicCallKind::FiberIsTerminated
-        | IntrinsicCallKind::GeneratorValid => PhpType::Bool,
-        IntrinsicCallKind::GeneratorNext | IntrinsicCallKind::GeneratorRewind => PhpType::Void,
+        | IntrinsicCallKind::GeneratorValid
+        | IntrinsicCallKind::SplDllIsEmpty
+        | IntrinsicCallKind::SplDllOffsetExists
+        | IntrinsicCallKind::SplDllValid
+        | IntrinsicCallKind::SplFixedOffsetExists => PhpType::Bool,
+        IntrinsicCallKind::SplDllCount
+        | IntrinsicCallKind::SplDllGetIteratorMode
+        | IntrinsicCallKind::SplFixedCount
+        | IntrinsicCallKind::SplFixedGetSize => PhpType::Int,
+        IntrinsicCallKind::SplDllSerialize => PhpType::Str,
+        IntrinsicCallKind::SplFixedToArray | IntrinsicCallKind::SplFixedJsonSerialize => {
+            PhpType::Array(Box::new(PhpType::Mixed))
+        }
+        IntrinsicCallKind::SplDllSerializeArray => PhpType::Array(Box::new(PhpType::Mixed)),
+        IntrinsicCallKind::SplFixedFromArray => {
+            PhpType::Object("SplFixedArray".to_string())
+        }
+        IntrinsicCallKind::GeneratorNext
+        | IntrinsicCallKind::GeneratorRewind
+        | IntrinsicCallKind::SplDllAdd
+        | IntrinsicCallKind::SplDllPush
+        | IntrinsicCallKind::SplDllUnshift
+        | IntrinsicCallKind::SplDllSetIteratorMode
+        | IntrinsicCallKind::SplDllUnserialize
+        | IntrinsicCallKind::SplDllOffsetSet
+        | IntrinsicCallKind::SplDllOffsetUnset
+        | IntrinsicCallKind::SplDllRewind
+        | IntrinsicCallKind::SplDllPrev
+        | IntrinsicCallKind::SplDllNext
+        | IntrinsicCallKind::SplQueueEnqueue
+        | IntrinsicCallKind::SplFixedConstruct
+        | IntrinsicCallKind::SplFixedSetSize
+        | IntrinsicCallKind::SplFixedUnserialize
+        | IntrinsicCallKind::SplFixedOffsetSet
+        | IntrinsicCallKind::SplFixedOffsetUnset => PhpType::Void,
         _ => PhpType::Mixed,
     }
 }
@@ -76,6 +109,42 @@ pub(super) fn emit_static_intrinsic_call(
             );                                                                  // read the currently running Fiber from runtime state
             PhpType::Mixed
         }
+        IntrinsicCallKind::SplFixedFromArray => {
+            let Some(array_expr) = args.first() else {
+                emitter.comment("WARNING: SplFixedArray::fromArray() intrinsic missing array argument");
+                return return_type_for(intrinsic);
+            };
+            let array_ty = emit_expr(array_expr, emitter, ctx, data);
+            coerce_result_to_type(emitter, ctx, data, &array_ty, &PhpType::Array(Box::new(PhpType::Mixed)));
+            abi::emit_push_reg(emitter, abi::int_result_reg(emitter));          // preserve the source array while optional arguments are evaluated
+            if let Some(preserve_expr) = args.get(1) {
+                let preserve_ty = emit_expr(preserve_expr, emitter, ctx, data);
+                coerce_result_to_type(emitter, ctx, data, &preserve_ty, &PhpType::Bool);
+                abi::emit_push_reg(emitter, abi::int_result_reg(emitter));      // preserve the runtime preserveKeys flag for the SPL helper
+            } else {
+                abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 1);
+                abi::emit_push_reg(emitter, abi::int_result_reg(emitter));      // default preserveKeys=true, matching PHP
+            }
+            let class_id = ctx
+                .classes
+                .get("SplFixedArray")
+                .map(|info| info.class_id)
+                .unwrap_or(u64::MAX);
+            abi::emit_pop_reg(emitter, abi::int_arg_reg_name(emitter.target, 2)); // pass preserveKeys as runtime helper argument 3
+            abi::emit_pop_reg(emitter, abi::int_arg_reg_name(emitter.target, 1)); // pass the source PHP array as runtime helper argument 2
+            abi::emit_load_int_immediate(
+                emitter,
+                abi::int_arg_reg_name(emitter.target, 0),
+                class_id as i64,
+            );
+            abi::emit_call_label(
+                emitter,
+                intrinsic
+                    .runtime_helper()
+                    .expect("SplFixedArray::fromArray intrinsic must have a runtime helper"),
+            );                                                                  // build a SplFixedArray from the source PHP array
+            PhpType::Object("SplFixedArray".to_string())
+        }
         other => {
             emitter.comment(&format!(
                 "WARNING: unsupported static intrinsic {:?} for {}::{}",
@@ -113,7 +182,46 @@ pub(super) fn emit_instance_intrinsic_with_loaded_args(
         | IntrinsicCallKind::GeneratorSend
         | IntrinsicCallKind::GeneratorThrow
         | IntrinsicCallKind::GeneratorGetReturn => emit_generator_intrinsic(intrinsic, emitter, ctx),
-        IntrinsicCallKind::FiberSuspend | IntrinsicCallKind::FiberGetCurrent => {
+        IntrinsicCallKind::SplDllAdd
+        | IntrinsicCallKind::SplDllPop
+        | IntrinsicCallKind::SplDllShift
+        | IntrinsicCallKind::SplDllPush
+        | IntrinsicCallKind::SplDllUnshift
+        | IntrinsicCallKind::SplDllTop
+        | IntrinsicCallKind::SplDllBottom
+        | IntrinsicCallKind::SplDllCount
+        | IntrinsicCallKind::SplDllIsEmpty
+        | IntrinsicCallKind::SplDllSetIteratorMode
+        | IntrinsicCallKind::SplDllGetIteratorMode
+        | IntrinsicCallKind::SplDllSerialize
+        | IntrinsicCallKind::SplDllUnserialize
+        | IntrinsicCallKind::SplDllSerializeArray
+        | IntrinsicCallKind::SplDllOffsetExists
+        | IntrinsicCallKind::SplDllOffsetGet
+        | IntrinsicCallKind::SplDllOffsetSet
+        | IntrinsicCallKind::SplDllOffsetUnset
+        | IntrinsicCallKind::SplDllRewind
+        | IntrinsicCallKind::SplDllCurrent
+        | IntrinsicCallKind::SplDllKey
+        | IntrinsicCallKind::SplDllPrev
+        | IntrinsicCallKind::SplDllNext
+        | IntrinsicCallKind::SplDllValid
+        | IntrinsicCallKind::SplQueueEnqueue
+        | IntrinsicCallKind::SplQueueDequeue
+        | IntrinsicCallKind::SplFixedConstruct
+        | IntrinsicCallKind::SplFixedCount
+        | IntrinsicCallKind::SplFixedToArray
+        | IntrinsicCallKind::SplFixedGetSize
+        | IntrinsicCallKind::SplFixedSetSize
+        | IntrinsicCallKind::SplFixedOffsetExists
+        | IntrinsicCallKind::SplFixedOffsetGet
+        | IntrinsicCallKind::SplFixedOffsetSet
+        | IntrinsicCallKind::SplFixedOffsetUnset
+        | IntrinsicCallKind::SplFixedJsonSerialize
+        | IntrinsicCallKind::SplFixedUnserialize => emit_simple_runtime_intrinsic(intrinsic, emitter),
+        IntrinsicCallKind::FiberSuspend
+        | IntrinsicCallKind::FiberGetCurrent
+        | IntrinsicCallKind::SplFixedFromArray => {
             emitter.comment(&format!(
                 "WARNING: static intrinsic used as instance call {:?}",
                 intrinsic.kind()

@@ -141,6 +141,26 @@ pub(crate) fn emit_runtime_data_user(
     out.push_str(".globl _generator_class_id\n_generator_class_id:\n");
     out.push_str(&format!("    .quad {}\n", generator_class_id));
 
+    for (symbol, class_name) in [
+        ("_spl_dll_class_id", "SplDoublyLinkedList"),
+        ("_spl_stack_class_id", "SplStack"),
+        ("_spl_queue_class_id", "SplQueue"),
+        ("_spl_fixed_array_class_id", "SplFixedArray"),
+        ("_spl_runtime_exception_class_id", "RuntimeException"),
+        ("_spl_out_of_range_exception_class_id", "OutOfRangeException"),
+        ("_spl_out_of_bounds_exception_class_id", "OutOfBoundsException"),
+        ("_spl_invalid_argument_exception_class_id", "InvalidArgumentException"),
+        ("_spl_type_error_class_id", "TypeError"),
+        ("_spl_value_error_class_id", "ValueError"),
+    ] {
+        let class_id = all_class_id_by_name
+            .get(class_name)
+            .copied()
+            .unwrap_or(u64::MAX);
+        out.push_str(&format!(".globl {}\n{}:\n", symbol, symbol));
+        out.push_str(&format!("    .quad {}\n", class_id));
+    }
+
     out.push_str(".globl _interface_count\n_interface_count:\n");
     out.push_str(&format!("    .quad {}\n", sorted_interfaces.len()));
     out.push_str(".globl _interface_method_ptrs\n_interface_method_ptrs:\n");

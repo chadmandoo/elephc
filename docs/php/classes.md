@@ -97,6 +97,24 @@ Classes implementing `ArrayAccess` can use PHP subscript syntax:
 PHP 8.1. Use `__serialize` / `__unserialize` magic methods instead
 (when those land).
 
+### Built-in SPL containers
+
+The Phase 4 SPL container classes are runtime-backed built-ins:
+`SplDoublyLinkedList`, `SplStack`, `SplQueue`, and `SplFixedArray`. They
+participate in `class_exists()`, `get_declared_classes()`, `spl_classes()`,
+`instanceof`, inherited class constants, interface checks, `foreach`, and
+`ArrayAccess` where PHP expects it.
+
+| Class | Parent | Interfaces |
+|---|---|---|
+| `SplDoublyLinkedList` | — | `Iterator`, `Countable`, `ArrayAccess` |
+| `SplStack` | `SplDoublyLinkedList` | inherited from parent |
+| `SplQueue` | `SplDoublyLinkedList` | inherited from parent |
+| `SplFixedArray` | — | `ArrayAccess`, `Countable`, `JsonSerializable` |
+
+See [SPL](spl.md) for the supported method surface, iterator modes, examples,
+and current compatibility gaps.
+
 ## Type checks with instanceof
 ```php
 <?php
