@@ -75,10 +75,13 @@ Supported methods:
 | `bottom(): mixed` | Read the head |
 | `count(): int` | Number of stored values |
 | `isEmpty(): bool` | Whether the list is empty |
-| `setIteratorMode(int $mode): int` | Set iterator flags |
+| `setIteratorMode(int $mode): void` | Set iterator flags |
 | `getIteratorMode(): int` | Read iterator flags |
 | `rewind()`, `current()`, `key()`, `next()`, `prev()`, `valid()` | Iterator operations |
 | `offsetExists()`, `offsetGet()`, `offsetSet()`, `offsetUnset()` | `ArrayAccess` backing |
+| `serialize()`, `unserialize(string $data): void` | Legacy SPL list payload round-trip |
+| `__serialize()`, `__unserialize(array $data): void` | PHP 7.4+ array state round-trip |
+| `__debugInfo(): array` | Debug state with flags and list contents |
 
 Supported constants:
 
@@ -149,11 +152,15 @@ Supported methods:
 | Method | Notes |
 |---|---|
 | `__construct(int $size = 0)` | Allocate fixed-size storage |
+| `__wakeup(): void` | PHP wakeup hook |
+| `fromArray(array $array, bool $preserveKeys = true): SplFixedArray` | Build a fixed array from PHP array data |
+| `__serialize(): array` | Returns the same indexed values as `toArray()` |
+| `__unserialize(array $data): void` | Replaces storage with packed source values |
 | `count(): int` | Current size |
 | `getSize(): int` | Current size |
 | `setSize(int $size): void` | Resize storage |
 | `offsetExists(mixed $index): bool` | False for invalid, unset, or null slots |
-| `offsetGet(mixed $index): mixed` | Reads invalid or unset slots as `null` |
+| `offsetGet(mixed $index): mixed` | Reads unset slots as `null`; invalid offsets throw |
 | `offsetSet(mixed $index, mixed $value): void` | Writes valid integer offsets |
 | `offsetUnset(mixed $index): void` | Resets a valid slot to `null` |
 | `toArray(): array` | Returns an indexed array copy |
@@ -182,15 +189,8 @@ SPL autoload and class-introspection helpers are documented in
 
 ## Compatibility Gaps
 
-The Phase 4 containers intentionally expose only methods that have runtime
-backing. Serialization/debug hooks such as `serialize()`, `unserialize()`,
-`__serialize()`, `__unserialize()`, and `__debugInfo()` are not available yet.
-
-`SplFixedArray::fromArray()` and `SplFixedArray::getIterator()` are also
-deferred. `getIterator()` will make sense once the Phase 5 iterator decorator
-types land.
-
-Some edge-case exceptions are not PHP-exact yet. Invalid offsets and empty
-container reads are currently conservative runtime behaviors rather than a full
-replica of PHP's `RuntimeException`, `OutOfRangeException`, and `ValueError`
-surface.
+`SplFixedArray::getIterator()` is deferred because it needs the Phase 5 iterator
+runtime surface (`IteratorAggregate` return objects and the iterator decorator
+classes). The Phase 4 containers otherwise keep their runtime-backed method
+surface aligned with PHP's empty-container, invalid-offset, serialization, and
+fixed-array key behaviors.
