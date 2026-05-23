@@ -55,7 +55,8 @@ $formatted = array_map($format, ["a", "b"]);
 echo "method callable array_map: ";
 foreach ($formatted as $v) { echo $v . " "; }
 echo "\n";
-echo "method callable call_user_func_array: " . call_user_func_array($format, ["cb"]) . "\n";
+$format_args = ["value" => "cb"];
+echo "method callable call_user_func_array: " . call_user_func_array($format, $format_args) . "\n";
 
 function bump(&$value) {
     $value = $value + 1;

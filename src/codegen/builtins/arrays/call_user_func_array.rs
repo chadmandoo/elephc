@@ -123,27 +123,40 @@ pub fn emit(
         precomputed_sig
     };
 
-    // Evaluate the array argument (second arg)
-    let arr_ty = emit_expr(&args[1], emitter, ctx, data);
-    let literal_arg_elems = match &args[1].kind {
-        ExprKind::ArrayLiteral(elems) => Some(elems.as_slice()),
-        _ => None,
-    };
-
     let ret_ty = if let Some(sig) = sig {
-        emit_loaded_array_callback_call(
-            LoadedArraySource::Result,
-            &arr_ty,
-            literal_arg_elems,
-            call_reg,
-            &captures,
-            &sig,
-            save_concat_before_args,
-            emitter,
-            ctx,
-            data,
-        )
+        if sig.ref_params.iter().any(|is_ref| *is_ref) {
+            let arr_ty = emit_expr(&args[1], emitter, ctx, data);
+            let literal_arg_elems = match &args[1].kind {
+                ExprKind::ArrayLiteral(elems) => Some(elems.as_slice()),
+                _ => None,
+            };
+            emit_loaded_array_callback_call(
+                LoadedArraySource::Result,
+                &arr_ty,
+                literal_arg_elems,
+                call_reg,
+                &captures,
+                &sig,
+                save_concat_before_args,
+                emitter,
+                ctx,
+                data,
+            )
+        } else {
+            emit_spread_callback_call_from_array_expr(
+                &args[1],
+                call_reg,
+                &captures,
+                &sig,
+                save_concat_before_args,
+                emitter,
+                ctx,
+                data,
+            )
+        }
     } else {
+        // Evaluate the array argument (second arg)
+        let arr_ty = emit_expr(&args[1], emitter, ctx, data);
         emit_loaded_array_unknown_callback_call(
             LoadedArraySource::Result,
             &arr_ty,
@@ -159,6 +172,63 @@ pub fn emit(
     Some(ret_ty)
 }
 
+fn emit_spread_callback_call_from_array_expr(
+    arg_array: &Expr,
+    call_reg: &str,
+    captures: &[(String, PhpType, bool)],
+    sig: &FunctionSig,
+    concat_saved_before_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    abi::emit_push_reg(emitter, call_reg);                                      // preserve the callback address while unpacking call_user_func_array() args
+    let spread_arg = Expr::new(ExprKind::Spread(Box::new(arg_array.clone())), arg_array.span);
+    let visible_param_count = sig.params.len();
+    let regular_param_count = if sig.variadic.is_some() {
+        visible_param_count.saturating_sub(1)
+    } else {
+        visible_param_count
+    };
+    let emitted_args = args::emit_pushed_call_args(
+        &[spread_arg],
+        Some(sig),
+        regular_param_count,
+        "call_user_func_array ref arg",
+        true,
+        true,
+        emitter,
+        ctx,
+        data,
+    );
+    let mut arg_types = emitted_args.arg_types;
+    callback_env::push_captures_as_hidden_args(captures, emitter, ctx, &mut arg_types);
+
+    let callback_offset = args::pushed_temp_bytes(&arg_types) + emitted_args.source_temp_bytes;
+    abi::emit_load_temporary_stack_slot(emitter, call_reg, callback_offset);
+    let assignments = abi::build_outgoing_arg_assignments_for_target(emitter.target, &arg_types, 0);
+    let overflow_bytes = abi::materialize_outgoing_args(emitter, &assignments);
+    let ret_ty = sig.return_type.clone();
+
+    if !concat_saved_before_args {
+        crate::codegen::expr::save_concat_offset_before_nested_call(emitter, ctx);
+    }
+    abi::emit_call_reg(emitter, call_reg);
+    if concat_saved_before_args {
+        abi::emit_release_temporary_stack(emitter, overflow_bytes);
+        abi::emit_release_temporary_stack(emitter, emitted_args.source_temp_bytes);
+        abi::emit_release_temporary_stack(emitter, 16);
+        crate::codegen::expr::restore_concat_offset_after_nested_call(emitter, ctx, &ret_ty);
+    } else {
+        crate::codegen::expr::restore_concat_offset_after_nested_call(emitter, ctx, &ret_ty);
+        abi::emit_release_temporary_stack(emitter, overflow_bytes);
+        abi::emit_release_temporary_stack(emitter, emitted_args.source_temp_bytes);
+        abi::emit_release_temporary_stack(emitter, 16);
+    }
+
+    ret_ty
+}
+
 pub(crate) fn emit_loaded_array_callback_call(
     array_source: LoadedArraySource,
     arr_ty: &PhpType,
@@ -171,6 +241,20 @@ pub(crate) fn emit_loaded_array_callback_call(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
+    if matches!(arr_ty, PhpType::AssocArray { .. }) {
+        return emit_loaded_assoc_array_callback_call(
+            array_source,
+            arr_ty,
+            call_reg,
+            captures,
+            sig,
+            concat_saved_before_args,
+            emitter,
+            ctx,
+            data,
+        );
+    }
+
     let (array_reg, len_reg, tail_count_reg, tail_index_reg, index_reg, offset_reg, data_reg, peek_reg, array_new_capacity_reg, array_new_elem_size_reg, len_store_reg) =
         match emitter.target.arch {
             crate::codegen::platform::Arch::AArch64 => (
@@ -531,6 +615,114 @@ pub(crate) fn emit_loaded_array_callback_call(
     ret_ty
 }
 
+fn emit_loaded_assoc_array_callback_call(
+    array_source: LoadedArraySource,
+    arr_ty: &PhpType,
+    call_reg: &str,
+    captures: &[(String, PhpType, bool)],
+    sig: &FunctionSig,
+    concat_saved_before_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    let hash_reg = match emitter.target.arch {
+        Arch::AArch64 => "x20",
+        Arch::X86_64 => "r13",
+    };
+    let elem_ty = match arr_ty {
+        PhpType::AssocArray { value, .. } => *value.clone(),
+        _ => PhpType::Int,
+    };
+
+    match array_source {
+        LoadedArraySource::Result => {
+            emitter.instruction(&format!("mov {}, {}", hash_reg, abi::int_result_reg(emitter))); // preserve the callback-argument hash pointer across named lookups
+        }
+        LoadedArraySource::TemporaryStackSlot(offset) => {
+            abi::emit_load_temporary_stack_slot(emitter, hash_reg, offset);
+        }
+    }
+
+    let visible_param_count = sig.params.len();
+    let regular_param_count = if sig.variadic.is_some() {
+        visible_param_count.saturating_sub(1)
+    } else {
+        visible_param_count
+    };
+    let mut arg_types = Vec::new();
+
+    for i in 0..regular_param_count {
+        let has_default = sig.defaults.get(i).and_then(|d| d.as_ref()).is_some();
+        let target_ty = if args::declared_target_ty(Some(sig), i).is_some() || has_default {
+            sig.params.get(i).map(|(_, ty)| ty)
+        } else {
+            None
+        };
+        let param_name = sig.params.get(i).map(|(name, _)| name.as_str());
+        emitter.comment("lookup call_user_func_array() named argument");
+        args::emit_hash_lookup_for_param_or_index(
+            hash_reg,
+            param_name,
+            i,
+            emitter,
+            ctx,
+            data,
+        );
+
+        let pushed_ty = if let Some(default_expr) = sig.defaults.get(i).and_then(|d| d.as_ref()) {
+            let use_default = ctx.next_label("cufa_assoc_default");
+            let done = ctx.next_label("cufa_assoc_done");
+            abi::emit_branch_if_int_result_zero(emitter, &use_default);
+            let loaded_ty = args::push_loaded_hash_value_arg(&elem_ty, target_ty, emitter, ctx, data);
+            abi::emit_jump(emitter, &done);
+            emitter.label(&use_default);
+            let default_ty = args::push_expr_arg(default_expr, target_ty, emitter, ctx, data);
+            emitter.label(&done);
+            widen_callback_arg_type(&loaded_ty, &default_ty)
+        } else {
+            let missing = ctx.next_label("cufa_assoc_missing");
+            let done = ctx.next_label("cufa_assoc_done");
+            abi::emit_branch_if_int_result_zero(emitter, &missing);
+            let loaded_ty = args::push_loaded_hash_value_arg(&elem_ty, target_ty, emitter, ctx, data);
+            abi::emit_jump(emitter, &done);
+            emitter.label(&missing);
+            emit_call_user_func_array_missing_arg_abort(emitter, data);
+            emitter.label(&done);
+            loaded_ty
+        };
+        arg_types.push(pushed_ty);
+    }
+
+    if sig.variadic.is_some() {
+        emitter.comment("empty variadic array for associative call_user_func_array()");
+        let variadic_ty = args::emit_empty_variadic_array_arg(
+            "empty variadic array for associative call_user_func_array()",
+            emitter,
+        );
+        arg_types.push(variadic_ty);
+    }
+
+    callback_env::push_captures_as_hidden_args(captures, emitter, ctx, &mut arg_types);
+    let assignments = abi::build_outgoing_arg_assignments_for_target(emitter.target, &arg_types, 0);
+    let overflow_bytes = abi::materialize_outgoing_args(emitter, &assignments);
+    let ret_ty = sig.return_type.clone();
+
+    if !concat_saved_before_args {
+        crate::codegen::expr::save_concat_offset_before_nested_call(emitter, ctx);
+    }
+    abi::emit_call_reg(emitter, call_reg);
+    if concat_saved_before_args {
+        abi::emit_release_temporary_stack(emitter, overflow_bytes);
+        crate::codegen::expr::restore_concat_offset_after_nested_call(emitter, ctx, &ret_ty);
+    } else {
+        crate::codegen::expr::restore_concat_offset_after_nested_call(emitter, ctx, &ret_ty);
+        abi::emit_release_temporary_stack(emitter, overflow_bytes);
+    }
+
+    ret_ty
+}
+
 pub(crate) fn emit_loaded_array_unknown_callback_call(
     array_source: LoadedArraySource,
     arr_ty: &PhpType,
@@ -662,4 +854,52 @@ fn emit_unknown_callback_arg_limit_abort(emitter: &mut Emitter, data: &mut DataS
             abi::emit_exit(emitter, 1);
         }
     }
+}
+
+fn emit_call_user_func_array_missing_arg_abort(emitter: &mut Emitter, data: &mut DataSection) {
+    let (message_label, message_len) = data.add_string(
+        b"Fatal error: call_user_func_array() argument array is missing a required callback parameter\n",
+    );
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, #2");                                  // write the callback argument diagnostic to stderr
+            emitter.adrp("x1", &message_label);
+            emitter.add_lo12("x1", "x1", &message_label);
+            emitter.instruction(&format!("mov x2, #{}", message_len));          // pass the diagnostic byte length to write()
+            emitter.syscall(4);
+            abi::emit_exit(emitter, 1);
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov edi, 2");                                  // write the callback argument diagnostic to stderr
+            abi::emit_symbol_address(emitter, "rsi", &message_label);
+            emitter.instruction(&format!("mov edx, {}", message_len));          // pass the diagnostic byte length to write()
+            emitter.instruction("mov eax, 1");                                  // Linux x86_64 syscall 1 = write
+            emitter.instruction("syscall");                                     // emit the fatal callback argument diagnostic
+            abi::emit_exit(emitter, 1);
+        }
+    }
+}
+
+fn widen_callback_arg_type(a: &PhpType, b: &PhpType) -> PhpType {
+    if a == b {
+        return a.clone();
+    }
+    if matches!(a, PhpType::Mixed | PhpType::Union(_))
+        || matches!(b, PhpType::Mixed | PhpType::Union(_))
+    {
+        return PhpType::Mixed;
+    }
+    if *a == PhpType::Str || *b == PhpType::Str {
+        return PhpType::Str;
+    }
+    if *a == PhpType::Float || *b == PhpType::Float {
+        return PhpType::Float;
+    }
+    if *a == PhpType::Void {
+        return b.clone();
+    }
+    if *b == PhpType::Void {
+        return a.clone();
+    }
+    a.clone()
 }

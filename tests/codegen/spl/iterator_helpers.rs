@@ -431,6 +431,30 @@ echo iterator_apply(new Range(), make_label(), $args);
 }
 
 #[test]
+fn test_iterator_apply_dynamic_assoc_args_for_known_signature() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $i;
+    public function __construct() { $this->i = 0; }
+    public function rewind(): void { $this->i = 0; }
+    public function valid(): bool { return $this->i < 2; }
+    public function current(): int { return $this->i; }
+    public function key(): int { return $this->i; }
+    public function next(): void { $this->i = $this->i + 1; }
+}
+function label_tick(string $label): bool {
+    echo $label;
+    return true;
+}
+$args = ["label" => "L"];
+echo iterator_apply(new Range(), "label_tick", $args);
+"#,
+    );
+    assert_eq!(out, "LL2");
+}
+
+#[test]
 fn test_iterator_apply_accepts_traversable_typed_source_and_dynamic_args() {
     let out = compile_and_run(
         r#"<?php

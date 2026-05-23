@@ -285,6 +285,23 @@ echo call_user_func_array(make_callback(), $args);
 }
 
 #[test]
+fn test_call_user_func_array_dynamic_assoc_args_for_known_signature() {
+    let out = compile_and_run(
+        r#"<?php
+function stamp($prefix, $value): int {
+    echo $prefix;
+    echo ":";
+    echo $value;
+    return 9;
+}
+$args = ["value" => 7, "prefix" => "id"];
+echo call_user_func_array("stamp", $args);
+"#,
+    );
+    assert_eq!(out, "id:79");
+}
+
+#[test]
 fn test_call_user_func_array_variadic_callback() {
     let out = compile_and_run(
         "<?php

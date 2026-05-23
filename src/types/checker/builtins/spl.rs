@@ -191,8 +191,14 @@ pub(super) fn check_builtin(
                         env,
                     )?;
                 }
-                IteratorApplyArgs::Dynamic => {
-                    check_iterator_apply_dynamic_callback(checker, &args[1], span, env)?;
+                IteratorApplyArgs::Dynamic { associative } => {
+                    check_iterator_apply_dynamic_callback(
+                        checker,
+                        &args[1],
+                        associative,
+                        span,
+                        env,
+                    )?;
                 }
             }
             Ok(Some(PhpType::Int))
@@ -329,7 +335,7 @@ fn iterator_to_array_static_return_type(source_ty: &PhpType, preserve_keys: bool
 
 enum IteratorApplyArgs<'a> {
     Static(&'a [Expr]),
-    Dynamic,
+    Dynamic { associative: bool },
 }
 
 fn iterator_apply_callback_args<'a>(
@@ -347,18 +353,26 @@ fn iterator_apply_callback_args<'a>(
             if elems.iter().all(is_static_callback_arg_literal) {
                 Ok(IteratorApplyArgs::Static(elems.as_slice()))
             } else {
-                checker.infer_type(args_expr, env)?;
-                Ok(IteratorApplyArgs::Dynamic)
+                let args_ty = checker.infer_type(args_expr, env)?;
+                Ok(IteratorApplyArgs::Dynamic {
+                    associative: matches!(args_ty, PhpType::AssocArray { .. }),
+                })
             }
+        }
+        ExprKind::ArrayLiteralAssoc(_) => {
+            checker.infer_type(args_expr, env)?;
+            Ok(IteratorApplyArgs::Dynamic { associative: true })
         }
         _ => {
             let args_ty = checker.infer_type(args_expr, env)?;
-            if matches!(args_ty, PhpType::Array(_)) {
-                Ok(IteratorApplyArgs::Dynamic)
+            if matches!(args_ty, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+                Ok(IteratorApplyArgs::Dynamic {
+                    associative: matches!(args_ty, PhpType::AssocArray { .. }),
+                })
             } else {
                 Err(CompileError::new(
                     span,
-                    "iterator_apply() args must be null, a literal array, or an indexed array value",
+                    "iterator_apply() args must be null, a literal array, or an array value",
                 ))
             }
         }
@@ -368,6 +382,7 @@ fn iterator_apply_callback_args<'a>(
 fn check_iterator_apply_dynamic_callback(
     checker: &mut Checker,
     callback: &Expr,
+    associative_args: bool,
     span: crate::span::Span,
     env: &TypeEnv,
 ) -> Result<(), CompileError> {
@@ -381,6 +396,7 @@ fn check_iterator_apply_dynamic_callback(
     if let ExprKind::FirstClassCallable(target) = &callback.kind {
         let sig = checker.specialize_first_class_callable_target(target, &[], span, env)?;
         reject_dynamic_ref_args(&sig, span)?;
+        reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
         return Ok(());
     }
 
@@ -392,6 +408,7 @@ fn check_iterator_apply_dynamic_callback(
                 .closure_return_types
                 .insert(var_name.clone(), sig.return_type.clone());
             reject_dynamic_ref_args(&sig, span)?;
+            reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
             return Ok(());
         }
     }
@@ -400,12 +417,14 @@ fn check_iterator_apply_dynamic_callback(
         if let Some(extern_name) = checker.canonical_extern_function_name_folded(cb_name) {
             if let Some(sig) = checker.functions.get(extern_name.as_str()).cloned() {
                 reject_dynamic_ref_args(&sig, span)?;
+                reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
                 return Ok(());
             }
         }
         if let Some(builtin_name) = super::canonical_builtin_function_name(cb_name) {
             if let Some(sig) = crate::types::first_class_callable_builtin_sig(&builtin_name) {
                 reject_dynamic_ref_args(&sig, span)?;
+                reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
                 return Ok(());
             }
         }
@@ -414,6 +433,7 @@ fn check_iterator_apply_dynamic_callback(
             .unwrap_or_else(|| cb_name.clone());
         if let Some(sig) = checker.functions.get(cb_name.as_str()).cloned() {
             reject_dynamic_ref_args(&sig, span)?;
+            reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
             return Ok(());
         }
         if let Some(decl) = checker.fn_decls.get(cb_name.as_str()) {
@@ -423,17 +443,30 @@ fn check_iterator_apply_dynamic_callback(
                     "iterator_apply() requires a literal args array when the callback has pass-by-reference parameters",
                 ));
             }
+            if associative_args && decl.variadic.is_some() {
+                return Err(CompileError::new(
+                    span,
+                    "iterator_apply() dynamic associative args require a non-variadic callable signature",
+                ));
+            }
             return Ok(());
         }
     }
 
     if let Some(sig) = checker.resolve_expr_callable_sig(callback, env)? {
         reject_dynamic_ref_args(&sig, span)?;
+        reject_dynamic_assoc_variadic_args(&sig, associative_args, span)?;
         return Ok(());
     }
 
     let callback_ty = checker.infer_type(callback, env)?;
     if callback_ty == PhpType::Callable {
+        if associative_args {
+            return Err(CompileError::new(
+                span,
+                "iterator_apply() dynamic associative args require a statically known callable signature",
+            ));
+        }
         return Ok(());
     }
 
@@ -441,6 +474,20 @@ fn check_iterator_apply_dynamic_callback(
         callback.span,
         "iterator_apply() dynamic args require a statically known callable signature",
     ))
+}
+
+fn reject_dynamic_assoc_variadic_args(
+    sig: &crate::types::FunctionSig,
+    associative_args: bool,
+    span: crate::span::Span,
+) -> Result<(), CompileError> {
+    if associative_args && sig.variadic.is_some() {
+        return Err(CompileError::new(
+            span,
+            "iterator_apply() dynamic associative args require a non-variadic callable signature",
+        ));
+    }
+    Ok(())
 }
 
 fn check_iterator_apply_static_callback(

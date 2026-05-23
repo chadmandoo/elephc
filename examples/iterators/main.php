@@ -137,7 +137,7 @@ function iterator_tick(string $label): bool {
 }
 
 echo "iterator_apply callback count:\n";
-$labels = ["*"];
+$labels = ["label" => "*"];
 echo iterator_apply(new Range(0, 3, 1), "iterator_tick", $labels);
 echo "\n";
 

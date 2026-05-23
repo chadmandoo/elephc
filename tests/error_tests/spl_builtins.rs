@@ -162,7 +162,7 @@ fn test_error_iterator_apply_rejects_array_source() {
 }
 
 #[test]
-fn test_error_iterator_apply_rejects_dynamic_assoc_args_array() {
+fn test_error_iterator_apply_unknown_callable_rejects_dynamic_assoc_args_array() {
     expect_error(
         r#"<?php
 class Range implements Iterator {
@@ -172,10 +172,14 @@ class Range implements Iterator {
     public function key(): int { return 0; }
     public function next(): void {}
 }
-function cb(): bool { return true; }
+function make_cb(): callable {
+    return function(string $name): bool {
+        return true;
+    };
+}
 $args = ["name" => "value"];
-iterator_apply(new Range(), "cb", $args);
+iterator_apply(new Range(), make_cb(), $args);
 "#,
-        "iterator_apply() args must be null, a literal array, or an indexed array value",
+        "iterator_apply() dynamic associative args require a statically known callable signature",
     );
 }

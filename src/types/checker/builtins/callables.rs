@@ -36,6 +36,33 @@ fn validate_call_user_func_array_ref_args(
     ))
 }
 
+fn validate_call_user_func_array_dynamic_arg_array(
+    checker: &mut Checker,
+    sig: &crate::types::FunctionSig,
+    arg_array: &Expr,
+    span: crate::span::Span,
+    env: &TypeEnv,
+) -> Result<(), CompileError> {
+    validate_call_user_func_array_ref_args(sig, arg_array, span)?;
+    let arg_array_ty = checker.infer_type(arg_array, env)?;
+    if !matches!(
+        arg_array_ty,
+        PhpType::Array(_) | PhpType::AssocArray { .. }
+    ) {
+        return Err(CompileError::new(
+            arg_array.span,
+            "call_user_func_array() second argument must be an array",
+        ));
+    }
+    if matches!(arg_array_ty, PhpType::AssocArray { .. }) && sig.variadic.is_some() {
+        return Err(CompileError::new(
+            span,
+            "call_user_func_array() dynamic associative argument arrays require a non-variadic callable signature",
+        ));
+    }
+    Ok(())
+}
+
 fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::span::Span) -> Expr {
     let elem_ty = match arr_ty {
         PhpType::Array(elem_ty) => elem_ty.as_ref(),
@@ -292,7 +319,7 @@ pub(super) fn check_builtin(
                     _ => &[],
                 };
                 let sig = checker.specialize_first_class_callable_target(target, elems, span, env)?;
-                validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
+                validate_call_user_func_array_dynamic_arg_array(checker, &sig, &args[1], span, env)?;
                 if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                     let ret_ty = checker.check_known_callable_call(
                         &sig,
@@ -317,7 +344,13 @@ pub(super) fn check_builtin(
                     checker
                         .closure_return_types
                         .insert(var_name.clone(), sig.return_type.clone());
-                    validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
+                    validate_call_user_func_array_dynamic_arg_array(
+                        checker,
+                        &sig,
+                        &args[1],
+                        span,
+                        env,
+                    )?;
                     if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                         let ret_ty = checker.check_known_callable_call(
                             &sig,
@@ -359,7 +392,13 @@ pub(super) fn check_builtin(
                     .canonical_function_name_folded(cb_name)
                     .unwrap_or_else(|| cb_name.clone());
                 if let Some(sig) = checker.functions.get(cb_name.as_str()).cloned() {
-                    validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
+                    validate_call_user_func_array_dynamic_arg_array(
+                        checker,
+                        &sig,
+                        &args[1],
+                        span,
+                        env,
+                    )?;
                     if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                         let ret_ty = checker.check_known_callable_call(
                             &sig,
@@ -386,18 +425,17 @@ pub(super) fn check_builtin(
                     let ret_ty = checker.check_function_call(&cb_name, elems, span, env)?;
                     return Ok(Some(ret_ty));
                 }
-                if let Some(decl) = checker.fn_decls.get(cb_name.as_str()).cloned() {
-                    let dummy_args: Vec<Expr> = decl
-                        .params
-                        .iter()
-                        .map(|_| Expr::new(ExprKind::IntLiteral(0), span))
-                        .collect();
-                    let ret_ty = checker.check_function_call(&cb_name, &dummy_args, span, env)?;
+                if checker.fn_decls.contains_key(cb_name.as_str()) {
+                    let spread_args = vec![Expr::new(
+                        ExprKind::Spread(Box::new(args[1].clone())),
+                        args[1].span,
+                    )];
+                    let ret_ty = checker.check_function_call(&cb_name, &spread_args, span, env)?;
                     return Ok(Some(ret_ty));
                 }
             }
             if let Some(sig) = checker.resolve_expr_callable_sig(&args[0], env)? {
-                validate_call_user_func_array_ref_args(&sig, &args[1], span)?;
+                validate_call_user_func_array_dynamic_arg_array(checker, &sig, &args[1], span, env)?;
                 if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
                     let ret_ty = checker.check_known_callable_call(
                         &sig,
