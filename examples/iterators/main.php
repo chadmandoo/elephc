@@ -141,6 +141,15 @@ $labels = ["*"];
 echo iterator_apply(new Range(0, 3, 1), "iterator_tick", $labels);
 echo "\n";
 
+function iterator_label_once(): string {
+    echo "!";
+    return "+";
+}
+
+echo "iterator_apply expression args:\n";
+echo iterator_apply(new Range(0, 2, 1), "iterator_tick", [iterator_label_once()]);
+echo "\n";
+
 function make_iterator_labeler(): callable {
     return function(string $label): bool {
         echo $label;

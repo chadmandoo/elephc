@@ -347,10 +347,8 @@ fn iterator_apply_callback_args<'a>(
             if elems.iter().all(is_static_callback_arg_literal) {
                 Ok(IteratorApplyArgs::Static(elems.as_slice()))
             } else {
-                Err(CompileError::new(
-                    span,
-                    "iterator_apply() args must be null or a literal array of scalar literals",
-                ))
+                checker.infer_type(args_expr, env)?;
+                Ok(IteratorApplyArgs::Dynamic)
             }
         }
         _ => {
@@ -360,7 +358,7 @@ fn iterator_apply_callback_args<'a>(
             } else {
                 Err(CompileError::new(
                     span,
-                    "iterator_apply() args must be null, a literal array of scalar literals, or an indexed array value",
+                    "iterator_apply() args must be null, a literal array, or an indexed array value",
                 ))
             }
         }

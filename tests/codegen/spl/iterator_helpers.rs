@@ -344,6 +344,33 @@ echo iterator_apply(new Range(), "label", ["A"]);
 }
 
 #[test]
+fn test_iterator_apply_evaluates_literal_arg_array_once_before_loop() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $i;
+    public function __construct() { $this->i = 0; }
+    public function rewind(): void { $this->i = 0; }
+    public function valid(): bool { return $this->i < 2; }
+    public function current(): int { return $this->i; }
+    public function key(): int { return $this->i; }
+    public function next(): void { $this->i = $this->i + 1; }
+}
+function make_label(): string {
+    echo "!";
+    return "A";
+}
+function label(string $prefix): bool {
+    echo $prefix;
+    return true;
+}
+echo iterator_apply(new Range(), "label", [make_label()]);
+"#,
+    );
+    assert_eq!(out, "!AA2");
+}
+
+#[test]
 fn test_iterator_apply_accepts_static_args_for_callable_without_known_signature() {
     let out = compile_and_run(
         r#"<?php

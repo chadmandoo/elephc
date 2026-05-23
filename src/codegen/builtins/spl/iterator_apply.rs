@@ -71,21 +71,26 @@ pub fn emit(
     abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // save iterator_apply()'s callback-invocation counter
     abi::emit_push_reg(emitter, call_reg);                                      // save the resolved callback address beneath the loop receiver
 
-    let callback_arg_source = if let Some(args_expr) = dynamic_callback_args(args) {
-        let arg_array_ty = emit_expr(args_expr, emitter, ctx, data);
-        abi::emit_push_reg(emitter, abi::int_result_reg(emitter));              // save iterator_apply()'s evaluated callback-argument array for every invocation
-        CallbackArgSource::Dynamic {
-            args_offset: 16,
-            callback_offset: 32,
-            count_offset: 48,
-            arg_array_ty,
+    let callback_arg_source = match callback_args_expr(args) {
+        CallbackArgsExpr::Evaluated {
+            expr,
+            literal_elems,
+        } => {
+            let arg_array_ty = emit_expr(expr, emitter, ctx, data);
+            abi::emit_push_reg(emitter, abi::int_result_reg(emitter));          // save iterator_apply()'s evaluated callback-argument array for every invocation
+            CallbackArgSource::Dynamic {
+                args_offset: 16,
+                callback_offset: 32,
+                count_offset: 48,
+                arg_array_ty,
+                literal_elems,
+            }
         }
-    } else {
-        CallbackArgSource::Literal {
-            args: literal_callback_args(args),
+        CallbackArgsExpr::Literal(args) => CallbackArgSource::Literal {
+            args,
             callback_offset: 16,
             count_offset: 32,
-        }
+        },
     };
     let receiver_offset = match callback_arg_source {
         CallbackArgSource::Dynamic { .. } => 48,
@@ -186,20 +191,50 @@ enum CallbackArgSource<'a> {
         callback_offset: usize,
         count_offset: usize,
         arg_array_ty: PhpType,
+        literal_elems: Option<&'a [Expr]>,
     },
 }
 
-fn literal_callback_args(args: &[Expr]) -> &[Expr] {
-    match args.get(2).map(|arg| &arg.kind) {
-        Some(ExprKind::ArrayLiteral(elems)) => elems.as_slice(),
-        _ => &[],
+enum CallbackArgsExpr<'a> {
+    Literal(&'a [Expr]),
+    Evaluated {
+        expr: &'a Expr,
+        literal_elems: Option<&'a [Expr]>,
+    },
+}
+
+fn callback_args_expr(args: &[Expr]) -> CallbackArgsExpr<'_> {
+    match args.get(2) {
+        Some(arg) => match &arg.kind {
+            ExprKind::Null => CallbackArgsExpr::Literal(&[]),
+            ExprKind::ArrayLiteral(elems) if elems.iter().all(is_static_callback_arg_literal) => {
+                CallbackArgsExpr::Literal(elems.as_slice())
+            }
+            ExprKind::ArrayLiteral(elems) => CallbackArgsExpr::Evaluated {
+                expr: arg,
+                literal_elems: Some(elems.as_slice()),
+            },
+            _ => CallbackArgsExpr::Evaluated {
+                expr: arg,
+                literal_elems: None,
+            },
+        },
+        None => CallbackArgsExpr::Literal(&[]),
     }
 }
 
-fn dynamic_callback_args(args: &[Expr]) -> Option<&Expr> {
-    match args.get(2) {
-        Some(arg) if !matches!(arg.kind, ExprKind::ArrayLiteral(_) | ExprKind::Null) => Some(arg),
-        _ => None,
+fn is_static_callback_arg_literal(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::StringLiteral(_)
+        | ExprKind::IntLiteral(_)
+        | ExprKind::FloatLiteral(_)
+        | ExprKind::BoolLiteral(_)
+        | ExprKind::Null => true,
+        ExprKind::Negate(inner) => matches!(
+            inner.kind,
+            ExprKind::IntLiteral(_) | ExprKind::FloatLiteral(_)
+        ),
+        _ => false,
     }
 }
 
@@ -228,6 +263,7 @@ fn emit_callback_invocation(
         args_offset,
         count_offset,
         arg_array_ty,
+        literal_elems,
         ..
     } = callback_arg_source
     {
@@ -241,7 +277,7 @@ fn emit_callback_invocation(
         let dynamic_ret_ty = call_user_func_array::emit_loaded_array_callback_call(
             LoadedArraySource::TemporaryStackSlot(*args_offset),
             arg_array_ty,
-            None,
+            *literal_elems,
             call_reg,
             captures,
             sig,

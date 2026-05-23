@@ -227,12 +227,12 @@ accepts statically known Traversable objects and runtime-dispatched
 `Traversable` or `iterable` values; if an `iterable` value is an array at
 runtime, the program aborts because PHP's `iterator_apply()` signature requires
 `Traversable`. The third `iterator_apply()` argument may be omitted, `null`, a
-literal scalar array, or a dynamic indexed array value. Dynamic associative
-arrays with string keys are rejected because PHP treats them as named callback
-arguments. Callback expressions without statically known signatures are
-accepted only when the callback arguments are omitted, `null`, or a literal
-scalar array; dynamic callback-argument arrays still require a statically known
-callback signature.
+literal array, or a dynamic indexed array value; literal arrays with expressions
+are evaluated once before iteration starts. Dynamic associative arrays with
+string keys are rejected because PHP treats them as named callback arguments.
+Callback expressions without statically known signatures are accepted only when
+the callback arguments are omitted, `null`, or a literal scalar array; dynamic
+callback-argument arrays still require a statically known callback signature.
 
 ## Compatibility Gaps
 

@@ -176,7 +176,7 @@ function cb(): bool { return true; }
 $args = ["name" => "value"];
 iterator_apply(new Range(), "cb", $args);
 "#,
-        "iterator_apply() args must be null, a literal array of scalar literals, or an indexed array value",
+        "iterator_apply() args must be null, a literal array, or an indexed array value",
     );
 }
 
