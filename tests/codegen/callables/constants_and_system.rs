@@ -379,6 +379,27 @@ call_user_func_array("summarize", $args);
 }
 
 #[test]
+fn test_call_user_func_array_first_class_dynamic_assoc_args_for_variadic_callback() {
+    let out = compile_and_run(
+        r#"<?php
+function summarize($head, ...$rest) {
+    echo $head;
+    echo ":";
+    foreach ($rest as $key => $value) {
+        echo $key . "=" . $value . ";";
+    }
+}
+$args = ["head" => 1, "x" => 2];
+$cb = summarize(...);
+call_user_func_array($cb, $args);
+echo "|";
+call_user_func_array(summarize(...), $args);
+"#,
+    );
+    assert_eq!(out, "1:x=2;|1:x=2;");
+}
+
+#[test]
 fn test_call_user_func_array_variadic_float_tail_count() {
     let out = compile_and_run(
         "<?php

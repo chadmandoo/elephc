@@ -342,11 +342,11 @@ pub(super) fn check_builtin(
                 ));
             }
             if let ExprKind::FirstClassCallable(target) = &args[0].kind {
-                let elems = match &args[1].kind {
-                    ExprKind::ArrayLiteral(elems) => elems.as_slice(),
-                    _ => &[],
+                let sig = if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
+                    checker.specialize_first_class_callable_target(target, elems, span, env)?
+                } else {
+                    checker.resolve_first_class_callable_sig(target, span, env)?
                 };
-                let sig = checker.specialize_first_class_callable_target(target, elems, span, env)?;
                 validate_call_user_func_array_dynamic_arg_array(checker, &sig, &args[1], span, env)?;
                 let arg_array_ty = checker.infer_type(&args[1], env)?;
                 specialize_dynamic_assoc_variadic_first_class_callback(
@@ -369,12 +369,11 @@ pub(super) fn check_builtin(
             }
             if let ExprKind::Variable(var_name) = &args[0].kind {
                 if let Some(target) = checker.first_class_callable_targets.get(var_name).cloned() {
-                    let elems = match &args[1].kind {
-                        ExprKind::ArrayLiteral(elems) => elems.as_slice(),
-                        _ => &[],
+                    let sig = if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
+                        checker.specialize_first_class_callable_target(&target, elems, span, env)?
+                    } else {
+                        checker.resolve_first_class_callable_sig(&target, span, env)?
                     };
-                    let sig =
-                        checker.specialize_first_class_callable_target(&target, elems, span, env)?;
                     checker.callable_sigs.insert(var_name.clone(), sig.clone());
                     checker
                         .closure_return_types

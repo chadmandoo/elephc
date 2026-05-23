@@ -394,7 +394,7 @@ fn check_iterator_apply_dynamic_callback(
     }
 
     if let ExprKind::FirstClassCallable(target) = &callback.kind {
-        let sig = checker.specialize_first_class_callable_target(target, &[], span, env)?;
+        let sig = checker.resolve_first_class_callable_sig(target, span, env)?;
         reject_dynamic_ref_args(&sig, span)?;
         specialize_iterator_apply_dynamic_assoc_variadic_target(
             checker,
@@ -407,7 +407,7 @@ fn check_iterator_apply_dynamic_callback(
 
     if let ExprKind::Variable(var_name) = &callback.kind {
         if let Some(target) = checker.first_class_callable_targets.get(var_name).cloned() {
-            let sig = checker.specialize_first_class_callable_target(&target, &[], span, env)?;
+            let sig = checker.resolve_first_class_callable_sig(&target, span, env)?;
             checker.callable_sigs.insert(var_name.clone(), sig.clone());
             checker
                 .closure_return_types

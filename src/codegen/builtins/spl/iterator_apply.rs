@@ -52,10 +52,20 @@ pub fn emit(
         &args[1].kind,
         ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_)
     );
-    let precomputed_sig = crate::codegen::callables::callable_sig(&args[1], ctx);
-    let captures =
-        callback_env::materialize_callback_address(&args[1], call_reg, emitter, ctx, data);
-    let sig: Option<FunctionSig> = if is_callable_expr {
+    let direct_fcc_function =
+        crate::codegen::callables::direct_first_class_function_sig(&args[1], ctx);
+    let precomputed_sig = direct_fcc_function
+        .as_ref()
+        .map(|(_, sig)| sig.clone())
+        .or_else(|| crate::codegen::callables::callable_sig(&args[1], ctx));
+    let captures = if let Some((resolved_name, _)) = direct_fcc_function.as_ref() {
+        let label = crate::names::function_symbol(resolved_name);
+        abi::emit_symbol_address(emitter, call_reg, &label);
+        Vec::new()
+    } else {
+        callback_env::materialize_callback_address(&args[1], call_reg, emitter, ctx, data)
+    };
+    let sig: Option<FunctionSig> = if direct_fcc_function.is_none() && is_callable_expr {
         ctx.deferred_closures
             .last()
             .map(|deferred| deferred.sig.clone())
