@@ -137,10 +137,13 @@ fn emit_classes(emitter: &mut Emitter, data: &mut DataSection) -> PhpType {
 /// `inject_builtin_spl_classes`.
 const SPL_CLASS_NAMES: &[&str] = &[
     "ArrayAccess",
+    "ArrayIterator",
+    "ArrayObject",
     "BadFunctionCallException",
     "BadMethodCallException",
     "Countable",
     "DomainException",
+    "EmptyIterator",
     "Error",
     "Exception",
     "InvalidArgumentException",

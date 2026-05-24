@@ -24,3 +24,5 @@ mod intrinsics;
 mod redirects;
 #[path = "spl/exceptions.rs"]
 mod exceptions;
+#[path = "spl/storage.rs"]
+mod storage;

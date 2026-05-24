@@ -8,7 +8,7 @@
 //! Key details:
 //! - Object handles, property storage, and class ids must stay consistent with emitted class tables.
 
-use crate::codegen::abi;
+use crate::codegen::{abi, runtime_value_tag};
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
@@ -42,6 +42,9 @@ pub(super) fn emit_new_object(
     }
     if class_name == "SplFixedArray" {
         return emit_new_spl_fixed_array(args, emitter, ctx, data);
+    }
+    if matches!(class_name, "ArrayIterator" | "ArrayObject") {
+        return emit_new_spl_array_storage_object(class_name, args, emitter, ctx, data);
     }
     if super::reflection::is_reflection_owner_class(class_name) {
         return super::reflection::emit_new_reflection_owner(
@@ -379,6 +382,189 @@ fn emit_new_spl_fixed_array(
     abi::emit_pop_reg(emitter, abi::int_arg_reg_name(emitter.target, 1));       // pass requested fixed-array size as the second runtime argument
     abi::emit_call_label(emitter, "__rt_spl_fixed_new");                       // allocate a runtime-managed SplFixedArray payload
     PhpType::Object("SplFixedArray".to_string())
+}
+
+fn emit_new_spl_array_storage_object(
+    class_name: &str,
+    args: &[Expr],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    emitter.comment(&format!("new {}() — SPL array storage construction", class_name));
+    let Some(class_info) = ctx.classes.get(class_name).cloned() else {
+        emitter.comment(&format!("WARNING: missing {} metadata", class_name));
+        return PhpType::Object(class_name.to_string());
+    };
+    let keys_offset = *class_info.property_offsets.get("keys").unwrap_or(&8);
+    let values_offset = *class_info.property_offsets.get("values").unwrap_or(&24);
+    let flags_offset = class_info
+        .property_offsets
+        .get("flags")
+        .copied()
+        .unwrap_or(if class_name == "ArrayIterator" { 56 } else { 40 });
+    let position_offset = class_info.property_offsets.get("position").copied();
+
+    emit_new_object_core(class_name, &[], false, emitter, ctx, data);
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the allocated SPL storage object while constructor arguments are normalized
+
+    let source_ty = if let Some(source_expr) = args.first() {
+        let ty = emit_expr(source_expr, emitter, ctx, data);
+        if matches!(ty, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+            ty
+        } else {
+            emitter.comment("WARNING: ArrayIterator/ArrayObject source was not statically typed as array");
+            emit_empty_mixed_array(emitter);
+            PhpType::Array(Box::new(PhpType::Mixed))
+        }
+    } else {
+        emit_empty_mixed_array(emitter);
+        PhpType::Array(Box::new(PhpType::Mixed))
+    };
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the source array for both keys and values extraction
+
+    if let Some(flags_expr) = args.get(1) {
+        let flags_ty = emit_expr(flags_expr, emitter, ctx, data);
+        coerce_result_to_type(emitter, ctx, data, &flags_ty, &PhpType::Int);
+    } else {
+        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve ArrayIterator/ArrayObject flags until property storage is ready
+
+    load_storage_source_from_stack(emitter);
+    let keys_ty = crate::codegen::builtins::arrays::array_keys::emit_loaded_keys(
+        &source_ty,
+        emitter,
+        ctx,
+    )
+    .unwrap_or_else(|| PhpType::Array(Box::new(PhpType::Mixed)));
+    emit_convert_loaded_indexed_array_to_mixed(&keys_ty, emitter);
+    store_storage_array_property_from_result(emitter, keys_offset, 32);
+
+    load_storage_source_from_stack(emitter);
+    let values_ty = crate::codegen::builtins::arrays::array_values::emit_loaded_values(
+        &source_ty,
+        emitter,
+        ctx,
+        data,
+    )
+    .unwrap_or_else(|| PhpType::Array(Box::new(PhpType::Mixed)));
+    emit_convert_loaded_indexed_array_to_mixed(&values_ty, emitter);
+    store_storage_array_property_from_result(emitter, values_offset, 32);
+
+    store_storage_int_property_from_stack(emitter, flags_offset, 0, 32);
+    if let Some(position_offset) = position_offset {
+        store_storage_zero_property(emitter, position_offset, 32);
+    }
+
+    abi::emit_release_temporary_stack(emitter, 32);                             // discard preserved flags and source array after storage initialization
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized SPL storage object as the expression result
+    PhpType::Object(class_name.to_string())
+}
+
+fn emit_empty_mixed_array(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, #4");                                  // allocate a small empty storage array for SPL keys/values
+            emitter.instruction("mov x1, #8");                                  // Mixed storage uses pointer-sized slots
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov rdi, 4");                                  // allocate a small empty storage array for SPL keys/values
+            emitter.instruction("mov rsi, 8");                                  // Mixed storage uses pointer-sized slots
+        }
+    }
+    abi::emit_call_label(emitter, "__rt_array_new");                           // allocate empty indexed storage
+    emit_convert_loaded_indexed_array_to_mixed(&PhpType::Array(Box::new(PhpType::Int)), emitter);
+}
+
+fn load_storage_source_from_stack(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("ldr x0, [sp, #16]");                           // reload the preserved constructor source array
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov rax, QWORD PTR [rsp + 16]");               // reload the preserved constructor source array
+        }
+    }
+}
+
+fn emit_convert_loaded_indexed_array_to_mixed(array_ty: &PhpType, emitter: &mut Emitter) {
+    let elem_ty = match array_ty {
+        PhpType::Array(elem_ty) => elem_ty.as_ref(),
+        _ => &PhpType::Mixed,
+    };
+    let tag = runtime_value_tag(&elem_ty.codegen_repr()) as i64;
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("mov x1, #{}", tag));                  // pass the current indexed-array value_type tag to the Mixed converter
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov rdi, rax");                                // pass the loaded indexed-array pointer to the Mixed converter
+            emitter.instruction(&format!("mov rsi, {}", tag));                  // pass the current indexed-array value_type tag to the Mixed converter
+        }
+    }
+    abi::emit_call_label(emitter, "__rt_array_to_mixed");                      // normalize SPL storage arrays to boxed Mixed slots
+}
+
+fn store_storage_array_property_from_result(
+    emitter: &mut Emitter,
+    property_offset: usize,
+    object_stack_offset: usize,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("ldr x9, [sp, #{}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("str x0, [x9, #{}]", property_offset)); // store the initialized storage array pointer
+            emitter.instruction("mov x10, #4");                                 // runtime property tag 4 = indexed array
+            emitter.instruction(&format!("str x10, [x9, #{}]", property_offset + 8)); // stamp the property as an indexed array
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov r11, QWORD PTR [rsp + {}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], rax", property_offset)); // store the initialized storage array pointer
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 4", property_offset + 8)); // stamp the property as an indexed array
+        }
+    }
+}
+
+fn store_storage_int_property_from_stack(
+    emitter: &mut Emitter,
+    property_offset: usize,
+    value_stack_offset: usize,
+    object_stack_offset: usize,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("ldr x9, [sp, #{}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("ldr x10, [sp, #{}]", value_stack_offset)); // reload the preserved integer property value
+            emitter.instruction(&format!("str x10, [x9, #{}]", property_offset)); // store the integer property value
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset + 8)); // clear scalar property metadata
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov r11, QWORD PTR [rsp + {}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("mov r10, QWORD PTR [rsp + {}]", value_stack_offset)); // reload the preserved integer property value
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], r10", property_offset)); // store the integer property value
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset + 8)); // clear scalar property metadata
+        }
+    }
+}
+
+fn store_storage_zero_property(
+    emitter: &mut Emitter,
+    property_offset: usize,
+    object_stack_offset: usize,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("ldr x9, [sp, #{}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset)); // initialize the integer property to zero
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset + 8)); // clear scalar property metadata
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov r11, QWORD PTR [rsp + {}]", object_stack_offset)); // reload the SPL storage object pointer
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset)); // initialize the integer property to zero
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset + 8)); // clear scalar property metadata
+        }
+    }
 }
 
 /// Codegen interception for `new Fiber($callable)`.

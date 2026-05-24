@@ -7,8 +7,8 @@ sidebar:
 
 elephc ships the SPL pieces that are needed by supported PHP code today:
 iterator/counting/access interfaces, the SPL exception hierarchy, autoload and
-introspection helpers, and the Phase 4 container classes
-`SplDoublyLinkedList`, `SplStack`, `SplQueue`, and `SplFixedArray`.
+introspection helpers, the Phase 4 container classes, and the Phase 5 storage
+iterator foundations: `EmptyIterator`, `ArrayIterator`, and `ArrayObject`.
 
 SPL names live in the global namespace, matching PHP. They are available
 without imports or runtime extensions.
@@ -46,8 +46,10 @@ matching follows PHP's normal class hierarchy rules.
 
 ## Container Classes
 
-The Phase 4 SPL containers are built-in classes with runtime-backed storage,
-not userland PHP shims:
+The Phase 4 SPL containers and Phase 5 storage iterators are built-in classes.
+`SplDoublyLinkedList`, `SplStack`, `SplQueue`, and `SplFixedArray` use dedicated
+runtime storage; `ArrayIterator` and `ArrayObject` use compiler-managed
+keys/values storage over boxed `mixed` cells:
 
 | Class | Parent | Interfaces |
 |---|---|---|
@@ -55,6 +57,9 @@ not userland PHP shims:
 | `SplStack` | `SplDoublyLinkedList` | inherited from parent |
 | `SplQueue` | `SplDoublyLinkedList` | inherited from parent |
 | `SplFixedArray` | - | `ArrayAccess`, `Countable`, `JsonSerializable` |
+| `EmptyIterator` | - | `Iterator` |
+| `ArrayIterator` | - | `Iterator`, `ArrayAccess`, `SeekableIterator`, `Countable` |
+| `ArrayObject` | - | `IteratorAggregate`, `ArrayAccess`, `Countable` |
 
 Container slots store `mixed`, so scalar and object values can be mixed in the
 same container. Runtime ownership is handled by the SPL helpers, including
@@ -179,6 +184,39 @@ $fixed->setSize(3);
 $fixed[2] = "tail";
 ```
 
+### Storage iterators
+
+Supported methods:
+
+| Class | Methods |
+|---|---|
+| `EmptyIterator` | `current()`, `key()`, `next()`, `rewind()`, `valid()` |
+| `ArrayIterator` | `__construct(array $array = [], int $flags = 0)`, `current()`, `key()`, `next()`, `rewind()`, `valid()`, `seek(int $offset): void`, `count(): int`, `offsetExists()`, `offsetGet()`, `offsetSet()`, `offsetUnset()`, `append()`, `getArrayCopy()` |
+| `ArrayObject` | `__construct(array $array = [], int $flags = 0)`, `getIterator(): ArrayIterator`, `count(): int`, `offsetExists()`, `offsetGet()`, `offsetSet()`, `offsetUnset()`, `append()`, `getArrayCopy()` |
+
+```php
+<?php
+$it = new ArrayIterator(["a" => 10, "b" => 20]);
+$it["c"] = 30;
+
+foreach ($it as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+    echo "\n";
+}
+
+$obj = new ArrayObject(["left" => 1, "right" => 2]);
+foreach ($obj as $key => $value) {
+    echo $key;
+    echo $value;
+}
+```
+
+`ArrayIterator` and `ArrayObject` preserve insertion-order keys for array
+inputs and for writes through `ArrayAccess`. Appends use the current storage
+length as the next integer key.
+
 ## Autoload and Introspection
 
 SPL autoload and class-introspection helpers are documented in
@@ -244,8 +282,7 @@ source argument array.
 
 ## Compatibility Gaps
 
-`SplFixedArray::getIterator()` is deferred because it needs the Phase 5 iterator
-runtime surface (`IteratorAggregate` return objects and the iterator decorator
-classes). The Phase 4 containers otherwise keep their runtime-backed method
-surface aligned with PHP's empty-container, invalid-offset, serialization, and
-fixed-array key behaviors.
+`SplFixedArray::getIterator()` is still deferred until the fixed-array runtime
+is wired to return an `ArrayIterator`. The Phase 4 containers otherwise keep
+their runtime-backed method surface aligned with PHP's empty-container,
+invalid-offset, serialization, and fixed-array key behaviors.

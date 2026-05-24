@@ -26,7 +26,14 @@ pub fn emit(
 ) -> Option<PhpType> {
     emitter.comment("array_keys()");
     let arr_ty = emit_expr(&args[0], emitter, ctx, data);
+    emit_loaded_keys(&arr_ty, emitter, ctx)
+}
 
+pub(crate) fn emit_loaded_keys(
+    arr_ty: &PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> Option<PhpType> {
     if let PhpType::AssocArray { key, .. } = &arr_ty {
         let key_ty = *key.clone();
         let assoc_key_elem_size = if matches!(key_ty, PhpType::Str) { 16 } else { 8 };

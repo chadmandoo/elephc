@@ -20,7 +20,7 @@ mod array_flip;
 mod array_intersect;
 mod array_intersect_key;
 mod array_key_exists;
-mod array_keys;
+pub(crate) mod array_keys;
 mod array_map;
 mod array_map_callback_returns_str;
 mod array_map_expr_is_str;
