@@ -339,6 +339,12 @@ pub(crate) fn emit_loaded_array_callback_call(
         _ => PhpType::Int,
     };
     let elem_size = args::array_element_stride(&elem_ty);
+    let visible_param_count = sig.params.len();
+    let regular_param_count = if sig.variadic.is_some() {
+        visible_param_count.saturating_sub(1)
+    } else {
+        visible_param_count
+    };
 
     match array_source {
         LoadedArraySource::Result => {
@@ -349,15 +355,17 @@ pub(crate) fn emit_loaded_array_callback_call(
         }
     }
     abi::emit_load_from_address(emitter, len_reg, array_reg, 0);                // load callback-argument array length
+    emit_indexed_required_arg_count_check(
+        sig,
+        regular_param_count,
+        len_reg,
+        emitter,
+        ctx,
+        data,
+    );
 
     // -- extract elements from array and push them as regular call arguments --
     let mut arg_types = Vec::new();
-    let visible_param_count = sig.params.len();
-    let regular_param_count = if sig.variadic.is_some() {
-        visible_param_count.saturating_sub(1)
-    } else {
-        visible_param_count
-    };
     for i in 0..regular_param_count {
         let is_ref = sig.ref_params.get(i).copied().unwrap_or(false);
         if is_ref {
@@ -737,6 +745,37 @@ fn callback_arg_target_ty<'a>(
     } else {
         None
     }
+}
+
+fn emit_indexed_required_arg_count_check(
+    sig: &FunctionSig,
+    regular_param_count: usize,
+    len_reg: &str,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let required_count = (0..regular_param_count)
+        .filter(|idx| sig.defaults.get(*idx).and_then(|default| default.as_ref()).is_none())
+        .map(|idx| idx + 1)
+        .max()
+        .unwrap_or(0);
+    if required_count == 0 {
+        return;
+    }
+    let ok_label = ctx.next_label("cufa_indexed_required_ok");
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("cmp {}, #{}", len_reg, required_count)); // check that the dynamic indexed arg array contains all required callback parameters
+            emitter.instruction(&format!("b.ge {}", ok_label));                 // continue when every required callback parameter is present
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("cmp {}, {}", len_reg, required_count)); // check that the dynamic indexed arg array contains all required callback parameters
+            emitter.instruction(&format!("jge {}", ok_label));                  // continue when every required callback parameter is present
+        }
+    }
+    emit_call_user_func_array_missing_arg_abort(emitter, data);
+    emitter.label(&ok_label);
 }
 
 fn emit_loaded_assoc_array_callback_call(
@@ -1242,6 +1281,106 @@ pub(crate) fn emit_loaded_array_unknown_callback_call(
         );
     }
 
+    let elem_ty = callback_array_elem_ty(arr_ty);
+    let cases = runtime_callable_cases(ctx, captures, Some(&elem_ty));
+    if !cases.is_empty() {
+        return emit_loaded_indexed_array_unknown_callback_call(
+            array_source,
+            arr_ty,
+            call_reg,
+            captures,
+            &cases,
+            concat_saved_before_args,
+            emitter,
+            ctx,
+            data,
+        );
+    }
+
+    emit_loaded_array_unknown_callback_call_by_arity(
+        array_source,
+        arr_ty,
+        call_reg,
+        captures,
+        concat_saved_before_args,
+        emitter,
+        ctx,
+        data,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_loaded_indexed_array_unknown_callback_call(
+    array_source: LoadedArraySource,
+    arr_ty: &PhpType,
+    call_reg: &str,
+    captures: &[(String, PhpType, bool)],
+    cases: &[RuntimeCallableCase],
+    concat_saved_before_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    let done_label = ctx.next_label("cufa_unknown_indexed_done");
+    let pushed_array = matches!(array_source, LoadedArraySource::Result);
+    let array_source = match array_source {
+        LoadedArraySource::Result => {
+            abi::emit_push_reg(emitter, abi::int_result_reg(emitter));          // preserve the indexed callback-argument array for runtime signature dispatch
+            LoadedArraySource::TemporaryStackSlot(0)
+        }
+        LoadedArraySource::TemporaryStackSlot(offset) => LoadedArraySource::TemporaryStackSlot(offset),
+    };
+
+    for case in cases {
+        let next_case = ctx.next_label("cufa_unknown_indexed_next");
+        emit_branch_if_callable_case_mismatch(call_reg, &case.label, &next_case, emitter);
+        let case_ret_ty = emit_loaded_array_callback_call(
+            array_source,
+            arr_ty,
+            None,
+            call_reg,
+            &case.captures,
+            &case.sig,
+            concat_saved_before_args,
+            emitter,
+            ctx,
+            data,
+        );
+        crate::codegen::emit_box_current_value_as_mixed(emitter, &case_ret_ty.codegen_repr());
+        abi::emit_jump(emitter, &done_label);
+        emitter.label(&next_case);
+    }
+
+    let fallback_ret_ty = emit_loaded_array_unknown_callback_call_by_arity(
+        array_source,
+        arr_ty,
+        call_reg,
+        captures,
+        concat_saved_before_args,
+        emitter,
+        ctx,
+        data,
+    );
+    crate::codegen::emit_box_current_value_as_mixed(emitter, &fallback_ret_ty.codegen_repr());
+
+    emitter.label(&done_label);
+    if pushed_array {
+        abi::emit_release_temporary_stack(emitter, 16);                         // discard the preserved indexed callback-argument array
+    }
+    PhpType::Mixed
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_loaded_array_unknown_callback_call_by_arity(
+    array_source: LoadedArraySource,
+    arr_ty: &PhpType,
+    call_reg: &str,
+    captures: &[(String, PhpType, bool)],
+    concat_saved_before_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
     if captures.is_empty() {
         return emit_loaded_array_unknown_callback_call_dynamic(
             array_source,
@@ -1335,7 +1474,8 @@ fn emit_loaded_assoc_array_unknown_callback_call(
     data: &mut DataSection,
 ) -> PhpType {
     let done_label = ctx.next_label("cufa_unknown_assoc_done");
-    let cases = runtime_callable_cases(ctx, captures);
+    let elem_ty = callback_array_elem_ty(arr_ty);
+    let cases = runtime_callable_cases(ctx, captures, Some(&elem_ty));
     let pushed_array = matches!(array_source, LoadedArraySource::Result);
     let array_source = match array_source {
         LoadedArraySource::Result => {
@@ -1373,8 +1513,9 @@ fn emit_loaded_assoc_array_unknown_callback_call(
 }
 
 fn runtime_callable_cases(
-    ctx: &Context,
+    ctx: &mut Context,
     captures: &[(String, PhpType, bool)],
+    source_elem_ty: Option<&PhpType>,
 ) -> Vec<RuntimeCallableCase> {
     let mut cases = Vec::new();
     for (name, sig) in &ctx.functions {
@@ -1383,23 +1524,74 @@ fn runtime_callable_cases(
         }
         cases.push(RuntimeCallableCase {
             label: function_symbol(name),
-            sig: sig.clone(),
+            sig: specialized_runtime_case_sig(sig, source_elem_ty),
             captures: Vec::new(),
         });
     }
-    for deferred in &ctx.deferred_closures {
+    for deferred in &mut ctx.deferred_closures {
         if deferred.hidden_params.as_slice() != captures {
             continue;
         }
+        let sig = specialized_runtime_case_sig(&deferred.sig, source_elem_ty);
+        deferred.sig = sig.clone();
         cases.push(RuntimeCallableCase {
             label: deferred.label.clone(),
-            sig: deferred.sig.clone(),
+            sig,
             captures: captures.to_vec(),
         });
     }
     cases.sort_by(|left, right| left.label.cmp(&right.label));
     cases.dedup_by(|left, right| left.label == right.label);
     cases
+}
+
+fn callback_array_elem_ty(arr_ty: &PhpType) -> PhpType {
+    match arr_ty {
+        PhpType::Array(elem_ty) => *elem_ty.clone(),
+        PhpType::AssocArray { value, .. } => *value.clone(),
+        _ => PhpType::Int,
+    }
+}
+
+fn specialized_runtime_case_sig(
+    sig: &FunctionSig,
+    source_elem_ty: Option<&PhpType>,
+) -> FunctionSig {
+    let Some(source_elem_ty) = source_elem_ty else {
+        return sig.clone();
+    };
+    let mut sig = sig.clone();
+    let visible_param_count = sig.params.len();
+    let regular_param_count = if sig.variadic.is_some() {
+        visible_param_count.saturating_sub(1)
+    } else {
+        visible_param_count
+    };
+    let source_ty = source_elem_ty.codegen_repr();
+    for i in 0..regular_param_count {
+        if sig.declared_params.get(i).copied().unwrap_or(false)
+            || sig.ref_params.get(i).copied().unwrap_or(false)
+        {
+            continue;
+        }
+        if let Some((_, param_ty)) = sig.params.get_mut(i) {
+            *param_ty = source_ty.clone();
+        }
+    }
+    if sig.variadic.is_some() {
+        let variadic_idx = visible_param_count.saturating_sub(1);
+        if !sig
+            .declared_params
+            .get(variadic_idx)
+            .copied()
+            .unwrap_or(false)
+        {
+            if let Some((_, param_ty)) = sig.params.get_mut(variadic_idx) {
+                *param_ty = PhpType::Array(Box::new(source_ty));
+            }
+        }
+    }
+    sig
 }
 
 fn emit_branch_if_callable_case_mismatch(

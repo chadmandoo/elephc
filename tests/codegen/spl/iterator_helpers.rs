@@ -585,6 +585,34 @@ echo iterator_apply(new Range(), $cb, $args);
 }
 
 #[test]
+fn test_iterator_apply_dynamic_indexed_unknown_signature_uses_string_truthiness() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $i;
+    public function __construct() { $this->i = 0; }
+    public function rewind(): void { $this->i = 0; }
+    public function valid(): bool { return $this->i < 2; }
+    public function current(): int { return $this->i; }
+    public function key(): int { return $this->i; }
+    public function next(): void { $this->i = $this->i + 1; }
+}
+$callbacks = [
+    function($label): string {
+        echo $label;
+        return "";
+    },
+];
+$idx = 0;
+$cb = $callbacks[$idx];
+$args = ["X"];
+echo iterator_apply(new Range(), $cb, $args);
+"#,
+    );
+    assert_eq!(out, "X1");
+}
+
+#[test]
 fn test_iterator_apply_dynamic_assoc_args_for_known_signature() {
     let out = compile_and_run(
         r#"<?php

@@ -504,6 +504,24 @@ echo call_user_func_array($cb, $args);
 }
 
 #[test]
+fn test_call_user_func_array_dynamic_indexed_unknown_signature_boxes_string_return() {
+    let out = compile_and_run(
+        r#"<?php
+$callbacks = [
+    function($value): string {
+        return "v:" . $value;
+    },
+];
+$idx = 0;
+$cb = $callbacks[$idx];
+$args = [7];
+echo call_user_func_array($cb, $args);
+"#,
+    );
+    assert_eq!(out, "v:7");
+}
+
+#[test]
 fn test_call_user_func_array_variadic_float_tail_count() {
     let out = compile_and_run(
         "<?php
