@@ -155,6 +155,22 @@ foreach ($wrap as $k => $v) {
 }
 
 #[test]
+fn test_iterator_iterator_second_arg_accepts_keyword_named_argument() {
+    let out = compile_and_run(
+        r#"<?php
+$wrap = new IteratorIterator(new ArrayObject(["named" => "N"]), class: "ArrayObject");
+foreach ($wrap as $k => $v) {
+    echo $k;
+    echo "=";
+    echo $v;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "named=N;");
+}
+
+#[test]
 fn test_iterator_iterator_second_arg_rejects_invalid_aggregate_downcasts() {
     let out = compile_and_run(
         r#"<?php

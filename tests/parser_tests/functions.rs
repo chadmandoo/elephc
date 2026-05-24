@@ -267,6 +267,25 @@ fn test_parse_named_constructor_call() {
     }
 }
 
+#[test]
+fn test_parse_keyword_named_constructor_call() {
+    let stmts = parse_source("<?php $user = new User(class: 42);");
+    if let StmtKind::Assign { value: expr, .. } = &stmts[0].kind {
+        if let ExprKind::NewObject { class_name, args } = &expr.kind {
+            assert_eq!(class_name.as_str(), "User");
+            assert_eq!(args.len(), 1);
+            assert!(matches!(
+                args[0].kind,
+                ExprKind::NamedArg { ref name, .. } if name == "class"
+            ));
+        } else {
+            panic!("expected NewObject");
+        }
+    } else {
+        panic!("expected Assign");
+    }
+}
+
 // --- Default parameter values ---
 
 #[test]

@@ -386,8 +386,14 @@ fn collect_assignment_expr_vars(expr: &Expr, ctx: &mut Context, sig: &FunctionSi
                 collect_assignment_expr_vars(arg, ctx, sig);
             }
         }
+        ExprKind::NewObject { class_name, args } => {
+            let call_span = args.first().map(|arg| arg.span).unwrap_or(expr.span);
+            collect_named_constructor_call_temps(class_name.as_str(), call_span, args, ctx, sig);
+            for arg in args {
+                collect_assignment_expr_vars(arg, ctx, sig);
+            }
+        }
         ExprKind::ClosureCall { args, .. }
-        | ExprKind::NewObject { args, .. }
         | ExprKind::StaticMethodCall { args, .. }
         | ExprKind::NewScopedObject { args, .. } => {
             for arg in args {
@@ -514,12 +520,40 @@ fn collect_named_builtin_or_extern_call_temps(
     let Some(call_sig) = call_sig else {
         return;
     };
+    collect_named_call_temps_for_sig(&call_sig, call_span, args, ctx, current_sig);
+}
+
+fn collect_named_constructor_call_temps(
+    class_name: &str,
+    call_span: crate::span::Span,
+    args: &[Expr],
+    ctx: &mut Context,
+    current_sig: &FunctionSig,
+) {
+    let Some(call_sig) = ctx
+        .classes
+        .get(class_name)
+        .and_then(|class_info| class_info.methods.get("__construct"))
+        .cloned()
+    else {
+        return;
+    };
+    collect_named_call_temps_for_sig(&call_sig, call_span, args, ctx, current_sig);
+}
+
+fn collect_named_call_temps_for_sig(
+    call_sig: &FunctionSig,
+    call_span: crate::span::Span,
+    args: &[Expr],
+    ctx: &mut Context,
+    current_sig: &FunctionSig,
+) {
     let assoc_spread_sources = assoc_spread_sources_for_locals(args, current_sig, ctx);
     let Ok(plan) = crate::types::call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
-        &call_sig,
+        call_sig,
         args,
         call_span,
-        crate::types::call_args::regular_param_count(&call_sig),
+        crate::types::call_args::regular_param_count(call_sig),
         false,
         false,
         &assoc_spread_sources,
@@ -544,7 +578,7 @@ fn collect_named_builtin_or_extern_call_temps(
         for source in &plan.source_values {
             if source.source_index() >= first_named_pos {
                 collect_planned_call_value_temp(
-                    &call_sig,
+                    call_sig,
                     call_span,
                     source.source_index(),
                     source.param_idx(),
@@ -557,7 +591,7 @@ fn collect_named_builtin_or_extern_call_temps(
     } else {
         for source in &plan.source_values {
             collect_planned_call_value_temp(
-                &call_sig,
+                call_sig,
                 call_span,
                 source.source_index(),
                 source.param_idx(),
