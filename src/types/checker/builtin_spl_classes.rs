@@ -1,6 +1,6 @@
 //! Purpose:
 //! Injects SPL container class metadata into the checker.
-//! Provides nominal class/interface/signature contracts for runtime-backed SPL containers.
+//! Provides nominal class/interface/signature contracts for runtime-backed and synthetic SPL containers.
 //!
 //! Called from:
 //! - `crate::types::checker::driver`
@@ -248,6 +248,40 @@ pub(crate) fn inject_builtin_spl_classes(
         },
     );
 
+    class_map.insert(
+        "AppendIterator".to_string(),
+        FlattenedClass {
+            name: "AppendIterator".to_string(),
+            extends: Some("IteratorIterator".to_string()),
+            implements: Vec::new(),
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: append_iterator_properties(),
+            methods: spl_append_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
+        "MultipleIterator".to_string(),
+        FlattenedClass {
+            name: "MultipleIterator".to_string(),
+            extends: None,
+            implements: vec!["Iterator".to_string()],
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: multiple_iterator_properties(),
+            methods: spl_multiple_iterator_methods(),
+            attributes: Vec::new(),
+            constants: multiple_iterator_constants(),
+            used_traits: Vec::new(),
+        },
+    );
+
     Ok(())
 }
 
@@ -280,6 +314,28 @@ pub(crate) fn patch_builtin_spl_storage_signatures(checker: &mut Checker) {
             }
         }
     }
+    let iterator_array_type = PhpType::Array(Box::new(PhpType::Object("Iterator".to_string())));
+    if let Some(class_info) = checker.classes.get_mut("AppendIterator") {
+        for (name, ty) in &mut class_info.properties {
+            if name == "iterators" {
+                *ty = iterator_array_type.clone();
+            }
+        }
+    }
+    if let Some(class_info) = checker.classes.get_mut("MultipleIterator") {
+        for (name, ty) in &mut class_info.properties {
+            if name == "iterators" {
+                *ty = iterator_array_type.clone();
+            } else if name == "infos" {
+                *ty = PhpType::Array(Box::new(PhpType::Mixed));
+            }
+        }
+        for method in ["key", "current"] {
+            if let Some(sig) = class_info.methods.get_mut(&php_symbol_key(method)) {
+                sig.return_type = PhpType::Mixed;
+            }
+        }
+    }
 }
 
 const SPL_CLASS_NAMES: &[&str] = &[
@@ -294,6 +350,8 @@ const SPL_CLASS_NAMES: &[&str] = &[
     "LimitIterator",
     "NoRewindIterator",
     "InfiniteIterator",
+    "AppendIterator",
+    "MultipleIterator",
 ];
 
 fn spl_empty_iterator_methods() -> Vec<ClassMethod> {
@@ -332,6 +390,21 @@ fn limit_iterator_properties() -> Vec<ClassProperty> {
         storage_property("position", TypeExpr::Int),
         storage_property("offset", TypeExpr::Int),
         storage_property("limit", TypeExpr::Int),
+    ]
+}
+
+fn append_iterator_properties() -> Vec<ClassProperty> {
+    vec![
+        storage_property("iterators", array_type()),
+        storage_property("index", TypeExpr::Int),
+    ]
+}
+
+fn multiple_iterator_properties() -> Vec<ClassProperty> {
+    vec![
+        storage_property("iterators", array_type()),
+        storage_property("infos", array_type()),
+        storage_property("flags", TypeExpr::Int),
     ]
 }
 
@@ -517,6 +590,96 @@ fn spl_infinite_iterator_methods() -> Vec<ClassMethod> {
     ]
 }
 
+fn spl_append_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body("__construct", Vec::new(), Some(TypeExpr::Void), append_construct_body()),
+        method_with_body(
+            "append",
+            vec![param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            append_append_body(),
+        ),
+        method_with_body("rewind", Vec::new(), Some(TypeExpr::Void), append_rewind_body()),
+        method_with_body("valid", Vec::new(), Some(TypeExpr::Bool), append_valid_body()),
+        method_with_body("current", Vec::new(), Some(mixed_type()), append_current_body()),
+        method_with_body("key", Vec::new(), Some(mixed_type()), append_key_body()),
+        method_with_body("next", Vec::new(), Some(TypeExpr::Void), append_next_body()),
+        method_with_body(
+            "getInnerIterator",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("Iterator")))),
+            append_get_inner_iterator_body(),
+        ),
+        method_with_body(
+            "getIteratorIndex",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(TypeExpr::Int))),
+            append_get_iterator_index_body(),
+        ),
+        method_with_body(
+            "getArrayIterator",
+            Vec::new(),
+            Some(named_type("ArrayIterator")),
+            append_get_array_iterator_body(),
+        ),
+    ]
+}
+
+fn spl_multiple_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![param_default("flags", TypeExpr::Int, int_expr(1))],
+            Some(TypeExpr::Void),
+            multiple_construct_body(),
+        ),
+        method_with_body("getFlags", Vec::new(), Some(TypeExpr::Int), return_body(multiple_flags_expr())),
+        method_with_body(
+            "setFlags",
+            vec![param("flags", TypeExpr::Int)],
+            Some(TypeExpr::Void),
+            vec![property_assign_stmt(this_expr(), "flags", var_expr("flags"))],
+        ),
+        method_with_body(
+            "attachIterator",
+            vec![
+                param("iterator", named_type("Iterator")),
+                param_default(
+                    "info",
+                    TypeExpr::Nullable(Box::new(TypeExpr::Union(vec![TypeExpr::Str, TypeExpr::Int]))),
+                    null_expr(),
+                ),
+            ],
+            Some(TypeExpr::Void),
+            multiple_attach_iterator_body(),
+        ),
+        method_with_body(
+            "detachIterator",
+            vec![param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            multiple_detach_iterator_body(),
+        ),
+        method_with_body(
+            "containsIterator",
+            vec![param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Bool),
+            multiple_contains_iterator_body(),
+        ),
+        method_with_body(
+            "countIterators",
+            Vec::new(),
+            Some(TypeExpr::Int),
+            return_body(count_expr(multiple_iterators_expr())),
+        ),
+        method_with_body("rewind", Vec::new(), Some(TypeExpr::Void), multiple_rewind_body()),
+        method_with_body("valid", Vec::new(), Some(TypeExpr::Bool), multiple_valid_body()),
+        method_with_body("key", Vec::new(), Some(mixed_type()), multiple_output_body("key")),
+        method_with_body("current", Vec::new(), Some(mixed_type()), multiple_output_body("current")),
+        method_with_body("next", Vec::new(), Some(TypeExpr::Void), multiple_next_body()),
+        method_with_body("__debugInfo", Vec::new(), Some(array_type()), multiple_debug_info_body()),
+    ]
+}
+
 fn spl_doubly_linked_list_methods() -> Vec<ClassMethod> {
     vec![
         method(
@@ -660,6 +823,15 @@ fn spl_doubly_linked_list_constants() -> Vec<ClassConst> {
     ]
 }
 
+fn multiple_iterator_constants() -> Vec<ClassConst> {
+    vec![
+        class_const("MIT_NEED_ANY", 0),
+        class_const("MIT_NEED_ALL", 1),
+        class_const("MIT_KEYS_NUMERIC", 0),
+        class_const("MIT_KEYS_ASSOC", 2),
+    ]
+}
+
 fn method(
     name: &str,
     params: Vec<(String, Option<TypeExpr>, Option<Expr>, bool)>,
@@ -762,6 +934,10 @@ fn return_stmt(value: Expr) -> Stmt {
 
 fn return_void_stmt() -> Stmt {
     Stmt::new(StmtKind::Return(None), crate::span::Span::dummy())
+}
+
+fn throw_stmt(value: Expr) -> Stmt {
+    Stmt::new(StmtKind::Throw(value), crate::span::Span::dummy())
 }
 
 fn param(name: &str, ty: TypeExpr) -> (String, Option<TypeExpr>, Option<Expr>, bool) {
@@ -886,6 +1062,17 @@ fn array_access(array: Expr, index: Expr) -> Expr {
 fn assign_stmt(name: &str, value: Expr) -> Stmt {
     Stmt::new(
         StmtKind::Assign {
+            name: name.to_string(),
+            value,
+        },
+        crate::span::Span::dummy(),
+    )
+}
+
+fn typed_assign_stmt(name: &str, type_expr: TypeExpr, value: Expr) -> Stmt {
+    Stmt::new(
+        StmtKind::TypedAssign {
+            type_expr,
             name: name.to_string(),
             value,
         },
@@ -1298,6 +1485,353 @@ fn infinite_next_body() -> Vec<Stmt> {
         expr_stmt(inner_call("next")),
         if_stmt(not_expr(inner_call("valid")), inner_void_body("rewind"), None),
     ]
+}
+
+fn append_iterators_expr() -> Expr {
+    property_access(this_expr(), "iterators")
+}
+
+fn append_index_expr() -> Expr {
+    property_access(this_expr(), "index")
+}
+
+fn append_current_iterator_expr() -> Expr {
+    array_access(append_iterators_expr(), append_index_expr())
+}
+
+fn append_construct_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "inner", new_object_expr("EmptyIterator", Vec::new())),
+        property_assign_stmt(this_expr(), "iterators", empty_array_expr()),
+        property_assign_stmt(this_expr(), "index", int_expr(0)),
+    ]
+}
+
+fn append_append_body() -> Vec<Stmt> {
+    vec![property_array_push_stmt(this_expr(), "iterators", var_expr("iterator"))]
+}
+
+fn append_rewind_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "index", int_expr(0)),
+        property_assign_stmt(this_expr(), "inner", new_object_expr("EmptyIterator", Vec::new())),
+        if_stmt(
+            binary_expr(count_expr(append_iterators_expr()), BinOp::StrictEq, int_expr(0)),
+            vec![return_void_stmt()],
+            None,
+        ),
+        typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+        expr_stmt(method_call(var_expr("iterator"), "rewind", Vec::new())),
+        expr_stmt(method_call(this_expr(), "valid", Vec::new())),
+    ]
+}
+
+fn append_valid_body() -> Vec<Stmt> {
+    vec![
+        while_stmt(
+            binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
+            vec![
+                typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+                if_stmt(
+                    method_call(var_expr("iterator"), "valid", Vec::new()),
+                    vec![
+                        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+                        return_stmt(bool_expr(true)),
+                    ],
+                    None,
+                ),
+                property_assign_stmt(
+                    this_expr(),
+                    "index",
+                    binary_expr(append_index_expr(), BinOp::Add, int_expr(1)),
+                ),
+                if_stmt(
+                    binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
+                    vec![
+                        typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+                        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+                        expr_stmt(method_call(var_expr("iterator"), "rewind", Vec::new())),
+                    ],
+                    None,
+                ),
+            ],
+        ),
+        property_assign_stmt(this_expr(), "inner", new_object_expr("EmptyIterator", Vec::new())),
+        return_stmt(bool_expr(false)),
+    ]
+}
+
+fn append_current_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(method_call(this_expr(), "valid", Vec::new())),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(inner_call("current")),
+    ]
+}
+
+fn append_key_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(method_call(this_expr(), "valid", Vec::new())),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(inner_call("key")),
+    ]
+}
+
+fn append_next_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(method_call(this_expr(), "valid", Vec::new())),
+            vec![return_void_stmt()],
+            None,
+        ),
+        typed_assign_stmt("iterator", named_type("Iterator"), inner_expr()),
+        expr_stmt(method_call(var_expr("iterator"), "next", Vec::new())),
+        expr_stmt(method_call(this_expr(), "valid", Vec::new())),
+    ]
+}
+
+fn append_get_inner_iterator_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(method_call(this_expr(), "valid", Vec::new())),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(inner_expr()),
+    ]
+}
+
+fn append_get_iterator_index_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(method_call(this_expr(), "valid", Vec::new())),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(append_index_expr()),
+    ]
+}
+
+fn append_get_array_iterator_body() -> Vec<Stmt> {
+    return_body(new_object_expr("ArrayIterator", vec![append_iterators_expr()]))
+}
+
+fn multiple_iterators_expr() -> Expr {
+    property_access(this_expr(), "iterators")
+}
+
+fn multiple_infos_expr() -> Expr {
+    property_access(this_expr(), "infos")
+}
+
+fn multiple_flags_expr() -> Expr {
+    property_access(this_expr(), "flags")
+}
+
+fn multiple_iterator_at(index: Expr) -> Expr {
+    array_access(multiple_iterators_expr(), index)
+}
+
+fn multiple_info_at(index: Expr) -> Expr {
+    array_access(multiple_infos_expr(), index)
+}
+
+fn multiple_need_all_expr() -> Expr {
+    binary_expr(
+        binary_expr(multiple_flags_expr(), BinOp::BitAnd, int_expr(1)),
+        BinOp::NotEq,
+        int_expr(0),
+    )
+}
+
+fn multiple_assoc_keys_expr() -> Expr {
+    binary_expr(
+        binary_expr(multiple_flags_expr(), BinOp::BitAnd, int_expr(2)),
+        BinOp::NotEq,
+        int_expr(0),
+    )
+}
+
+fn multiple_construct_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "iterators", empty_array_expr()),
+        property_assign_stmt(this_expr(), "infos", empty_array_expr()),
+        property_assign_stmt(this_expr(), "flags", var_expr("flags")),
+    ]
+}
+
+fn multiple_attach_iterator_body() -> Vec<Stmt> {
+    vec![
+        property_array_push_stmt(this_expr(), "iterators", var_expr("iterator")),
+        property_array_push_stmt(this_expr(), "infos", var_expr("info")),
+    ]
+}
+
+fn multiple_detach_iterator_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("newIterators", empty_array_expr()),
+        assign_stmt("newInfos", empty_array_expr()),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                assign_stmt("candidate", multiple_iterator_at(var_expr("i"))),
+                if_stmt(
+                    not_expr(binary_expr(var_expr("candidate"), BinOp::StrictEq, var_expr("iterator"))),
+                    vec![
+                        array_push_stmt("newIterators", var_expr("candidate")),
+                        array_push_stmt("newInfos", multiple_info_at(var_expr("i"))),
+                    ],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        property_assign_stmt(this_expr(), "iterators", var_expr("newIterators")),
+        property_assign_stmt(this_expr(), "infos", var_expr("newInfos")),
+    ]
+}
+
+fn multiple_contains_iterator_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    binary_expr(multiple_iterator_at(var_expr("i")), BinOp::StrictEq, var_expr("iterator")),
+                    return_body(bool_expr(true)),
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(bool_expr(false)),
+    ]
+}
+
+fn multiple_each_iterator_body(method: &str) -> Vec<Stmt> {
+    vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                typed_assign_stmt("iterator", named_type("Iterator"), multiple_iterator_at(var_expr("i"))),
+                expr_stmt(method_call(var_expr("iterator"), method, Vec::new())),
+                increment_stmt("i"),
+            ],
+        ),
+    ]
+}
+
+fn multiple_rewind_body() -> Vec<Stmt> {
+    multiple_each_iterator_body("rewind")
+}
+
+fn multiple_next_body() -> Vec<Stmt> {
+    multiple_each_iterator_body("next")
+}
+
+fn multiple_valid_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            binary_expr(count_expr(multiple_iterators_expr()), BinOp::StrictEq, int_expr(0)),
+            return_body(bool_expr(false)),
+            None,
+        ),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        if_stmt(
+            multiple_need_all_expr(),
+            vec![
+                while_stmt(
+                    binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+                    vec![
+                        typed_assign_stmt("iterator", named_type("Iterator"), multiple_iterator_at(var_expr("i"))),
+                        if_stmt(
+                            not_expr(method_call(var_expr("iterator"), "valid", Vec::new())),
+                            return_body(bool_expr(false)),
+                            None,
+                        ),
+                        increment_stmt("i"),
+                    ],
+                ),
+                return_stmt(bool_expr(true)),
+            ],
+            None,
+        ),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                typed_assign_stmt("iterator", named_type("Iterator"), multiple_iterator_at(var_expr("i"))),
+                if_stmt(
+                    method_call(var_expr("iterator"), "valid", Vec::new()),
+                    return_body(bool_expr(true)),
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(bool_expr(false)),
+    ]
+}
+
+fn multiple_output_body(method: &str) -> Vec<Stmt> {
+    vec![
+        assign_stmt("out", empty_array_expr()),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                typed_assign_stmt("iterator", named_type("Iterator"), multiple_iterator_at(var_expr("i"))),
+                assign_stmt("info", multiple_info_at(var_expr("i"))),
+                if_stmt(
+                    multiple_assoc_keys_expr(),
+                    vec![if_stmt(
+                        function_call("is_null", vec![var_expr("info")]),
+                        vec![throw_stmt(new_object_expr(
+                            "InvalidArgumentException",
+                            vec![string_expr("Sub-Iterator is associated with NULL")],
+                        ))],
+                        None,
+                    )],
+                    None,
+                ),
+                typed_assign_stmt("item", mixed_type(), null_expr()),
+                if_stmt(
+                    method_call(var_expr("iterator"), "valid", Vec::new()),
+                    vec![assign_stmt("item", method_call(var_expr("iterator"), method, Vec::new()))],
+                    None,
+                ),
+                if_stmt(
+                    multiple_assoc_keys_expr(),
+                    vec![array_assign_stmt("out", var_expr("info"), var_expr("item"))],
+                    Some(vec![array_assign_stmt("out", var_expr("i"), var_expr("item"))]),
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(var_expr("out")),
+    ]
+}
+
+fn multiple_debug_info_body() -> Vec<Stmt> {
+    return_body(expr(ExprKind::ArrayLiteralAssoc(vec![
+        (string_expr("\0MultipleIterator\0iterators"), multiple_iterators_expr()),
+        (string_expr("\0MultipleIterator\0infos"), multiple_infos_expr()),
+        (string_expr("\0MultipleIterator\0flags"), multiple_flags_expr()),
+    ])))
 }
 
 fn array_search_prelude() -> Vec<Stmt> {

@@ -10,7 +10,8 @@ iterator/counting/access interfaces, the SPL exception hierarchy, autoload and
 introspection helpers, the Phase 4 container classes, and the Phase 5 storage
 iterator/decorator foundations: `EmptyIterator`, `ArrayIterator`,
 `ArrayObject`, `IteratorIterator`, `LimitIterator`, `NoRewindIterator`, and
-`InfiniteIterator`.
+`InfiniteIterator`, plus the multi-source decorators `AppendIterator` and
+`MultipleIterator`.
 
 SPL names live in the global namespace, matching PHP. They are available
 without imports or runtime extensions.
@@ -52,7 +53,7 @@ The Phase 4 SPL containers and Phase 5 storage/decorator iterators are built-in 
 `SplDoublyLinkedList`, `SplStack`, `SplQueue`, and `SplFixedArray` use dedicated
 runtime storage; `ArrayIterator` and `ArrayObject` use compiler-managed
 keys/values storage over boxed `mixed` cells; the iterator decorators forward to
-an inner `Iterator` object:
+one or more `Iterator` objects:
 
 | Class | Parent | Interfaces |
 |---|---|---|
@@ -67,6 +68,8 @@ an inner `Iterator` object:
 | `LimitIterator` | `IteratorIterator` | inherited from parent |
 | `NoRewindIterator` | `IteratorIterator` | inherited from parent |
 | `InfiniteIterator` | `IteratorIterator` | inherited from parent |
+| `AppendIterator` | `IteratorIterator` | inherited from parent |
+| `MultipleIterator` | - | `Iterator` |
 
 Container slots store `mixed`, so scalar and object values can be mixed in the
 same container. Runtime ownership is handled by the SPL helpers, including
@@ -204,6 +207,8 @@ Supported methods:
 | `LimitIterator` | `__construct(Iterator $iterator, int $offset = 0, int $limit = -1)`, `rewind()`, `next()`, `valid()`, `seek(int $offset): void`, `getPosition(): int`, plus inherited forwarding methods |
 | `NoRewindIterator` | `__construct(Iterator $iterator)`, `rewind()` no-op, plus inherited forwarding methods |
 | `InfiniteIterator` | `__construct(Iterator $iterator)`, `next()` cycles to the start when the inner iterator is exhausted, plus inherited forwarding methods |
+| `AppendIterator` | `__construct()`, `append(Iterator $iterator): void`, `rewind()`, `valid()`, `current()`, `key()`, `next()`, `getInnerIterator(): ?Iterator`, `getIteratorIndex(): ?int`, `getArrayIterator(): ArrayIterator` |
+| `MultipleIterator` | `__construct(int $flags = MultipleIterator::MIT_NEED_ALL)`, `attachIterator(Iterator $iterator, string\|int\|null $info = null): void`, `detachIterator(Iterator $iterator): void`, `containsIterator(Iterator $iterator): bool`, `countIterators(): int`, `getFlags(): int`, `setFlags(int $flags): void`, `rewind()`, `valid()`, `key()`, `current()`, `next()` |
 
 ```php
 <?php
@@ -237,6 +242,24 @@ $limited = new LimitIterator(
 foreach ($limited as $value) {
     echo $value; // 12121
 }
+
+$append = new AppendIterator();
+$append->append(new ArrayIterator(["a" => 1]));
+$append->append(new ArrayIterator(["b" => 2]));
+foreach ($append as $key => $value) {
+    echo $key;
+    echo $value;
+}
+
+$multi = new MultipleIterator(
+    MultipleIterator::MIT_NEED_ANY | MultipleIterator::MIT_KEYS_ASSOC
+);
+$multi->attachIterator(new ArrayIterator(["a" => 1, "b" => 2]), "left");
+$multi->attachIterator(new ArrayIterator(["x" => 10]), "right");
+foreach ($multi as $keys => $values) {
+    echo $keys["left"];
+    echo is_null($values["right"]) ? "missing" : $values["right"];
+}
 ```
 
 `IteratorIterator` accepts PHP's optional `$class` downcast argument. Direct
@@ -250,6 +273,13 @@ length as the next integer key. `IteratorIterator` accepts any `Traversable`;
 when passed an `IteratorAggregate`, it calls `getIterator()` once and wraps the
 returned iterator. `LimitIterator`, `NoRewindIterator`, and `InfiniteIterator`
 follow PHP's constructors and require an `Iterator` directly.
+
+`AppendIterator` skips exhausted appended iterators and exposes the current
+source index through `getIteratorIndex()`. `MultipleIterator` supports PHP's
+`MIT_NEED_ANY`, `MIT_NEED_ALL`, `MIT_KEYS_NUMERIC`, and `MIT_KEYS_ASSOC` flags.
+When associative-key mode is active, attaching an iterator with `null` info
+raises `InvalidArgumentException` when `key()` or `current()` materializes the
+composite arrays, matching PHP.
 
 ## Autoload and Introspection
 

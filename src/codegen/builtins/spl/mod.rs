@@ -136,6 +136,7 @@ fn emit_classes(emitter: &mut Emitter, data: &mut DataSection) -> PhpType {
 /// with `inject_builtin_interfaces`, `inject_builtin_spl_exceptions`, and
 /// `inject_builtin_spl_classes`.
 const SPL_CLASS_NAMES: &[&str] = &[
+    "AppendIterator",
     "ArrayAccess",
     "ArrayIterator",
     "ArrayObject",
@@ -155,6 +156,7 @@ const SPL_CLASS_NAMES: &[&str] = &[
     "LengthException",
     "LimitIterator",
     "LogicException",
+    "MultipleIterator",
     "NoRewindIterator",
     "OuterIterator",
     "OutOfBoundsException",
