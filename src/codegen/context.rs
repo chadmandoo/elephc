@@ -144,6 +144,15 @@ pub struct Context {
     pub callable_return_sigs: HashMap<String, FunctionSig>,
     /// Captured variables per closure variable name: maps $fn -> [(capture_name, type, by_ref)].
     pub closure_captures: HashMap<String, Vec<(String, PhpType, bool)>>,
+    /// Runtime-dispatch wrappers synthesized for PHP builtin callbacks selected
+    /// by a dynamic string name. The key is the canonical builtin name.
+    pub runtime_callable_builtin_wrappers: HashMap<String, String>,
+    /// Runtime-dispatch wrappers synthesized for `Class::method` string
+    /// callbacks. The key is the PHP-visible `Class::method` name.
+    pub runtime_callable_static_method_wrappers: HashMap<String, String>,
+    /// Callable array targets assigned to variables, for PHP forms such as
+    /// `$cb = [$object, "method"]` and `$cb = [ClassName::class, "method"]`.
+    pub callable_array_targets: HashMap<String, CallableTarget>,
     /// First-class callable target stored in a variable, mirroring the Checker's
     /// `first_class_callable_targets` so call sites can short-circuit to a direct
     /// function/method/static-method call instead of going through the closure
@@ -250,6 +259,9 @@ impl Context {
             callable_param_sigs: HashMap::new(),
             callable_return_sigs: HashMap::new(),
             closure_captures: HashMap::new(),
+            runtime_callable_builtin_wrappers: HashMap::new(),
+            runtime_callable_static_method_wrappers: HashMap::new(),
+            callable_array_targets: HashMap::new(),
             first_class_callable_targets: HashMap::new(),
             variable_fcc_label: HashMap::new(),
             classes: HashMap::new(),

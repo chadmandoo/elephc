@@ -10,12 +10,17 @@
 //! - String-name dispatch compares against userland callable names before loading the matched entry address.
 
 use crate::codegen::abi;
-use crate::codegen::context::Context;
+use crate::codegen::context::{Context, DeferredClosure};
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
-use crate::names::function_symbol;
-use crate::types::{FunctionSig, PhpType};
+use crate::names::{function_symbol, Name};
+use crate::parser::ast::{Expr, ExprKind, StaticReceiver, Stmt, StmtKind, Visibility};
+use crate::span::Span;
+use crate::types::{
+    callable_wrapper_sig, first_class_callable_builtin_sig, FunctionSig, PhpType,
+};
+use crate::types::checker::builtins::supported_builtin_function_names;
 
 #[derive(Clone)]
 pub(crate) struct RuntimeCallableCase {
@@ -40,6 +45,35 @@ pub(crate) fn runtime_callable_cases(
     source_elem_ty: Option<&PhpType>,
 ) -> Vec<RuntimeCallableCase> {
     let mut cases = Vec::new();
+    if captures.is_empty() {
+        for name in supported_builtin_function_names() {
+            if runtime_builtin_wrapper_excluded(name) {
+                continue;
+            }
+            let Some(sig) = first_class_callable_builtin_sig(name) else {
+                continue;
+            };
+            let wrapper_sig = callable_wrapper_sig(&sig);
+            let label = ensure_runtime_builtin_wrapper(ctx, name, &wrapper_sig);
+            cases.push(RuntimeCallableCase {
+                label,
+                php_name: Some((*name).to_string()),
+                sig: specialized_runtime_case_sig(&wrapper_sig, source_elem_ty),
+                captures: Vec::new(),
+            });
+        }
+        for (class_name, method_name, sig) in runtime_static_method_wrappers(ctx) {
+            let wrapper_sig = callable_wrapper_sig(&sig);
+            let label =
+                ensure_runtime_static_method_wrapper(ctx, &class_name, &method_name, &wrapper_sig);
+            cases.push(RuntimeCallableCase {
+                label,
+                php_name: Some(format!("{}::{}", class_name, method_name)),
+                sig: specialized_runtime_case_sig(&wrapper_sig, source_elem_ty),
+                captures: Vec::new(),
+            });
+        }
+    }
     for (name, sig) in &ctx.functions {
         if ctx.extern_functions.contains_key(name) {
             continue;
@@ -67,6 +101,149 @@ pub(crate) fn runtime_callable_cases(
     cases.sort_by(|left, right| left.label.cmp(&right.label));
     cases.dedup_by(|left, right| left.label == right.label);
     cases
+}
+
+fn runtime_static_method_wrappers(ctx: &Context) -> Vec<(String, String, FunctionSig)> {
+    let mut wrappers = Vec::new();
+    for (class_name, class_info) in &ctx.classes {
+        for (method_name, sig) in &class_info.static_methods {
+            if !class_info
+                .static_method_visibilities
+                .get(method_name)
+                .is_some_and(|visibility| matches!(visibility, Visibility::Public))
+            {
+                continue;
+            }
+            wrappers.push((class_name.clone(), method_name.clone(), sig.clone()));
+        }
+    }
+    wrappers.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+    wrappers
+}
+
+fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
+    matches!(name, "iterator_apply" | "preg_replace_callback")
+}
+
+fn ensure_runtime_builtin_wrapper(
+    ctx: &mut Context,
+    name: &str,
+    sig: &FunctionSig,
+) -> String {
+    if let Some(label) = ctx.runtime_callable_builtin_wrappers.get(name) {
+        return label.clone();
+    }
+
+    let label = ctx.next_label("callable_builtin");
+    let params: Vec<String> = sig.params.iter().map(|(name, _)| name.clone()).collect();
+    ctx.deferred_closures.push(DeferredClosure {
+        label: label.clone(),
+        params,
+        body: builtin_wrapper_body(name, sig),
+        sig: sig.clone(),
+        captures: Vec::new(),
+        hidden_params: Vec::new(),
+        current_class: None,
+        needed: true,
+    });
+    ctx.runtime_callable_builtin_wrappers
+        .insert(name.to_string(), label.clone());
+    label
+}
+
+fn ensure_runtime_static_method_wrapper(
+    ctx: &mut Context,
+    class_name: &str,
+    method_name: &str,
+    sig: &FunctionSig,
+) -> String {
+    let key = format!("{}::{}", class_name, method_name);
+    if let Some(label) = ctx.runtime_callable_static_method_wrappers.get(&key) {
+        return label.clone();
+    }
+
+    let label = ctx.next_label("callable_static_method");
+    let params: Vec<String> = sig.params.iter().map(|(name, _)| name.clone()).collect();
+    ctx.deferred_closures.push(DeferredClosure {
+        label: label.clone(),
+        params,
+        body: static_method_wrapper_body(class_name, method_name, sig),
+        sig: sig.clone(),
+        captures: Vec::new(),
+        hidden_params: Vec::new(),
+        current_class: None,
+        needed: true,
+    });
+    ctx.runtime_callable_static_method_wrappers
+        .insert(key, label.clone());
+    label
+}
+
+fn static_method_wrapper_body(class_name: &str, method_name: &str, sig: &FunctionSig) -> Vec<Stmt> {
+    let last_param_idx = sig.params.len().saturating_sub(1);
+    let args: Vec<Expr> = sig
+        .params
+        .iter()
+        .enumerate()
+        .map(|(idx, (param_name, _))| {
+            let var = Expr::new(ExprKind::Variable(param_name.clone()), Span::dummy());
+            if sig.variadic.is_some() && idx == last_param_idx {
+                Expr::new(ExprKind::Spread(Box::new(var)), Span::dummy())
+            } else {
+                var
+            }
+        })
+        .collect();
+    let call = Expr::new(
+        ExprKind::StaticMethodCall {
+            receiver: StaticReceiver::Named(Name::from(class_name.to_string())),
+            method: method_name.to_string(),
+            args,
+        },
+        Span::dummy(),
+    );
+
+    if sig.return_type == PhpType::Void {
+        vec![
+            Stmt::new(StmtKind::ExprStmt(call), Span::dummy()),
+            Stmt::new(StmtKind::Return(None), Span::dummy()),
+        ]
+    } else {
+        vec![Stmt::new(StmtKind::Return(Some(call)), Span::dummy())]
+    }
+}
+
+fn builtin_wrapper_body(name: &str, sig: &FunctionSig) -> Vec<Stmt> {
+    let last_param_idx = sig.params.len().saturating_sub(1);
+    let args: Vec<Expr> = sig
+        .params
+        .iter()
+        .enumerate()
+        .map(|(idx, (param_name, _))| {
+            let var = Expr::new(ExprKind::Variable(param_name.clone()), Span::dummy());
+            if sig.variadic.is_some() && idx == last_param_idx {
+                Expr::new(ExprKind::Spread(Box::new(var)), Span::dummy())
+            } else {
+                var
+            }
+        })
+        .collect();
+    let call = Expr::new(
+        ExprKind::FunctionCall {
+            name: Name::unqualified(name),
+            args,
+        },
+        Span::dummy(),
+    );
+
+    if sig.return_type == PhpType::Void {
+        vec![
+            Stmt::new(StmtKind::ExprStmt(call), Span::dummy()),
+            Stmt::new(StmtKind::Return(None), Span::dummy()),
+        ]
+    } else {
+        vec![Stmt::new(StmtKind::Return(Some(call)), Span::dummy())]
+    }
 }
 
 pub(crate) fn emit_branch_if_callable_case_mismatch(

@@ -503,7 +503,7 @@ impl Checker {
         Ok(self.nullable_callable_result(PhpType::Int, nullable_callable)) // fallback for unknown callables
     }
 
-    fn invokable_class_for_type(&self, ty: &PhpType) -> Option<String> {
+    pub(crate) fn invokable_class_for_type(&self, ty: &PhpType) -> Option<String> {
         match ty {
             PhpType::Object(class_name) => Some(class_name.clone()),
             PhpType::Union(members) => {

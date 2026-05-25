@@ -16,6 +16,7 @@ use crate::codegen::abi;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::{FunctionSig, PhpType};
 use super::callback_env;
+use super::callable_forms;
 use super::call_user_func_array;
 use super::super::callable_lookup::{lookup_function, FunctionLookup};
 
@@ -53,6 +54,15 @@ pub fn emit(
             }
             Some(FunctionLookup::UserFunction(_)) | Some(FunctionLookup::IncludeVariant(_)) | None => {}
         }
+    }
+    if let Some(ret_ty) = callable_forms::emit_call_user_func_form(
+        &args[0],
+        &args[1..],
+        emitter,
+        ctx,
+        data,
+    ) {
+        return Some(ret_ty);
     }
     let save_concat_before_args =
         emitter.target.arch == crate::codegen::platform::Arch::X86_64;

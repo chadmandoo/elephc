@@ -9,7 +9,8 @@
 //! - Signatures, callable aliases, optimizer effects, and codegen builtin dispatch must remain in lockstep.
 
 use crate::errors::CompileError;
-use crate::parser::ast::{CallableTarget, Expr, ExprKind};
+use crate::names::{php_symbol_key, Name};
+use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver};
 use crate::types::{FunctionSig, PhpType, TypeEnv};
 
 use super::canonical_builtin_function_name;
@@ -87,6 +88,158 @@ fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::span::Span) ->
     }
 }
 
+fn check_object_or_array_callable_call(
+    checker: &mut Checker,
+    callback: &Expr,
+    callback_args: &[Expr],
+    _span: crate::span::Span,
+    env: &TypeEnv,
+) -> Result<Option<PhpType>, CompileError> {
+    if let ExprKind::Variable(var_name) = &callback.kind {
+        if let Some(target) = checker.callable_array_targets.get(var_name).cloned() {
+            return check_callable_target_call(checker, &target, callback_args, callback, env)
+                .map(Some);
+        }
+    }
+
+    let callback_ty = checker.infer_type(callback, env)?;
+    if let Some(class_name) = checker.invokable_class_for_type(&callback_ty) {
+        if checker
+            .classes
+            .get(&class_name)
+            .is_some_and(|class_info| class_info.methods.contains_key("__invoke"))
+        {
+            return checker
+                .infer_method_call_on_class_type(
+                    &class_name,
+                    "__invoke",
+                    callback_args,
+                    callback,
+                    env,
+                )
+                .map(Some);
+        }
+    }
+
+    let Some((receiver, method)) = callable_array_parts(callback) else {
+        return Ok(None);
+    };
+    if let Some(receiver) = static_callable_receiver(checker, receiver, callback.span)? {
+        return checker
+            .infer_static_method_call_type(&receiver, method, callback_args, callback, env)
+            .map(Some);
+    }
+    let receiver_ty = checker.infer_type(receiver, env)?;
+    let Some(class_name) = checker.invokable_class_for_type(&receiver_ty) else {
+        return Ok(None);
+    };
+    checker
+        .infer_method_call_on_class_type(&class_name, method, callback_args, callback, env)
+        .map(Some)
+}
+
+fn check_callable_target_call(
+    checker: &mut Checker,
+    target: &CallableTarget,
+    callback_args: &[Expr],
+    callback: &Expr,
+    env: &TypeEnv,
+) -> Result<PhpType, CompileError> {
+    match target {
+        CallableTarget::Method { object, method } => {
+            let receiver_ty = checker.infer_type(object, env)?;
+            let Some(class_name) = checker.invokable_class_for_type(&receiver_ty) else {
+                return Err(CompileError::new(
+                    callback.span,
+                    "callable array receiver must be an object",
+                ));
+            };
+            checker.infer_method_call_on_class_type(
+                &class_name,
+                method,
+                callback_args,
+                callback,
+                env,
+            )
+        }
+        CallableTarget::StaticMethod { receiver, method } => checker
+            .infer_static_method_call_type(receiver, method, callback_args, callback, env),
+        CallableTarget::Function(name) => {
+            checker.check_function_call(name.as_str(), callback_args, callback.span, env)
+        }
+    }
+}
+
+fn callable_array_parts(callback: &Expr) -> Option<(&Expr, &str)> {
+    let elems = match &callback.kind {
+        ExprKind::ArrayLiteral(elems) => elems,
+        _ => return None,
+    };
+    if elems.len() != 2 {
+        return None;
+    }
+    let ExprKind::StringLiteral(method) = &elems[1].kind else {
+        return None;
+    };
+    Some((&elems[0], method.as_str()))
+}
+
+fn static_callable_receiver(
+    checker: &Checker,
+    receiver: &Expr,
+    span: crate::span::Span,
+) -> Result<Option<StaticReceiver>, CompileError> {
+    let class_name = match &receiver.kind {
+        ExprKind::StringLiteral(class_name) => resolve_class_name(checker, class_name)
+            .map(str::to_string),
+        ExprKind::ClassConstant { receiver } => {
+            Some(resolve_static_receiver_class(checker, receiver, span)?)
+        }
+        _ => None,
+    };
+    Ok(class_name.map(|class_name| StaticReceiver::Named(Name::from(class_name))))
+}
+
+fn resolve_static_receiver_class(
+    checker: &Checker,
+    receiver: &StaticReceiver,
+    span: crate::span::Span,
+) -> Result<String, CompileError> {
+    match receiver {
+        StaticReceiver::Named(name) => resolve_class_name(checker, name.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| CompileError::new(span, &format!("Undefined class: {}", name))),
+        StaticReceiver::Self_ | StaticReceiver::Static => checker
+            .current_class
+            .clone()
+            .ok_or_else(|| CompileError::new(span, "Cannot use self::class outside a class context")),
+        StaticReceiver::Parent => {
+            let current_class = checker.current_class.as_ref().ok_or_else(|| {
+                CompileError::new(span, "Cannot use parent::class outside a class context")
+            })?;
+            checker
+                .classes
+                .get(current_class)
+                .and_then(|class_info| class_info.parent.clone())
+                .ok_or_else(|| {
+                    CompileError::new(
+                        span,
+                        &format!("Class '{}' has no parent class", current_class),
+                    )
+                })
+        }
+    }
+}
+
+fn resolve_class_name<'a>(checker: &'a Checker, class_name: &str) -> Option<&'a str> {
+    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
+    checker
+        .classes
+        .keys()
+        .find(|existing| php_symbol_key(existing) == class_key)
+        .map(String::as_str)
+}
+
 pub(crate) fn check_callback_builtin_call(
     checker: &mut Checker,
     callback: &Expr,
@@ -160,6 +313,12 @@ pub(crate) fn check_callback_builtin_call(
 
     if let Some(sig) = checker.resolve_expr_callable_sig(callback, env)? {
         return checker.check_known_callable_call(&sig, callback_args, span, env, label);
+    }
+
+    if let Some(ret_ty) =
+        check_object_or_array_callable_call(checker, callback, callback_args, span, env)?
+    {
+        return Ok(ret_ty);
     }
 
     Err(CompileError::new(
@@ -467,6 +626,22 @@ pub(super) fn check_builtin(
                     return Ok(Some(ret_ty));
                 }
             }
+            let spread_args = vec![Expr::new(
+                ExprKind::Spread(Box::new(args[1].clone())),
+                args[1].span,
+            )];
+            if let Some(ret_ty) =
+                check_object_or_array_callable_call(checker, &args[0], &spread_args, span, env)?
+            {
+                let sig_arg = checker.infer_type(&args[1], env)?;
+                if !matches!(sig_arg, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+                    return Err(CompileError::new(
+                        args[1].span,
+                        "call_user_func_array() second argument must be an array",
+                    ));
+                }
+                return Ok(Some(ret_ty));
+            }
             if let Some(sig) = checker.resolve_expr_callable_sig(&args[0], env)? {
                 validate_call_user_func_array_dynamic_arg_array(checker, &sig, &args[1], span, env)?;
                 if let ExprKind::ArrayLiteral(elems) = &args[1].kind {
@@ -577,6 +752,11 @@ pub(super) fn check_builtin(
                 }
                 let cb_args = args[1..].to_vec();
                 let ret_ty = checker.check_function_call(&cb_name, &cb_args, span, env)?;
+                return Ok(Some(ret_ty));
+            }
+            if let Some(ret_ty) =
+                check_object_or_array_callable_call(checker, &args[0], &args[1..], span, env)?
+            {
                 return Ok(Some(ret_ty));
             }
             if let Some(sig) = checker.resolve_expr_callable_sig(&args[0], env)? {

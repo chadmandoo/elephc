@@ -47,6 +47,7 @@ mod buffer_free;
 mod buffer_len;
 mod call_user_func;
 pub(crate) mod call_user_func_array;
+mod callable_forms;
 pub(crate) mod callback_env;
 mod count;
 mod ensure_unique_arg;

@@ -467,7 +467,7 @@ pub(super) fn magic_method_args(method: &str, args: &[Expr], span: crate::span::
     ]
 }
 
-pub(super) fn emit_method_call(
+pub(crate) fn emit_method_call(
     object: &Expr,
     method: &str,
     args: &[Expr],
@@ -527,7 +527,7 @@ pub(super) fn emit_pushed_method_args(
     dispatch::emit_pushed_method_args(args, sig, emitter, ctx, data)
 }
 
-pub(super) fn emit_static_method_call(
+pub(crate) fn emit_static_method_call(
     receiver: &StaticReceiver,
     method: &str,
     args: &[Expr],

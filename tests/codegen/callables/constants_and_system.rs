@@ -296,6 +296,34 @@ echo call_user_func($callback, "Ada");
 }
 
 #[test]
+fn test_call_user_func_dynamic_string_builtin_callback() {
+    let out = compile_and_run(
+        r#"<?php
+$callback = "STRLEN";
+echo call_user_func($callback, "hello");
+"#,
+    );
+    assert_eq!(out, "5");
+}
+
+#[test]
+fn test_call_user_func_dynamic_string_static_method_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public static function wrap(string $value): string {
+        return "[" . $value . "]";
+    }
+}
+
+$callback = "Formatter::wrap";
+echo call_user_func($callback, "ok");
+"#,
+    );
+    assert_eq!(out, "[ok]");
+}
+
+#[test]
 fn test_call_user_func_array_dynamic_string_assoc_callback() {
     let out = compile_and_run(
         r#"<?php
@@ -308,6 +336,122 @@ echo call_user_func_array($callback, $args);
 "#,
     );
     assert_eq!(out, "id:7");
+}
+
+#[test]
+fn test_call_user_func_array_dynamic_string_builtin_assoc_callback() {
+    let out = compile_and_run(
+        r#"<?php
+$callback = "strlen";
+$args = ["string" => "hello"];
+echo call_user_func_array($callback, $args);
+"#,
+    );
+    assert_eq!(out, "5");
+}
+
+#[test]
+fn test_call_user_func_array_dynamic_string_static_method_assoc_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public static function join(string $prefix, int $value): string {
+        return $prefix . ":" . $value;
+    }
+}
+
+$callback = "Formatter::join";
+$args = ["value" => 7, "prefix" => "id"];
+echo call_user_func_array($callback, $args);
+"#,
+    );
+    assert_eq!(out, "id:7");
+}
+
+#[test]
+fn test_call_user_func_invokable_object_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Twice {
+    public function __invoke(int $value): int {
+        return $value * 2;
+    }
+}
+
+echo call_user_func(new Twice(), 9);
+"#,
+    );
+    assert_eq!(out, "18");
+}
+
+#[test]
+fn test_call_user_func_array_instance_method_array_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public function join(string $prefix, int $value): string {
+        return $prefix . ":" . $value;
+    }
+}
+
+$formatter = new Formatter();
+$args = ["value" => 7, "prefix" => "id"];
+echo call_user_func_array([$formatter, "join"], $args);
+"#,
+    );
+    assert_eq!(out, "id:7");
+}
+
+#[test]
+fn test_call_user_func_static_method_array_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public static function wrap(string $value): string {
+        return "[" . $value . "]";
+    }
+}
+
+echo call_user_func(["Formatter", "wrap"], "ok");
+"#,
+    );
+    assert_eq!(out, "[ok]");
+}
+
+#[test]
+fn test_call_user_func_variable_instance_method_array_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public function join(string $prefix, int $value): string {
+        return $prefix . ":" . $value;
+    }
+}
+
+$formatter = new Formatter();
+$callback = [$formatter, "join"];
+echo call_user_func($callback, "id", 7);
+"#,
+    );
+    assert_eq!(out, "id:7");
+}
+
+#[test]
+fn test_call_user_func_array_variable_static_method_array_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Formatter {
+    public static function wrap(string $value): string {
+        return "[" . $value . "]";
+    }
+}
+
+$callback = [Formatter::class, "wrap"];
+$args = ["value" => "ok"];
+echo call_user_func_array($callback, $args);
+"#,
+    );
+    assert_eq!(out, "[ok]");
 }
 
 #[test]
