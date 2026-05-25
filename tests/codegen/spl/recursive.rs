@@ -7,7 +7,7 @@
 //!
 //! Key details:
 //! - RecursiveArrayIterator children are built from runtime mixed array values.
-//! - RecursiveIteratorIterator flattens traversal into stable key/value/depth rows.
+//! - RecursiveIteratorIterator keeps live stack cursors for depth and sub-iterator access.
 
 use crate::support::*;
 
@@ -150,6 +150,55 @@ foreach ($child as $key => $value) {
             "child:1:x=1;0:a=array;0:b=2;",
         )
     );
+}
+
+#[test]
+fn test_recursive_iterator_iterator_sees_source_mutation_after_rewind() {
+    let out = compile_and_run(
+        r#"<?php
+$root = new RecursiveArrayIterator(["a" => ["x" => 1]]);
+$it = new RecursiveIteratorIterator($root, RecursiveIteratorIterator::SELF_FIRST);
+$it->rewind();
+$root["b"] = 2;
+while ($it->valid()) {
+    echo $it->getDepth();
+    echo ":";
+    echo $it->key();
+    echo ";";
+    $it->next();
+}
+"#,
+    );
+    assert_eq!(out, "0:a;1:x;0:b;");
+}
+
+#[test]
+fn test_recursive_iterator_iterator_sub_iterators_track_live_cursors() {
+    let out = compile_and_run(
+        r#"<?php
+$it = new RecursiveIteratorIterator(
+    new RecursiveArrayIterator(["a" => ["x" => 1], "b" => 2]),
+    RecursiveIteratorIterator::SELF_FIRST
+);
+foreach ($it as $key => $value) {
+    echo $it->getDepth();
+    echo ":";
+    echo $key;
+    echo ":";
+    echo $it->getInnerIterator()->key();
+    echo ":";
+    echo $it->getSubIterator()->key();
+    if ($it->getDepth() > 0) {
+        echo ":";
+        echo $it->getSubIterator(0)->key();
+        echo ":";
+        echo $it->getSubIterator(1)->key();
+    }
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "0:a:a:a;1:x:x:x:a:x;0:b:b:b;");
 }
 
 #[test]

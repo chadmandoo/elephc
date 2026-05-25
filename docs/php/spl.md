@@ -351,11 +351,11 @@ composite arrays, matching PHP.
 
 `RecursiveArrayIterator` detects nested arrays and nested `RecursiveIterator`
 objects through `hasChildren()`. `RecursiveIteratorIterator` supports
-`LEAVES_ONLY`, `SELF_FIRST`, and `CHILD_FIRST`; traversal rows keep the source
-key, value, depth, and source sub-iterator object. `RecursiveCallbackFilterIterator`
-preserves closure and first-class-callable capture environments when it wraps
-child iterators. `ParentIterator` recursively keeps only entries that have
-children.
+`LEAVES_ONLY`, `SELF_FIRST`, and `CHILD_FIRST`; it keeps a live stack of source
+sub-iterators so `getDepth()`, `getInnerIterator()`, and `getSubIterator()`
+track the active cursors. `RecursiveCallbackFilterIterator` preserves closure
+and first-class-callable capture environments when it wraps child iterators.
+`ParentIterator` recursively keeps only entries that have children.
 
 ## Autoload and Introspection
 
@@ -426,9 +426,3 @@ source argument array.
 is wired to return an `ArrayIterator`. The Phase 4 containers otherwise keep
 their runtime-backed method surface aligned with PHP's empty-container,
 invalid-offset, serialization, and fixed-array key behaviors.
-
-`RecursiveIteratorIterator` materializes its traversal during `rewind()`, so
-mutating the underlying recursive source after `rewind()` is reflected on the
-next rewind rather than during the active pass. `getSubIterator()` returns the
-stored sub-iterator object, but the iterator's live cursor is not rewound to the
-materialized row.
