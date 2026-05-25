@@ -386,12 +386,17 @@ fn prepend_internal_names<'a>(
         .map(|name| crate::names::php_symbol_key(name))
         .collect();
     let mut names: Vec<String> = known_names
+        .filter(|name| !is_internal_synthetic_class_name(name))
         .filter(|name| !user_keys.contains(&crate::names::php_symbol_key(name)))
         .cloned()
         .collect();
     names.sort();
     names.extend(user_names.iter().cloned());
     names
+}
+
+fn is_internal_synthetic_class_name(name: &str) -> bool {
+    crate::names::php_symbol_key(name).starts_with("__elephc")
 }
 
 fn collect_x86_emitted_class_names(

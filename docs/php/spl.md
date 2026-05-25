@@ -207,7 +207,7 @@ Supported methods:
 | `LimitIterator` | `__construct(Iterator $iterator, int $offset = 0, int $limit = -1)`, `rewind()`, `next()`, `valid()`, `seek(int $offset): void`, `getPosition(): int`, plus inherited forwarding methods |
 | `NoRewindIterator` | `__construct(Iterator $iterator)`, `rewind()` no-op, plus inherited forwarding methods |
 | `InfiniteIterator` | `__construct(Iterator $iterator)`, `next()` cycles to the start when the inner iterator is exhausted, plus inherited forwarding methods |
-| `AppendIterator` | `__construct()`, `append(Iterator $iterator): void`, `rewind()`, `valid()`, `current()`, `key()`, `next()`, `getInnerIterator(): ?Iterator`, `getIteratorIndex(): ?int`, `getArrayIterator(): ArrayIterator` |
+| `AppendIterator` | `__construct()`, `append(Iterator $iterator): void`, `rewind()`, `valid()`, `current()`, `key()`, `next()`, `getInnerIterator(): ?Iterator`, `getIteratorIndex(): int\|string\|null`, `getArrayIterator(): ArrayIterator` |
 | `MultipleIterator` | `__construct(int $flags = MultipleIterator::MIT_NEED_ALL)`, `attachIterator(Iterator $iterator, string\|int\|null $info = null): void`, `detachIterator(Iterator $iterator): void`, `containsIterator(Iterator $iterator): bool`, `countIterators(): int`, `getFlags(): int`, `setFlags(int $flags): void`, `rewind()`, `valid()`, `key()`, `current()`, `next()` |
 
 ```php
@@ -275,10 +275,13 @@ returned iterator. `LimitIterator`, `NoRewindIterator`, and `InfiniteIterator`
 follow PHP's constructors and require an `Iterator` directly.
 
 `AppendIterator` skips exhausted appended iterators and exposes the current
-source index through `getIteratorIndex()`. `MultipleIterator` supports PHP's
+storage key through `getIteratorIndex()`. Its `getArrayIterator()` result is a
+live `ArrayIterator` view: appending, keyed `offsetSet()`, and `offsetUnset()`
+through that view updates the owner. `MultipleIterator` supports PHP's
 `MIT_NEED_ANY`, `MIT_NEED_ALL`, `MIT_KEYS_NUMERIC`, and `MIT_KEYS_ASSOC` flags.
-When associative-key mode is active, attaching an iterator with `null` info
-raises `InvalidArgumentException` when `key()` or `current()` materializes the
+Re-attaching the same iterator updates its info instead of duplicating it. When
+associative-key mode is active, attaching an iterator with `null` info raises
+`InvalidArgumentException` when `key()` or `current()` materializes the
 composite arrays, matching PHP.
 
 ## Autoload and Introspection

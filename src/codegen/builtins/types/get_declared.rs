@@ -32,7 +32,12 @@ pub fn emit(
     };
     if names.is_empty() {
         names = match name {
-            "get_declared_classes" => ctx.classes.keys().cloned().collect(),
+            "get_declared_classes" => ctx
+                .classes
+                .keys()
+                .filter(|name| !is_internal_synthetic_class_name(name))
+                .cloned()
+                .collect(),
             "get_declared_interfaces" => ctx.interfaces.keys().cloned().collect(),
             "get_declared_traits" => ctx.traits.iter().cloned().collect(),
             _ => unreachable!(),
@@ -61,6 +66,10 @@ pub fn emit(
     }
 
     Some(PhpType::Array(Box::new(PhpType::Str)))
+}
+
+fn is_internal_synthetic_class_name(name: &str) -> bool {
+    crate::names::php_symbol_key(name).starts_with("__elephc")
 }
 
 /// Push each name onto the array via `__rt_array_push_str`. The array

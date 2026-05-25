@@ -266,6 +266,23 @@ pub(crate) fn inject_builtin_spl_classes(
     );
 
     class_map.insert(
+        "__ElephcAppendIteratorArrayIterator".to_string(),
+        FlattenedClass {
+            name: "__ElephcAppendIteratorArrayIterator".to_string(),
+            extends: Some("ArrayIterator".to_string()),
+            implements: Vec::new(),
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: append_iterator_array_iterator_properties(),
+            methods: spl_append_iterator_array_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
         "MultipleIterator".to_string(),
         FlattenedClass {
             name: "MultipleIterator".to_string(),
@@ -314,14 +331,20 @@ pub(crate) fn patch_builtin_spl_storage_signatures(checker: &mut Checker) {
             }
         }
     }
-    let iterator_array_type = PhpType::Array(Box::new(PhpType::Object("Iterator".to_string())));
     if let Some(class_info) = checker.classes.get_mut("AppendIterator") {
         for (name, ty) in &mut class_info.properties {
             if name == "iterators" {
-                *ty = iterator_array_type.clone();
+                *ty = PhpType::Array(Box::new(PhpType::Object("Iterator".to_string())));
+            } else if name == "iteratorKeys" {
+                *ty = PhpType::Array(Box::new(PhpType::Mixed));
+            } else if name == "iteratorActive" {
+                *ty = PhpType::Array(Box::new(PhpType::Bool));
+            } else if name == "arrayIterator" {
+                *ty = PhpType::Object("__ElephcAppendIteratorArrayIterator".to_string());
             }
         }
     }
+    let iterator_array_type = PhpType::Array(Box::new(PhpType::Object("Iterator".to_string())));
     if let Some(class_info) = checker.classes.get_mut("MultipleIterator") {
         for (name, ty) in &mut class_info.properties {
             if name == "iterators" {
@@ -396,7 +419,17 @@ fn limit_iterator_properties() -> Vec<ClassProperty> {
 fn append_iterator_properties() -> Vec<ClassProperty> {
     vec![
         storage_property("iterators", array_type()),
+        storage_property("iteratorKeys", array_type()),
+        storage_property("iteratorActive", array_type()),
         storage_property("index", TypeExpr::Int),
+        storage_property("arrayIterator", named_type("__ElephcAppendIteratorArrayIterator")),
+    ]
+}
+
+fn append_iterator_array_iterator_properties() -> Vec<ClassProperty> {
+    vec![
+        storage_property("owner", named_type("AppendIterator")),
+        storage_property_default("appendPosition", TypeExpr::Int, int_expr(0)),
     ]
 }
 
@@ -613,15 +646,129 @@ fn spl_append_iterator_methods() -> Vec<ClassMethod> {
         method_with_body(
             "getIteratorIndex",
             Vec::new(),
-            Some(TypeExpr::Nullable(Box::new(TypeExpr::Int))),
+            Some(mixed_type()),
             append_get_iterator_index_body(),
         ),
         method_with_body(
             "getArrayIterator",
             Vec::new(),
-            Some(named_type("ArrayIterator")),
+            Some(named_type("__ElephcAppendIteratorArrayIterator")),
             append_get_array_iterator_body(),
         ),
+        method_with_body(
+            "__elephcStorageCount",
+            Vec::new(),
+            Some(TypeExpr::Int),
+            append_storage_count_body(),
+        ),
+        method_with_body(
+            "__elephcStoragePhysicalCount",
+            Vec::new(),
+            Some(TypeExpr::Int),
+            return_body(count_expr(append_iterators_expr())),
+        ),
+        method_with_body(
+            "__elephcStorageIsActive",
+            vec![param("position", TypeExpr::Int)],
+            Some(TypeExpr::Bool),
+            return_body(append_active_at_position_expr(var_expr("position"))),
+        ),
+        method_with_body(
+            "__elephcStorageAppend",
+            vec![param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            append_storage_append_body(),
+        ),
+        method_with_body(
+            "__elephcStorageOffsetSet",
+            vec![param("offset", mixed_type()), param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            append_storage_offset_set_body(),
+        ),
+        method_with_body(
+            "__elephcStorageOffsetExists",
+            vec![param("offset", mixed_type())],
+            Some(TypeExpr::Bool),
+            append_storage_offset_exists_body(),
+        ),
+        method_with_body(
+            "__elephcStorageOffsetGet",
+            vec![param("offset", mixed_type())],
+            Some(mixed_type()),
+            append_storage_offset_get_body(),
+        ),
+        method_with_body(
+            "__elephcStorageOffsetUnset",
+            vec![param("offset", mixed_type())],
+            Some(TypeExpr::Void),
+            append_storage_offset_unset_body(),
+        ),
+        method_with_body(
+            "__elephcStorageGetArrayCopy",
+            Vec::new(),
+            Some(array_type()),
+            append_storage_get_array_copy_body(),
+        ),
+        method_with_body(
+            "__elephcStorageKey",
+            vec![param("position", TypeExpr::Int)],
+            Some(mixed_type()),
+            return_body(append_key_at_position_expr(var_expr("position"))),
+        ),
+        method_with_body(
+            "__elephcStorageCurrent",
+            vec![param("position", TypeExpr::Int)],
+            Some(mixed_type()),
+            append_storage_current_body(),
+        ),
+    ]
+}
+
+fn spl_append_iterator_array_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![param("owner", named_type("AppendIterator"))],
+            Some(TypeExpr::Void),
+            append_array_iterator_construct_body(),
+        ),
+        method_with_body("count", Vec::new(), Some(TypeExpr::Int), append_array_iterator_count_body()),
+        method_with_body(
+            "append",
+            vec![param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            append_array_iterator_append_body(),
+        ),
+        method_with_body(
+            "offsetSet",
+            vec![param("offset", mixed_type()), param("iterator", named_type("Iterator"))],
+            Some(TypeExpr::Void),
+            append_array_iterator_offset_set_body(),
+        ),
+        method_with_body(
+            "offsetExists",
+            vec![param("offset", mixed_type())],
+            Some(TypeExpr::Bool),
+            append_array_iterator_offset_exists_body(),
+        ),
+        method_with_body(
+            "offsetGet",
+            vec![param("offset", mixed_type())],
+            Some(mixed_type()),
+            append_array_iterator_offset_get_body(),
+        ),
+        method_with_body(
+            "offsetUnset",
+            vec![param("offset", mixed_type())],
+            Some(TypeExpr::Void),
+            append_array_iterator_offset_unset_body(),
+        ),
+        method_with_body("getArrayCopy", Vec::new(), Some(array_type()), append_array_iterator_copy_body()),
+        method_with_body("rewind", Vec::new(), Some(TypeExpr::Void), append_array_iterator_rewind_body()),
+        method_with_body("next", Vec::new(), Some(TypeExpr::Void), append_array_iterator_next_body()),
+        method_with_body("valid", Vec::new(), Some(TypeExpr::Bool), append_array_iterator_valid_body()),
+        method_with_body("key", Vec::new(), Some(mixed_type()), append_array_iterator_key_body()),
+        method_with_body("current", Vec::new(), Some(mixed_type()), append_array_iterator_current_body()),
     ]
 }
 
@@ -888,6 +1035,18 @@ fn class_method_with_body(
 }
 
 fn storage_property(name: &str, type_expr: TypeExpr) -> ClassProperty {
+    storage_property_with_default(name, type_expr, None)
+}
+
+fn storage_property_default(name: &str, type_expr: TypeExpr, default: Expr) -> ClassProperty {
+    storage_property_with_default(name, type_expr, Some(default))
+}
+
+fn storage_property_with_default(
+    name: &str,
+    type_expr: TypeExpr,
+    default: Option<Expr>,
+) -> ClassProperty {
     ClassProperty {
         name: name.to_string(),
         visibility: Visibility::Private,
@@ -898,7 +1057,7 @@ fn storage_property(name: &str, type_expr: TypeExpr) -> ClassProperty {
         is_static: false,
         is_abstract: false,
         by_ref: false,
-        default: None,
+        default,
         span: crate::span::Span::dummy(),
         attributes: Vec::new(),
     }
@@ -1491,8 +1650,32 @@ fn append_iterators_expr() -> Expr {
     property_access(this_expr(), "iterators")
 }
 
+fn append_iterator_keys_expr() -> Expr {
+    property_access(this_expr(), "iteratorKeys")
+}
+
+fn append_iterator_active_expr() -> Expr {
+    property_access(this_expr(), "iteratorActive")
+}
+
+fn append_array_iterator_expr() -> Expr {
+    property_access(this_expr(), "arrayIterator")
+}
+
 fn append_index_expr() -> Expr {
     property_access(this_expr(), "index")
+}
+
+fn append_key_at_position_expr(position: Expr) -> Expr {
+    array_access(append_iterator_keys_expr(), position)
+}
+
+fn append_active_at_position_expr(position: Expr) -> Expr {
+    array_access(append_iterator_active_expr(), position)
+}
+
+fn append_current_key_expr() -> Expr {
+    append_key_at_position_expr(append_index_expr())
 }
 
 fn append_current_iterator_expr() -> Expr {
@@ -1503,12 +1686,19 @@ fn append_construct_body() -> Vec<Stmt> {
     vec![
         property_assign_stmt(this_expr(), "inner", new_object_expr("EmptyIterator", Vec::new())),
         property_assign_stmt(this_expr(), "iterators", empty_array_expr()),
+        property_assign_stmt(this_expr(), "iteratorKeys", empty_array_expr()),
+        property_assign_stmt(this_expr(), "iteratorActive", empty_array_expr()),
         property_assign_stmt(this_expr(), "index", int_expr(0)),
+        property_assign_stmt(
+            this_expr(),
+            "arrayIterator",
+            new_object_expr("__ElephcAppendIteratorArrayIterator", vec![this_expr()]),
+        ),
     ]
 }
 
 fn append_append_body() -> Vec<Stmt> {
-    vec![property_array_push_stmt(this_expr(), "iterators", var_expr("iterator"))]
+    append_storage_append_body()
 }
 
 fn append_rewind_body() -> Vec<Stmt> {
@@ -1528,38 +1718,54 @@ fn append_rewind_body() -> Vec<Stmt> {
 }
 
 fn append_valid_body() -> Vec<Stmt> {
+    let mut active_body = vec![
+        typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+        if_stmt(
+            method_call(var_expr("iterator"), "valid", Vec::new()),
+            vec![
+                property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+                return_stmt(bool_expr(true)),
+            ],
+            None,
+        ),
+    ];
+    active_body.extend(append_advance_index_body());
+
     vec![
         while_stmt(
             binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
-            vec![
-                typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
-                if_stmt(
-                    method_call(var_expr("iterator"), "valid", Vec::new()),
-                    vec![
-                        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
-                        return_stmt(bool_expr(true)),
-                    ],
-                    None,
-                ),
-                property_assign_stmt(
-                    this_expr(),
-                    "index",
-                    binary_expr(append_index_expr(), BinOp::Add, int_expr(1)),
-                ),
-                if_stmt(
-                    binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
-                    vec![
-                        typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
-                        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
-                        expr_stmt(method_call(var_expr("iterator"), "rewind", Vec::new())),
-                    ],
-                    None,
-                ),
-            ],
+            vec![if_stmt(
+                not_expr(append_active_at_position_expr(append_index_expr())),
+                append_advance_index_body(),
+                Some(active_body),
+            )],
         ),
         property_assign_stmt(this_expr(), "inner", new_object_expr("EmptyIterator", Vec::new())),
         return_stmt(bool_expr(false)),
     ]
+}
+
+fn append_advance_index_body() -> Vec<Stmt> {
+    vec![
+        append_advance_index_stmt(),
+        if_stmt(
+            binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
+            vec![
+                typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+                property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+                expr_stmt(method_call(var_expr("iterator"), "rewind", Vec::new())),
+            ],
+            None,
+        ),
+    ]
+}
+
+fn append_advance_index_stmt() -> Stmt {
+    property_assign_stmt(
+        this_expr(),
+        "index",
+        binary_expr(append_index_expr(), BinOp::Add, int_expr(1)),
+    )
 }
 
 fn append_current_body() -> Vec<Stmt> {
@@ -1593,6 +1799,26 @@ fn append_next_body() -> Vec<Stmt> {
         ),
         typed_assign_stmt("iterator", named_type("Iterator"), inner_expr()),
         expr_stmt(method_call(var_expr("iterator"), "next", Vec::new())),
+        if_stmt(
+            not_expr(method_call(var_expr("iterator"), "valid", Vec::new())),
+            vec![
+                property_assign_stmt(
+                    this_expr(),
+                    "index",
+                    binary_expr(append_index_expr(), BinOp::Add, int_expr(1)),
+                ),
+                if_stmt(
+                    binary_expr(append_index_expr(), BinOp::Lt, count_expr(append_iterators_expr())),
+                    vec![
+                        typed_assign_stmt("iterator", named_type("Iterator"), append_current_iterator_expr()),
+                        property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
+                        expr_stmt(method_call(var_expr("iterator"), "rewind", Vec::new())),
+                    ],
+                    None,
+                ),
+            ],
+            None,
+        ),
         expr_stmt(method_call(this_expr(), "valid", Vec::new())),
     ]
 }
@@ -1615,12 +1841,315 @@ fn append_get_iterator_index_body() -> Vec<Stmt> {
             null_return_body(),
             None,
         ),
-        return_stmt(append_index_expr()),
+        return_stmt(append_current_key_expr()),
     ]
 }
 
 fn append_get_array_iterator_body() -> Vec<Stmt> {
-    return_body(new_object_expr("ArrayIterator", vec![append_iterators_expr()]))
+    return_body(append_array_iterator_expr())
+}
+
+fn append_storage_append_body() -> Vec<Stmt> {
+    vec![
+        property_array_push_stmt(this_expr(), "iteratorKeys", count_expr(append_iterator_keys_expr())),
+        property_array_push_stmt(this_expr(), "iterators", var_expr("iterator")),
+        property_array_push_stmt(this_expr(), "iteratorActive", bool_expr(true)),
+    ]
+}
+
+fn append_storage_offset_set_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            binary_expr(var_expr("offset"), BinOp::StrictEq, null_expr()),
+            append_storage_append_body(),
+            Some(vec![
+                assign_stmt("i", int_expr(0)),
+                assign_stmt("limit", count_expr(append_iterator_keys_expr())),
+                while_stmt(
+                    binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+                    vec![
+                        if_stmt(
+                            binary_expr(append_key_at_position_expr(var_expr("i")), BinOp::StrictEq, var_expr("offset")),
+                            vec![
+                                property_array_assign_stmt(
+                                    this_expr(),
+                                    "iterators",
+                                    var_expr("i"),
+                                    var_expr("iterator"),
+                                ),
+                                property_array_assign_stmt(
+                                    this_expr(),
+                                    "iteratorActive",
+                                    var_expr("i"),
+                                    bool_expr(true),
+                                ),
+                                return_void_stmt(),
+                            ],
+                            None,
+                        ),
+                        increment_stmt("i"),
+                    ],
+                ),
+                property_array_push_stmt(this_expr(), "iteratorKeys", var_expr("offset")),
+                property_array_push_stmt(this_expr(), "iterators", var_expr("iterator")),
+                property_array_push_stmt(this_expr(), "iteratorActive", bool_expr(true)),
+            ]),
+        ),
+    ]
+}
+
+fn append_storage_count_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("count", int_expr(0)),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(append_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    append_active_at_position_expr(var_expr("i")),
+                    vec![assign_stmt(
+                        "count",
+                        binary_expr(var_expr("count"), BinOp::Add, int_expr(1)),
+                    )],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(var_expr("count")),
+    ]
+}
+
+fn append_storage_offset_exists_body() -> Vec<Stmt> {
+    let mut body = vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(append_iterator_keys_expr())),
+    ];
+    body.push(while_stmt(
+        binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+        vec![
+            if_stmt(
+                binary_expr(
+                    binary_expr(
+                        append_key_at_position_expr(var_expr("i")),
+                        BinOp::StrictEq,
+                        var_expr("offset"),
+                    ),
+                    BinOp::And,
+                    append_active_at_position_expr(var_expr("i")),
+                ),
+                return_body(bool_expr(true)),
+                None,
+            ),
+            increment_stmt("i"),
+        ],
+    ));
+    body.push(return_stmt(bool_expr(false)));
+    body
+}
+
+fn append_storage_offset_get_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(append_iterator_keys_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    binary_expr(
+                        binary_expr(
+                            append_key_at_position_expr(var_expr("i")),
+                            BinOp::StrictEq,
+                            var_expr("offset"),
+                        ),
+                        BinOp::And,
+                        append_active_at_position_expr(var_expr("i")),
+                    ),
+                    return_body(array_access(append_iterators_expr(), var_expr("i"))),
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(null_expr()),
+    ]
+}
+
+fn append_storage_offset_unset_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(append_iterator_keys_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    binary_expr(append_key_at_position_expr(var_expr("i")), BinOp::StrictEq, var_expr("offset")),
+                    vec![
+                        property_array_assign_stmt(
+                            this_expr(),
+                            "iteratorActive",
+                            var_expr("i"),
+                            bool_expr(false),
+                        ),
+                        return_void_stmt(),
+                    ],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+    ]
+}
+
+fn append_storage_get_array_copy_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("out", empty_array_expr()),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(append_iterator_keys_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    append_active_at_position_expr(var_expr("i")),
+                    vec![array_assign_stmt(
+                        "out",
+                        append_key_at_position_expr(var_expr("i")),
+                        array_access(append_iterators_expr(), var_expr("i")),
+                    )],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        return_stmt(var_expr("out")),
+    ]
+}
+
+fn append_storage_current_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("i", var_expr("position")),
+        return_stmt(array_access(append_iterators_expr(), var_expr("i"))),
+    ]
+}
+
+fn append_array_iterator_owner_expr() -> Expr {
+    property_access(this_expr(), "owner")
+}
+
+fn append_array_iterator_position_expr() -> Expr {
+    property_access(this_expr(), "appendPosition")
+}
+
+fn append_array_iterator_owner_call(method: &str, args: Vec<Expr>) -> Expr {
+    method_call(append_array_iterator_owner_expr(), method, args)
+}
+
+fn append_array_iterator_construct_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "owner", var_expr("owner")),
+        property_assign_stmt(this_expr(), "appendPosition", int_expr(0)),
+    ]
+}
+
+fn append_array_iterator_count_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call("__elephcStorageCount", Vec::new()))
+}
+
+fn append_array_iterator_append_body() -> Vec<Stmt> {
+    vec![expr_stmt(append_array_iterator_owner_call(
+        "__elephcStorageAppend",
+        vec![var_expr("iterator")],
+    ))]
+}
+
+fn append_array_iterator_offset_set_body() -> Vec<Stmt> {
+    vec![expr_stmt(append_array_iterator_owner_call(
+        "__elephcStorageOffsetSet",
+        vec![var_expr("offset"), var_expr("iterator")],
+    ))]
+}
+
+fn append_array_iterator_offset_exists_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call(
+        "__elephcStorageOffsetExists",
+        vec![var_expr("offset")],
+    ))
+}
+
+fn append_array_iterator_offset_get_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call(
+        "__elephcStorageOffsetGet",
+        vec![var_expr("offset")],
+    ))
+}
+
+fn append_array_iterator_offset_unset_body() -> Vec<Stmt> {
+    vec![expr_stmt(append_array_iterator_owner_call(
+        "__elephcStorageOffsetUnset",
+        vec![var_expr("offset")],
+    ))]
+}
+
+fn append_array_iterator_copy_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call(
+        "__elephcStorageGetArrayCopy",
+        Vec::new(),
+    ))
+}
+
+fn append_array_iterator_rewind_body() -> Vec<Stmt> {
+    vec![property_assign_stmt(this_expr(), "appendPosition", int_expr(0))]
+}
+
+fn append_array_iterator_next_body() -> Vec<Stmt> {
+    vec![property_assign_stmt(
+        this_expr(),
+        "appendPosition",
+        binary_expr(append_array_iterator_position_expr(), BinOp::Add, int_expr(1)),
+    )]
+}
+
+fn append_array_iterator_valid_body() -> Vec<Stmt> {
+    vec![
+        while_stmt(
+            binary_expr(
+                append_array_iterator_position_expr(),
+                BinOp::Lt,
+                append_array_iterator_owner_call("__elephcStoragePhysicalCount", Vec::new()),
+            ),
+            vec![
+                if_stmt(
+                    append_array_iterator_owner_call(
+                        "__elephcStorageIsActive",
+                        vec![append_array_iterator_position_expr()],
+                    ),
+                    return_body(bool_expr(true)),
+                    None,
+                ),
+                property_assign_stmt(
+                    this_expr(),
+                    "appendPosition",
+                    binary_expr(append_array_iterator_position_expr(), BinOp::Add, int_expr(1)),
+                ),
+            ],
+        ),
+        return_stmt(bool_expr(false)),
+    ]
+}
+
+fn append_array_iterator_key_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call(
+        "__elephcStorageKey",
+        vec![append_array_iterator_position_expr()],
+    ))
+}
+
+fn append_array_iterator_current_body() -> Vec<Stmt> {
+    return_body(append_array_iterator_owner_call(
+        "__elephcStorageCurrent",
+        vec![append_array_iterator_position_expr()],
+    ))
 }
 
 fn multiple_iterators_expr() -> Expr {
@@ -1669,6 +2198,22 @@ fn multiple_construct_body() -> Vec<Stmt> {
 
 fn multiple_attach_iterator_body() -> Vec<Stmt> {
     vec![
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    binary_expr(multiple_iterator_at(var_expr("i")), BinOp::StrictEq, var_expr("iterator")),
+                    vec![
+                        property_array_assign_stmt(this_expr(), "infos", var_expr("i"), var_expr("info")),
+                        return_void_stmt(),
+                    ],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
         property_array_push_stmt(this_expr(), "iterators", var_expr("iterator")),
         property_array_push_stmt(this_expr(), "infos", var_expr("info")),
     ]
@@ -1788,6 +2333,39 @@ fn multiple_valid_body() -> Vec<Stmt> {
 
 fn multiple_output_body(method: &str) -> Vec<Stmt> {
     vec![
+        if_stmt(
+            binary_expr(count_expr(multiple_iterators_expr()), BinOp::StrictEq, int_expr(0)),
+            vec![throw_stmt(new_object_expr(
+                "RuntimeException",
+                vec![string_expr(&format!("Called {method}() on an invalid iterator"))],
+            ))],
+            None,
+        ),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(multiple_iterators_expr())),
+        if_stmt(
+            multiple_need_all_expr(),
+            vec![
+                while_stmt(
+                    binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+                    vec![
+                        typed_assign_stmt("iterator", named_type("Iterator"), multiple_iterator_at(var_expr("i"))),
+                        if_stmt(
+                            not_expr(method_call(var_expr("iterator"), "valid", Vec::new())),
+                            vec![throw_stmt(new_object_expr(
+                                "RuntimeException",
+                                vec![string_expr(&format!(
+                                    "Called {method}() with non valid sub iterator"
+                                ))],
+                            ))],
+                            None,
+                        ),
+                        increment_stmt("i"),
+                    ],
+                ),
+            ],
+            None,
+        ),
         assign_stmt("out", empty_array_expr()),
         assign_stmt("i", int_expr(0)),
         assign_stmt("limit", count_expr(multiple_iterators_expr())),

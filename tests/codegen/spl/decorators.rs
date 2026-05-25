@@ -29,9 +29,12 @@ var_dump(class_exists("NoRewindIterator"));
 var_dump(class_exists("InfiniteIterator"));
 var_dump(class_exists("AppendIterator"));
 var_dump(class_exists("MultipleIterator"));
+var_dump(class_exists("__ElephcAppendIteratorArrayIterator", false));
 $names = spl_classes();
 var_dump(has_name($names, "AppendIterator"));
 var_dump(has_name($names, "MultipleIterator"));
+$declared = get_declared_classes();
+var_dump(has_name($declared, "__ElephcAppendIteratorArrayIterator"));
 var_dump(new IteratorIterator(new ArrayIterator([])) instanceof OuterIterator);
 var_dump(new LimitIterator(new ArrayIterator([])) instanceof OuterIterator);
 var_dump(new NoRewindIterator(new ArrayIterator([])) instanceof Iterator);
@@ -49,8 +52,10 @@ var_dump(new MultipleIterator() instanceof Iterator);
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
+            "bool(false)\n",
             "bool(true)\n",
             "bool(true)\n",
             "bool(true)\n",
@@ -313,7 +318,52 @@ foreach ($append as $key => $value) {
 }
 $storage = $append->getArrayIterator();
 echo "|";
+var_dump($storage instanceof ArrayIterator);
+var_dump($storage === $append->getArrayIterator());
 echo $storage->count();
+$storage->offsetSet(7, new ArrayIterator(["z" => 5]));
+echo ":";
+echo $storage->count();
+echo ":";
+var_dump($storage->offsetExists(7));
+$slot = $storage->offsetGet(7);
+foreach ($slot as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+}
+echo ":";
+foreach ($storage as $source => $inner) {
+    echo $source;
+    echo "~";
+    foreach ($inner as $key => $value) {
+        echo $key;
+        echo "=";
+        echo $value;
+    }
+    echo ";";
+}
+echo ":";
+foreach ($append as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+    echo "@";
+    echo $append->getIteratorIndex();
+    echo ";";
+}
+$storage->offsetUnset(1);
+echo ":";
+echo $storage->count();
+echo ":";
+foreach ($append as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+    echo "@";
+    echo $append->getIteratorIndex();
+    echo ";";
+}
 "#,
     );
     assert_eq!(
@@ -321,7 +371,15 @@ echo $storage->count();
         concat!(
             "bool(true)\n",
             "bool(true)\n",
-            "x=3@1;y=4@1;0=9@2;|3",
+            "x=3@1;y=4@1;0=9@2;|",
+            "bool(true)\n",
+            "bool(true)\n",
+            "3:4:",
+            "bool(true)\n",
+            "z=5:",
+            "0~;1~x=3y=4;2~0=9;7~z=5;:",
+            "x=3@1;y=4@1;0=9@2;z=5@7;:",
+            "3:0=9@2;z=5@7;",
         )
     );
 }
@@ -387,6 +445,85 @@ foreach ($multi as $keys => $values) {
 "#,
     );
     assert_eq!(out, "a/x=1/10;|a/x=1/10;b/null=2/null;");
+}
+
+#[test]
+fn test_multiple_iterator_updates_duplicate_attach_info() {
+    let out = compile_and_run(
+        r#"<?php
+$multi = new MultipleIterator(MultipleIterator::MIT_KEYS_ASSOC);
+$it = new ArrayIterator([5]);
+$multi->attachIterator($it, "first");
+$multi->attachIterator($it, "second");
+echo $multi->countIterators();
+echo ":";
+foreach ($multi as $keys => $values) {
+    echo $keys["second"];
+    echo "=";
+    echo $values["second"];
+}
+"#,
+    );
+    assert_eq!(out, "1:0=5");
+}
+
+#[test]
+fn test_multiple_iterator_direct_invalid_current_and_key_match_php() {
+    let out = compile_and_run(
+        r#"<?php
+$empty = new MultipleIterator();
+try {
+    $empty->current();
+} catch (RuntimeException $e) {
+    echo "c:";
+    echo $e->getMessage();
+    echo ";";
+}
+try {
+    $empty->key();
+} catch (RuntimeException $e) {
+    echo "k:";
+    echo $e->getMessage();
+    echo ";";
+}
+
+$all = new MultipleIterator(MultipleIterator::MIT_NEED_ALL);
+$all->attachIterator(new ArrayIterator([]));
+try {
+    $all->current();
+} catch (RuntimeException $e) {
+    echo "C:";
+    echo $e->getMessage();
+    echo ";";
+}
+try {
+    $all->key();
+} catch (RuntimeException $e) {
+    echo "K:";
+    echo $e->getMessage();
+    echo ";";
+}
+
+$any = new MultipleIterator(MultipleIterator::MIT_NEED_ANY);
+$any->attachIterator(new ArrayIterator([]));
+$current = $any->current();
+$key = $any->key();
+echo ":";
+echo is_null($current[0]) ? "cn" : "cv";
+echo "/";
+echo is_null($key[0]) ? "kn" : "kv";
+"#,
+    );
+    assert_eq!(
+        out,
+        concat!(
+            "c:Called current() on an invalid iterator;",
+            "k:Called key() on an invalid iterator;",
+            "C:Called current() with non valid sub iterator;",
+            "K:Called key() with non valid sub iterator;",
+            ":cn/kn",
+        )
+    );
 }
 
 #[test]

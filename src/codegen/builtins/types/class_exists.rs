@@ -43,7 +43,12 @@ fn literal_lookup_result(name: &str, args: &[Expr], ctx: &Context) -> Option<i64
     };
     let cleaned = class.trim_start_matches('\\');
     let present = match name {
-        "class_exists" => contains_folded(ctx.classes.keys(), cleaned),
+        "class_exists" => contains_folded(
+            ctx.classes
+                .keys()
+                .filter(|name| !is_internal_synthetic_class_name(name)),
+            cleaned,
+        ),
         "interface_exists" => contains_folded(ctx.interfaces.keys(), cleaned),
         "enum_exists" => contains_folded(ctx.enums.keys(), cleaned),
         "trait_exists" => contains_folded(ctx.traits.iter(), cleaned),
@@ -58,4 +63,8 @@ fn contains_folded<'a>(
 ) -> bool {
     let needle_key = php_symbol_key(needle);
     names.any(|name| php_symbol_key(name) == needle_key)
+}
+
+fn is_internal_synthetic_class_name(name: &str) -> bool {
+    php_symbol_key(name).starts_with("__elephc")
 }
