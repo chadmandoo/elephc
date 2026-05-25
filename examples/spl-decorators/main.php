@@ -93,3 +93,36 @@ foreach ($multi as $keys => $values) {
     echo is_null($values["right"]) ? "null" : $values["right"];
     echo "\n";
 }
+
+echo "recursive:\n";
+$tree = new RecursiveIteratorIterator(
+    new RecursiveArrayIterator([
+        "root" => ["left" => 1, "right" => ["leaf" => 2]],
+        "tail" => 3,
+    ]),
+    RecursiveIteratorIterator::SELF_FIRST
+);
+foreach ($tree as $key => $value) {
+    echo $tree->getDepth();
+    echo ":";
+    echo $key;
+    echo "=";
+    echo gettype($value) === "array" ? "array" : $value;
+    echo "\n";
+}
+
+echo "recursive filter:\n";
+$min = 1;
+$recursiveFilter = new RecursiveCallbackFilterIterator(
+    new RecursiveArrayIterator(["group" => ["skip" => 1, "keep" => 2], "tail" => 3]),
+    function (mixed $value, mixed $key, Iterator $inner) use ($min): bool {
+        return $inner instanceof Iterator
+            && (gettype($value) === "array" || $value > $min || $key === "always");
+    }
+);
+foreach (new RecursiveIteratorIterator($recursiveFilter) as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+    echo "\n";
+}

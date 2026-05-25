@@ -34,6 +34,9 @@ pub(super) fn return_type_for(intrinsic: IntrinsicCall) -> PhpType {
         | IntrinsicCallKind::SplDllOffsetExists
         | IntrinsicCallKind::SplDllValid
         | IntrinsicCallKind::SplFixedOffsetExists => PhpType::Bool,
+        IntrinsicCallKind::SplRecursiveAssumeIterator => {
+            PhpType::Object("RecursiveIterator".to_string())
+        }
         IntrinsicCallKind::SplDllCount
         | IntrinsicCallKind::SplDllGetIteratorMode
         | IntrinsicCallKind::SplFixedCount
@@ -185,6 +188,9 @@ pub(super) fn emit_instance_intrinsic_with_loaded_args(
         | IntrinsicCallKind::GeneratorGetReturn => emit_generator_intrinsic(intrinsic, emitter, ctx),
         IntrinsicCallKind::CallbackFilterAccept => {
             emit_callback_filter_accept_intrinsic(intrinsic, emitter, ctx)
+        }
+        IntrinsicCallKind::SplRecursiveAssumeIterator => {
+            emit_recursive_assume_iterator_intrinsic(emitter, ctx)
         }
         IntrinsicCallKind::SplDllAdd
         | IntrinsicCallKind::SplDllPop
@@ -398,4 +404,26 @@ fn emit_callback_filter_accept_intrinsic(
     }
     restore_concat_offset_after_nested_call(emitter, ctx, &PhpType::Bool);
     PhpType::Bool
+}
+
+fn emit_recursive_assume_iterator_intrinsic(
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> PhpType {
+    save_concat_offset_before_nested_call(emitter, ctx);
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, x1");                                  // move the boxed candidate iterator into the mixed-unbox helper input
+            emitter.instruction("bl __rt_mixed_unbox");                         // unwrap the candidate so the raw object pointer can be returned
+            emitter.instruction("mov x0, x1");                                  // return the unboxed object payload as RecursiveIterator
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov rax, rsi");                                // move the boxed candidate iterator into the mixed-unbox helper input
+            emitter.instruction("call __rt_mixed_unbox");                       // unwrap the candidate so the raw object pointer can be returned
+            emitter.instruction("mov rax, rdi");                                // return the unboxed object payload as RecursiveIterator
+        }
+    }
+    let ret_ty = PhpType::Object("RecursiveIterator".to_string());
+    restore_concat_offset_after_nested_call(emitter, ctx, &ret_ty);
+    ret_ty
 }

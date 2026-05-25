@@ -12,7 +12,10 @@ iterator/decorator foundations: `EmptyIterator`, `ArrayIterator`,
 `ArrayObject`, `IteratorIterator`, `LimitIterator`, `NoRewindIterator`, and
 `InfiniteIterator`, filter/cache decorators `FilterIterator`,
 `CallbackFilterIterator`, and `CachingIterator`, plus the multi-source
-decorators `AppendIterator` and `MultipleIterator`.
+decorators `AppendIterator` and `MultipleIterator`, and the recursive family
+`RecursiveArrayIterator`, `RecursiveFilterIterator`,
+`RecursiveCallbackFilterIterator`, `RecursiveIteratorIterator`, and
+`ParentIterator`.
 
 SPL names live in the global namespace, matching PHP. They are available
 without imports or runtime extensions.
@@ -72,6 +75,11 @@ one or more `Iterator` objects:
 | `FilterIterator` | `IteratorIterator` | inherited from parent |
 | `CallbackFilterIterator` | `FilterIterator` | inherited from parent |
 | `CachingIterator` | `IteratorIterator` | `ArrayAccess`, `Countable`, `Stringable` |
+| `RecursiveArrayIterator` | `ArrayIterator` | `RecursiveIterator` |
+| `RecursiveFilterIterator` | `FilterIterator` | `RecursiveIterator` |
+| `RecursiveCallbackFilterIterator` | `CallbackFilterIterator` | `RecursiveIterator` |
+| `RecursiveIteratorIterator` | - | `OuterIterator` |
+| `ParentIterator` | `RecursiveFilterIterator` | inherited from parent |
 | `AppendIterator` | `IteratorIterator` | inherited from parent |
 | `MultipleIterator` | - | `Iterator` |
 
@@ -214,6 +222,11 @@ Supported methods:
 | `FilterIterator` | `__construct(Iterator $iterator)`, abstract `accept(): bool`, `rewind()`, `next()`, plus inherited forwarding methods |
 | `CallbackFilterIterator` | `__construct(Iterator $iterator, callable $callback)`, `accept(): bool` calling the callback as `callback(current, key, inner)` |
 | `CachingIterator` | `__construct(Iterator $iterator, int $flags = CachingIterator::CALL_TOSTRING)`, `rewind()`, `valid()`, `next()`, `current()`, `key()`, `hasNext()`, `__toString()`, `getFlags()`, `setFlags(int $flags): void`, `getCache()`, `count()`, `offsetExists()`, `offsetGet()`, `offsetSet()`, `offsetUnset()` |
+| `RecursiveArrayIterator` | `__construct(array\|object $array = [], int $flags = 0)`, `hasChildren(): bool`, `getChildren(): ?RecursiveIterator`, plus inherited `ArrayIterator` methods |
+| `RecursiveFilterIterator` | `__construct(RecursiveIterator $iterator)`, `hasChildren(): bool`, `getChildren(): ?RecursiveIterator`, plus inherited `FilterIterator` methods |
+| `RecursiveCallbackFilterIterator` | `__construct(RecursiveIterator $iterator, callable $callback)`, `hasChildren(): bool`, `getChildren(): ?RecursiveIterator`, plus inherited callback filtering |
+| `RecursiveIteratorIterator` | `__construct(RecursiveIterator $iterator, int $mode = RecursiveIteratorIterator::LEAVES_ONLY, int $flags = 0)`, `rewind()`, `valid()`, `current()`, `key()`, `next()`, `getDepth(): int`, `getInnerIterator(): ?Iterator`, `getSubIterator(int $level = -1): ?RecursiveIterator` |
+| `ParentIterator` | `__construct(RecursiveIterator $iterator)`, `accept(): bool`, `getChildren(): ?RecursiveIterator`, plus inherited recursive filtering |
 | `AppendIterator` | `__construct()`, `append(Iterator $iterator): void`, `rewind()`, `valid()`, `current()`, `key()`, `next()`, `getInnerIterator(): ?Iterator`, `getIteratorIndex(): int\|string\|null`, `getArrayIterator(): ArrayIterator` |
 | `MultipleIterator` | `__construct(int $flags = MultipleIterator::MIT_NEED_ALL)`, `attachIterator(Iterator $iterator, string\|int\|null $info = null): void`, `detachIterator(Iterator $iterator): void`, `containsIterator(Iterator $iterator): bool`, `countIterators(): int`, `getFlags(): int`, `setFlags(int $flags): void`, `rewind()`, `valid()`, `key()`, `current()`, `next()` |
 
@@ -290,6 +303,18 @@ foreach ($multi as $keys => $values) {
     echo $keys["left"];
     echo is_null($values["right"]) ? "missing" : $values["right"];
 }
+
+$tree = new RecursiveIteratorIterator(
+    new RecursiveArrayIterator(["a" => ["x" => 1], "b" => 2]),
+    RecursiveIteratorIterator::SELF_FIRST
+);
+foreach ($tree as $key => $value) {
+    echo $tree->getDepth();
+    echo ":";
+    echo $key;
+    echo "=";
+    echo gettype($value) === "array" ? "array" : $value;
+}
 ```
 
 `IteratorIterator` accepts PHP's optional `$class` downcast argument. Direct
@@ -323,6 +348,14 @@ Re-attaching the same iterator updates its info instead of duplicating it. When
 associative-key mode is active, attaching an iterator with `null` info raises
 `InvalidArgumentException` when `key()` or `current()` materializes the
 composite arrays, matching PHP.
+
+`RecursiveArrayIterator` detects nested arrays and nested `RecursiveIterator`
+objects through `hasChildren()`. `RecursiveIteratorIterator` supports
+`LEAVES_ONLY`, `SELF_FIRST`, and `CHILD_FIRST`; traversal rows keep the source
+key, value, depth, and source sub-iterator object. `RecursiveCallbackFilterIterator`
+preserves closure and first-class-callable capture environments when it wraps
+child iterators. `ParentIterator` recursively keeps only entries that have
+children.
 
 ## Autoload and Introspection
 
@@ -394,5 +427,8 @@ is wired to return an `ArrayIterator`. The Phase 4 containers otherwise keep
 their runtime-backed method surface aligned with PHP's empty-container,
 invalid-offset, serialization, and fixed-array key behaviors.
 
-`CallbackFilterIterator` supports function first-class callables and closures
-stored in the iterator object, including captured closure environments.
+`RecursiveIteratorIterator` materializes its traversal during `rewind()`, so
+mutating the underlying recursive source after `rewind()` is reflected on the
+next rewind rather than during the active pass. `getSubIterator()` returns the
+stored sub-iterator object, but the iterator's live cursor is not rewound to the
+materialized row.

@@ -45,7 +45,10 @@ impl Checker {
         if class_name == "Fiber" {
             self.validate_fiber_constructor_args(args, expr, env)?;
         }
-        if class_name == "CallbackFilterIterator" {
+        if matches!(
+            class_name.as_str(),
+            "CallbackFilterIterator" | "RecursiveCallbackFilterIterator"
+        ) {
             self.specialize_callback_filter_iterator_callback(args)?;
         }
         if is_reflection_owner_class(&class_name) {

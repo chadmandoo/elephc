@@ -146,10 +146,34 @@ fn test_error_filter_iterator_is_abstract() {
 }
 
 #[test]
+fn test_error_recursive_filter_iterator_is_abstract() {
+    expect_error(
+        "<?php $it = new RecursiveFilterIterator(new RecursiveArrayIterator([]));",
+        "Cannot instantiate abstract class: RecursiveFilterIterator",
+    );
+}
+
+#[test]
 fn test_error_callback_filter_iterator_requires_callable() {
     expect_error(
         "<?php $it = new CallbackFilterIterator(new ArrayIterator([]), 123);",
         "Constructor 'CallbackFilterIterator::__construct' parameter $callback expects Callable, got Int",
+    );
+}
+
+#[test]
+fn test_error_recursive_callback_filter_iterator_requires_callable() {
+    expect_error(
+        "<?php $it = new RecursiveCallbackFilterIterator(new RecursiveArrayIterator([]), 123);",
+        "Constructor 'RecursiveCallbackFilterIterator::__construct' parameter $callback expects Callable, got Int",
+    );
+}
+
+#[test]
+fn test_error_recursive_iterator_iterator_requires_recursive_iterator() {
+    expect_error(
+        "<?php $it = new RecursiveIteratorIterator(new ArrayIterator([]));",
+        "Constructor 'RecursiveIteratorIterator::__construct' parameter $iterator expects Object(\"RecursiveIterator\"), got Object(\"ArrayIterator\")",
     );
 }
 

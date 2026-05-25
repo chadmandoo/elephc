@@ -75,6 +75,7 @@ pub enum IntrinsicCallKind {
     SplFixedJsonSerialize,
     SplFixedUnserialize,
     CallbackFilterAccept,
+    SplRecursiveAssumeIterator,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -331,6 +332,54 @@ const INTRINSICS: &[IntrinsicSpec] = &[
         class_key: "callbackfilteriterator",
         class_name: "CallbackFilterIterator",
         method_key: "__elephcacceptcallback",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::CallbackFilterAccept,
+        form: IntrinsicCallForm::Instance,
+        class_key: "recursivecallbackfilteriterator",
+        class_name: "RecursiveCallbackFilterIterator",
+        method_key: "__elephcacceptcallback",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::SplRecursiveAssumeIterator,
+        form: IntrinsicCallForm::Instance,
+        class_key: "recursivearrayiterator",
+        class_name: "RecursiveArrayIterator",
+        method_key: "__elephcassumerecursiveiterator",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::SplRecursiveAssumeIterator,
+        form: IntrinsicCallForm::Instance,
+        class_key: "recursivefilteriterator",
+        class_name: "RecursiveFilterIterator",
+        method_key: "__elephcassumerecursiveiterator",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::SplRecursiveAssumeIterator,
+        form: IntrinsicCallForm::Instance,
+        class_key: "recursivecallbackfilteriterator",
+        class_name: "RecursiveCallbackFilterIterator",
+        method_key: "__elephcassumerecursiveiterator",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::SplRecursiveAssumeIterator,
+        form: IntrinsicCallForm::Instance,
+        class_key: "recursiveiteratoriterator",
+        class_name: "RecursiveIteratorIterator",
+        method_key: "__elephcassumerecursiveiterator",
+        runtime_helper: None,
+    },
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::SplRecursiveAssumeIterator,
+        form: IntrinsicCallForm::Instance,
+        class_key: "parentiterator",
+        class_name: "ParentIterator",
+        method_key: "__elephcassumerecursiveiterator",
         runtime_helper: None,
     },
 ];

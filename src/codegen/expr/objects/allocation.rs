@@ -54,8 +54,8 @@ pub(super) fn emit_new_object(
     if class_name == "IteratorIterator" {
         return emit_new_iterator_iterator(args, emitter, ctx, data);
     }
-    if class_name == "CallbackFilterIterator" {
-        return emit_new_callback_filter_iterator(args, emitter, ctx, data);
+    if matches!(class_name, "CallbackFilterIterator" | "RecursiveCallbackFilterIterator") {
+        return emit_new_callback_filter_iterator(class_name, args, emitter, ctx, data);
     }
     if super::reflection::is_reflection_owner_class(class_name) {
         return super::reflection::emit_new_reflection_owner(
@@ -507,15 +507,16 @@ fn emit_new_iterator_iterator(
 }
 
 fn emit_new_callback_filter_iterator(
+    class_name: &str,
     args: &[Expr],
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
-    emitter.comment("new CallbackFilterIterator() — callback filter construction");
-    let Some(class_info) = ctx.classes.get("CallbackFilterIterator").cloned() else {
-        emitter.comment("WARNING: missing CallbackFilterIterator metadata");
-        return PhpType::Object("CallbackFilterIterator".to_string());
+    emitter.comment(&format!("new {}() — callback filter construction", class_name));
+    let Some(class_info) = ctx.classes.get(class_name).cloned() else {
+        emitter.comment(&format!("WARNING: missing {} metadata", class_name));
+        return PhpType::Object(class_name.to_string());
     };
     let inner_offset = class_info.property_offsets.get("inner").copied().unwrap_or(8);
     let callback_offset = class_info
@@ -530,8 +531,8 @@ fn emit_new_callback_filter_iterator(
         .unwrap_or(40);
     let normalized_args = normalize_constructor_args(&class_info, args, emitter, ctx, data);
 
-    emit_new_object_core("CallbackFilterIterator", &[], false, emitter, ctx, data);
-    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the allocated CallbackFilterIterator while constructor arguments are stored
+    emit_new_object_core(class_name, &[], false, emitter, ctx, data);
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the allocated callback-filter object while constructor arguments are stored
 
     if let Some(iterator_expr) = normalized_args.first() {
         let actual_ty = emit_expr(iterator_expr, emitter, ctx, data);
@@ -543,7 +544,7 @@ fn emit_new_callback_filter_iterator(
             &PhpType::Object("Iterator".to_string()),
         );
     } else {
-        emitter.comment("WARNING: CallbackFilterIterator constructor missing Iterator source");
+        emitter.comment(&format!("WARNING: {} constructor missing Iterator source", class_name));
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
     }
     store_iterator_inner_property_from_result(emitter, inner_offset);
@@ -567,15 +568,15 @@ fn emit_new_callback_filter_iterator(
             store_callable_property_from_result(emitter, callback_offset);
         }
     } else {
-        emitter.comment("WARNING: CallbackFilterIterator constructor missing callback");
+        emitter.comment(&format!("WARNING: {} constructor missing callback", class_name));
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
         store_pointer_property_zero(emitter, callback_env_offset);
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
         store_callable_property_from_result(emitter, callback_offset);
     }
 
-    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized CallbackFilterIterator object as the expression result
-    PhpType::Object("CallbackFilterIterator".to_string())
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized callback-filter object as the expression result
+    PhpType::Object(class_name.to_string())
 }
 
 fn normalize_iterator_iterator_constructor_args(

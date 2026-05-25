@@ -15,7 +15,7 @@ use crate::errors::CompileError;
 use crate::names::{php_symbol_key, Name};
 use crate::parser::ast::{
     BinOp, CastType, ClassConst, ClassMethod, ClassProperty, Expr, ExprKind, PropertyHooks, Stmt,
-    StmtKind, TypeExpr, Visibility,
+    StmtKind, TypeExpr, Visibility, InstanceOfTarget, StaticReceiver,
 };
 use crate::types::{traits::FlattenedClass, PhpType};
 
@@ -153,6 +153,23 @@ pub(crate) fn inject_builtin_spl_classes(
             is_readonly_class: false,
             properties: array_iterator_properties(),
             methods: spl_array_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
+        "RecursiveArrayIterator".to_string(),
+        FlattenedClass {
+            name: "RecursiveArrayIterator".to_string(),
+            extends: Some("ArrayIterator".to_string()),
+            implements: vec!["RecursiveIterator".to_string()],
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: Vec::new(),
+            methods: spl_recursive_array_iterator_methods(),
             attributes: Vec::new(),
             constants: Vec::new(),
             used_traits: Vec::new(),
@@ -304,6 +321,74 @@ pub(crate) fn inject_builtin_spl_classes(
     );
 
     class_map.insert(
+        "RecursiveFilterIterator".to_string(),
+        FlattenedClass {
+            name: "RecursiveFilterIterator".to_string(),
+            extends: Some("FilterIterator".to_string()),
+            implements: vec!["RecursiveIterator".to_string()],
+            is_abstract: true,
+            is_final: false,
+            is_readonly_class: false,
+            properties: Vec::new(),
+            methods: spl_recursive_filter_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
+        "RecursiveCallbackFilterIterator".to_string(),
+        FlattenedClass {
+            name: "RecursiveCallbackFilterIterator".to_string(),
+            extends: Some("CallbackFilterIterator".to_string()),
+            implements: vec!["RecursiveIterator".to_string()],
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: Vec::new(),
+            methods: spl_recursive_callback_filter_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
+        "RecursiveIteratorIterator".to_string(),
+        FlattenedClass {
+            name: "RecursiveIteratorIterator".to_string(),
+            extends: None,
+            implements: vec!["OuterIterator".to_string()],
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: recursive_iterator_iterator_properties(),
+            methods: spl_recursive_iterator_iterator_methods(),
+            attributes: Vec::new(),
+            constants: recursive_iterator_iterator_constants(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
+        "ParentIterator".to_string(),
+        FlattenedClass {
+            name: "ParentIterator".to_string(),
+            extends: Some("RecursiveFilterIterator".to_string()),
+            implements: Vec::new(),
+            is_abstract: false,
+            is_final: false,
+            is_readonly_class: false,
+            properties: Vec::new(),
+            methods: spl_parent_iterator_methods(),
+            attributes: Vec::new(),
+            constants: Vec::new(),
+            used_traits: Vec::new(),
+        },
+    );
+
+    class_map.insert(
         "AppendIterator".to_string(),
         FlattenedClass {
             name: "AppendIterator".to_string(),
@@ -423,6 +508,42 @@ pub(crate) fn patch_builtin_spl_storage_signatures(checker: &mut Checker) {
             }
         }
     }
+    for class_name in [
+        "RecursiveFilterIterator",
+        "RecursiveCallbackFilterIterator",
+        "ParentIterator",
+    ] {
+        if let Some(class_info) = checker.classes.get_mut(class_name) {
+            for (name, ty) in &mut class_info.properties {
+                if name == "inner" {
+                    *ty = PhpType::Object("RecursiveIterator".to_string());
+                } else if name == "callback" {
+                    *ty = PhpType::Callable;
+                } else if name == "callbackEnv" {
+                    *ty = PhpType::Pointer(None);
+                }
+            }
+        }
+    }
+    if let Some(class_info) = checker.classes.get_mut("RecursiveIteratorIterator") {
+        for (name, ty) in &mut class_info.properties {
+            match name.as_str() {
+                "root" => *ty = PhpType::Object("RecursiveIterator".to_string()),
+                "keys" | "values" | "paths" => {
+                    *ty = PhpType::Array(Box::new(PhpType::Mixed));
+                }
+                "depths" => {
+                    *ty = PhpType::Array(Box::new(PhpType::Int));
+                }
+                "iterators" => {
+                    *ty = PhpType::Array(Box::new(PhpType::Object(
+                        "RecursiveIterator".to_string(),
+                    )));
+                }
+                _ => {}
+            }
+        }
+    }
     if let Some(class_info) = checker.classes.get_mut("CachingIterator") {
         for (name, ty) in &mut class_info.properties {
             if name == "cache" {
@@ -450,6 +571,7 @@ const SPL_CLASS_NAMES: &[&str] = &[
     "SplFixedArray",
     "EmptyIterator",
     "ArrayIterator",
+    "RecursiveArrayIterator",
     "ArrayObject",
     "IteratorIterator",
     "LimitIterator",
@@ -458,6 +580,10 @@ const SPL_CLASS_NAMES: &[&str] = &[
     "FilterIterator",
     "CallbackFilterIterator",
     "CachingIterator",
+    "RecursiveFilterIterator",
+    "RecursiveCallbackFilterIterator",
+    "RecursiveIteratorIterator",
+    "ParentIterator",
     "AppendIterator",
     "MultipleIterator",
 ];
@@ -474,10 +600,10 @@ fn spl_empty_iterator_methods() -> Vec<ClassMethod> {
 
 fn array_iterator_properties() -> Vec<ClassProperty> {
     vec![
-        storage_property("keys", array_type()),
-        storage_property("values", array_type()),
-        storage_property("position", TypeExpr::Int),
-        storage_property("flags", TypeExpr::Int),
+        protected_storage_property("keys", array_type()),
+        protected_storage_property("values", array_type()),
+        protected_storage_property("position", TypeExpr::Int),
+        protected_storage_property("flags", TypeExpr::Int),
     ]
 }
 
@@ -528,8 +654,8 @@ fn multiple_iterator_properties() -> Vec<ClassProperty> {
 
 fn callback_filter_iterator_properties() -> Vec<ClassProperty> {
     vec![
-        storage_property_untyped("callback"),
-        storage_property("callbackEnv", TypeExpr::Ptr(None)),
+        protected_storage_property_untyped("callback"),
+        protected_storage_property("callbackEnv", TypeExpr::Ptr(None)),
     ]
 }
 
@@ -541,6 +667,20 @@ fn caching_iterator_properties() -> Vec<ClassProperty> {
         storage_property("currentValue", mixed_type()),
         storage_property("currentValid", TypeExpr::Bool),
         storage_property("cachedHasNext", TypeExpr::Bool),
+    ]
+}
+
+fn recursive_iterator_iterator_properties() -> Vec<ClassProperty> {
+    vec![
+        storage_property("root", named_type("RecursiveIterator")),
+        storage_property("mode", TypeExpr::Int),
+        storage_property("flags", TypeExpr::Int),
+        storage_property("keys", array_type()),
+        storage_property("values", array_type()),
+        storage_property("depths", array_type()),
+        storage_property("iterators", array_type()),
+        storage_property("paths", array_type()),
+        storage_property("position", TypeExpr::Int),
     ]
 }
 
@@ -598,6 +738,33 @@ fn spl_array_iterator_methods() -> Vec<ClassMethod> {
             array_append_body(),
         ),
         method_with_body("getArrayCopy", Vec::new(), Some(array_type()), array_copy_body()),
+    ]
+}
+
+fn spl_recursive_array_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![
+                param_default("array", mixed_type(), empty_array_expr()),
+                param_default("flags", TypeExpr::Int, int_expr(0)),
+            ],
+            Some(TypeExpr::Void),
+            recursive_array_iterator_construct_body(),
+        ),
+        method_with_body("hasChildren", Vec::new(), Some(TypeExpr::Bool), recursive_array_has_children_body()),
+        method_with_body(
+            "getChildren",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("RecursiveIterator")))),
+            recursive_array_get_children_body(),
+        ),
+        method_with_body(
+            "__elephcAssumeRecursiveIterator",
+            vec![param("iterator", mixed_type())],
+            Some(named_type("RecursiveIterator")),
+            Vec::new(),
+        ),
     ]
 }
 
@@ -762,6 +929,12 @@ fn spl_callback_filter_iterator_methods() -> Vec<ClassMethod> {
             Vec::new(),
         ),
         method_with_body("accept", Vec::new(), Some(TypeExpr::Bool), callback_filter_accept_body()),
+        method_with_body(
+            "__elephcSetCallbackEnv",
+            vec![param("env", TypeExpr::Ptr(None))],
+            Some(TypeExpr::Void),
+            vec![property_assign_stmt(this_expr(), "callbackEnv", var_expr("env"))],
+        ),
     ]
 }
 
@@ -821,6 +994,145 @@ fn spl_caching_iterator_methods() -> Vec<ClassMethod> {
             Vec::new(),
             Some(TypeExpr::Void),
             caching_capture_current_body(),
+        ),
+    ]
+}
+
+fn spl_recursive_filter_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![param("iterator", named_type("RecursiveIterator"))],
+            Some(TypeExpr::Void),
+            iterator_iterator_construct_body(),
+        ),
+        method_with_body("hasChildren", Vec::new(), Some(TypeExpr::Bool), recursive_inner_return_body("hasChildren")),
+        method_with_body(
+            "getChildren",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("RecursiveIterator")))),
+            recursive_filter_get_children_body(),
+        ),
+        method_with_body(
+            "__elephcAssumeRecursiveIterator",
+            vec![param("iterator", mixed_type())],
+            Some(named_type("RecursiveIterator")),
+            Vec::new(),
+        ),
+    ]
+}
+
+fn spl_recursive_callback_filter_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![
+                param("iterator", named_type("RecursiveIterator")),
+                param("callback", named_type("callable")),
+            ],
+            Some(TypeExpr::Void),
+            callback_filter_construct_body(),
+        ),
+        method_with_body("hasChildren", Vec::new(), Some(TypeExpr::Bool), recursive_inner_return_body("hasChildren")),
+        method_with_body(
+            "getChildren",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("RecursiveIterator")))),
+            recursive_callback_filter_get_children_body(),
+        ),
+        method_with_body(
+            "__elephcAssumeRecursiveIterator",
+            vec![param("iterator", mixed_type())],
+            Some(named_type("RecursiveIterator")),
+            Vec::new(),
+        ),
+    ]
+}
+
+fn spl_recursive_iterator_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![
+                param("iterator", named_type("RecursiveIterator")),
+                param_default("mode", TypeExpr::Int, int_expr(0)),
+                param_default("flags", TypeExpr::Int, int_expr(0)),
+            ],
+            Some(TypeExpr::Void),
+            recursive_iterator_iterator_construct_body(),
+        ),
+        method_with_body("rewind", Vec::new(), Some(TypeExpr::Void), recursive_iterator_iterator_rewind_body()),
+        method_with_body("valid", Vec::new(), Some(TypeExpr::Bool), recursive_iterator_iterator_valid_body()),
+        method_with_body("current", Vec::new(), Some(mixed_type()), recursive_iterator_iterator_current_body()),
+        method_with_body("key", Vec::new(), Some(mixed_type()), recursive_iterator_iterator_key_body()),
+        method_with_body("next", Vec::new(), Some(TypeExpr::Void), recursive_iterator_iterator_next_body()),
+        method_with_body(
+            "getDepth",
+            Vec::new(),
+            Some(TypeExpr::Int),
+            recursive_iterator_iterator_get_depth_body(),
+        ),
+        method_with_body(
+            "getInnerIterator",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("Iterator")))),
+            return_body(recursive_iterator_iterator_root_expr()),
+        ),
+        method_with_body(
+            "getSubIterator",
+            vec![param_default("level", TypeExpr::Int, int_expr(-1))],
+            Some(TypeExpr::Nullable(Box::new(named_type("RecursiveIterator")))),
+            recursive_iterator_iterator_get_sub_iterator_body(),
+        ),
+        method_with_body(
+            "__elephcCollect",
+            vec![
+                param("iterator", named_type("RecursiveIterator")),
+                param("depth", TypeExpr::Int),
+                param("path", array_type()),
+            ],
+            Some(TypeExpr::Void),
+            recursive_iterator_iterator_collect_body(),
+        ),
+        method_with_body(
+            "__elephcAppendCurrent",
+            vec![
+                param("iterator", named_type("RecursiveIterator")),
+                param("depth", TypeExpr::Int),
+                param("path", array_type()),
+            ],
+            Some(TypeExpr::Void),
+            recursive_iterator_iterator_append_current_body(),
+        ),
+        method_with_body(
+            "__elephcAssumeRecursiveIterator",
+            vec![param("iterator", mixed_type())],
+            Some(named_type("RecursiveIterator")),
+            Vec::new(),
+        ),
+    ]
+}
+
+fn spl_parent_iterator_methods() -> Vec<ClassMethod> {
+    vec![
+        method_with_body(
+            "__construct",
+            vec![param("iterator", named_type("RecursiveIterator"))],
+            Some(TypeExpr::Void),
+            iterator_iterator_construct_body(),
+        ),
+        method_with_body("accept", Vec::new(), Some(TypeExpr::Bool), return_body(method_call(this_expr(), "hasChildren", Vec::new()))),
+        method_with_body(
+            "getChildren",
+            Vec::new(),
+            Some(TypeExpr::Nullable(Box::new(named_type("RecursiveIterator")))),
+            parent_iterator_get_children_body(),
+        ),
+        method_with_body(
+            "__elephcAssumeRecursiveIterator",
+            vec![param("iterator", mixed_type())],
+            Some(named_type("RecursiveIterator")),
+            Vec::new(),
         ),
     ]
 }
@@ -1192,6 +1504,15 @@ fn caching_iterator_constants() -> Vec<ClassConst> {
     ]
 }
 
+fn recursive_iterator_iterator_constants() -> Vec<ClassConst> {
+    vec![
+        class_const("LEAVES_ONLY", 0),
+        class_const("SELF_FIRST", 1),
+        class_const("CHILD_FIRST", 2),
+        class_const("CATCH_GET_CHILD", 16),
+    ]
+}
+
 fn method(
     name: &str,
     params: Vec<(String, Option<TypeExpr>, Option<Expr>, bool)>,
@@ -1262,25 +1583,16 @@ fn storage_property(name: &str, type_expr: TypeExpr) -> ClassProperty {
     storage_property_with_default(name, type_expr, None)
 }
 
+fn protected_storage_property(name: &str, type_expr: TypeExpr) -> ClassProperty {
+    storage_property_with_visibility(name, Some(type_expr), None, Visibility::Protected)
+}
+
 fn storage_property_default(name: &str, type_expr: TypeExpr, default: Expr) -> ClassProperty {
     storage_property_with_default(name, type_expr, Some(default))
 }
 
-fn storage_property_untyped(name: &str) -> ClassProperty {
-    ClassProperty {
-        name: name.to_string(),
-        visibility: Visibility::Private,
-        type_expr: None,
-        hooks: PropertyHooks::none(),
-        readonly: false,
-        is_final: false,
-        is_static: false,
-        is_abstract: false,
-        by_ref: false,
-        default: None,
-        span: crate::span::Span::dummy(),
-        attributes: Vec::new(),
-    }
+fn protected_storage_property_untyped(name: &str) -> ClassProperty {
+    storage_property_with_visibility(name, None, None, Visibility::Protected)
 }
 
 fn storage_property_with_default(
@@ -1288,10 +1600,19 @@ fn storage_property_with_default(
     type_expr: TypeExpr,
     default: Option<Expr>,
 ) -> ClassProperty {
+    storage_property_with_visibility(name, Some(type_expr), default, Visibility::Private)
+}
+
+fn storage_property_with_visibility(
+    name: &str,
+    type_expr: Option<TypeExpr>,
+    default: Option<Expr>,
+    visibility: Visibility,
+) -> ClassProperty {
     ClassProperty {
         name: name.to_string(),
-        visibility: Visibility::Private,
-        type_expr: Some(type_expr),
+        visibility,
+        type_expr,
         hooks: PropertyHooks::none(),
         readonly: false,
         is_final: false,
@@ -1449,6 +1770,20 @@ fn new_object_expr(class_name: &str, args: Vec<Expr>) -> Expr {
     expr(ExprKind::NewObject {
         class_name: Name::unqualified(class_name),
         args,
+    })
+}
+
+fn new_static_expr(args: Vec<Expr>) -> Expr {
+    expr(ExprKind::NewScopedObject {
+        receiver: StaticReceiver::Static,
+        args,
+    })
+}
+
+fn instanceof_expr(value: Expr, class_name: &str) -> Expr {
+    expr(ExprKind::InstanceOf {
+        value: Box::new(value),
+        target: InstanceOfTarget::Name(Name::unqualified(class_name)),
     })
 }
 
@@ -1783,6 +2118,68 @@ fn array_object_get_iterator_body() -> Vec<Stmt> {
     ]
 }
 
+fn recursive_array_iterator_construct_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "keys", empty_array_expr()),
+        property_assign_stmt(this_expr(), "values", empty_array_expr()),
+        property_assign_stmt(this_expr(), "position", int_expr(0)),
+        property_assign_stmt(this_expr(), "flags", var_expr("flags")),
+        foreach_stmt(
+            var_expr("array"),
+            Some("key"),
+            "value",
+            vec![
+                property_array_push_stmt(this_expr(), "keys", var_expr("key")),
+                property_array_push_stmt(this_expr(), "values", var_expr("value")),
+            ],
+        ),
+    ]
+}
+
+fn gettype_is_array_expr(value: Expr) -> Expr {
+    binary_expr(
+        function_call("gettype", vec![value]),
+        BinOp::StrictEq,
+        string_expr("array"),
+    )
+}
+
+fn recursive_current_expr() -> Expr {
+    method_call(this_expr(), "current", Vec::new())
+}
+
+fn assume_recursive_iterator_expr(value: Expr) -> Expr {
+    method_call(this_expr(), "__elephcAssumeRecursiveIterator", vec![value])
+}
+
+fn recursive_array_has_children_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("value", recursive_current_expr()),
+        return_stmt(binary_expr(
+            instanceof_expr(var_expr("value"), "RecursiveIterator"),
+            BinOp::Or,
+            gettype_is_array_expr(var_expr("value")),
+        )),
+    ]
+}
+
+fn recursive_array_get_children_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("value", recursive_current_expr()),
+        if_stmt(
+            instanceof_expr(var_expr("value"), "RecursiveIterator"),
+            return_body(assume_recursive_iterator_expr(var_expr("value"))),
+            None,
+        ),
+        if_stmt(
+            gettype_is_array_expr(var_expr("value")),
+            return_body(new_object_expr("RecursiveArrayIterator", vec![var_expr("value")])),
+            None,
+        ),
+        return_stmt(null_expr()),
+    ]
+}
+
 fn iterator_iterator_construct_body() -> Vec<Stmt> {
     vec![property_assign_stmt(this_expr(), "inner", var_expr("iterator"))]
 }
@@ -1801,6 +2198,10 @@ fn inner_return_body(method: &str) -> Vec<Stmt> {
 
 fn inner_void_body(method: &str) -> Vec<Stmt> {
     vec![expr_stmt(inner_call(method))]
+}
+
+fn recursive_inner_return_body(method: &str) -> Vec<Stmt> {
+    return_body(method_call(inner_expr(), method, Vec::new()))
 }
 
 fn limit_position_expr() -> Expr {
@@ -1937,6 +2338,371 @@ fn callback_filter_accept_body() -> Vec<Stmt> {
             ],
         ),
     ))
+}
+
+fn recursive_filter_get_children_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("child", method_call(inner_expr(), "getChildren", Vec::new())),
+        if_stmt(
+            function_call("is_null", vec![var_expr("child")]),
+            return_body(null_expr()),
+            None,
+        ),
+        return_stmt(new_static_expr(vec![assume_recursive_iterator_expr(var_expr("child"))])),
+    ]
+}
+
+fn recursive_callback_filter_get_children_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("child", method_call(inner_expr(), "getChildren", Vec::new())),
+        if_stmt(
+            function_call("is_null", vec![var_expr("child")]),
+            return_body(null_expr()),
+            None,
+        ),
+        assign_stmt(
+            "next",
+            new_object_expr(
+                "RecursiveCallbackFilterIterator",
+                vec![
+                    assume_recursive_iterator_expr(var_expr("child")),
+                    property_access(this_expr(), "callback"),
+                ],
+            ),
+        ),
+        expr_stmt(method_call(
+            var_expr("next"),
+            "__elephcSetCallbackEnv",
+            vec![property_access(this_expr(), "callbackEnv")],
+        )),
+        return_stmt(var_expr("next")),
+    ]
+}
+
+fn parent_iterator_get_children_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("child", method_call(inner_expr(), "getChildren", Vec::new())),
+        if_stmt(
+            function_call("is_null", vec![var_expr("child")]),
+            return_body(null_expr()),
+            None,
+        ),
+        return_stmt(new_object_expr(
+            "ParentIterator",
+            vec![assume_recursive_iterator_expr(var_expr("child"))],
+        )),
+    ]
+}
+
+fn recursive_iterator_iterator_root_expr() -> Expr {
+    property_access(this_expr(), "root")
+}
+
+fn recursive_iterator_iterator_mode_expr() -> Expr {
+    property_access(this_expr(), "mode")
+}
+
+fn recursive_iterator_iterator_keys_expr() -> Expr {
+    property_access(this_expr(), "keys")
+}
+
+fn recursive_iterator_iterator_values_expr() -> Expr {
+    property_access(this_expr(), "values")
+}
+
+fn recursive_iterator_iterator_depths_expr() -> Expr {
+    property_access(this_expr(), "depths")
+}
+
+fn recursive_iterator_iterator_iterators_expr() -> Expr {
+    property_access(this_expr(), "iterators")
+}
+
+fn recursive_iterator_iterator_paths_expr() -> Expr {
+    property_access(this_expr(), "paths")
+}
+
+fn recursive_iterator_iterator_position_expr() -> Expr {
+    property_access(this_expr(), "position")
+}
+
+fn recursive_iterator_iterator_valid_expr() -> Expr {
+    binary_expr(
+        recursive_iterator_iterator_position_expr(),
+        BinOp::Lt,
+        count_expr(recursive_iterator_iterator_values_expr()),
+    )
+}
+
+fn recursive_iterator_iterator_value_at_position() -> Expr {
+    array_access(
+        recursive_iterator_iterator_values_expr(),
+        recursive_iterator_iterator_position_expr(),
+    )
+}
+
+fn recursive_iterator_iterator_key_at_position() -> Expr {
+    array_access(
+        recursive_iterator_iterator_keys_expr(),
+        recursive_iterator_iterator_position_expr(),
+    )
+}
+
+fn recursive_iterator_iterator_depth_at_position() -> Expr {
+    array_access(
+        recursive_iterator_iterator_depths_expr(),
+        recursive_iterator_iterator_position_expr(),
+    )
+}
+
+fn recursive_iterator_iterator_iterator_at_position() -> Expr {
+    array_access(
+        recursive_iterator_iterator_iterators_expr(),
+        recursive_iterator_iterator_position_expr(),
+    )
+}
+
+fn recursive_iterator_iterator_construct_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "root", var_expr("iterator")),
+        property_assign_stmt(this_expr(), "mode", var_expr("mode")),
+        property_assign_stmt(this_expr(), "flags", var_expr("flags")),
+        property_assign_stmt(this_expr(), "keys", empty_array_expr()),
+        property_assign_stmt(this_expr(), "values", empty_array_expr()),
+        property_assign_stmt(this_expr(), "depths", empty_array_expr()),
+        property_assign_stmt(this_expr(), "iterators", empty_array_expr()),
+        property_assign_stmt(this_expr(), "paths", empty_array_expr()),
+        property_assign_stmt(this_expr(), "position", int_expr(0)),
+    ]
+}
+
+fn recursive_iterator_iterator_rewind_body() -> Vec<Stmt> {
+    vec![
+        property_assign_stmt(this_expr(), "keys", empty_array_expr()),
+        property_assign_stmt(this_expr(), "values", empty_array_expr()),
+        property_assign_stmt(this_expr(), "depths", empty_array_expr()),
+        property_assign_stmt(this_expr(), "iterators", empty_array_expr()),
+        property_assign_stmt(this_expr(), "paths", empty_array_expr()),
+        property_assign_stmt(this_expr(), "position", int_expr(0)),
+        expr_stmt(method_call(
+            recursive_iterator_iterator_root_expr(),
+            "rewind",
+            Vec::new(),
+        )),
+        expr_stmt(method_call(
+            this_expr(),
+            "__elephcCollect",
+            vec![
+                recursive_iterator_iterator_root_expr(),
+                int_expr(0),
+                empty_array_expr(),
+            ],
+        )),
+    ]
+}
+
+fn recursive_iterator_iterator_valid_body() -> Vec<Stmt> {
+    return_body(recursive_iterator_iterator_valid_expr())
+}
+
+fn recursive_iterator_iterator_current_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(recursive_iterator_iterator_valid_expr()),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(recursive_iterator_iterator_value_at_position()),
+    ]
+}
+
+fn recursive_iterator_iterator_key_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(recursive_iterator_iterator_valid_expr()),
+            null_return_body(),
+            None,
+        ),
+        return_stmt(recursive_iterator_iterator_key_at_position()),
+    ]
+}
+
+fn recursive_iterator_iterator_next_body() -> Vec<Stmt> {
+    vec![property_assign_stmt(
+        this_expr(),
+        "position",
+        binary_expr(
+            recursive_iterator_iterator_position_expr(),
+            BinOp::Add,
+            int_expr(1),
+        ),
+    )]
+}
+
+fn recursive_iterator_iterator_get_depth_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(recursive_iterator_iterator_valid_expr()),
+            return_body(int_expr(0)),
+            None,
+        ),
+        return_stmt(recursive_iterator_iterator_depth_at_position()),
+    ]
+}
+
+fn recursive_iterator_iterator_get_sub_iterator_body() -> Vec<Stmt> {
+    vec![
+        if_stmt(
+            not_expr(recursive_iterator_iterator_valid_expr()),
+            null_return_body(),
+            None,
+        ),
+        if_stmt(
+            binary_expr(var_expr("level"), BinOp::Lt, int_expr(0)),
+            return_body(recursive_iterator_iterator_iterator_at_position()),
+            None,
+        ),
+        if_stmt(
+            binary_expr(
+                var_expr("level"),
+                BinOp::LtEq,
+                recursive_iterator_iterator_depth_at_position(),
+            ),
+            vec![
+                assign_stmt(
+                    "path",
+                    array_access(
+                        recursive_iterator_iterator_paths_expr(),
+                        recursive_iterator_iterator_position_expr(),
+                    ),
+                ),
+                return_stmt(assume_recursive_iterator_expr(array_access(
+                    var_expr("path"),
+                    var_expr("level"),
+                ))),
+            ],
+            None,
+        ),
+        return_stmt(null_expr()),
+    ]
+}
+
+fn recursive_iterator_iterator_append_current_body() -> Vec<Stmt> {
+    vec![
+        property_array_push_stmt(
+            this_expr(),
+            "keys",
+            method_call(var_expr("iterator"), "key", Vec::new()),
+        ),
+        property_array_push_stmt(
+            this_expr(),
+            "values",
+            method_call(var_expr("iterator"), "current", Vec::new()),
+        ),
+        property_array_push_stmt(this_expr(), "depths", var_expr("depth")),
+        property_array_push_stmt(this_expr(), "iterators", var_expr("iterator")),
+        property_array_push_stmt(this_expr(), "paths", var_expr("path")),
+    ]
+}
+
+fn recursive_iterator_iterator_collect_body() -> Vec<Stmt> {
+    vec![while_stmt(
+        method_call(var_expr("iterator"), "valid", Vec::new()),
+        vec![
+            assign_stmt("currentPath", var_expr("path")),
+            array_assign_stmt("currentPath", var_expr("depth"), var_expr("iterator")),
+            assign_stmt(
+                "hasChildren",
+                method_call(var_expr("iterator"), "hasChildren", Vec::new()),
+            ),
+            if_stmt(
+                binary_expr(
+                    recursive_iterator_iterator_mode_expr(),
+                    BinOp::StrictEq,
+                    int_expr(1),
+                ),
+                vec![expr_stmt(method_call(
+                    this_expr(),
+                    "__elephcAppendCurrent",
+                    vec![
+                        var_expr("iterator"),
+                        var_expr("depth"),
+                        var_expr("currentPath"),
+                    ],
+                ))],
+                None,
+            ),
+            if_stmt(
+                var_expr("hasChildren"),
+                recursive_iterator_iterator_collect_child_body(),
+                Some(recursive_iterator_iterator_leaf_append_body()),
+            ),
+            if_stmt(
+                binary_expr(
+                    recursive_iterator_iterator_mode_expr(),
+                    BinOp::StrictEq,
+                    int_expr(2),
+                ),
+                vec![expr_stmt(method_call(
+                    this_expr(),
+                    "__elephcAppendCurrent",
+                    vec![
+                        var_expr("iterator"),
+                        var_expr("depth"),
+                        var_expr("currentPath"),
+                    ],
+                ))],
+                None,
+            ),
+            expr_stmt(method_call(var_expr("iterator"), "next", Vec::new())),
+        ],
+    )]
+}
+
+fn recursive_iterator_iterator_collect_child_body() -> Vec<Stmt> {
+    vec![
+        assign_stmt("child", method_call(var_expr("iterator"), "getChildren", Vec::new())),
+        if_stmt(
+            function_call("is_null", vec![var_expr("child")]),
+            recursive_iterator_iterator_leaf_append_body(),
+            Some(vec![
+                assign_stmt(
+                    "recursiveChild",
+                    assume_recursive_iterator_expr(var_expr("child")),
+                ),
+                expr_stmt(method_call(var_expr("recursiveChild"), "rewind", Vec::new())),
+                expr_stmt(method_call(
+                    this_expr(),
+                    "__elephcCollect",
+                    vec![
+                        var_expr("recursiveChild"),
+                        binary_expr(var_expr("depth"), BinOp::Add, int_expr(1)),
+                        var_expr("currentPath"),
+                    ],
+                )),
+            ]),
+        ),
+    ]
+}
+
+fn recursive_iterator_iterator_leaf_append_body() -> Vec<Stmt> {
+    vec![if_stmt(
+        binary_expr(
+            recursive_iterator_iterator_mode_expr(),
+            BinOp::StrictEq,
+            int_expr(0),
+        ),
+        vec![expr_stmt(method_call(
+            this_expr(),
+            "__elephcAppendCurrent",
+            vec![
+                var_expr("iterator"),
+                var_expr("depth"),
+                var_expr("currentPath"),
+            ],
+        ))],
+        None,
+    )]
 }
 
 fn caching_flags_expr() -> Expr {

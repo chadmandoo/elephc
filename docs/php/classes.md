@@ -102,8 +102,11 @@ PHP 8.1. Use `__serialize` / `__unserialize` magic methods instead
 The SPL container and storage iterator classes are built-ins:
 `SplDoublyLinkedList`, `SplStack`, `SplQueue`, `SplFixedArray`,
 `EmptyIterator`, `ArrayIterator`, `ArrayObject`, `IteratorIterator`,
-`LimitIterator`, `NoRewindIterator`, `InfiniteIterator`, `AppendIterator`, and
-`MultipleIterator`. They participate in
+`LimitIterator`, `NoRewindIterator`, `InfiniteIterator`, `FilterIterator`,
+`CallbackFilterIterator`, `CachingIterator`, `AppendIterator`,
+`MultipleIterator`, `RecursiveArrayIterator`, `RecursiveFilterIterator`,
+`RecursiveCallbackFilterIterator`, `RecursiveIteratorIterator`, and
+`ParentIterator`. They participate in
 `class_exists()`, `get_declared_classes()`, `spl_classes()`, `instanceof`,
 inherited class constants, interface checks, `foreach`, and `ArrayAccess`
 where PHP expects it.
@@ -121,8 +124,16 @@ where PHP expects it.
 | `LimitIterator` | `IteratorIterator` | inherited from parent |
 | `NoRewindIterator` | `IteratorIterator` | inherited from parent |
 | `InfiniteIterator` | `IteratorIterator` | inherited from parent |
+| `FilterIterator` | `IteratorIterator` | inherited from parent |
+| `CallbackFilterIterator` | `FilterIterator` | inherited from parent |
+| `CachingIterator` | `IteratorIterator` | `ArrayAccess`, `Countable`, `Stringable` |
 | `AppendIterator` | `IteratorIterator` | inherited from parent |
 | `MultipleIterator` | — | `Iterator` |
+| `RecursiveArrayIterator` | `ArrayIterator` | `RecursiveIterator` |
+| `RecursiveFilterIterator` | `FilterIterator` | `RecursiveIterator` |
+| `RecursiveCallbackFilterIterator` | `CallbackFilterIterator` | `RecursiveIterator` |
+| `RecursiveIteratorIterator` | — | `OuterIterator` |
+| `ParentIterator` | `RecursiveFilterIterator` | inherited from parent |
 
 See [SPL](spl.md) for the supported method surface, iterator modes, examples,
 and current compatibility gaps.
