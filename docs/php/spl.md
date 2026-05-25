@@ -306,7 +306,9 @@ follow PHP's constructors and require an `Iterator` directly.
 
 `FilterIterator` is abstract and skips inner positions whose `accept()` returns
 false during `rewind()` and `next()`. `CallbackFilterIterator` stores a callable
-and invokes it with current value, current key, and the inner iterator object.
+and invokes it with current value, current key, and the inner iterator object;
+closure and first-class-callable capture environments are preserved with the
+iterator object.
 `CachingIterator` implements one-element lookahead through `hasNext()`, supports
 the string mode flags `CALL_TOSTRING`, `TOSTRING_USE_KEY`,
 `TOSTRING_USE_CURRENT`, and `TOSTRING_USE_INNER`, and supports `FULL_CACHE` for
@@ -392,6 +394,5 @@ is wired to return an `ArrayIterator`. The Phase 4 containers otherwise keep
 their runtime-backed method surface aligned with PHP's empty-container,
 invalid-offset, serialization, and fixed-array key behaviors.
 
-`CallbackFilterIterator` supports function first-class callables stored in the
-iterator object. Closure environments stored in object properties are still a
-broader callable-runtime limitation.
+`CallbackFilterIterator` supports function first-class callables and closures
+stored in the iterator object, including captured closure environments.

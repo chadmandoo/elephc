@@ -167,6 +167,21 @@ pub(super) fn emit_closure(
             PhpType::Array(Box::new(PhpType::Int)),
         ));
     }
+    if let Some(expected_sig) = ctx.expected_first_class_callable_sig.as_ref() {
+        for (idx, (_, expected_ty)) in expected_sig.params.iter().enumerate() {
+            let Some((_, actual_ty)) = param_types.get_mut(idx) else {
+                break;
+            };
+            let has_declared_type = params
+                .get(idx)
+                .and_then(|(_, type_ann, _, _)| type_ann.as_ref())
+                .is_some();
+            let is_by_ref = params.get(idx).map(|(_, _, _, is_ref)| *is_ref).unwrap_or(false);
+            if !has_declared_type && !is_by_ref && *actual_ty == PhpType::Int {
+                *actual_ty = expected_ty.clone();
+            }
+        }
+    }
     let mut defaults: Vec<Option<Expr>> = params
         .iter()
         .map(|(_, _, default, _)| default.clone())

@@ -8,6 +8,7 @@
 //! Key details:
 //! - Object handles, property storage, and class ids must stay consistent with emitted class tables.
 
+use crate::codegen::builtins::arrays::callback_env;
 use crate::codegen::{abi, runtime_value_tag};
 use crate::codegen::context::{Context, HeapOwnership};
 use crate::codegen::data_section::DataSection;
@@ -522,6 +523,11 @@ fn emit_new_callback_filter_iterator(
         .get("callback")
         .copied()
         .unwrap_or(24);
+    let callback_env_offset = class_info
+        .property_offsets
+        .get("callbackEnv")
+        .copied()
+        .unwrap_or(40);
     let normalized_args = normalize_constructor_args(&class_info, args, emitter, ctx, data);
 
     emit_new_object_core("CallbackFilterIterator", &[], false, emitter, ctx, data);
@@ -543,12 +549,30 @@ fn emit_new_callback_filter_iterator(
     store_iterator_inner_property_from_result(emitter, inner_offset);
 
     if let Some(callback_expr) = normalized_args.get(1) {
-        emit_callback_filter_callable_arg(callback_expr, emitter, ctx, data);
+        let (_callback_ty, captures, target_visible_arg_types) =
+            emit_callback_filter_callable_arg(callback_expr, emitter, ctx, data);
+        if captures.is_empty() {
+            store_callable_property_from_result(emitter, callback_offset);
+            store_pointer_property_zero(emitter, callback_env_offset);
+        } else {
+            let wrapper_label = callback_env::emit_persistent_callback_env_from_result(
+                &captures,
+                callback_filter_visible_arg_types(),
+                target_visible_arg_types,
+                emitter,
+                ctx,
+            );
+            store_pointer_property_from_result(emitter, callback_env_offset);
+            abi::emit_symbol_address(emitter, abi::int_result_reg(emitter), &wrapper_label);
+            store_callable_property_from_result(emitter, callback_offset);
+        }
     } else {
         emitter.comment("WARNING: CallbackFilterIterator constructor missing callback");
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
+        store_pointer_property_zero(emitter, callback_env_offset);
+        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
+        store_callable_property_from_result(emitter, callback_offset);
     }
-    store_callable_property_from_result(emitter, callback_offset);
 
     abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized CallbackFilterIterator object as the expression result
     PhpType::Object("CallbackFilterIterator".to_string())
@@ -609,16 +633,24 @@ fn callback_filter_callable_sig() -> FunctionSig {
     }
 }
 
+fn callback_filter_visible_arg_types() -> Vec<PhpType> {
+    vec![
+        PhpType::Mixed,
+        PhpType::Mixed,
+        PhpType::Object("Iterator".to_string()),
+    ]
+}
+
 fn emit_callback_filter_callable_arg(
     callback_expr: &Expr,
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
-) -> PhpType {
+) -> (PhpType, Vec<(String, PhpType, bool)>, Vec<PhpType>) {
     let previous_sig = ctx
         .expected_first_class_callable_sig
         .replace(callback_filter_callable_sig());
-    let callback_ty = if let ExprKind::Variable(name) = &callback_expr.kind {
+    let (callback_ty, capture_source) = if let ExprKind::Variable(name) = &callback_expr.kind {
         if let Some(CallableTarget::Function(function_name)) =
             ctx.first_class_callable_targets.get(name).cloned()
         {
@@ -626,15 +658,35 @@ fn emit_callback_filter_callable_arg(
                 ExprKind::FirstClassCallable(CallableTarget::Function(function_name)),
                 callback_expr.span,
             );
-            emit_expr(&synthetic, emitter, ctx, data)
+            (emit_expr(&synthetic, emitter, ctx, data), synthetic)
         } else {
-            emit_expr(callback_expr, emitter, ctx, data)
+            (emit_expr(callback_expr, emitter, ctx, data), callback_expr.clone())
         }
     } else {
-        emit_expr(callback_expr, emitter, ctx, data)
+        (emit_expr(callback_expr, emitter, ctx, data), callback_expr.clone())
     };
+    let captures = crate::codegen::callables::callable_captures(&capture_source, ctx);
+    let target_visible_arg_types = callback_filter_target_arg_types(&capture_source, ctx);
     ctx.expected_first_class_callable_sig = previous_sig;
-    callback_ty
+    (callback_ty, captures, target_visible_arg_types)
+}
+
+fn callback_filter_target_arg_types(callback_expr: &Expr, ctx: &Context) -> Vec<PhpType> {
+    let sig = match &callback_expr.kind {
+        ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_) => {
+            ctx.deferred_closures.last().map(|closure| closure.sig.clone())
+        }
+        _ => crate::codegen::callables::callable_sig(callback_expr, ctx),
+    };
+    sig.map(|sig| {
+        sig.params
+            .into_iter()
+            .take(3)
+            .map(|(_, ty)| ty)
+            .collect::<Vec<_>>()
+    })
+    .filter(|types| types.len() == 3)
+    .unwrap_or_else(callback_filter_visible_arg_types)
 }
 
 fn emit_iterator_iterator_downcast_arg_status(
@@ -967,6 +1019,36 @@ fn store_callable_property_from_result(emitter: &mut Emitter, property_offset: u
             emitter.instruction("mov r11, QWORD PTR [rsp]");                    // reload the object pointer that owns the callable property
             emitter.instruction(&format!("mov QWORD PTR [r11 + {}], rax", property_offset)); // store the callable wrapper entry address
             emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset + 8)); // clear callable property metadata because callables are raw code pointers
+        }
+    }
+}
+
+fn store_pointer_property_from_result(emitter: &mut Emitter, property_offset: usize) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("ldr x9, [sp]");                                // reload the object pointer that owns the raw pointer property
+            emitter.instruction(&format!("str x0, [x9, #{}]", property_offset)); // store the raw pointer payload
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset + 8)); // clear pointer property metadata because it is not PHP-owned
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov r11, QWORD PTR [rsp]");                    // reload the object pointer that owns the raw pointer property
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], rax", property_offset)); // store the raw pointer payload
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset + 8)); // clear pointer property metadata because it is not PHP-owned
+        }
+    }
+}
+
+fn store_pointer_property_zero(emitter: &mut Emitter, property_offset: usize) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("ldr x9, [sp]");                                // reload the object pointer that owns the raw pointer property
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset)); // initialize the raw pointer payload as null
+            emitter.instruction(&format!("str xzr, [x9, #{}]", property_offset + 8)); // clear pointer property metadata because it is not PHP-owned
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov r11, QWORD PTR [rsp]");                    // reload the object pointer that owns the raw pointer property
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset)); // initialize the raw pointer payload as null
+            emitter.instruction(&format!("mov QWORD PTR [r11 + {}], 0", property_offset + 8)); // clear pointer property metadata because it is not PHP-owned
         }
     }
 }

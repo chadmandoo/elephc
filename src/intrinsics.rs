@@ -74,6 +74,7 @@ pub enum IntrinsicCallKind {
     SplFixedOffsetUnset,
     SplFixedJsonSerialize,
     SplFixedUnserialize,
+    CallbackFilterAccept,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -324,6 +325,14 @@ const INTRINSICS: &[IntrinsicSpec] = &[
     spl_instance_spec("splfixedarray", "SplFixedArray", "offsetunset", IntrinsicCallKind::SplFixedOffsetUnset, "__rt_spl_fixed_offset_unset"),
     spl_instance_spec("splfixedarray", "SplFixedArray", "jsonserialize", IntrinsicCallKind::SplFixedJsonSerialize, "__rt_spl_fixed_to_array"),
     spl_instance_spec("splfixedarray", "SplFixedArray", "__unserialize", IntrinsicCallKind::SplFixedUnserialize, "__rt_spl_fixed_unserialize"),
+    IntrinsicSpec {
+        kind: IntrinsicCallKind::CallbackFilterAccept,
+        form: IntrinsicCallForm::Instance,
+        class_key: "callbackfilteriterator",
+        class_name: "CallbackFilterIterator",
+        method_key: "__elephcacceptcallback",
+        runtime_helper: None,
+    },
 ];
 
 const fn spl_instance_spec(

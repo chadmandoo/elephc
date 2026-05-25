@@ -393,6 +393,54 @@ foreach ($it2 as $key => $value) {
 }
 
 #[test]
+fn test_callback_filter_iterator_preserves_captured_closure_env() {
+    let out = compile_and_run(
+        r#"<?php
+$limit = 1;
+$suffix = "!";
+$it = new CallbackFilterIterator(
+    new ArrayIterator(["a" => 1, "b" => 2, "c" => 3]),
+    function(int $value, string $key, Iterator $inner) use ($limit, $suffix): bool {
+        echo $key;
+        echo $suffix;
+        echo $inner instanceof ArrayIterator ? "it" : "bad";
+        echo ";";
+        return $value > $limit;
+    }
+);
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "a!it;b!it;out:b=2;c!it;out:c=3;");
+}
+
+#[test]
+fn test_callback_filter_iterator_preserves_variable_closure_env() {
+    let out = compile_and_run(
+        r#"<?php
+$limit = 2;
+$cb = function(int $value, int $key, Iterator $inner) use ($limit): bool {
+    return $value >= $limit;
+};
+$it = new CallbackFilterIterator(new ArrayIterator([1, 2, 3]), $cb);
+foreach ($it as $key => $value) {
+    echo $key;
+    echo ":";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "1:2;2:3;");
+}
+
+#[test]
 fn test_caching_iterator_tracks_has_next_and_string_value() {
     let out = compile_and_run(
         r#"<?php

@@ -148,6 +148,7 @@ fn materialize_capture_env(
     ctx.deferred_callback_wrappers.push(DeferredCallbackWrapper {
         label: wrapper_label.clone(),
         visible_arg_types: vec![preg_matches_type()],
+        target_visible_arg_types: None,
         capture_types: captures
             .iter()
             .map(|(_, ty, by_ref)| if *by_ref { PhpType::Int } else { ty.clone() })

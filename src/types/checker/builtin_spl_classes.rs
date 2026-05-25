@@ -418,6 +418,8 @@ pub(crate) fn patch_builtin_spl_storage_signatures(checker: &mut Checker) {
         for (name, ty) in &mut class_info.properties {
             if name == "callback" {
                 *ty = PhpType::Callable;
+            } else if name == "callbackEnv" {
+                *ty = PhpType::Pointer(None);
             }
         }
     }
@@ -525,7 +527,10 @@ fn multiple_iterator_properties() -> Vec<ClassProperty> {
 }
 
 fn callback_filter_iterator_properties() -> Vec<ClassProperty> {
-    vec![storage_property_untyped("callback")]
+    vec![
+        storage_property_untyped("callback"),
+        storage_property("callbackEnv", TypeExpr::Ptr(None)),
+    ]
 }
 
 fn caching_iterator_properties() -> Vec<ClassProperty> {
@@ -745,6 +750,16 @@ fn spl_callback_filter_iterator_methods() -> Vec<ClassMethod> {
             ],
             Some(TypeExpr::Void),
             callback_filter_construct_body(),
+        ),
+        method_with_body(
+            "__elephcAcceptCallback",
+            vec![
+                param("current", mixed_type()),
+                param("key", mixed_type()),
+                param("iterator", named_type("Iterator")),
+            ],
+            Some(TypeExpr::Bool),
+            Vec::new(),
         ),
         method_with_body("accept", Vec::new(), Some(TypeExpr::Bool), callback_filter_accept_body()),
     ]
@@ -1902,10 +1917,6 @@ fn filter_skip_rejected_body() -> Vec<Stmt> {
     )]
 }
 
-fn callback_filter_callback_expr() -> Expr {
-    property_access(this_expr(), "callback")
-}
-
 fn callback_filter_construct_body() -> Vec<Stmt> {
     vec![
         property_assign_stmt(this_expr(), "inner", var_expr("iterator")),
@@ -1916,10 +1927,10 @@ fn callback_filter_construct_body() -> Vec<Stmt> {
 fn callback_filter_accept_body() -> Vec<Stmt> {
     return_body(cast_expr(
         CastType::Bool,
-        function_call(
-            "call_user_func",
+        method_call(
+            this_expr(),
+            "__elephcAcceptCallback",
             vec![
-                callback_filter_callback_expr(),
                 inner_call("current"),
                 inner_call("key"),
                 inner_expr(),

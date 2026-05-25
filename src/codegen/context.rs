@@ -102,6 +102,7 @@ pub struct DeferredFiberWrapper {
 pub struct DeferredCallbackWrapper {
     pub label: String,
     pub visible_arg_types: Vec<PhpType>,
+    pub target_visible_arg_types: Option<Vec<PhpType>>,
     pub capture_types: Vec<PhpType>,
 }
 

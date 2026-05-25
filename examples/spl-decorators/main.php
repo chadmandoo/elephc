@@ -34,13 +34,14 @@ echo $limited->current();
 echo "\n";
 
 echo "filter:\n";
-function keep_decorator_value(int $value, string $key, Iterator $inner): bool {
-    return $value > 1;
-}
+$minimum = 1;
+$marker = "keep";
 
 $filter = new CallbackFilterIterator(
     new ArrayIterator(["skip" => 1, "keep" => 2, "tail" => 3]),
-    keep_decorator_value(...)
+    function (int $value, string $key, Iterator $inner) use ($minimum, $marker): bool {
+        return $inner instanceof Iterator && ($value > $minimum || $key === $marker);
+    }
 );
 foreach ($filter as $key => $value) {
     echo $key;
