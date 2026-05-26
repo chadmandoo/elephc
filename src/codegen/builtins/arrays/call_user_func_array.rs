@@ -1319,7 +1319,7 @@ fn emit_normalized_invoker_arg_mixed(
 }
 
 /// Clones and converts an indexed callback argument array to boxed Mixed slots.
-fn emit_clone_indexed_array_for_invoker(
+pub(crate) fn emit_clone_indexed_array_for_invoker(
     dest_reg: &str,
     elem_ty: &PhpType,
     emitter: &mut Emitter,
@@ -1363,7 +1363,7 @@ fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut Emitter) {
 }
 
 /// Boxes the normalized argument clone as `Mixed` and releases the caller-side clone owner.
-fn emit_box_invoker_arg_clone_as_mixed(dest_reg: &str, container_ty: &PhpType, emitter: &mut Emitter) {
+pub(crate) fn emit_box_invoker_arg_clone_as_mixed(dest_reg: &str, container_ty: &PhpType, emitter: &mut Emitter) {
     let tag_reg = abi::secondary_scratch_reg(emitter);
     let zero_reg = abi::tertiary_scratch_reg(emitter);
 

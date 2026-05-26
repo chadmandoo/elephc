@@ -103,6 +103,8 @@ $dynamic_formatter = new DynamicFormatter();
 $method_array_callback = [$dynamic_formatter, "wrap"];
 echo "method array call_user_func: " . call_user_func($method_array_callback, "ok") . "\n";
 echo "method array literal call_user_func_array: " . call_user_func_array([$dynamic_formatter, "wrap"], ["value" => "lit"]) . "\n";
+$dynamic_method_args = ["dyn"];
+echo "method array dynamic call_user_func_array: " . call_user_func_array($method_array_callback, $dynamic_method_args) . "\n";
 
 class InvokeFormatter {
     public function __invoke(string $value): string {
