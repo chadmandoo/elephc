@@ -811,6 +811,63 @@ echo call_user_func_array($callback, $args);
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies receiver-bound callable arrays use descriptor invokers for dynamic associative args.
+#[test]
+fn test_call_user_func_array_instance_method_dynamic_assoc_uses_descriptor_invoker() {
+    let source = r#"<?php
+class Formatter {
+    public function join(string $left, string $right = "b"): string {
+        return $left . ":" . $right;
+    }
+}
+
+$formatter = new Formatter();
+$args = [0 => "a", "right" => "r"];
+echo call_user_func_array([$formatter, "join"], $args);
+echo "|" . count($args) . ":" . $args[0] . ":" . $args["right"];
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "a:r|2:a:r");
+
+    let dir = make_cli_test_dir("elephc_instance_array_callable_dynamic_assoc_descriptor");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("callable_instance_method") && user_asm.contains("callable_invoker"),
+        "instance method array callbacks with dynamic assoc args should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Verifies invokable objects use descriptor invokers for dynamic associative argument hashes.
+#[test]
+fn test_call_user_func_array_invokable_object_dynamic_assoc_uses_descriptor_invoker() {
+    let source = r#"<?php
+class Wrap {
+    public function __invoke(string $value = "fallback", string $suffix = "!"): string {
+        return "<" . $value . $suffix . ">";
+    }
+}
+
+$callback = new Wrap();
+$args = ["suffix" => "?"];
+echo call_user_func_array($callback, $args);
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "<fallback?>");
+
+    let dir = make_cli_test_dir("elephc_invokable_object_dynamic_assoc_descriptor");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("callable_instance_method") && user_asm.contains("callable_invoker"),
+        "invokable object callbacks with dynamic assoc args should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 /// Verifies that call user func array dynamic args for callable without known signature.
 #[test]
 fn test_call_user_func_array_dynamic_args_for_callable_without_known_signature() {

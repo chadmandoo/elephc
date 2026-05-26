@@ -59,6 +59,7 @@ mod ksort;
 mod natcasesort;
 mod natsort;
 mod range;
+mod receiver_call_args;
 mod hash_value_type_tag;
 mod rsort;
 mod shuffle_fn;

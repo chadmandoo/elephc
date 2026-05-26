@@ -13,7 +13,6 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::arrays::emit_array_value_type_stamp;
 use crate::codegen::expr::emit_expr;
 use crate::codegen::callable_dispatch::RuntimeInstanceCallableShape;
 use crate::codegen::functions;
@@ -23,6 +22,7 @@ use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver};
 use crate::types::PhpType;
 
 use super::call_user_func_array::{self, LoadedArraySource};
+use super::receiver_call_args;
 
 /// Emits assembly for call user func form.
 pub(crate) fn emit_call_user_func_form(
@@ -161,7 +161,7 @@ pub(crate) fn emit_call_user_func_array_form(
                         return Some(ret_ty);
                     }
                 }
-                if let Some(ret_ty) = emit_instance_method_descriptor_dynamic_indexed_form(
+                if let Some(ret_ty) = emit_instance_method_descriptor_dynamic_arg_form(
                     &object,
                     "__invoke",
                     RuntimeInstanceCallableShape::ObjectInvoke,
@@ -189,7 +189,7 @@ pub(crate) fn emit_call_user_func_array_form(
                         return Some(ret_ty);
                     }
                 }
-                if let Some(ret_ty) = emit_instance_method_descriptor_dynamic_indexed_form(
+                if let Some(ret_ty) = emit_instance_method_descriptor_dynamic_arg_form(
                     &object,
                     &method,
                     RuntimeInstanceCallableShape::InstanceMethod,
@@ -249,8 +249,8 @@ fn emit_instance_method_descriptor_form(
     Some(PhpType::Mixed)
 }
 
-/// Invokes a receiver-bound descriptor with a dynamic indexed `call_user_func_array()` container.
-fn emit_instance_method_descriptor_dynamic_indexed_form(
+/// Invokes a receiver-bound descriptor with a dynamic `call_user_func_array()` container.
+fn emit_instance_method_descriptor_dynamic_arg_form(
     object: &Expr,
     method: &str,
     shape: RuntimeInstanceCallableShape,
@@ -260,9 +260,12 @@ fn emit_instance_method_descriptor_dynamic_indexed_form(
     data: &mut DataSection,
 ) -> Option<PhpType> {
     let inferred_arg_ty = functions::infer_contextual_type(arg_array, ctx);
-    let PhpType::Array(arg_elem_ty) = inferred_arg_ty else {
+    if !matches!(
+        inferred_arg_ty,
+        PhpType::Array(_) | PhpType::AssocArray { .. }
+    ) {
         return None;
-    };
+    }
     let receiver_ty = functions::infer_contextual_type(object, ctx);
     let class_name = functions::singular_object_class(&receiver_ty)?;
     let case =
@@ -276,14 +279,16 @@ fn emit_instance_method_descriptor_dynamic_indexed_form(
         crate::codegen::expr::save_concat_offset_before_nested_call(emitter, ctx);
     }
 
-    emit_receiver_prefixed_indexed_arg_mixed(
+    if !receiver_call_args::emit_receiver_prefixed_dynamic_arg_mixed(
         object,
         arg_array,
-        arg_elem_ty.as_ref(),
+        &inferred_arg_ty,
         emitter,
         ctx,
         data,
-    );
+    ) {
+        return None;
+    }
     let call_reg = abi::nested_call_reg(emitter);
     abi::emit_symbol_address(emitter, call_reg, &case.descriptor_label);
     call_user_func_array::emit_call_descriptor_array_invoker(
@@ -296,77 +301,6 @@ fn emit_instance_method_descriptor_dynamic_indexed_form(
         data,
     );
     Some(PhpType::Mixed)
-}
-
-/// Builds a boxed Mixed argument container `[receiver, ...$args]` for indexed arrays.
-fn emit_receiver_prefixed_indexed_arg_mixed(
-    receiver: &Expr,
-    arg_array: &Expr,
-    inferred_arg_elem_ty: &PhpType,
-    emitter: &mut Emitter,
-    ctx: &mut Context,
-    data: &mut DataSection,
-) {
-    emitter.comment("receiver-prefixed call_user_func_array descriptor args");
-    let receiver_ty = emit_expr(receiver, emitter, ctx, data);
-    crate::codegen::emit_box_current_expr_value_as_mixed_for_container(
-        emitter,
-        receiver,
-        &receiver_ty,
-    );
-    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the boxed receiver Mixed cell before evaluating the source argument array
-
-    let arr_ty = emit_expr(arg_array, emitter, ctx, data);
-    let source_elem_ty = match &arr_ty {
-        PhpType::Array(elem_ty) => elem_ty.as_ref(),
-        _ => inferred_arg_elem_ty,
-    };
-    let result_reg = abi::int_result_reg(emitter);
-    call_user_func_array::emit_clone_indexed_array_for_invoker(
-        result_reg,
-        source_elem_ty,
-        emitter,
-    );
-    abi::emit_push_reg(emitter, result_reg);                                    // preserve the cloned Mixed source array before allocating the receiver-prefixed container
-
-    let capacity_reg = abi::int_arg_reg_name(emitter.target, 0);
-    let elem_size_reg = abi::int_arg_reg_name(emitter.target, 1);
-    abi::emit_load_int_immediate(emitter, capacity_reg, 16);
-    abi::emit_load_int_immediate(emitter, elem_size_reg, 8);
-    abi::emit_call_label(emitter, "__rt_array_new");
-    emit_array_value_type_stamp(emitter, result_reg, &PhpType::Mixed);
-
-    let scratch_reg = abi::secondary_scratch_reg(emitter);
-    abi::emit_load_temporary_stack_slot(emitter, scratch_reg, 16);
-    abi::emit_store_to_address(emitter, scratch_reg, result_reg, 24);
-    abi::emit_load_int_immediate(emitter, scratch_reg, 1);
-    abi::emit_store_to_address(emitter, scratch_reg, result_reg, 0);
-
-    abi::emit_push_reg(emitter, result_reg);                                    // preserve the destination array while merging the cloned source tail
-    let dest_arg_reg = abi::int_arg_reg_name(emitter.target, 0);
-    let source_arg_reg = abi::int_arg_reg_name(emitter.target, 1);
-    abi::emit_load_temporary_stack_slot(emitter, dest_arg_reg, 0);
-    abi::emit_load_temporary_stack_slot(emitter, source_arg_reg, 16);
-    abi::emit_call_label(emitter, "__rt_array_merge_into_refcounted");
-
-    let normalized_array_ty = PhpType::Array(Box::new(PhpType::Mixed));
-    abi::emit_push_reg(emitter, result_reg);                                    // preserve the merged receiver-prefixed array while releasing the source clone
-    abi::emit_load_temporary_stack_slot(emitter, result_reg, 32);
-    abi::emit_decref_if_refcounted(emitter, &normalized_array_ty);
-    abi::emit_pop_reg(emitter, result_reg);                                     // restore the merged receiver-prefixed array after source-clone release
-    abi::emit_release_temporary_stack(emitter, 48);                             // discard stale destination, source-clone, and receiver stack slots
-    let container_reg = abi::nested_call_reg(emitter);
-    if container_reg != result_reg {
-        emitter.instruction(&format!("mov {}, {}", container_reg, result_reg)); // move the receiver-prefixed array away from the result register before Mixed boxing installs the tag
-    }
-    call_user_func_array::emit_box_invoker_arg_clone_as_mixed(
-        container_reg,
-        &normalized_array_ty,
-        emitter,
-    );
-    if container_reg != result_reg {
-        emitter.instruction(&format!("mov {}, {}", result_reg, container_reg)); // return the boxed Mixed argument container through the standard expression result register
-    }
 }
 
 /// Invokes a public static-method callable array through its descriptor invoker.

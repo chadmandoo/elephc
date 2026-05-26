@@ -1346,7 +1346,7 @@ pub(crate) fn emit_clone_indexed_array_for_invoker(
 }
 
 /// Clones and converts an associative callback argument array to boxed Mixed entries.
-fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut Emitter) {
+pub(crate) fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut Emitter) {
     let hash_arg_reg = abi::int_arg_reg_name(emitter.target, 0);
     let result_reg = abi::int_result_reg(emitter);
     if hash_arg_reg != dest_reg {
