@@ -20,12 +20,22 @@ use crate::types::PhpType;
 
 use super::super::callable_lookup::{lookup_function, FunctionLookup};
 
+/// Metadata for a deferred callback wrapper emitted after the main function body.
+/// Holds the environment layout so the wrapper can reload captures and forward the call.
 pub(super) struct CallbackEnv {
     pub(super) wrapper_label: String,
     pub(super) env_bytes: usize,
     pub(super) array_slot_offset: usize,
 }
 
+/// Resolves a callback expression and emits code to load its address into `call_reg`.
+///
+/// Handles three cases:
+/// - String literal: looks up the function name and emits the symbol address.
+/// - Variable: loads the callable address from the variable's stack slot and collects its captures.
+/// - Other expression: evaluates the expression, stores the result in `call_reg`, and collects captures.
+///
+/// Returns the list of captured variables with their types and by-ref flags.
 pub(super) fn materialize_callback_address(
     callback: &Expr,
     call_reg: &str,
@@ -58,6 +68,11 @@ pub(super) fn materialize_callback_address(
     }
 }
 
+/// Emits code to push each captured variable as a hidden argument before a deferred wrapper call.
+///
+/// For by-ref captures, emits the variable's address; for value captures, loads the value from
+/// the stack slot and pushes it. Appends corresponding types to `arg_types`. Skips captures
+/// that are no longer in scope (e.g., due to conditional declaration), emitting a warning comment.
 pub(super) fn push_captures_as_hidden_args(
     captures: &[(String, PhpType, bool)],
     emitter: &mut Emitter,
@@ -96,6 +111,14 @@ pub(super) fn push_captures_as_hidden_args(
     }
 }
 
+/// Allocates a temporary stack frame for the callback environment and stores the callback
+/// address, array pointer, and all captures into it.
+///
+/// `callback_reg` holds the resolved callback address; `array_reg` holds the array being
+/// iterated. The environment is stored at negative offsets from the current frame pointer.
+/// Registers a `DeferredCallbackWrapper` in the context that will be emitted after the
+/// function body completes. Returns a `CallbackEnv` with the wrapper label, total environment
+/// size, and the offset of the array slot for later reload.
 pub(super) fn emit_captured_callback_env(
     callback_reg: &str,
     array_reg: &str,
@@ -159,22 +182,31 @@ pub(super) fn emit_captured_callback_env(
     }
 }
 
+/// Loads a value from an environment slot into `reg` by computing the slot address on the
+/// temporary stack and performing a type-aware load.
 pub(super) fn load_env_slot_to_reg(emitter: &mut Emitter, reg: &str, offset: usize) {
     let scratch = abi::symbol_scratch_reg(emitter);
     abi::emit_temporary_stack_address(emitter, scratch, offset);
     abi::emit_load_from_address(emitter, reg, scratch, 0);
 }
 
+/// Emits the address of the base of the temporary callback environment stack frame into `reg`.
+/// Used by the deferred wrapper to locate the environment.
 pub(super) fn load_env_pointer_to_reg(emitter: &mut Emitter, reg: &str) {
     abi::emit_temporary_stack_address(emitter, reg, 0);
 }
 
+/// Stores the raw value in `reg` directly into the environment slot at `offset` using a
+/// temporary stack address scratch register.
 fn store_reg_to_env_slot(emitter: &mut Emitter, reg: &str, offset: usize) {
     let scratch = abi::symbol_scratch_reg(emitter);
     abi::emit_temporary_stack_address(emitter, scratch, offset);
     abi::emit_store_to_address(emitter, reg, scratch, 0);
 }
 
+/// Stores the current ABI result register(s) into the environment slot at `offset` using a
+/// temporary stack address scratch register. Handles float, string (ptr+len), and integer
+/// representations per `ty.codegen_repr()`. No-op for `Void`/`Never` types.
 fn store_current_result_to_env_slot(emitter: &mut Emitter, ty: &PhpType, offset: usize) {
     let scratch = abi::symbol_scratch_reg(emitter);
     abi::emit_temporary_stack_address(emitter, scratch, offset);
