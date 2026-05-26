@@ -408,6 +408,18 @@ pub(crate) fn emit_loaded_array_callback_call(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
+    if matches!(arr_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+        return emit_loaded_mixed_array_callback_call(
+            array_source,
+            call_reg,
+            captures,
+            sig,
+            concat_saved_before_args,
+            emitter,
+            ctx,
+            data,
+        );
+    }
     if matches!(arr_ty, PhpType::AssocArray { .. }) {
         return emit_loaded_assoc_array_callback_call(
             array_source,
@@ -822,6 +834,102 @@ pub(crate) fn emit_loaded_array_callback_call(
     }
 
     ret_ty
+}
+
+/// Emits assembly for a callback call whose argument container is boxed as `Mixed`.
+#[allow(clippy::too_many_arguments)]
+fn emit_loaded_mixed_array_callback_call(
+    array_source: LoadedArraySource,
+    call_reg: &str,
+    captures: &[(String, PhpType, bool)],
+    sig: &FunctionSig,
+    concat_saved_before_args: bool,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    let (mixed_reg, tag_reg, payload_reg) = match emitter.target.arch {
+        Arch::AArch64 => ("x20", "x21", "x22"),
+        Arch::X86_64 => ("r13", "r14", "r15"),
+    };
+    let indexed_label = ctx.next_label("cufa_mixed_indexed");
+    let assoc_label = ctx.next_label("cufa_mixed_assoc");
+    let done_label = ctx.next_label("cufa_mixed_done");
+    let indexed_ty = PhpType::Array(Box::new(PhpType::Mixed));
+    let assoc_ty = PhpType::AssocArray {
+        key: Box::new(PhpType::Mixed),
+        value: Box::new(PhpType::Mixed),
+    };
+
+    emit_loaded_array_source_to_reg(array_source, mixed_reg, emitter);
+    abi::emit_load_from_address(emitter, tag_reg, mixed_reg, 0);
+    abi::emit_load_from_address(emitter, payload_reg, mixed_reg, 8);
+    abi::emit_push_reg(emitter, payload_reg);                                   // preserve the unboxed argument container while branching by Mixed tag
+    emit_branch_if_mixed_arg_tag(
+        tag_reg,
+        crate::codegen::runtime_value_tag(&indexed_ty),
+        &indexed_label,
+        emitter,
+    );
+    emit_branch_if_mixed_arg_tag(
+        tag_reg,
+        crate::codegen::runtime_value_tag(&assoc_ty),
+        &assoc_label,
+        emitter,
+    );
+    emit_call_user_func_array_invalid_mixed_args_abort(emitter, data);
+
+    emitter.label(&indexed_label);
+    emit_loaded_array_callback_call(
+        LoadedArraySource::TemporaryStackSlot(0),
+        &indexed_ty,
+        None,
+        call_reg,
+        captures,
+        sig,
+        concat_saved_before_args,
+        emitter,
+        ctx,
+        data,
+    );
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&assoc_label);
+    emit_loaded_assoc_array_callback_call(
+        LoadedArraySource::TemporaryStackSlot(0),
+        &assoc_ty,
+        call_reg,
+        captures,
+        sig,
+        concat_saved_before_args,
+        emitter,
+        ctx,
+        data,
+    );
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&done_label);
+    abi::emit_release_temporary_stack(emitter, 16);                             // drop the borrowed unboxed argument-container pointer
+    sig.return_type.clone()
+}
+
+/// Branches to `label` when a boxed invoker argument carries `expected_tag`.
+fn emit_branch_if_mixed_arg_tag(
+    tag_reg: &str,
+    expected_tag: u8,
+    label: &str,
+    emitter: &mut Emitter,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("cmp {}, #{}", tag_reg, expected_tag)); // check the runtime tag of the boxed invoker argument container
+            emitter.instruction(&format!("b.eq {}", label));                    // dispatch to the handler for this argument-container shape
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("cmp {}, {}", tag_reg, expected_tag)); // check the runtime tag of the boxed invoker argument container
+            emitter.instruction(&format!("je {}", label));                      // dispatch to the handler for this argument-container shape
+        }
+    }
 }
 
 /// Provides the Callback arg target ty helper used by the call user func array module.
@@ -1493,9 +1601,9 @@ fn emit_call_descriptor_array_invoker(
     let missing_label = ctx.next_label("cufa_descriptor_invoker_missing");
     let ready_label = ctx.next_label("cufa_descriptor_invoker_ready");
 
-    let normalized_array_ty =
-        emit_normalized_invoker_arg_array(array_source, arr_ty, array_arg_reg, emitter);
-    abi::emit_push_reg(emitter, array_arg_reg);                                  // preserve the temporary Mixed argument array for release after invocation
+    let normalized_arg_ty =
+        emit_normalized_invoker_arg_mixed(array_source, arr_ty, array_arg_reg, emitter);
+    abi::emit_push_reg(emitter, array_arg_reg);                                  // preserve the temporary boxed Mixed argument container for release after invocation
     if descriptor_arg_reg != descriptor_reg {
         emitter.instruction(&format!("mov {}, {}", descriptor_arg_reg, descriptor_reg)); // pass the matched callable descriptor to the runtime invoker
     }
@@ -1511,7 +1619,7 @@ fn emit_call_descriptor_array_invoker(
     emitter.label(&ready_label);
     abi::emit_call_reg(emitter, invoker_reg);
     if concat_saved_before_args {
-        emit_release_normalized_invoker_arg_array(&normalized_array_ty, emitter);
+        emit_release_normalized_invoker_arg_mixed(&normalized_arg_ty, emitter);
         crate::codegen::expr::restore_concat_offset_after_nested_call(
             emitter,
             ctx,
@@ -1523,12 +1631,12 @@ fn emit_call_descriptor_array_invoker(
             ctx,
             &PhpType::Mixed,
         );
-        emit_release_normalized_invoker_arg_array(&normalized_array_ty, emitter);
+        emit_release_normalized_invoker_arg_mixed(&normalized_arg_ty, emitter);
     }
 }
 
-/// Materializes the descriptor invoker argument array as a cloned Mixed container.
-fn emit_normalized_invoker_arg_array(
+/// Materializes the descriptor invoker argument as a boxed Mixed container.
+fn emit_normalized_invoker_arg_mixed(
     array_source: LoadedArraySource,
     arr_ty: &PhpType,
     dest_reg: &str,
@@ -1538,14 +1646,18 @@ fn emit_normalized_invoker_arg_array(
     match arr_ty {
         PhpType::Array(elem_ty) => {
             emit_clone_indexed_array_for_invoker(dest_reg, elem_ty, emitter);
-            PhpType::Array(Box::new(PhpType::Mixed))
+            let normalized_ty = PhpType::Array(Box::new(PhpType::Mixed));
+            emit_box_invoker_arg_clone_as_mixed(dest_reg, &normalized_ty, emitter);
+            PhpType::Mixed
         }
         PhpType::AssocArray { .. } => {
             emit_clone_assoc_array_for_invoker(dest_reg, emitter);
-            PhpType::AssocArray {
+            let normalized_ty = PhpType::AssocArray {
                 key: Box::new(PhpType::Mixed),
                 value: Box::new(PhpType::Mixed),
-            }
+            };
+            emit_box_invoker_arg_clone_as_mixed(dest_reg, &normalized_ty, emitter);
+            PhpType::Mixed
         }
         _ => arr_ty.codegen_repr(),
     }
@@ -1595,8 +1707,28 @@ fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut Emitter) {
     }
 }
 
-/// Releases the temporary Mixed argument array while preserving the Mixed call result.
-fn emit_release_normalized_invoker_arg_array(array_ty: &PhpType, emitter: &mut Emitter) {
+/// Boxes the normalized argument clone as `Mixed` and releases the caller-side clone owner.
+fn emit_box_invoker_arg_clone_as_mixed(dest_reg: &str, container_ty: &PhpType, emitter: &mut Emitter) {
+    let tag_reg = abi::secondary_scratch_reg(emitter);
+    let zero_reg = abi::tertiary_scratch_reg(emitter);
+
+    abi::emit_push_reg(emitter, dest_reg);                                      // preserve the cloned argument container while Mixed boxing retains it
+    abi::emit_load_int_immediate(
+        emitter,
+        tag_reg,
+        crate::codegen::runtime_value_tag(container_ty) as i64,
+    );
+    abi::emit_load_int_immediate(emitter, zero_reg, 0);
+    crate::codegen::emit_box_runtime_payload_as_mixed(emitter, tag_reg, dest_reg, zero_reg);
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the boxed Mixed argument while dropping the clone owner
+    abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 16);
+    abi::emit_decref_if_refcounted(emitter, container_ty);
+    abi::emit_pop_reg(emitter, dest_reg);                                       // move the boxed Mixed argument into the invoker ABI register
+    abi::emit_release_temporary_stack(emitter, 16);                             // discard the preserved clone slot after ownership transfer
+}
+
+/// Releases the temporary boxed Mixed argument container while preserving the Mixed call result.
+fn emit_release_normalized_invoker_arg_mixed(array_ty: &PhpType, emitter: &mut Emitter) {
     abi::emit_push_result_value(emitter, &PhpType::Mixed);
     abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 16);
     abi::emit_decref_if_refcounted(emitter, array_ty);
@@ -2654,6 +2786,31 @@ fn emit_call_user_func_array_unknown_assoc_abort(emitter: &mut Emitter, data: &m
             emitter.instruction(&format!("mov edx, {}", message_len));          // pass the callback metadata diagnostic byte length to write()
             emitter.instruction("mov eax, 1");                                  // Linux x86_64 syscall 1 = write
             emitter.instruction("syscall");                                     // emit the fatal callback metadata diagnostic
+            abi::emit_exit(emitter, 1);
+        }
+    }
+}
+
+/// Emits assembly for a descriptor invoker argument-container type mismatch.
+fn emit_call_user_func_array_invalid_mixed_args_abort(emitter: &mut Emitter, data: &mut DataSection) {
+    let (message_label, message_len) = data.add_string(
+        b"Fatal error: callable descriptor invoker expected an indexed or associative argument array\n",
+    );
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, #2");                                  // write the descriptor argument-shape diagnostic to stderr
+            emitter.adrp("x1", &message_label);
+            emitter.add_lo12("x1", "x1", &message_label);
+            emitter.instruction(&format!("mov x2, #{}", message_len));          // pass the descriptor argument-shape diagnostic byte length to write()
+            emitter.syscall(4);
+            abi::emit_exit(emitter, 1);
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov edi, 2");                                  // write the descriptor argument-shape diagnostic to stderr
+            abi::emit_symbol_address(emitter, "rsi", &message_label);
+            emitter.instruction(&format!("mov edx, {}", message_len));          // pass the descriptor argument-shape diagnostic byte length to write()
+            emitter.instruction("mov eax, 1");                                  // Linux x86_64 syscall 1 = write
+            emitter.instruction("syscall");                                     // emit the descriptor argument-shape diagnostic
             abi::emit_exit(emitter, 1);
         }
     }

@@ -779,6 +779,34 @@ call_user_func_array($callback, $args);
     assert_eq!(out, "5:0");
 }
 
+/// Verifies that one descriptor invoker accepts both indexed and associative argument containers.
+#[test]
+fn test_call_user_func_array_dynamic_string_descriptor_invoker_branches_on_mixed_arg_shape() {
+    let source = r#"<?php
+function render(string $prefix = "hi", string $name = "Ada", ...$rest): string {
+    return $prefix . " " . $name . ":" . count($rest);
+}
+$callback = "render";
+$indexed = ["yo", "Bob", "tail"];
+$assoc = ["name" => "Ada", "extra" => "x"];
+echo call_user_func_array($callback, $indexed);
+echo "|";
+echo call_user_func_array($callback, $assoc);
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "yo Bob:1|hi Ada:1");
+
+    let dir = make_cli_test_dir("elephc_descriptor_invoker_mixed_arg_shapes");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("cufa_mixed_indexed") && user_asm.contains("cufa_mixed_assoc"),
+        "descriptor invoker should branch on boxed argument container tags:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 /// Verifies that call user func array first class dynamic assoc args for variadic callback.
 #[test]
 fn test_call_user_func_array_first_class_dynamic_assoc_args_for_variadic_callback() {

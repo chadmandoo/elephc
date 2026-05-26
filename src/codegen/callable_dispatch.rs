@@ -63,8 +63,7 @@ pub(crate) fn runtime_callable_cases(
             };
             let case_sig = callable_wrapper_sig(&sig);
             let label = ensure_runtime_builtin_wrapper(ctx, name, &case_sig);
-            let invoker_label =
-                ensure_runtime_descriptor_invoker(ctx, source_arg_ty, captures, &case_sig);
+            let invoker_label = ensure_runtime_descriptor_invoker(ctx, captures, &case_sig);
             let descriptor_label = runtime_case_descriptor(
                 data,
                 &label,
@@ -90,8 +89,7 @@ pub(crate) fn runtime_callable_cases(
             let label =
                 ensure_runtime_static_method_wrapper(ctx, &class_name, &method_name, &case_sig);
             let php_name = format!("{}::{}", class_name, method_name);
-            let invoker_label =
-                ensure_runtime_descriptor_invoker(ctx, source_arg_ty, captures, &case_sig);
+            let invoker_label = ensure_runtime_descriptor_invoker(ctx, captures, &case_sig);
             let descriptor_label = runtime_case_descriptor(
                 data,
                 &label,
@@ -125,8 +123,7 @@ pub(crate) fn runtime_callable_cases(
         .collect();
     for (name, sig) in user_functions {
         let case_sig = callable_wrapper_sig(&sig);
-        let invoker_label =
-            ensure_runtime_descriptor_invoker(ctx, source_arg_ty, captures, &case_sig);
+        let invoker_label = ensure_runtime_descriptor_invoker(ctx, captures, &case_sig);
         let descriptor_label = runtime_case_descriptor(
             data,
             &function_symbol(&name),
@@ -212,21 +209,19 @@ fn runtime_case_source_elem_ty(source_arg_ty: &PhpType) -> PhpType {
     }
 }
 
-/// Ensures a descriptor-compatible runtime invoker exists for callsite array metadata.
+/// Ensures a descriptor-compatible runtime invoker exists for the callable signature.
 fn ensure_runtime_descriptor_invoker(
     ctx: &mut Context,
-    source_arg_ty: Option<&PhpType>,
     captures: &[(String, PhpType, bool)],
     sig: &FunctionSig,
 ) -> Option<String> {
     if !captures.is_empty() {
         return None;
     }
-    let array_ty = normalized_runtime_invoker_array_ty(source_arg_ty?)?;
     if let Some(existing) = ctx
         .deferred_runtime_callable_invokers
         .iter()
-        .find(|invoker| invoker.sig == *sig && invoker.array_ty == array_ty)
+        .find(|invoker| invoker.sig == *sig)
     {
         return Some(existing.label.clone());
     }
@@ -235,21 +230,8 @@ fn ensure_runtime_descriptor_invoker(
         .push(DeferredRuntimeCallableInvoker {
             label: label.clone(),
             sig: sig.clone(),
-            array_ty,
         });
     Some(label)
-}
-
-/// Returns the type-erased argument array shape passed to descriptor invokers.
-fn normalized_runtime_invoker_array_ty(source_arg_ty: &PhpType) -> Option<PhpType> {
-    match source_arg_ty {
-        PhpType::Array(_) => Some(PhpType::Array(Box::new(PhpType::Mixed))),
-        PhpType::AssocArray { .. } => Some(PhpType::AssocArray {
-            key: Box::new(PhpType::Mixed),
-            value: Box::new(PhpType::Mixed),
-        }),
-        _ => None,
-    }
 }
 
 /// Provides the Runtime static method wrappers helper used by the callable dispatch module.

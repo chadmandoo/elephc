@@ -19,6 +19,7 @@ use crate::codegen::context::{Context, DeferredRuntimeCallableInvoker};
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
+use crate::types::PhpType;
 
 use super::abi;
 
@@ -42,7 +43,7 @@ pub(crate) fn emit_runtime_callable_invoker(
 
     let ret_ty = call_user_func_array::emit_loaded_array_callback_call(
         LoadedArraySource::ArgumentRegister(1),
-        &invoker.array_ty,
+        &PhpType::Mixed,
         None,
         call_reg,
         &[],

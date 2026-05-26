@@ -137,7 +137,6 @@ pub struct DeferredCallbackWrapper {
 pub struct DeferredRuntimeCallableInvoker {
     pub label: String,
     pub sig: FunctionSig,
-    pub array_ty: PhpType,
 }
 
 /// Carries mutable codegen state while lowering expressions, statements, functions, and wrappers.
