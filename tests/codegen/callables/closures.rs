@@ -294,6 +294,66 @@ echo call_user_func(function(int $x) use ($base): int { return $x * $base; }, 6)
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies branch-selected captured callables route through `call_user_func()` descriptor invokers.
+#[test]
+fn test_call_user_func_complex_captured_callable_expr_uses_descriptor_invoker() {
+    let source = r#"<?php
+class Counter {
+    public int $base = 0;
+
+    public function add(int $n = 4): int {
+        return $n + $this->base;
+    }
+}
+
+$left = new Counter();
+$left->base = 3;
+$right = new Counter();
+$right->base = 7;
+$use_left = false;
+echo call_user_func($use_left ? $left->add(...) : $right->add(...), 5);
+echo ",";
+echo call_user_func($use_left ? $left->add(...) : $right->add(...));
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "12,11");
+
+    let dir = make_cli_test_dir("elephc_call_user_func_complex_callable_expr_invoker");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("callable_invoker"),
+        "call_user_func branch-selected captured callable calls should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Verifies `call_user_func()` descriptor invokers preserve by-reference args for branch callables.
+#[test]
+fn test_call_user_func_complex_captured_callable_expr_preserves_by_ref_arg() {
+    let source = r#"<?php
+class Counter {
+    public int $step = 0;
+
+    public function bump(int &$n): void {
+        $n = $n + $this->step;
+    }
+}
+
+$left = new Counter();
+$left->step = 3;
+$right = new Counter();
+$right->step = 7;
+$use_left = false;
+$value = 5;
+call_user_func($use_left ? $left->bump(...) : $right->bump(...), $value);
+echo $value;
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "12");
+}
+
 /// Verifies branch-selected captured first-class callables use descriptor invokers.
 #[test]
 fn test_direct_complex_captured_callable_expr_uses_descriptor_invoker() {
