@@ -169,6 +169,26 @@ echo $result[1];
     assert_eq!(out, "1525");
 }
 
+/// Verifies callback runtimes read by-value closure captures from descriptor storage
+/// instead of rereading the current source variable after reassignment.
+#[test]
+fn test_captured_closure_variable_array_map_uses_descriptor_capture_after_reassign() {
+    let out = compile_and_run(
+        r#"<?php
+$offset = 5;
+$add = function(int $x) use ($offset): int {
+    return $x + $offset;
+};
+$offset = 100;
+$result = array_map($add, [1, 2]);
+echo $result[0];
+echo ":";
+echo $result[1];
+"#,
+    );
+    assert_eq!(out, "6:7");
+}
+
 #[test]
 fn test_captured_closure_variable_array_map_string_capture() {
     // Verifies string capture via `use ($prefix)` in a typed closure passed to `array_map`, producing string-concatenated output.

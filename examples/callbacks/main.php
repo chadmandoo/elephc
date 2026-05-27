@@ -70,6 +70,11 @@ $captured_formatter = new CapturedFormatter("old:");
 $captured_label = $captured_formatter->label(...);
 $captured_formatter = new CapturedFormatter("new:");
 echo "method callable captured receiver: " . $captured_label(value: "Ada") . "\n";
+$captured_formatter_map = new CapturedFormatter("map-old:");
+$captured_label_map = $captured_formatter_map->label(...);
+$captured_formatter_map = new CapturedFormatter("map-new:");
+$captured_mapped = array_map($captured_label_map, ["Ada", "Bob"]);
+echo "method callable array_map captured receiver: " . $captured_mapped[0] . " " . $captured_mapped[1] . "\n";
 
 $named_callbacks = [
     function($left, $right) { return ($left * 10) + $right; },
@@ -86,6 +91,11 @@ $captured_callbacks = [
 ];
 $prefix = "changed:";
 echo "captured closure call_user_func_array: " . call_user_func_array($captured_callbacks[0], ["name" => "Ada"]) . "\n";
+$map_prefix = "map:";
+$map_callback = function(int $value) use ($map_prefix): string { return $map_prefix . $value; };
+$map_prefix = "changed:";
+$mapped_capture = array_map($map_callback, [1, 2]);
+echo "captured closure array_map: " . $mapped_capture[0] . " " . $mapped_capture[1] . "\n";
 
 function dynamic_string_sum(int $left, int $right): int {
     return $left + $right;

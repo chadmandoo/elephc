@@ -221,6 +221,36 @@ echo $values[2];
     assert_eq!(out, "3:9");
 }
 
+/// Verifies callback runtimes preserve a method first-class callable receiver when
+/// the descriptor is passed through a callable parameter before `array_map()`.
+#[test]
+fn test_first_class_callable_method_parameter_array_map_uses_descriptor_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class Bumper {
+    public function __construct(private int $base) {}
+
+    public function add(int $n): int {
+        return $this->base + $n;
+    }
+}
+
+function run(callable $cb): void {
+    $values = array_map($cb, [1, 2]);
+    echo $values[0];
+    echo ":";
+    echo $values[1];
+}
+
+$box = new Bumper(10);
+$fn = $box->add(...);
+$box = new Bumper(100);
+run($fn);
+"#,
+    );
+    assert_eq!(out, "11:12");
+}
+
 // Tests an inline instance method callable passed directly to `array_map` with the receiver
 // bound from a temporary object, and return values are accessed from the result array.
 #[test]
