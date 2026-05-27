@@ -10,10 +10,11 @@
 //! - Once a callable expression has produced a descriptor pointer, hidden capture values must come
 //!   from that descriptor instead of from the caller's current lexical variables.
 
-use crate::codegen::context::Context;
+use crate::codegen::builtins::arrays::call_user_func_array::{self, LoadedArraySource};
+use crate::codegen::context::{Context, HeapOwnership};
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::parser::ast::{Expr, ExprKind};
+use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver};
 use crate::types::PhpType;
 
 use super::args;
@@ -78,6 +79,13 @@ pub(super) fn emit_loaded_expr_call(
                 emitter,
                 ctx,
             );
+        }
+    }
+    if expr_call_needs_descriptor_invoker(callee, ctx) {
+        if let Some(ret_ty) =
+            emit_descriptor_invoker_expr_call(callee, args_exprs, emitter, ctx, data)
+        {
+            return ret_ty;
         }
     }
     let save_concat_before_args =
@@ -150,6 +158,82 @@ pub(super) fn emit_loaded_expr_call(
     ret_ty
 }
 
+/// Emits a direct expression call through the callable descriptor's uniform invoker.
+///
+/// This is used when the callee expression can select a captured callable branch at
+/// runtime. In that shape, captures and receiver environments live in the descriptor,
+/// so direct ABI calls cannot reconstruct the hidden arguments safely.
+fn emit_descriptor_invoker_expr_call(
+    callee: &Expr,
+    args_exprs: &[Expr],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Option<PhpType> {
+    let ownership = crate::codegen::expr::expr_result_heap_ownership(callee);
+    if !matches!(ownership, HeapOwnership::Owned | HeapOwnership::Borrowed) {
+        return None;
+    }
+
+    let concat_saved_before_args =
+        emitter.target.arch == crate::codegen::platform::Arch::X86_64;
+    if concat_saved_before_args {
+        super::super::save_concat_offset_before_nested_call(emitter, ctx);
+    }
+    if matches!(ownership, HeapOwnership::Borrowed) {
+        crate::codegen::callable_descriptor::emit_retain_current_descriptor(emitter);
+    }
+    crate::codegen::abi::emit_push_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // preserve the callable descriptor while building direct-call arguments
+
+    let arg_array = Expr::new(ExprKind::ArrayLiteral(args_exprs.to_vec()), callee.span);
+    let arr_ty = crate::codegen::expr::emit_expr(&arg_array, emitter, ctx, data);
+    crate::codegen::abi::emit_push_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // preserve the owned descriptor-invoker argument array
+
+    let call_reg = crate::codegen::abi::nested_call_reg(emitter);
+    crate::codegen::abi::emit_load_temporary_stack_slot(emitter, call_reg, 16);
+    call_user_func_array::emit_call_descriptor_array_invoker(
+        LoadedArraySource::TemporaryStackSlot(0),
+        &arr_ty,
+        call_reg,
+        concat_saved_before_args,
+        emitter,
+        ctx,
+        data,
+    );
+    release_preserved_expr_call_arg_array_after_mixed_result(&arr_ty, emitter);
+    release_preserved_expr_call_descriptor_after_mixed_result(emitter);
+    Some(PhpType::Mixed)
+}
+
+/// Releases the synthetic direct-call argument array while preserving the Mixed result.
+fn release_preserved_expr_call_arg_array_after_mixed_result(
+    arr_ty: &PhpType,
+    emitter: &mut Emitter,
+) {
+    crate::codegen::abi::emit_push_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // preserve the boxed call result while releasing the argument array
+    crate::codegen::abi::emit_load_temporary_stack_slot(
+        emitter,
+        crate::codegen::abi::int_result_reg(emitter),
+        16,
+    );
+    crate::codegen::abi::emit_decref_if_refcounted(emitter, arr_ty);
+    crate::codegen::abi::emit_pop_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // restore the boxed call result after argument-array cleanup
+    crate::codegen::abi::emit_release_temporary_stack(emitter, 16);             // discard the preserved argument-array slot
+}
+
+/// Releases the retained callable descriptor while preserving the Mixed result.
+fn release_preserved_expr_call_descriptor_after_mixed_result(emitter: &mut Emitter) {
+    crate::codegen::abi::emit_push_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // preserve the boxed call result while releasing the callable descriptor
+    crate::codegen::abi::emit_load_temporary_stack_slot(
+        emitter,
+        crate::codegen::abi::int_result_reg(emitter),
+        16,
+    );
+    crate::codegen::callable_descriptor::emit_release_current_descriptor(emitter);
+    crate::codegen::abi::emit_pop_reg(emitter, crate::codegen::abi::int_result_reg(emitter)); // restore the boxed call result after descriptor cleanup
+    crate::codegen::abi::emit_release_temporary_stack(emitter, 16);             // discard the preserved callable descriptor slot
+}
+
 /// Resolves the function signature for a callee expression in an indirect call context.
 ///
 /// Looks up the signature in `ctx.closure_sigs` for `Variable` and `ArrayAccess` nodes
@@ -176,6 +260,72 @@ fn callee_sig_for_expr(
             .cloned(),
         _ => None,
     }
+}
+
+/// Returns true when a direct expression call needs descriptor-owned captures.
+fn expr_call_needs_descriptor_invoker(callee: &Expr, ctx: &Context) -> bool {
+    match &callee.kind {
+        ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_) | ExprKind::Variable(_) => false,
+        ExprKind::Assignment { value, .. } => expr_produces_captured_callable(value, ctx),
+        ExprKind::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            expr_produces_captured_callable(then_expr, ctx)
+                || expr_produces_captured_callable(else_expr, ctx)
+        }
+        ExprKind::ShortTernary { value, default }
+        | ExprKind::NullCoalesce { value, default } => {
+            expr_produces_captured_callable(value, ctx)
+                || expr_produces_captured_callable(default, ctx)
+        }
+        _ => false,
+    }
+}
+
+/// Returns true if an expression produces a callable with descriptor-owned environment.
+fn expr_produces_captured_callable(expr: &Expr, ctx: &Context) -> bool {
+    match &expr.kind {
+        ExprKind::Closure { captures, .. } => !captures.is_empty(),
+        ExprKind::FirstClassCallable(target) => first_class_target_needs_runtime_capture(target),
+        ExprKind::Variable(name) => {
+            ctx.closure_captures
+                .get(name)
+                .is_some_and(|captures| !captures.is_empty())
+                || ctx
+                    .first_class_callable_targets
+                    .get(name)
+                    .is_some_and(first_class_target_needs_runtime_capture)
+        }
+        ExprKind::Assignment { value, .. } => expr_produces_captured_callable(value, ctx),
+        ExprKind::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            expr_produces_captured_callable(then_expr, ctx)
+                || expr_produces_captured_callable(else_expr, ctx)
+        }
+        ExprKind::ShortTernary { value, default }
+        | ExprKind::NullCoalesce { value, default } => {
+            expr_produces_captured_callable(value, ctx)
+                || expr_produces_captured_callable(default, ctx)
+        }
+        _ => false,
+    }
+}
+
+/// Returns true when a first-class callable target carries receiver environment.
+fn first_class_target_needs_runtime_capture(target: &CallableTarget) -> bool {
+    matches!(
+        target,
+        CallableTarget::Method { .. }
+            | CallableTarget::StaticMethod {
+                receiver: StaticReceiver::Static,
+                ..
+            }
+    )
 }
 
 /// Updates stored callable signatures after argument emission reveals concrete types.

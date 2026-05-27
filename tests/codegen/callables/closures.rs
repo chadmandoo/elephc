@@ -294,6 +294,39 @@ echo call_user_func(function(int $x) use ($base): int { return $x * $base; }, 6)
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies branch-selected captured first-class callables use descriptor invokers.
+#[test]
+fn test_direct_complex_captured_callable_expr_uses_descriptor_invoker() {
+    let source = r#"<?php
+class Counter {
+    public int $base = 0;
+
+    public function add(int $n): int {
+        return $n + $this->base;
+    }
+}
+
+$left = new Counter();
+$left->base = 3;
+$right = new Counter();
+$right->base = 7;
+$use_left = false;
+echo ($use_left ? $left->add(...) : $right->add(...))(5);
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "12");
+
+    let dir = make_cli_test_dir("elephc_direct_complex_callable_expr_invoker");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("callable_invoker"),
+        "direct branch-selected captured callable calls should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 #[test]
 fn test_arrow_function_array_filter() {
     // Verifies `array_filter` with an arrow function predicate filtering values greater than 8.
