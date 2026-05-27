@@ -129,6 +129,7 @@ echo ptr_is_null($environ) ? "fail" : "ok";
 }
 
 // Verifies FFI extern `signal` and `raise` are callable and a PHP function can be used as a signal handler.
+/// Verifies extern callback string literals resolve function names case-insensitively.
 #[test]
 fn test_ffi_callback_signal_handler() {
     let out = compile_and_run(
@@ -140,11 +141,50 @@ function on_signal($sig) {
     echo $sig;
 }
 
-signal(15, "on_signal");
+signal(15, "ON_SIGNAL");
 raise(15);
 "#,
     );
     assert_eq!(out, "15");
+}
+
+/// Verifies FFI `callable` parameters accept environment-free first-class callable descriptors.
+#[test]
+fn test_ffi_callback_signal_handler_first_class_callable() {
+    let out = compile_and_run(
+        r#"<?php
+extern function signal(int $sig, callable $handler): ptr;
+extern function raise(int $sig): int;
+
+function on_signal(int $sig): void {
+    echo $sig + 1;
+}
+
+$handler = on_signal(...);
+signal(15, $handler);
+raise(15);
+"#,
+    );
+    assert_eq!(out, "16");
+}
+
+/// Verifies FFI `callable` parameters accept closure descriptors without captures.
+#[test]
+fn test_ffi_callback_signal_handler_closure_descriptor() {
+    let out = compile_and_run(
+        r#"<?php
+extern function signal(int $sig, callable $handler): ptr;
+extern function raise(int $sig): int;
+
+$handler = function(int $sig): void {
+    echo $sig + 2;
+};
+
+signal(15, $handler);
+raise(15);
+"#,
+    );
+    assert_eq!(out, "17");
 }
 
 // Smoke test: verifies non-string FFI extern function returning `int` is callable and returns a positive pid.

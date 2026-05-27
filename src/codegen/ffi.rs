@@ -9,6 +9,7 @@
 //! - Extern lowering follows platform ABI rules and must not use PHP call normalization for C-only details.
 
 use crate::codegen::abi;
+use crate::codegen::builtins::callable_lookup::{lookup_function, FunctionLookup};
 use crate::codegen::context::Context;
 use crate::codegen::context::HeapOwnership;
 use crate::codegen::data_section::DataSection;
@@ -221,16 +222,7 @@ fn preevaluate_extern_args(
             .map(|(_, t)| t.clone())
             .unwrap_or(PhpType::Int);
         let mut actual_ty = if param_ty == PhpType::Callable {
-            match &arg.kind {
-                ExprKind::StringLiteral(func_name) => {
-                    let label = function_symbol(func_name);
-                    abi::emit_symbol_address(emitter, abi::int_result_reg(emitter), &label); // materialize the callback target address in the integer result register
-                    PhpType::Callable
-                }
-                _ => panic!(
-                    "codegen bug: extern callable argument must be a function-name string literal"
-                ),
-            }
+            emit_extern_callable_arg(arg, emitter, ctx, data)
         } else {
             emit_expr(arg, emitter, ctx, data)
         };
@@ -253,6 +245,40 @@ fn preevaluate_extern_args(
         source_temp_types.push(actual_ty);
     }
     source_temp_types
+}
+
+/// Materializes an extern `callable` argument as a raw C function pointer.
+///
+/// String literals still lower to direct user-function symbols. Descriptor-backed
+/// callables are accepted after type checking proves they do not need hidden
+/// environment slots, so codegen can pass the descriptor entry slot directly.
+fn emit_extern_callable_arg(
+    arg: &Expr,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> PhpType {
+    match &arg.kind {
+        ExprKind::StringLiteral(func_name) => {
+            let resolved_name = match lookup_function(ctx, func_name) {
+                Some(FunctionLookup::UserFunction(name))
+                | Some(FunctionLookup::IncludeVariant(name)) => name,
+                _ => func_name.clone(),
+            };
+            let label = function_symbol(&resolved_name);
+            abi::emit_symbol_address(emitter, abi::int_result_reg(emitter), &label); // materialize the callback target address in the integer result register
+        }
+        _ => {
+            let actual_ty = emit_expr(arg, emitter, ctx, data);
+            debug_assert_eq!(actual_ty, PhpType::Callable);
+            crate::codegen::callable_descriptor::emit_load_entry_from_descriptor(
+                emitter,
+                abi::int_result_reg(emitter),
+                abi::int_result_reg(emitter),
+            );
+        }
+    }
+    PhpType::Callable
 }
 
 /// Determines whether an owned `Mixed` or `Union` source value must be preserved on the stack

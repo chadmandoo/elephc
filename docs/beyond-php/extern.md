@@ -41,11 +41,16 @@ Argument registers follow the selected target's C ABI: AArch64 uses
 x86_64 uses the System V registers (`rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`
 for integers/pointers and `xmm0`-`xmm7` for doubles).
 
-`callable` in an `extern function` signature is a special FFI-only path: the
-call site must provide a string-literal elephc function name, and codegen passes
-that function's native symbol address to C. General PHP callable values use
-runtime descriptor pointers internally and are not passed directly to C as
-closures or first-class callable descriptors.
+`callable` in an `extern function` signature is a special FFI-only path. The
+call site can provide either a string-literal elephc function name (resolved
+case-insensitively like PHP function names) or a callable
+descriptor whose entry can be used as a plain C function pointer. That includes
+environment-free closures and first-class callables for functions or static
+methods. Callable descriptors that require captures, object receivers, or
+late-static-binding context are rejected for raw C function-pointer slots,
+because the C ABI receives only the function address and has no descriptor
+environment pointer. Descriptor values whose environment-free status cannot be
+proven statically are rejected for the same reason.
 
 ## String conversion
 - **Calling C**: elephc creates temporary null-terminated copy, frees after call
@@ -82,6 +87,20 @@ function on_signal($sig) {
 signal(15, "on_signal");
 ```
 Callbacks must use C-compatible types only. No strings, arrays, variadic, defaults, or pass-by-reference.
+
+Descriptor-backed callbacks are accepted when no environment is needed:
+
+```php
+<?php
+extern function signal(int $sig, callable $handler): ptr;
+
+function on_signal(int $sig): void {
+    echo $sig;
+}
+
+$handler = on_signal(...);
+signal(15, $handler);
+```
 
 ## Extern globals
 ```php
