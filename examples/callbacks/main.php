@@ -163,6 +163,33 @@ echo "method callable array_reduce: " . array_reduce([1, 2], $offsets->add_offse
 echo "method callable array_walk: ";
 array_walk([1, 2], $offsets->show_shifted(...));
 echo "\n";
+
+class SelectedOffsetCallbacks {
+    public $reduce_bonus;
+    public $walk_bonus;
+
+    public function __construct($reduce_bonus, $walk_bonus) {
+        $this->reduce_bonus = $reduce_bonus;
+        $this->walk_bonus = $walk_bonus;
+    }
+
+    public function add_selected($carry, $item) {
+        return $carry + $item + $this->reduce_bonus;
+    }
+
+    public function show_selected($item) {
+        echo ($item + $this->walk_bonus) . " ";
+    }
+}
+
+$small_offsets = new SelectedOffsetCallbacks(1, 10);
+$large_offsets = new SelectedOffsetCallbacks(10, 20);
+$use_small_offsets = false;
+echo "selected callable array_reduce: " . array_reduce([1, 2], $use_small_offsets ? $small_offsets->add_selected(...) : $large_offsets->add_selected(...), 0) . "\n";
+echo "selected callable array_walk: ";
+array_walk([1, 2], $use_small_offsets ? $small_offsets->show_selected(...) : $large_offsets->show_selected(...));
+echo "\n";
+
 $method_sorted = [1, 3, 2];
 usort($method_sorted, $offsets->descending(...));
 echo "method callable usort: ";

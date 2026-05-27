@@ -553,6 +553,59 @@ foreach ($values as $value) {
     assert_eq!(out, "2:ba:bb");
 }
 
+/// Verifies that descriptor-backed `array_reduce` can invoke a runtime-selected receiver method.
+#[test]
+fn test_array_reduce_accepts_complex_captured_callable_expression() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeReducer {
+    public $bonus;
+
+    public function __construct($bonus) {
+        $this->bonus = $bonus;
+    }
+
+    public function add($carry, $item) {
+        return $carry + $item + $this->bonus;
+    }
+}
+
+$left = new RuntimeReducer(1);
+$right = new RuntimeReducer(10);
+$use_left = false;
+echo array_reduce([1, 2], $use_left ? $left->add(...) : $right->add(...), 0);
+"#,
+    );
+    assert_eq!(out, "23");
+}
+
+/// Verifies that descriptor-backed `array_walk` consumes ignored callback results safely.
+#[test]
+fn test_array_walk_accepts_complex_captured_callable_expression() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeWalker {
+    public $offset;
+
+    public function __construct($offset) {
+        $this->offset = $offset;
+    }
+
+    public function show($value) {
+        echo $value + $this->offset;
+        echo ",";
+    }
+}
+
+$left = new RuntimeWalker(10);
+$right = new RuntimeWalker(20);
+$use_left = false;
+array_walk([1, 2], $use_left ? $left->show(...) : $right->show(...));
+"#,
+    );
+    assert_eq!(out, "21,22,");
+}
+
 // Tests an instance method captured as a first-class callable and passed to `array_walk`,
 // verifying the callable receives each item and writes output for each element.
 #[test]

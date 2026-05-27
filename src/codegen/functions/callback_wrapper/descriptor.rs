@@ -267,6 +267,9 @@ fn emit_cast_descriptor_mixed_result_for_callback(emitter: &mut Emitter, return_
             abi::emit_call_label(emitter, "__rt_mixed_cast_float");            // convert the boxed callback result to a floating-point value
             emit_release_preserved_mixed_result_after_cast(emitter, &PhpType::Float);
         }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_decref_if_refcounted(emitter, &PhpType::Mixed);
+        }
         _ => {}
     }
 }

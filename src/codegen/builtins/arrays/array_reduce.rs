@@ -29,7 +29,9 @@ use super::callback_env;
 /// For capturing callbacks: recovers the array pointer, builds a capture
 /// environment via `callback_env::emit_captured_callback_env` (which rewrites
 /// the callback to a wrapper), then calls `__rt_array_reduce` with the wrapped
-/// callback and environment pointer. Releases the temporary stack after the call.
+/// callback and environment pointer. Branch-shaped captured callable expressions
+/// use descriptor-backed environments so runtime-selected receivers/captures are
+/// preserved through the uniform invoker. Releases the temporary stack after the call.
 ///
 /// # Returns
 /// `Some(PhpType::Int)` — `array_reduce` always returns an integer in this compiler.
@@ -55,6 +57,35 @@ pub fn emit(
     // -- evaluate the array argument, then the callback argument --
     emit_expr(&args[0], emitter, ctx, data);
     abi::emit_push_reg(emitter, result_reg);                                    // push the source array pointer onto the temporary stack
+
+    if callback_env::expr_call_needs_descriptor_callback_env(&args[1], ctx)
+        && callback_env::descriptor_callback_env_supported(&args[1])
+    {
+        emit_expr(&args[1], emitter, ctx, data);
+        emitter.instruction(&format!("mov {}, {}", call_reg, result_reg));      // preserve the selected callable descriptor while recovering the source array
+        abi::emit_pop_reg(emitter, array_arg_reg);                               // recover the source array pointer before building the descriptor environment
+        emitter.instruction(&format!("mov {}, {}", result_reg, call_reg));      // restore the selected callable descriptor as the current result
+        let wrapper = callback_env::emit_descriptor_callback_env_from_result(
+            &args[1],
+            array_arg_reg,
+            vec![PhpType::Int, source_elem_ty.clone()],
+            PhpType::Int,
+            emitter,
+            ctx,
+        )
+        .expect("descriptor callback env support checked before emitting callback");
+
+        // -- evaluate initial value (third arg) --
+        emit_expr(&args[2], emitter, ctx, data);
+        emitter.instruction(&format!("mov {}, {}", initial_arg_reg, result_reg)); // place the initial accumulator in the third runtime argument register
+
+        callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+        abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+        callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+        abi::emit_call_label(emitter, "__rt_array_reduce");                     // call the callback-driven reduce runtime helper with a descriptor environment
+        callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        return Some(PhpType::Int);
+    }
 
     let captures =
         callback_env::materialize_callback_address(&args[1], call_reg, emitter, ctx, data);
