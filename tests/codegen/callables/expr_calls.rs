@@ -97,6 +97,35 @@ echo $f("2");
     assert_eq!(out, "v2");
 }
 
+/// Verifies that an array-stored closure call reads by-value captures from the descriptor.
+#[test]
+fn test_expr_call_array_element_uses_descriptor_capture_snapshot() {
+    let out = compile_and_run(
+        r#"<?php
+$factor = 2;
+$arr = [];
+$arr[] = function($n) use ($factor) { return $n * $factor; };
+$factor = 10;
+echo $arr[0](5);
+"#,
+    );
+    assert_eq!(out, "10");
+}
+
+/// Verifies that parenthesized callable expression calls read captures from the descriptor.
+#[test]
+fn test_expr_call_parenthesized_variable_uses_descriptor_capture_snapshot() {
+    let out = compile_and_run(
+        r#"<?php
+$suffix = "old";
+$fn = function($value) use ($suffix) { return $value . ":" . $suffix; };
+$suffix = "new";
+echo ($fn)("id");
+"#,
+    );
+    assert_eq!(out, "id:old");
+}
+
 /// Verifies that callable by ref parameter dereferences descriptor before call.
 #[test]
 fn test_callable_by_ref_parameter_dereferences_descriptor_before_call() {

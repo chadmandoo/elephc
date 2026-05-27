@@ -7,6 +7,8 @@
 //!
 //! Key details:
 //! - Callable metadata and argument signatures must stay synchronized with type checking and runtime dispatch.
+//! - Once a callable expression has produced a descriptor pointer, hidden capture values must come
+//!   from that descriptor instead of from the caller's current lexical variables.
 
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
@@ -100,16 +102,17 @@ pub(super) fn emit_loaded_expr_call(
         data,
     );
     let mut arg_types = emitted_args.arg_types;
+    respecialize_indirect_callable_signature(callee, callee_sig.as_ref(), &captures, &arg_types, ctx);
 
     let call_reg = crate::codegen::abi::nested_call_reg(emitter);
     let arg_temp_bytes = args::pushed_temp_bytes(&arg_types) + emitted_args.source_temp_bytes;
     crate::codegen::abi::emit_load_temporary_stack_slot(emitter, call_reg, arg_temp_bytes);
+    push_descriptor_captures_as_hidden_args(&captures, emitter, call_reg, &mut arg_types);
     crate::codegen::callable_descriptor::emit_load_entry_from_descriptor(
         emitter,
         call_reg,
         call_reg,
     );
-    push_captures_as_hidden_args(&captures, emitter, ctx, &mut arg_types);
 
     let assignments =
         crate::codegen::abi::build_outgoing_arg_assignments_for_target(emitter.target, &arg_types, 0);
@@ -175,42 +178,97 @@ fn callee_sig_for_expr(
     }
 }
 
-/// Pushes closure capture variables as hidden additional arguments before the regular call
-/// arguments. For by-reference captures, emits the variable address; for by-value captures,
-/// loads the value from the stack slot. Missing captures are warned but skipped to avoid
-/// blocking compilation of partially captured closures.
-fn push_captures_as_hidden_args(
+/// Updates stored callable signatures after argument emission reveals concrete types.
+fn respecialize_indirect_callable_signature(
+    callee: &Expr,
+    callee_sig: Option<&crate::types::FunctionSig>,
+    captures: &[(String, PhpType, bool)],
+    arg_types: &[PhpType],
+    ctx: &mut Context,
+) {
+    let Some(cached_sig) = callee_sig.cloned() else {
+        return;
+    };
+    let Some(storage_name) = callable_signature_storage_name(callee) else {
+        return;
+    };
+
+    for deferred in &mut ctx.deferred_closures {
+        if deferred.sig.params == cached_sig.params && deferred.captures == captures {
+            for (i, ty) in arg_types.iter().enumerate() {
+                if i < deferred.sig.params.len()
+                    && !deferred
+                        .sig
+                        .declared_params
+                        .get(i)
+                        .copied()
+                        .unwrap_or(false)
+                    && !deferred.sig.ref_params.get(i).copied().unwrap_or(false)
+                {
+                    deferred.sig.params[i].1 = ty.clone();
+                }
+            }
+            break;
+        }
+    }
+
+    if let Some(cached) = ctx.closure_sigs.get_mut(storage_name) {
+        for (i, ty) in arg_types.iter().enumerate() {
+            if i < cached.params.len()
+                && !cached.declared_params.get(i).copied().unwrap_or(false)
+                && !cached.ref_params.get(i).copied().unwrap_or(false)
+            {
+                cached.params[i].1 = ty.clone();
+            }
+        }
+    }
+}
+
+/// Returns the context metadata key for a callable expression, when one exists.
+fn callable_signature_storage_name(callee: &Expr) -> Option<&str> {
+    match &callee.kind {
+        ExprKind::Variable(name) => Some(name.as_str()),
+        ExprKind::ArrayAccess { array, .. } => {
+            if let ExprKind::Variable(name) = &array.kind {
+                Some(name.as_str())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Pushes hidden capture arguments from a materialized callable descriptor.
+///
+/// The indirect callee has already evaluated to a descriptor pointer. Reading
+/// captures from descriptor slots preserves by-value snapshot semantics for
+/// callables stored in arrays, returned from expressions, or parenthesized
+/// before invocation.
+fn push_descriptor_captures_as_hidden_args(
     captures: &[(String, PhpType, bool)],
     emitter: &mut Emitter,
-    ctx: &Context,
+    descriptor_reg: &str,
     arg_types: &mut Vec<PhpType>,
 ) {
-    for (capture_name, capture_ty, by_ref) in captures {
+    for (idx, (capture_name, capture_ty, by_ref)) in captures.iter().enumerate() {
         emitter.comment(&format!("push callable capture ${}", capture_name));
         if *by_ref {
-            if !args::emit_ref_arg_variable_address(
-                capture_name,
-                "callable capture ref",
+            crate::codegen::callable_descriptor::emit_load_runtime_capture_to_result(
                 emitter,
-                ctx,
-            ) {
-                emitter.comment(&format!(
-                    "WARNING: captured callable variable ${} not found",
-                    capture_name
-                ));
-                continue;
-            }
+                descriptor_reg,
+                idx,
+                &PhpType::Int,
+            );
             args::push_arg_value(emitter, &PhpType::Int);
             arg_types.push(PhpType::Int);
         } else {
-            let Some(capture_info) = ctx.variables.get(capture_name) else {
-                emitter.comment(&format!(
-                    "WARNING: captured callable variable ${} not found",
-                    capture_name
-                ));
-                continue;
-            };
-            crate::codegen::abi::emit_load(emitter, capture_ty, capture_info.stack_offset);
+            crate::codegen::callable_descriptor::emit_load_runtime_capture_to_result(
+                emitter,
+                descriptor_reg,
+                idx,
+                capture_ty,
+            );
             args::push_arg_value(emitter, capture_ty);
             arg_types.push(capture_ty.clone());
         }
