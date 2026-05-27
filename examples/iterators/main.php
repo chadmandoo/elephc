@@ -186,3 +186,31 @@ echo iterator_apply(
     $selectedLabels
 );
 echo "\n";
+
+class IteratorFilterGate {
+    private int $min;
+
+    public function __construct(int $min) {
+        $this->min = $min;
+    }
+
+    public function keep(int $value, string $key, Iterator $inner): bool {
+        return $inner instanceof ArrayIterator && $key !== "a" && $value >= $this->min;
+    }
+}
+
+echo "callback filter selected callable:\n";
+$wideFilter = new IteratorFilterGate(2);
+$strictFilter = new IteratorFilterGate(3);
+$useStrictFilter = true;
+$filtered = new CallbackFilterIterator(
+    new ArrayIterator(["a" => 1, "b" => 2, "c" => 3]),
+    $useStrictFilter ? $strictFilter->keep(...) : $wideFilter->keep(...)
+);
+foreach ($filtered as $key => $value) {
+    echo $key;
+    echo "=";
+    echo $value;
+    echo " ";
+}
+echo "\n";

@@ -550,6 +550,15 @@ impl Checker {
             return Ok(());
         };
 
+        if self.expr_call_complex_callee_needs_runtime_capture(callback)
+            && !crate::types::checker::builtins::callback_supports_complex_descriptor_env(callback)
+        {
+            return Err(CompileError::new(
+                callback.span,
+                "CallbackFilterIterator callback does not support complex expressions that select captured callables at runtime",
+            ));
+        }
+
         match &callback.kind {
             ExprKind::FirstClassCallable(crate::parser::ast::CallableTarget::Function(name)) => {
                 self.specialize_callback_filter_function(name.as_str(), callback.span)?;

@@ -560,7 +560,24 @@ fn emit_new_callback_filter_iterator(
     if let Some(callback_expr) = normalized_args.get(1) {
         let (_callback_ty, captures, target_visible_arg_types) =
             emit_callback_filter_callable_arg(callback_expr, emitter, ctx, data);
-        if captures.is_empty() {
+        if callback_env::expr_call_needs_descriptor_callback_env(callback_expr, ctx) {
+            let wrapper_label = callback_env::emit_persistent_descriptor_callback_env_from_result(
+                callback_expr,
+                callback_filter_visible_arg_types(),
+                PhpType::Bool,
+                emitter,
+                ctx,
+            )
+            .expect("type checker must reject unsupported callback-filter descriptor env ownership");
+            store_pointer_property_from_result(emitter, callback_env_offset);
+            emit_store_callback_filter_adapter_descriptor(
+                &wrapper_label,
+                callback_offset,
+                &[],
+                emitter,
+                data,
+            );
+        } else if captures.is_empty() {
             store_callable_property_from_result(emitter, callback_offset);
             store_pointer_property_zero(emitter, callback_env_offset);
         } else {
@@ -572,22 +589,13 @@ fn emit_new_callback_filter_iterator(
                 ctx,
             );
             store_pointer_property_from_result(emitter, callback_env_offset);
-            let callback_sig = callback_filter_callable_sig();
-            crate::codegen::callable_descriptor::emit_load_descriptor_address_with_meta(
+            emit_store_callback_filter_adapter_descriptor(
+                &wrapper_label,
+                callback_offset,
+                &captures,
                 emitter,
                 data,
-                abi::int_result_reg(emitter),
-                &wrapper_label,
-                None,
-                crate::codegen::callable_descriptor::CALLABLE_DESC_KIND_CALLBACK_ADAPTER,
-                Some(&callback_sig),
-                &captures,
-                &[],
-                crate::codegen::callable_descriptor::CallableDescriptorInvocation::new(
-                    crate::codegen::callable_descriptor::CallableDescriptorShape::CallbackAdapter,
-                ),
             );
-            store_callable_property_from_result(emitter, callback_offset);
         }
     } else {
         emitter.comment(&format!("WARNING: {} constructor missing callback", class_name));
@@ -599,6 +607,32 @@ fn emit_new_callback_filter_iterator(
 
     abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized callback-filter object as the expression result
     PhpType::Object(class_name.to_string())
+}
+
+/// Emits and stores the descriptor for a callback-filter adapter wrapper.
+fn emit_store_callback_filter_adapter_descriptor(
+    wrapper_label: &str,
+    callback_offset: usize,
+    captures: &[(String, PhpType, bool)],
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+) {
+    let callback_sig = callback_filter_callable_sig();
+    crate::codegen::callable_descriptor::emit_load_descriptor_address_with_meta(
+        emitter,
+        data,
+        abi::int_result_reg(emitter),
+        wrapper_label,
+        None,
+        crate::codegen::callable_descriptor::CALLABLE_DESC_KIND_CALLBACK_ADAPTER,
+        Some(&callback_sig),
+        captures,
+        &[],
+        crate::codegen::callable_descriptor::CallableDescriptorInvocation::new(
+            crate::codegen::callable_descriptor::CallableDescriptorShape::CallbackAdapter,
+        ),
+    );
+    store_callable_property_from_result(emitter, callback_offset);
 }
 
 /// Normalizes iterator iterator constructor args into the representation expected by later lowering.

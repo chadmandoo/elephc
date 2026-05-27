@@ -230,6 +230,51 @@ foreach ($it as $key => $value) {
     assert_eq!(out, "y=2;b=3;");
 }
 
+/// Verifies that recursive callback filter children preserve branch-selected descriptor env.
+#[test]
+fn test_recursive_callback_filter_iterator_preserves_branch_selected_descriptor_env() {
+    let out = compile_and_run(
+        r#"<?php
+class RecursiveGate {
+    private int $min;
+    private string $tag;
+
+    public function __construct(int $min, string $tag) {
+        $this->min = $min;
+        $this->tag = $tag;
+    }
+
+    public function keep(mixed $current, mixed $key, Iterator $iterator): bool {
+        echo $this->tag;
+        echo $key;
+        echo ";";
+        if (gettype($current) === "array") {
+            return true;
+        }
+        return $current > $this->min;
+    }
+}
+
+$left = new RecursiveGate(1, "L");
+$right = new RecursiveGate(2, "R");
+$useRight = true;
+$filter = new RecursiveCallbackFilterIterator(
+    new RecursiveArrayIterator(["a" => ["x" => 1, "y" => 2, "z" => 3], "b" => 4]),
+    $useRight ? $right->keep(...) : $left->keep(...)
+);
+$it = new RecursiveIteratorIterator($filter);
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "Ra;Rx;Ry;Rz;out:z=3;Rb;out:b=4;");
+}
+
 /// Verifies that parent iterator filters parents recursively.
 #[test]
 fn test_parent_iterator_filters_parents_recursively() {

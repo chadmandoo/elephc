@@ -335,7 +335,9 @@ follow PHP's constructors and require an `Iterator` directly.
 false during `rewind()` and `next()`. `CallbackFilterIterator` stores a callable
 and invokes it with current value, current key, and the inner iterator object;
 closure and first-class-callable capture environments are preserved with the
-iterator object.
+iterator object. Branch-shaped expressions that select captured callable
+descriptors at runtime use the same descriptor invoker path and keep the
+selected receiver/capture environment with the iterator.
 `CachingIterator` implements one-element lookahead through `hasNext()`, supports
 the string mode flags `CALL_TOSTRING`, `TOSTRING_USE_KEY`,
 `TOSTRING_USE_CURRENT`, and `TOSTRING_USE_INNER`, and supports `FULL_CACHE` for
@@ -356,7 +358,8 @@ objects through `hasChildren()`. `RecursiveIteratorIterator` supports
 `LEAVES_ONLY`, `SELF_FIRST`, and `CHILD_FIRST`; it keeps a live stack of source
 sub-iterators so `getDepth()`, `getInnerIterator()`, and `getSubIterator()`
 track the active cursors. `RecursiveCallbackFilterIterator` preserves closure
-and first-class-callable capture environments when it wraps child iterators.
+and first-class-callable capture environments, including branch-selected
+descriptor environments, when it wraps child iterators.
 `ParentIterator` recursively keeps only entries that have children.
 
 ## Autoload and Introspection

@@ -456,6 +456,49 @@ foreach ($it as $key => $value) {
     assert_eq!(out, "1:2;2:3;");
 }
 
+/// Verifies that callback filter iterator preserves branch-selected descriptor env.
+#[test]
+fn test_callback_filter_iterator_preserves_branch_selected_descriptor_env() {
+    let out = compile_and_run(
+        r#"<?php
+class CallbackGate {
+    private int $min;
+    private string $tag;
+
+    public function __construct(int $min, string $tag) {
+        $this->min = $min;
+        $this->tag = $tag;
+    }
+
+    public function keep(int $current, string $key, Iterator $iterator): bool {
+        echo $this->tag;
+        echo $key;
+        echo ":";
+        echo $iterator instanceof ArrayIterator ? "it" : "bad";
+        echo ";";
+        return $current >= $this->min;
+    }
+}
+
+$left = new CallbackGate(2, "L");
+$right = new CallbackGate(3, "R");
+$useRight = true;
+$it = new CallbackFilterIterator(
+    new ArrayIterator(["a" => 1, "b" => 2, "c" => 3]),
+    $useRight ? $right->keep(...) : $left->keep(...)
+);
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "Ra:it;Rb:it;Rc:it;out:c=3;");
+}
+
 /// Verifies that caching iterator tracks has next and string value.
 #[test]
 fn test_caching_iterator_tracks_has_next_and_string_value() {

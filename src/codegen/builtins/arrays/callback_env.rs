@@ -309,6 +309,51 @@ pub(crate) fn emit_persistent_callback_env_from_result(
     wrapper_label
 }
 
+/// Emits a heap-backed descriptor callback environment from the current descriptor result.
+pub(crate) fn emit_persistent_descriptor_callback_env_from_result(
+    callback: &Expr,
+    visible_arg_types: Vec<PhpType>,
+    descriptor_return_type: PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> Option<String> {
+    let ownership = callable_descriptor_result_ownership(callback);
+    if !matches!(ownership, HeapOwnership::Owned | HeapOwnership::Borrowed) {
+        return None;
+    }
+    if matches!(ownership, HeapOwnership::Borrowed) {
+        crate::codegen::callable_descriptor::emit_retain_current_descriptor(emitter);
+    }
+
+    let wrapper_label = ctx.next_label("descriptor_callback_wrapper");
+    ctx.deferred_callback_wrappers.push(DeferredCallbackWrapper {
+        label: wrapper_label.clone(),
+        visible_arg_types,
+        target_visible_arg_types: None,
+        capture_types: Vec::new(),
+        descriptor_return_type: Some(descriptor_return_type),
+    });
+
+    let env_bytes = 16;
+    emitter.comment("persistent descriptor callback environment");
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                 // preserve the selected callable descriptor while allocating its env
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("mov x0, #{}", env_bytes));            // request persistent descriptor callback environment storage
+            emitter.instruction("bl __rt_heap_alloc");                          // allocate the persistent descriptor callback environment
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov rax, {}", env_bytes));            // request persistent descriptor callback environment storage
+            emitter.instruction("call __rt_heap_alloc");                        // allocate the persistent descriptor callback environment
+        }
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                 // keep the env pointer above the saved selected descriptor
+    store_saved_callback_to_persistent_env(emitter);
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                  // return the persistent descriptor env pointer as the current result
+    abi::emit_release_temporary_stack(emitter, 16);                            // discard the saved selected callable descriptor
+    Some(wrapper_label)
+}
+
 /// Returns true when a callback expression must preserve the selected runtime descriptor.
 pub(crate) fn expr_call_needs_descriptor_callback_env(callback: &Expr, ctx: &Context) -> bool {
     match &callback.kind {
