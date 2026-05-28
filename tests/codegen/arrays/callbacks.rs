@@ -59,6 +59,51 @@ echo $b[1];
     assert_eq!(out, "2,4");
 }
 
+/// Verifies runtime string builtin callback variables dispatch through descriptor-backed array_map.
+#[test]
+fn test_array_map_dynamic_string_builtin_callback_uses_descriptor_invoker() {
+    let source = r#"<?php
+$name = "STRTOUPPER";
+$callback = $name;
+$out = array_map($callback, ["ada", "lin"]);
+echo $out[0] . ":" . $out[1];
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "ADA:LIN");
+
+    let dir = make_cli_test_dir("elephc_array_map_dynamic_string_builtin_descriptor");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("__rt_array_map_mixed") && user_asm.contains("callable_invoker"),
+        "array_map dynamic string callbacks should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Verifies runtime string user callbacks can produce mixed array_map result shapes.
+#[test]
+fn test_array_map_dynamic_string_user_callback_mixed_results() {
+    let out = compile_and_run(
+        r#"<?php
+function upper_runtime_map(string $value): string {
+    return strtoupper($value);
+}
+
+$callback = "upper_runtime_map";
+$out = array_map($callback, ["ada"]);
+echo $out[0];
+echo ":";
+
+$callback = "strlen";
+$lengths = array_map($callback, ["abcd"]);
+echo $lengths[0];
+"#,
+    );
+    assert_eq!(out, "ADA:4");
+}
+
 // Tests `array_filter` with a predicate that keeps even integers, verifying correct
 // iteration, element removal, and count/foreach output.
 /// Verifies that array filter.

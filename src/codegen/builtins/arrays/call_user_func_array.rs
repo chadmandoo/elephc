@@ -3249,7 +3249,7 @@ pub(crate) fn emit_call_user_func_array_invalid_mixed_args_abort(emitter: &mut E
 }
 
 /// Emits assembly for dynamic string callback abort.
-fn emit_dynamic_string_callback_abort(emitter: &mut Emitter, data: &mut DataSection) {
+pub(crate) fn emit_dynamic_string_callback_abort(emitter: &mut Emitter, data: &mut DataSection) {
     let (message_label, message_len) = data.add_string(
         b"Fatal error: dynamic string callback could not be resolved\n",
     );

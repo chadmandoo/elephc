@@ -700,10 +700,23 @@ pub(crate) fn check_callback_builtin_call(
         return Ok(ret_ty);
     }
 
+    let callback_ty = checker.infer_type(callback, env)?;
+    if callback_builtin_allows_runtime_string_descriptor(label) && callback_ty == PhpType::Str {
+        for arg in callback_args {
+            checker.infer_type(arg, env)?;
+        }
+        return Ok(PhpType::Mixed);
+    }
+
     Err(CompileError::new(
         callback.span,
         &format!("{} must have a statically known callable signature", label),
     ))
+}
+
+/// Returns true when a callback builtin can resolve string callbacks at runtime.
+fn callback_builtin_allows_runtime_string_descriptor(label: &str) -> bool {
+    matches!(label, "array_map() callback")
 }
 
 /// Returns true when a callback builtin has codegen support for runtime-selected callable arrays.
@@ -748,7 +761,7 @@ pub(super) fn check_builtin(
                 PhpType::Array(elem_ty) => {
                     let arr_ty = PhpType::Array(elem_ty.clone());
                     let dummy_args = vec![dummy_arg_for_array_scalar_elem(&arr_ty, span)];
-                    check_callback_builtin_call(
+                    let callback_ret_ty = check_callback_builtin_call(
                         checker,
                         &args[0],
                         &dummy_args,
@@ -756,7 +769,12 @@ pub(super) fn check_builtin(
                         env,
                         "array_map() callback",
                     )?;
-                    Ok(Some(PhpType::Array(elem_ty)))
+                    let result_elem_ty = if callback_ret_ty == PhpType::Mixed {
+                        Box::new(PhpType::Mixed)
+                    } else {
+                        elem_ty
+                    };
+                    Ok(Some(PhpType::Array(result_elem_ty)))
                 }
                 _ => Err(CompileError::new(
                     span,

@@ -9,6 +9,7 @@
 //! - Callback lowering must preserve PHP source evaluation order, captures, and callable return ownership.
 
 use crate::codegen::abi;
+use crate::codegen::callable_dispatch::{self, RuntimeCallableSelector};
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
@@ -17,6 +18,7 @@ use crate::parser::ast::Expr;
 use crate::types::PhpType;
 use super::array_map_callback_returns_str::callback_returns_str;
 use super::callback_env;
+use super::call_user_func_array;
 use super::runtime_callable_array_callback;
 
 /// Emits the `array_map` builtin call.
@@ -62,10 +64,24 @@ pub fn emit(
 
     // -- determine callback return type at compile time --
     let returns_str = callback_returns_str(args, ctx);
-    let source_elem_ty = match crate::codegen::functions::infer_contextual_type(&args[1], ctx) {
+    let source_array_ty = crate::codegen::functions::infer_contextual_type(&args[1], ctx);
+    let source_elem_ty = match &source_array_ty {
         PhpType::Array(elem_ty) => elem_ty.codegen_repr(),
         _ => PhpType::Int,
     };
+
+    if call_user_func_array::callback_is_runtime_string(&args[0], ctx) {
+        emit_runtime_string_descriptor_map(
+            &args[0],
+            &args[1],
+            &source_array_ty,
+            &source_elem_ty,
+            emitter,
+            ctx,
+            data,
+        );
+        return Some(PhpType::Array(Box::new(PhpType::Mixed)));
+    }
 
     if let Some(array_callback) =
         callback_env::resolve_callable_array_descriptor_callback(&args[0], ctx, data)
@@ -235,4 +251,70 @@ pub fn emit(
         abi::emit_call_label(emitter, "__rt_array_map");                        // call the scalar array_map runtime helper
         Some(PhpType::Array(Box::new(PhpType::Int)))
     }
+}
+
+/// Emits runtime-string callback selection through descriptor-backed `array_map()`.
+fn emit_runtime_string_descriptor_map(
+    callback: &Expr,
+    array: &Expr,
+    source_array_ty: &PhpType,
+    source_elem_ty: &PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let call_reg = abi::nested_call_reg(emitter);
+    let result_reg = abi::int_result_reg(emitter);
+    let callback_arg_reg = abi::int_arg_reg_name(emitter.target, 0);
+    let array_arg_reg = abi::int_arg_reg_name(emitter.target, 1);
+    let env_arg_reg = abi::int_arg_reg_name(emitter.target, 2);
+
+    let callback_ty = emit_expr(callback, emitter, ctx, data);
+    debug_assert!(matches!(callback_ty.codegen_repr(), PhpType::Str));
+    let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+    abi::emit_push_reg_pair(emitter, ptr_reg, len_reg);                        // preserve the runtime string callback name across mapped-array evaluation
+
+    let _array_ty = emit_expr(array, emitter, ctx, data);
+    abi::emit_push_reg(emitter, result_reg);                                    // preserve the mapped array while selecting the runtime string descriptor
+
+    let cases = callable_dispatch::runtime_callable_cases(ctx, data, &[], Some(source_array_ty));
+    let done_label = ctx.next_label("array_map_runtime_string_done");
+    let selector = RuntimeCallableSelector::StringNameStack {
+        ptr_offset: 16,
+        len_offset: 24,
+        call_reg,
+    };
+
+    for case in &cases {
+        let next_case = ctx.next_label("array_map_runtime_string_next");
+        callable_dispatch::emit_branch_if_callable_case_mismatch(
+            &selector,
+            case,
+            &next_case,
+            emitter,
+            ctx,
+            data,
+        );
+        abi::emit_load_temporary_stack_slot(emitter, array_arg_reg, 0);
+        let wrapper = callback_env::emit_descriptor_callback_env_from_static_descriptor(
+            &case.descriptor_label,
+            vec![source_elem_ty.clone()],
+            Vec::new(),
+            PhpType::Mixed,
+            emitter,
+            ctx,
+        );
+        callback_env::store_descriptor_callback_array_reg(&wrapper, array_arg_reg, emitter);
+        callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+        abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+        callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+        abi::emit_call_label(emitter, "__rt_array_map_mixed");                 // map through the selected runtime string descriptor invoker
+        callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        abi::emit_jump(emitter, &done_label);
+        emitter.label(&next_case);
+    }
+
+    call_user_func_array::emit_dynamic_string_callback_abort(emitter, data);
+    emitter.label(&done_label);
+    abi::emit_release_temporary_stack(emitter, 32);                             // discard the saved mapped array and runtime string callback name
 }
