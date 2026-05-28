@@ -438,7 +438,9 @@ fn unknown_callable_value_needs_descriptor_invoker(
         return false;
     }
     match &callee.kind {
-        ExprKind::Variable(_) => callee_sig_for_expr(callee, ctx).is_none(),
+        ExprKind::Variable(name) => {
+            ctx.runtime_callable_vars.contains(name) || callee_sig_for_expr(callee, ctx).is_none()
+        }
         ExprKind::ArrayAccess { .. }
         | ExprKind::PropertyAccess { .. }
         | ExprKind::DynamicPropertyAccess { .. }

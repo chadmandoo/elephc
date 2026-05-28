@@ -74,6 +74,7 @@ fn invoker_context(parent_ctx: &Context) -> Context {
     ctx.constants = parent_ctx.constants.clone();
     ctx.all_global_var_names = parent_ctx.all_global_var_names.clone();
     ctx.all_static_vars = parent_ctx.all_static_vars.clone();
+    ctx.runtime_callable_vars = parent_ctx.runtime_callable_vars.clone();
     ctx.callable_param_sigs = parent_ctx.callable_param_sigs.clone();
     ctx.callable_return_sigs = parent_ctx.callable_return_sigs.clone();
     ctx.interfaces = parent_ctx.interfaces.clone();

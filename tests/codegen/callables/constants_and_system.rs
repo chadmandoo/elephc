@@ -1699,6 +1699,85 @@ echo call_user_func_array(make_returned_fcc_array_callback(), ["Ada"]);
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies callback runtimes preserve descriptor receivers from returned method FCC expressions.
+#[test]
+fn test_array_map_returned_method_fcc_expr_uses_descriptor_receiver() {
+    let source = r#"<?php
+class ReturnedMapExprPrefixer {
+    public string $prefix = "";
+
+    public function wrap(string $name): string {
+        return $this->prefix . $name;
+    }
+}
+
+function make_returned_map_expr_callback(): callable {
+    $first = new ReturnedMapExprPrefixer();
+    $first->prefix = "first:";
+    $second = new ReturnedMapExprPrefixer();
+    $second->prefix = "second:";
+    $callback = $first->wrap(...);
+    $first = $second;
+    return $callback;
+}
+
+$out = array_map(make_returned_map_expr_callback(), ["Ada"]);
+echo $out[0];
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "first:Ada");
+
+    let dir = make_cli_test_dir("elephc_array_map_returned_fcc_expr_descriptor");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("descriptor_callback_wrapper") && user_asm.contains("callable_invoker"),
+        "array_map returned callable expressions should route through descriptor callback envs:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+/// Verifies callback runtimes preserve descriptor receivers from runtime callable variables.
+#[test]
+fn test_array_map_returned_method_fcc_variable_uses_descriptor_receiver() {
+    let source = r#"<?php
+class ReturnedMapVarPrefixer {
+    public string $prefix = "";
+
+    public function wrap(string $name): string {
+        return $this->prefix . $name;
+    }
+}
+
+function make_returned_map_var_callback(): callable {
+    $first = new ReturnedMapVarPrefixer();
+    $first->prefix = "first:";
+    $second = new ReturnedMapVarPrefixer();
+    $second->prefix = "second:";
+    $callback = $first->wrap(...);
+    $first = $second;
+    return $callback;
+}
+
+$callback = make_returned_map_var_callback();
+$out = array_map($callback, ["Ada"]);
+echo $out[0];
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "first:Ada");
+
+    let dir = make_cli_test_dir("elephc_array_map_returned_fcc_variable_descriptor");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("descriptor_callback_wrapper") && user_asm.contains("callable_invoker"),
+        "array_map runtime callable variables should route through descriptor callback envs:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 /// Verifies that capture-free closure descriptors expose the uniform array invoker.
 #[test]
 fn test_call_user_func_array_closure_descriptor_uses_invoker() {

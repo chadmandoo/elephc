@@ -539,6 +539,9 @@ fn closure_variable_needs_descriptor_invoker(var: &str, ctx: &Context) -> bool {
     if ctx.callable_param_names.contains(var) {
         return true;
     }
+    if ctx.runtime_callable_vars.contains(var) {
+        return true;
+    }
     if ctx.closure_sigs.contains_key(var) {
         return false;
     }

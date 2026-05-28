@@ -33,6 +33,8 @@ use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver};
 /// - For `Closure` / `FirstClassCallable` assignments, updates `ctx.closure_sigs`,
 ///   `ctx.closure_captures`, `ctx.first_class_callable_targets`, and `ctx.variable_fcc_label`.
 /// - For `Callable` variable-to-variable copies, propagates the above metadata.
+/// - For runtime-produced callable descriptors, keeps signature metadata while marking
+///   the variable so calls still read receiver/capture state from the descriptor.
 pub(crate) fn emit_assign_stmt(
     name: &str,
     value: &Expr,
@@ -242,6 +244,7 @@ pub(crate) fn emit_assign_stmt(
 
     match &value.kind {
         ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_) => {
+            ctx.runtime_callable_vars.remove(name);
             let last_wrapper_label = ctx.deferred_closures.last().map(|d| d.label.clone());
             if let Some(deferred) = ctx.deferred_closures.last() {
                 ctx.closure_sigs.insert(name.to_string(), deferred.sig.clone());
@@ -302,6 +305,11 @@ pub(crate) fn emit_assign_stmt(
             } else {
                 ctx.variable_fcc_label.remove(name);
             }
+            if ctx.runtime_callable_vars.contains(src_name) {
+                ctx.runtime_callable_vars.insert(name.to_string());
+            } else {
+                ctx.runtime_callable_vars.remove(name);
+            }
         }
         ExprKind::ArrayAccess { array, .. } if ty == PhpType::Callable => {
             if let ExprKind::Variable(src_name) = &array.kind {
@@ -326,15 +334,28 @@ pub(crate) fn emit_assign_stmt(
                 } else {
                     ctx.variable_fcc_label.remove(name);
                 }
+                ctx.runtime_callable_vars.remove(name);
             } else {
                 ctx.closure_sigs.remove(name);
                 ctx.closure_captures.remove(name);
                 ctx.first_class_callable_targets.remove(name);
                 ctx.variable_fcc_label.remove(name);
+                ctx.runtime_callable_vars.remove(name);
             }
         }
         _ => {
-            ctx.closure_sigs.remove(name);
+            if ty == PhpType::Callable {
+                if let Some(sig) = crate::codegen::callables::callable_sig(value, ctx) {
+                    ctx.closure_sigs.insert(name.to_string(), sig);
+                    ctx.runtime_callable_vars.insert(name.to_string());
+                } else {
+                    ctx.closure_sigs.remove(name);
+                    ctx.runtime_callable_vars.remove(name);
+                }
+            } else {
+                ctx.closure_sigs.remove(name);
+                ctx.runtime_callable_vars.remove(name);
+            }
             ctx.closure_captures.remove(name);
             ctx.first_class_callable_targets.remove(name);
             ctx.variable_fcc_label.remove(name);

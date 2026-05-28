@@ -357,6 +357,10 @@ pub(crate) fn emit_persistent_descriptor_callback_env_from_result(
 
 /// Returns true when a callback expression must preserve the selected runtime descriptor.
 pub(crate) fn expr_call_needs_descriptor_callback_env(callback: &Expr, ctx: &Context) -> bool {
+    if runtime_callable_expr_result_needs_descriptor_callback_env(callback, ctx) {
+        return true;
+    }
+
     match &callback.kind {
         ExprKind::Closure { captures, .. } => !captures.is_empty(),
         ExprKind::FirstClassCallable(target) => first_class_target_needs_runtime_capture(target),
@@ -379,9 +383,42 @@ pub(crate) fn expr_call_needs_descriptor_callback_env(callback: &Expr, ctx: &Con
     }
 }
 
+/// Returns true when a runtime-produced callable result must keep its descriptor environment.
+fn runtime_callable_expr_result_needs_descriptor_callback_env(
+    callback: &Expr,
+    ctx: &Context,
+) -> bool {
+    if !matches!(
+        crate::codegen::functions::infer_contextual_type(callback, ctx).codegen_repr(),
+        PhpType::Callable
+    ) {
+        return false;
+    }
+
+    match &callback.kind {
+        ExprKind::Variable(name) => callable_variable_needs_descriptor_callback_env(name, ctx),
+        ExprKind::ArrayAccess { .. }
+        | ExprKind::PropertyAccess { .. }
+        | ExprKind::DynamicPropertyAccess { .. }
+        | ExprKind::StaticPropertyAccess { .. }
+        | ExprKind::Assignment { .. }
+        | ExprKind::Ternary { .. }
+        | ExprKind::ShortTernary { .. }
+        | ExprKind::NullCoalesce { .. }
+        | ExprKind::FunctionCall { .. }
+        | ExprKind::MethodCall { .. }
+        | ExprKind::StaticMethodCall { .. }
+        | ExprKind::ExprCall { .. } => true,
+        _ => false,
+    }
+}
+
 /// Returns true when a local callable variable should be carried as a descriptor.
 fn callable_variable_needs_descriptor_callback_env(name: &str, ctx: &Context) -> bool {
     if ctx.callable_param_names.contains(name) {
+        return true;
+    }
+    if ctx.runtime_callable_vars.contains(name) {
         return true;
     }
     if ctx
@@ -391,9 +428,14 @@ fn callable_variable_needs_descriptor_callback_env(name: &str, ctx: &Context) ->
     {
         return true;
     }
-    ctx.first_class_callable_targets
+    if ctx
+        .first_class_callable_targets
         .get(name)
         .is_some_and(first_class_target_needs_runtime_capture)
+    {
+        return true;
+    }
+    false
 }
 
 /// Returns true when the selected descriptor can be owned safely by a callback environment.

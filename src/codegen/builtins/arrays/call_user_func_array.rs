@@ -720,21 +720,22 @@ fn runtime_callable_expr_result_needs_descriptor_invoker(callback: &Expr, ctx: &
     ) {
         return false;
     }
-    matches!(
-        &callback.kind,
+    match &callback.kind {
+        ExprKind::Variable(name) => ctx.runtime_callable_vars.contains(name),
         ExprKind::ArrayAccess { .. }
-            | ExprKind::PropertyAccess { .. }
-            | ExprKind::DynamicPropertyAccess { .. }
-            | ExprKind::StaticPropertyAccess { .. }
-            | ExprKind::Assignment { .. }
-            | ExprKind::Ternary { .. }
-            | ExprKind::ShortTernary { .. }
-            | ExprKind::NullCoalesce { .. }
-            | ExprKind::FunctionCall { .. }
-            | ExprKind::MethodCall { .. }
-            | ExprKind::StaticMethodCall { .. }
-            | ExprKind::ExprCall { .. }
-    )
+        | ExprKind::PropertyAccess { .. }
+        | ExprKind::DynamicPropertyAccess { .. }
+        | ExprKind::StaticPropertyAccess { .. }
+        | ExprKind::Assignment { .. }
+        | ExprKind::Ternary { .. }
+        | ExprKind::ShortTernary { .. }
+        | ExprKind::NullCoalesce { .. }
+        | ExprKind::FunctionCall { .. }
+        | ExprKind::MethodCall { .. }
+        | ExprKind::StaticMethodCall { .. }
+        | ExprKind::ExprCall { .. } => true,
+        _ => false,
+    }
 }
 
 /// Returns true if an expression produces a callable with descriptor-owned environment.
