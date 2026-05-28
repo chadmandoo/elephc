@@ -67,6 +67,27 @@ pub fn emit(
     // -- save array pointer, then evaluate the callback argument --
     abi::emit_push_reg(emitter, result_reg);                                    // push the source array pointer onto the temporary stack
 
+    if let Some(wrapper) = callback_env::emit_callable_array_descriptor_env_after_saved_array(
+        &args[1],
+        array_arg_reg,
+        call_reg,
+        vec![filter_elem_type(&arr_ty)],
+        PhpType::Bool,
+        emitter,
+        ctx,
+        data,
+    ) {
+        callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+        abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+        callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+        abi::emit_call_label(emitter, runtime_label);
+        callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        return match arr_ty {
+            PhpType::Array(elem_ty) => Some(PhpType::Array(elem_ty)),
+            _ => Some(PhpType::Array(Box::new(PhpType::Int))),
+        };
+    }
+
     if callback_env::expr_call_needs_descriptor_callback_env(&args[1], ctx)
         && callback_env::descriptor_callback_env_supported(&args[1])
     {

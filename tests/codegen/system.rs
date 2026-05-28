@@ -1211,6 +1211,31 @@ run_regex((new RegexFormatter("descriptor:"))->replace(...));
     assert_eq!(out, "descriptor:descriptor:");
 }
 
+/// Verifies callable-array regex callbacks route through descriptor environments.
+#[test]
+fn test_preg_replace_callback_callable_array_variable_preserves_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class RegexArrayFormatter {
+    public string $prefix = "";
+
+    public function replace(array $matches): string {
+        return $this->prefix;
+    }
+}
+
+$first = new RegexArrayFormatter();
+$first->prefix = "first:";
+$second = new RegexArrayFormatter();
+$second->prefix = "second:";
+$callback = [$first, "replace"];
+$first = $second;
+echo preg_replace_callback("/[A-Z]/", $callback, "AB");
+"#,
+    );
+    assert_eq!(out, "first:first:");
+}
+
 /// Verifies a branch-selected first-class callable keeps the selected descriptor
 /// environment when passed directly to `preg_replace_callback()`.
 #[test]

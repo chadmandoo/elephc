@@ -122,6 +122,7 @@ fn check_object_or_array_callable_call(
     _span: crate::span::Span,
     env: &TypeEnv,
     allow_by_ref_spread: bool,
+    allow_runtime_callable_array: bool,
 ) -> Result<Option<PhpType>, CompileError> {
     if let ExprKind::Variable(var_name) = &callback.kind {
         if let Some(target) = checker.callable_array_targets.get(var_name).cloned() {
@@ -139,6 +140,12 @@ fn check_object_or_array_callable_call(
 
     let callback_ty = checker.infer_type(callback, env)?;
     if runtime_callable_array_type(&callback_ty) {
+        if !allow_runtime_callable_array {
+            return Err(CompileError::new(
+                callback.span,
+                "callback runtime does not yet support dynamically selected callable arrays",
+            ));
+        }
         for arg in callback_args {
             checker.infer_type(arg, env)?;
         }
@@ -680,7 +687,15 @@ pub(crate) fn check_callback_builtin_call(
     }
 
     if let Some(ret_ty) =
-        check_object_or_array_callable_call(checker, callback, callback_args, span, env, false)?
+        check_object_or_array_callable_call(
+            checker,
+            callback,
+            callback_args,
+            span,
+            env,
+            false,
+            false,
+        )?
     {
         return Ok(ret_ty);
     }
@@ -1009,6 +1024,7 @@ pub(super) fn check_builtin(
                     span,
                     env,
                     true,
+                    true,
                 )?
             {
                 if !call_user_func_array_arg_container_is_supported(&arg_array_ty) {
@@ -1130,6 +1146,7 @@ pub(super) fn check_builtin(
                     &args[1..],
                     span,
                     env,
+                    true,
                     true,
                 )?
             {

@@ -58,6 +58,28 @@ pub fn emit(
     emit_expr(&args[0], emitter, ctx, data);
     abi::emit_push_reg(emitter, result_reg);                                    // push the source array pointer onto the temporary stack
 
+    if let Some(wrapper) = callback_env::emit_callable_array_descriptor_env_after_saved_array(
+        &args[1],
+        array_arg_reg,
+        call_reg,
+        vec![PhpType::Int, source_elem_ty.clone()],
+        PhpType::Int,
+        emitter,
+        ctx,
+        data,
+    ) {
+        // -- evaluate initial value (third arg) --
+        emit_expr(&args[2], emitter, ctx, data);
+        emitter.instruction(&format!("mov {}, {}", initial_arg_reg, result_reg)); // place the initial accumulator in the third runtime argument register
+
+        callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+        abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+        callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+        abi::emit_call_label(emitter, "__rt_array_reduce");                     // call the callback-driven reduce runtime helper with a callable-array descriptor environment
+        callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        return Some(PhpType::Int);
+    }
+
     if callback_env::expr_call_needs_descriptor_callback_env(&args[1], ctx)
         && callback_env::descriptor_callback_env_supported(&args[1])
     {

@@ -377,3 +377,66 @@ echo $sum;
     );
     assert_eq!(out, "142");
 }
+
+/// Verifies static-method callable-array variables route through descriptor callback wrappers.
+#[test]
+fn test_static_callable_array_variable_callback_runtimes() {
+    let out = compile_and_run(
+        r#"<?php
+class StaticCallableArrayRuntime {
+    public static function keep($value): bool {
+        return $value > 2;
+    }
+
+    public static function add($carry, $item): int {
+        return $carry + $item + 10;
+    }
+
+    public static function show($item): void {
+        echo $item + 10;
+        echo ",";
+    }
+
+    public static function compare($a, $b): int {
+        return $b - $a;
+    }
+}
+
+$filter = ["StaticCallableArrayRuntime", "keep"];
+$reduce = ["StaticCallableArrayRuntime", "add"];
+$walk = ["StaticCallableArrayRuntime", "show"];
+$sort = ["StaticCallableArrayRuntime", "compare"];
+
+$filtered = array_filter([1, 3, 4], $filter);
+foreach ($filtered as $value) {
+    echo $value;
+}
+echo ":";
+echo array_reduce([1, 2], $reduce, 0);
+echo ":";
+array_walk([1, 2], $walk);
+echo ":";
+
+$usorted = [1, 3, 2];
+usort($usorted, $sort);
+foreach ($usorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sort);
+foreach ($uksorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uasorted = [1, 3, 2];
+uasort($uasorted, $sort);
+foreach ($uasorted as $value) {
+    echo $value;
+}
+"#,
+    );
+    assert_eq!(out, "34:23:11,12,:321:321:321");
+}

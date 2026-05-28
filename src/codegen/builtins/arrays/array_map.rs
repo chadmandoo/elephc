@@ -66,6 +66,56 @@ pub fn emit(
         _ => PhpType::Int,
     };
 
+    if let Some(array_callback) =
+        callback_env::resolve_callable_array_descriptor_callback(&args[0], ctx, data)
+    {
+        let descriptor_return_type = if matches!(
+            array_callback.sig.return_type.codegen_repr(),
+            PhpType::Str
+        ) {
+            PhpType::Str
+        } else {
+            PhpType::Int
+        };
+        let descriptor_prefix_types = array_callback
+            .receiver_prefix
+            .iter()
+            .map(|(_, ty)| ty.clone())
+            .collect();
+        let wrapper = callback_env::emit_descriptor_callback_env_from_static_descriptor(
+            &array_callback.descriptor_label,
+            vec![source_elem_ty.clone()],
+            descriptor_prefix_types,
+            descriptor_return_type.clone(),
+            emitter,
+            ctx,
+        );
+        if let Some((receiver, receiver_ty)) = &array_callback.receiver_prefix {
+            emit_expr(receiver, emitter, ctx, data);
+            callback_env::store_descriptor_callback_prefix_result(
+                &wrapper,
+                0,
+                receiver_ty,
+                emitter,
+            );
+        }
+
+        let _arr_ty = emit_expr(&args[1], emitter, ctx, data);
+        emitter.instruction(&format!("mov {}, {}", array_arg_reg, result_reg)); // preserve the mapped array pointer before descriptor callback setup
+        callback_env::store_descriptor_callback_array_reg(&wrapper, array_arg_reg, emitter);
+        callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+        abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+        callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+        if matches!(descriptor_return_type, PhpType::Str) {
+            abi::emit_call_label(emitter, "__rt_array_map_str_owned");          // call the string map helper with a callable-array descriptor environment
+            callback_env::release_descriptor_callback_env(&wrapper, emitter);
+            return Some(PhpType::Array(Box::new(PhpType::Str)));
+        }
+        abi::emit_call_label(emitter, "__rt_array_map");                        // call the scalar map helper with a callable-array descriptor environment
+        callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        return Some(PhpType::Array(Box::new(PhpType::Int)));
+    }
+
     if callback_env::expr_call_needs_descriptor_callback_env(&args[0], ctx)
         && callback_env::descriptor_callback_env_supported(&args[0])
     {

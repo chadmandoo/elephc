@@ -1068,3 +1068,83 @@ echo $fn("Ada");
     );
     assert_eq!(out, "Hi Ada");
 }
+
+/// Verifies callable-array variables use descriptor callback environments in array runtimes.
+#[test]
+fn test_callable_array_variable_callback_runtimes_preserve_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class CallableArrayRuntimeBox {
+    public int $limit = 0;
+    public int $offset = 0;
+    public bool $descending = false;
+
+    public function keep($value): bool {
+        return $value > $this->limit;
+    }
+
+    public function add($carry, $item): int {
+        return $carry + $item + $this->offset;
+    }
+
+    public function show($item): void {
+        echo $item + $this->offset;
+        echo ",";
+    }
+
+    public function compare($a, $b): int {
+        if ($this->descending) {
+            return $b - $a;
+        }
+        return $a - $b;
+    }
+}
+
+$box = new CallableArrayRuntimeBox();
+$box->limit = 2;
+$box->offset = 10;
+$box->descending = true;
+
+$filter = [$box, "keep"];
+$reduce = [$box, "add"];
+$walk = [$box, "show"];
+$sort = [$box, "compare"];
+
+$box = new CallableArrayRuntimeBox();
+$box->limit = 100;
+$box->offset = 100;
+$box->descending = false;
+
+$filtered = array_filter([1, 3, 4], $filter);
+foreach ($filtered as $value) {
+    echo $value;
+}
+echo ":";
+echo array_reduce([1, 2], $reduce, 0);
+echo ":";
+array_walk([1, 2], $walk);
+echo ":";
+
+$usorted = [1, 3, 2];
+usort($usorted, $sort);
+foreach ($usorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sort);
+foreach ($uksorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uasorted = [1, 3, 2];
+uasort($uasorted, $sort);
+foreach ($uasorted as $value) {
+    echo $value;
+}
+"#,
+    );
+    assert_eq!(out, "34:23:11,12,:321:321:321");
+}

@@ -61,6 +61,11 @@ fn callback_expr_returns_str(callback: &Expr, ctx: &Context) -> bool {
             .get(name)
             .map(|sig| sig.return_type == PhpType::Str)
             .or_else(|| {
+                ctx.callable_array_targets
+                    .get(name)
+                    .map(|target| callable_target_returns_str(target, ctx))
+            })
+            .or_else(|| {
                 ctx.first_class_callable_targets.get(name).map(|target| {
                     crate::codegen::expr::calls::first_class_callable_sig(target, ctx)
                         .map(|sig| sig.return_type == PhpType::Str)
@@ -124,5 +129,45 @@ fn callback_expr_returns_str(callback: &Expr, ctx: &Context) -> bool {
                 && callback_expr_returns_str(default, ctx)
         }
         _ => false,
+    }
+}
+
+/// Returns true when a callable-array target has a statically string return type.
+fn callable_target_returns_str(target: &CallableTarget, ctx: &Context) -> bool {
+    match target {
+        CallableTarget::Function(name) => ctx
+            .functions
+            .get(name.as_str())
+            .map(|sig| sig.return_type == PhpType::Str)
+            .unwrap_or(false),
+        CallableTarget::StaticMethod { receiver, method } => {
+            let class_name = match receiver {
+                StaticReceiver::Named(name) => Some(name.as_str().to_string()),
+                StaticReceiver::Self_ | StaticReceiver::Static => ctx.current_class.clone(),
+                StaticReceiver::Parent => ctx
+                    .current_class
+                    .as_ref()
+                    .and_then(|class_name| ctx.classes.get(class_name))
+                    .and_then(|class_info| class_info.parent.clone()),
+            };
+            class_name
+                .as_ref()
+                .and_then(|class_name| ctx.classes.get(class_name))
+                .and_then(|class_info| class_info.static_methods.get(method))
+                .map(|sig| sig.return_type == PhpType::Str)
+                .unwrap_or(false)
+        }
+        CallableTarget::Method { object, method } => {
+            let object_ty = crate::codegen::functions::infer_contextual_type(object, ctx);
+            let Some(class_name) = crate::codegen::functions::singular_object_class(&object_ty)
+            else {
+                return false;
+            };
+            ctx.classes
+                .get(class_name)
+                .and_then(|class_info| class_info.methods.get(method))
+                .map(|sig| sig.return_type == PhpType::Str)
+                .unwrap_or(false)
+        }
     }
 }

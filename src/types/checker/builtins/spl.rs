@@ -449,6 +449,17 @@ fn check_iterator_apply_dynamic_callback(
             )?;
             return Ok(());
         }
+        if let Some(target) = checker.callable_array_targets.get(var_name).cloned() {
+            let sig = checker.resolve_first_class_callable_sig(&target, span, env)?;
+            reject_dynamic_ref_args(&sig, span)?;
+            specialize_iterator_apply_dynamic_assoc_variadic_target(
+                checker,
+                &target,
+                &sig,
+                associative_args,
+            )?;
+            return Ok(());
+        }
     }
 
     if let ExprKind::StringLiteral(cb_name) = &callback.kind {

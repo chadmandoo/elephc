@@ -16,9 +16,10 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::{emit_expr, expr_result_heap_ownership};
 use crate::codegen::platform::Arch;
-use crate::names::function_symbol;
+use crate::names::{function_symbol, php_symbol_key};
 use crate::parser::ast::{CallableTarget, Expr, ExprKind, StaticReceiver};
-use crate::types::PhpType;
+use crate::span::Span;
+use crate::types::{FunctionSig, PhpType};
 
 use super::super::callable_lookup::{lookup_function, FunctionLookup};
 
@@ -35,6 +36,13 @@ pub(crate) struct DescriptorCallbackEnv {
     pub(crate) wrapper_label: String,
     pub(crate) env_bytes: usize,
     pub(crate) array_slot_offset: usize,
+}
+
+/// Metadata for a callable-array target that can be invoked through a descriptor callback wrapper.
+pub(crate) struct CallableArrayDescriptorCallback {
+    pub(crate) descriptor_label: String,
+    pub(crate) sig: FunctionSig,
+    pub(crate) receiver_prefix: Option<(Expr, PhpType)>,
 }
 
 /// Resolves a callback expression and emits code to load its address into `call_reg`.
@@ -83,6 +91,51 @@ pub(crate) fn materialize_callback_address(
             );
             crate::codegen::callables::callable_captures(callback, ctx)
         }
+    }
+}
+
+/// Resolves a local callable-array callback to a descriptor plus optional receiver prefix.
+pub(crate) fn resolve_callable_array_descriptor_callback(
+    callback: &Expr,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Option<CallableArrayDescriptorCallback> {
+    let ExprKind::Variable(var_name) = &callback.kind else {
+        return None;
+    };
+    let target = ctx.callable_array_targets.get(var_name).cloned()?;
+    match target {
+        CallableTarget::StaticMethod { receiver, method } => {
+            let class_name = resolve_static_receiver_class(&receiver, ctx)?;
+            let case =
+                crate::codegen::callable_dispatch::runtime_static_method_case(ctx, data, &class_name, &method)?;
+            Some(CallableArrayDescriptorCallback {
+                descriptor_label: case.descriptor_label,
+                sig: case.sig,
+                receiver_prefix: None,
+            })
+        }
+        CallableTarget::Method { object, method } => {
+            let receiver = callable_array_slot_expr(var_name, 0);
+            let receiver_ty =
+                crate::codegen::functions::infer_contextual_type(&receiver, ctx).codegen_repr();
+            let object_ty = crate::codegen::functions::infer_contextual_type(&object, ctx);
+            let class_name =
+                crate::codegen::functions::singular_object_class(&object_ty)?.to_string();
+            let case = crate::codegen::callable_dispatch::runtime_instance_method_case(
+                ctx,
+                data,
+                &class_name,
+                &method,
+                crate::codegen::callable_dispatch::RuntimeInstanceCallableShape::InstanceMethod,
+            )?;
+            Some(CallableArrayDescriptorCallback {
+                descriptor_label: case.descriptor_label,
+                sig: case.sig,
+                receiver_prefix: Some((receiver, receiver_ty)),
+            })
+        }
+        CallableTarget::Function(_) => None,
     }
 }
 
@@ -185,6 +238,7 @@ pub(crate) fn emit_captured_callback_env(
             .iter()
             .map(|(_, ty, by_ref)| if *by_ref { PhpType::Int } else { ty.clone() })
             .collect(),
+        descriptor_prefix_types: Vec::new(),
         descriptor_return_type: None,
     });
 
@@ -250,6 +304,7 @@ pub(crate) fn emit_persistent_callback_env_from_result(
             .iter()
             .map(|(_, ty, by_ref)| if *by_ref { PhpType::Int } else { ty.clone() })
             .collect(),
+        descriptor_prefix_types: Vec::new(),
         descriptor_return_type: None,
     });
 
@@ -332,6 +387,7 @@ pub(crate) fn emit_persistent_descriptor_callback_env_from_result(
         visible_arg_types,
         target_visible_arg_types: None,
         capture_types: Vec::new(),
+        descriptor_prefix_types: Vec::new(),
         descriptor_return_type: Some(descriptor_return_type),
     });
 
@@ -501,6 +557,104 @@ pub(crate) fn emit_descriptor_callback_env_from_retained_result(
     )
 }
 
+/// Emits descriptor callback environment storage for a statically selected descriptor label.
+pub(crate) fn emit_descriptor_callback_env_from_static_descriptor(
+    descriptor_label: &str,
+    visible_arg_types: Vec<PhpType>,
+    descriptor_prefix_types: Vec<PhpType>,
+    descriptor_return_type: PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> DescriptorCallbackEnv {
+    let wrapper_label = ctx.next_label("descriptor_callback_wrapper");
+    let env_slots = descriptor_prefix_types.len() + 2;
+    ctx.deferred_callback_wrappers.push(DeferredCallbackWrapper {
+        label: wrapper_label.clone(),
+        visible_arg_types,
+        target_visible_arg_types: None,
+        capture_types: Vec::new(),
+        descriptor_prefix_types,
+        descriptor_return_type: Some(descriptor_return_type),
+    });
+
+    let env_bytes = env_slots * 16;
+    let array_slot_offset = (env_slots - 1) * 16;
+    emitter.comment("static descriptor callback environment");
+    abi::emit_reserve_temporary_stack(emitter, env_bytes);
+    let descriptor_reg = abi::int_result_reg(emitter);
+    abi::emit_symbol_address(emitter, descriptor_reg, descriptor_label);
+    store_current_result_to_env_slot(emitter, &PhpType::Callable, 0);
+
+    DescriptorCallbackEnv {
+        wrapper_label,
+        env_bytes,
+        array_slot_offset,
+    }
+}
+
+/// Emits a descriptor callback environment for a callable-array variable after saving an array.
+///
+/// The caller must have pushed the runtime array pointer before calling this helper. If the
+/// callback is a statically tracked callable-array variable, this evaluates any receiver prefix
+/// at the callback-expression point, restores the saved array, and stores both into the new
+/// descriptor environment. Returns `None` without touching the stack for unsupported callbacks.
+pub(crate) fn emit_callable_array_descriptor_env_after_saved_array(
+    callback: &Expr,
+    array_reg: &str,
+    call_reg: &str,
+    visible_arg_types: Vec<PhpType>,
+    descriptor_return_type: PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> Option<DescriptorCallbackEnv> {
+    let array_callback = resolve_callable_array_descriptor_callback(callback, ctx, data)?;
+    if let Some((receiver, _)) = &array_callback.receiver_prefix {
+        emit_expr(receiver, emitter, ctx, data);
+        emitter.instruction(&format!("mov {}, {}", call_reg, abi::int_result_reg(emitter))); // preserve callable-array receiver while restoring the saved array
+    }
+    abi::emit_pop_reg(emitter, array_reg);
+
+    let descriptor_prefix_types = array_callback
+        .receiver_prefix
+        .iter()
+        .map(|(_, ty)| ty.clone())
+        .collect();
+    let wrapper = emit_descriptor_callback_env_from_static_descriptor(
+        &array_callback.descriptor_label,
+        visible_arg_types,
+        descriptor_prefix_types,
+        descriptor_return_type,
+        emitter,
+        ctx,
+    );
+    if let Some((_, receiver_ty)) = &array_callback.receiver_prefix {
+        emitter.instruction(&format!("mov {}, {}", abi::int_result_reg(emitter), call_reg)); // restore callable-array receiver for descriptor prefix storage
+        store_descriptor_callback_prefix_result(&wrapper, 0, receiver_ty, emitter);
+    }
+    store_descriptor_callback_array_reg(&wrapper, array_reg, emitter);
+    Some(wrapper)
+}
+
+/// Stores the current result in a descriptor callback prefix slot.
+pub(crate) fn store_descriptor_callback_prefix_result(
+    _env: &DescriptorCallbackEnv,
+    idx: usize,
+    ty: &PhpType,
+    emitter: &mut Emitter,
+) {
+    store_current_result_to_env_slot(emitter, ty, (idx + 1) * 16);
+}
+
+/// Stores a runtime array pointer register into the descriptor callback environment.
+pub(crate) fn store_descriptor_callback_array_reg(
+    env: &DescriptorCallbackEnv,
+    array_reg: &str,
+    emitter: &mut Emitter,
+) {
+    store_reg_to_env_slot(emitter, array_reg, env.array_slot_offset);
+}
+
 /// Emits descriptor callback environment storage, optionally retaining borrowed descriptors.
 fn emit_descriptor_callback_env_from_result_inner(
     callback: &Expr,
@@ -525,6 +679,7 @@ fn emit_descriptor_callback_env_from_result_inner(
         visible_arg_types,
         target_visible_arg_types: None,
         capture_types: Vec::new(),
+        descriptor_prefix_types: Vec::new(),
         descriptor_return_type: Some(descriptor_return_type),
     });
 
@@ -553,6 +708,39 @@ pub(crate) fn release_descriptor_callback_env(
     crate::codegen::callable_descriptor::emit_release_current_descriptor(emitter);
     abi::emit_pop_reg(emitter, descriptor_reg);                                 // restore the callback runtime result after descriptor release
     abi::emit_release_temporary_stack(emitter, env.env_bytes);
+}
+
+/// Builds `$callback[$index]` for reading slots out of a stored callable array.
+fn callable_array_slot_expr(var: &str, index: i64) -> Expr {
+    Expr::new(
+        ExprKind::ArrayAccess {
+            array: Box::new(Expr::new(ExprKind::Variable(var.to_string()), Span::dummy())),
+            index: Box::new(Expr::new(ExprKind::IntLiteral(index), Span::dummy())),
+        },
+        Span::dummy(),
+    )
+}
+
+/// Resolves a static callable receiver against the current codegen class context.
+fn resolve_static_receiver_class(receiver: &StaticReceiver, ctx: &Context) -> Option<String> {
+    match receiver {
+        StaticReceiver::Named(name) => resolve_class_name(ctx, name.as_str()).map(str::to_string),
+        StaticReceiver::Self_ | StaticReceiver::Static => ctx.current_class.clone(),
+        StaticReceiver::Parent => ctx
+            .current_class
+            .as_ref()
+            .and_then(|class_name| ctx.classes.get(class_name))
+            .and_then(|class_info| class_info.parent.clone()),
+    }
+}
+
+/// Resolves class names case-insensitively against the codegen class table.
+fn resolve_class_name<'a>(ctx: &'a Context, class_name: &str) -> Option<&'a str> {
+    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
+    ctx.classes
+        .keys()
+        .find(|existing| php_symbol_key(existing) == class_key)
+        .map(String::as_str)
 }
 
 /// Returns the ownership class for a callable descriptor expression result.

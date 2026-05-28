@@ -55,6 +55,72 @@ pub fn emit(
     let call_reg = abi::nested_call_reg(emitter);
     let result_reg = abi::int_result_reg(emitter);
 
+    if let Some(array_callback) =
+        callback_env::resolve_callable_array_descriptor_callback(&args[1], ctx, data)
+    {
+        let receiver_ty = if let Some((receiver, receiver_ty)) = &array_callback.receiver_prefix {
+            emit_expr(receiver, emitter, ctx, data);
+            abi::emit_push_reg(emitter, result_reg);                            // preserve callable-array receiver across subject evaluation
+            Some(receiver_ty.clone())
+        } else {
+            None
+        };
+
+        // -- evaluate subject last --
+        emit_expr(&args[2], emitter, ctx, data);
+
+        match emitter.target.arch {
+            Arch::AArch64 => {
+                emitter.instruction("mov x5, x1");                              // pass subject pointer to the regex callback runtime
+                emitter.instruction("mov x6, x2");                              // pass subject length to the regex callback runtime
+                if receiver_ty.is_some() {
+                    abi::emit_pop_reg(emitter, call_reg);                       // recover callable-array receiver for descriptor prefix storage
+                }
+                abi::emit_pop_reg_pair(emitter, "x7", "x8");
+
+                let wrapper = static_callable_array_preg_callback_env(
+                    &array_callback,
+                    receiver_ty.as_ref(),
+                    call_reg,
+                    "x5",
+                    emitter,
+                    ctx,
+                );
+                abi::emit_symbol_address(emitter, "x3", &wrapper.wrapper_label);
+                callback_env::load_env_pointer_to_reg(emitter, "x4");
+                emitter.instruction("mov x1, x7");                              // pass pattern pointer to the regex callback runtime
+                emitter.instruction("mov x2, x8");                              // pass pattern length to the regex callback runtime
+                emitter.instruction("bl __rt_preg_replace_callback");           // run regex replacement through the callable-array descriptor callback → x1=ptr, x2=len
+                release_descriptor_preg_callback_env(wrapper.env_bytes, emitter);
+            }
+            Arch::X86_64 => {
+                emitter.instruction("mov r8, rax");                             // pass subject pointer to the regex callback runtime
+                emitter.instruction("mov r9, rdx");                             // pass subject length to the regex callback runtime
+                if receiver_ty.is_some() {
+                    abi::emit_pop_reg(emitter, call_reg);                       // recover callable-array receiver for descriptor prefix storage
+                }
+                abi::emit_pop_reg_pair(emitter, "r13", "r14");
+
+                let wrapper = static_callable_array_preg_callback_env(
+                    &array_callback,
+                    receiver_ty.as_ref(),
+                    call_reg,
+                    "r8",
+                    emitter,
+                    ctx,
+                );
+                abi::emit_symbol_address(emitter, "rdx", &wrapper.wrapper_label);
+                callback_env::load_env_pointer_to_reg(emitter, "rcx");
+                emitter.instruction("mov rdi, r13");                            // pass pattern pointer to the regex callback runtime
+                emitter.instruction("mov rsi, r14");                            // pass pattern length to the regex callback runtime
+                abi::emit_call_label(emitter, "__rt_preg_replace_callback");    // run regex replacement through the callable-array descriptor callback → rax=ptr, rdx=len
+                release_descriptor_preg_callback_env(wrapper.env_bytes, emitter);
+            }
+        }
+
+        return Some(PhpType::Str);
+    }
+
     if callback_env::expr_call_needs_descriptor_callback_env(&args[1], ctx)
         && callback_env::descriptor_callback_env_supported(&args[1])
     {
@@ -197,6 +263,36 @@ fn descriptor_preg_callback_env(
         )
     };
     wrapper.expect("descriptor callback env support checked before emitting preg_replace_callback")
+}
+
+/// Builds a descriptor-backed regex callback environment for a tracked callable-array variable.
+///
+/// Instance-method callable arrays store their receiver as a descriptor prefix so the
+/// shared descriptor wrapper can prepend it to the regex matches array before invoking
+/// the method descriptor. Static-method callable arrays have no prefix.
+fn static_callable_array_preg_callback_env(
+    array_callback: &callback_env::CallableArrayDescriptorCallback,
+    receiver_ty: Option<&PhpType>,
+    receiver_reg: &str,
+    dummy_array_reg: &str,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> callback_env::DescriptorCallbackEnv {
+    let descriptor_prefix_types = receiver_ty.iter().map(|ty| (*ty).clone()).collect();
+    let wrapper = callback_env::emit_descriptor_callback_env_from_static_descriptor(
+        &array_callback.descriptor_label,
+        vec![preg_matches_type()],
+        descriptor_prefix_types,
+        PhpType::Str,
+        emitter,
+        ctx,
+    );
+    if let Some(ty) = receiver_ty {
+        emitter.instruction(&format!("mov {}, {}", abi::int_result_reg(emitter), receiver_reg)); // restore callable-array receiver for regex descriptor prefix storage
+        callback_env::store_descriptor_callback_prefix_result(&wrapper, 0, ty, emitter);
+    }
+    callback_env::store_descriptor_callback_array_reg(&wrapper, dummy_array_reg, emitter);
+    wrapper
 }
 
 /// Releases a descriptor-backed regex callback environment while preserving the string result.
@@ -360,6 +456,7 @@ fn materialize_capture_env(
             .iter()
             .map(|(_, ty, by_ref)| if *by_ref { PhpType::Int } else { ty.clone() })
             .collect(),
+        descriptor_prefix_types: Vec::new(),
         descriptor_return_type: None,
     });
 

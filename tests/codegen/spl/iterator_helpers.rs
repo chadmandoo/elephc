@@ -356,6 +356,46 @@ echo iterator_apply(new Range(), "label", ["A"]);
     assert_eq!(out, "AA2");
 }
 
+/// Verifies callable-array iterator callbacks preserve receivers with literal and dynamic args.
+#[test]
+fn test_iterator_apply_callable_array_variable_preserves_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class Range implements Iterator {
+    private int $i;
+    public function __construct() { $this->i = 0; }
+    public function rewind(): void { $this->i = 0; }
+    public function valid(): bool { return $this->i < 2; }
+    public function current(): int { return $this->i; }
+    public function key(): int { return $this->i; }
+    public function next(): void { $this->i = $this->i + 1; }
+}
+
+class IteratorArrayTicker {
+    public string $prefix = "";
+
+    public function tick(string $suffix): bool {
+        echo $this->prefix . $suffix;
+        return true;
+    }
+}
+
+$first = new IteratorArrayTicker();
+$first->prefix = "first";
+$second = new IteratorArrayTicker();
+$second->prefix = "second";
+$callback = [$first, "tick"];
+$first = $second;
+
+echo iterator_apply(new Range(), $callback, ["!"]);
+echo ":";
+$args = ["?"];
+echo iterator_apply(new Range(), $callback, $args);
+"#,
+    );
+    assert_eq!(out, "first!first!2:first?first?2");
+}
+
 /// Verifies that iterator apply evaluates literal arg array once before loop.
 #[test]
 fn test_iterator_apply_evaluates_literal_arg_array_once_before_loop() {

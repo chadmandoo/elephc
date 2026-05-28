@@ -57,7 +57,7 @@ fn emit_aarch64_descriptor_callback_wrapper(
     emitter.instruction("ldr x19, [x20]");                                      // load the selected callable descriptor from env slot zero
 
     spill_visible_args(emitter, &wrapper.visible_arg_types);
-    emit_build_descriptor_invoker_arg_array(emitter, &wrapper.visible_arg_types, frame_size);
+    emit_build_descriptor_invoker_arg_array(emitter, wrapper, frame_size, "x20");
     emit_box_descriptor_arg_array_as_mixed(emitter, frame_size, visible_count);
     emit_call_descriptor_invoker_from_wrapper(emitter, "x19");
     emit_cast_descriptor_mixed_result_for_callback(emitter, return_ty);
@@ -97,7 +97,7 @@ fn emit_x86_64_descriptor_callback_wrapper(
     emitter.instruction("mov r12, QWORD PTR [r13]");                            // load the selected callable descriptor from env slot zero
 
     spill_visible_args(emitter, &wrapper.visible_arg_types);
-    emit_build_descriptor_invoker_arg_array(emitter, &wrapper.visible_arg_types, frame_size);
+    emit_build_descriptor_invoker_arg_array(emitter, wrapper, frame_size, "r13");
     emit_box_descriptor_arg_array_as_mixed(emitter, frame_size, visible_count);
     emit_call_descriptor_invoker_from_wrapper(emitter, "r12");
     emit_cast_descriptor_mixed_result_for_callback(emitter, return_ty);
@@ -113,20 +113,58 @@ fn emit_x86_64_descriptor_callback_wrapper(
 /// Builds the boxed-Mixed indexed argument array consumed by descriptor invokers.
 fn emit_build_descriptor_invoker_arg_array(
     emitter: &mut Emitter,
-    visible_arg_types: &[PhpType],
+    wrapper: &DeferredCallbackWrapper,
     frame_size: usize,
+    env_reg: &str,
 ) {
+    let visible_arg_types = &wrapper.visible_arg_types;
     let visible_count = visible_arg_types.len();
+    let prefix_count = wrapper.descriptor_prefix_types.len();
+    let total_count = prefix_count + visible_count;
     let array_frame_offset = descriptor_array_frame_offset(emitter, frame_size, visible_count);
 
-    emit_allocate_descriptor_arg_array(emitter, visible_count);
+    emit_allocate_descriptor_arg_array(emitter, total_count);
     abi::store_at_offset(emitter, abi::int_result_reg(emitter), array_frame_offset);
     emit_array_value_type_stamp(emitter, abi::int_result_reg(emitter), &PhpType::Mixed);
+
+    for (idx, ty) in wrapper.descriptor_prefix_types.iter().enumerate() {
+        load_descriptor_prefix_arg_to_result(emitter, env_reg, idx, ty);
+        emit_box_visible_arg_as_mixed(emitter, ty);
+        emit_store_current_mixed_arg_array_element(emitter, array_frame_offset, idx);
+    }
 
     for (idx, ty) in visible_arg_types.iter().enumerate() {
         load_spilled_visible_arg_to_result(emitter, frame_size, idx, ty);
         emit_box_visible_arg_as_mixed(emitter, ty);
-        emit_store_current_mixed_arg_array_element(emitter, array_frame_offset, idx);
+        emit_store_current_mixed_arg_array_element(
+            emitter,
+            array_frame_offset,
+            prefix_count + idx,
+        );
+    }
+}
+
+/// Loads a descriptor-prefix argument stored in the callback environment.
+fn load_descriptor_prefix_arg_to_result(
+    emitter: &mut Emitter,
+    env_reg: &str,
+    idx: usize,
+    ty: &PhpType,
+) {
+    let slot_offset = (idx + 1) * 16;
+    match ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_load_from_address(emitter, abi::float_result_reg(emitter), env_reg, slot_offset);
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+            abi::emit_load_from_address(emitter, ptr_reg, env_reg, slot_offset);
+            abi::emit_load_from_address(emitter, len_reg, env_reg, slot_offset + 8);
+        }
+        PhpType::Void | PhpType::Never => {}
+        _ => {
+            abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), env_reg, slot_offset);
+        }
     }
 }
 
