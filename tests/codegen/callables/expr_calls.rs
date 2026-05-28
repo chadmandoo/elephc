@@ -165,6 +165,28 @@ echo $from_array("Ada");
     assert_eq!(out, "oldAda");
 }
 
+/// Verifies list-unpacked runtime callables keep descriptor env for callback builtins.
+#[test]
+fn test_list_unpacked_runtime_callable_array_map_uses_descriptor_env() {
+    let out = compile_and_run(
+        r#"<?php
+function make(string $prefix): callable {
+    return function(string $name) use ($prefix): string {
+        return $prefix . $name;
+    };
+}
+
+$cb = make("old");
+$items = [];
+$items[] = $cb;
+list($from_array) = $items;
+$out = array_map($from_array, ["Ada"]);
+echo $out[0];
+"#,
+    );
+    assert_eq!(out, "oldAda");
+}
+
 /// Verifies that an array-stored closure call reads by-value captures from the descriptor.
 #[test]
 fn test_expr_call_array_element_uses_descriptor_capture_snapshot() {

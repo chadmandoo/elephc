@@ -529,7 +529,9 @@ pub(super) fn check_list_unpack(
     match &arr_ty {
         PhpType::Array(elem_ty) => {
             for var in vars {
-                env.insert(var.clone(), *elem_ty.clone());
+                let unpack_ty = *elem_ty.clone();
+                env.insert(var.clone(), unpack_ty.clone());
+                update_list_unpack_callable_metadata(checker, var, value, &unpack_ty);
             }
         }
         _ => {
@@ -540,6 +542,78 @@ pub(super) fn check_list_unpack(
         }
     }
     Ok(())
+}
+
+/// Updates callable metadata for a variable assigned by list unpacking.
+///
+/// List unpacking copies an array element into a local without constructing an
+/// explicit `ArrayAccess` assignment node. When the homogeneous element type is
+/// callable and the source array has known callable metadata, propagate that
+/// signature/capture/target information to the destination variable. Non-callable
+/// unpack targets clear stale callable metadata.
+fn update_list_unpack_callable_metadata(
+    checker: &mut Checker,
+    dest: &str,
+    source_array: &Expr,
+    elem_ty: &PhpType,
+) {
+    if elem_ty != &PhpType::Callable {
+        clear_callable_metadata(checker, dest);
+        return;
+    }
+    if let ExprKind::Variable(src_name) = &source_array.kind {
+        copy_callable_metadata(checker, dest, src_name);
+    } else {
+        clear_callable_metadata(checker, dest);
+    }
+}
+
+/// Copies callable signature, capture, first-class target, and callable-array metadata.
+///
+/// The checker stores homogeneous callable-array metadata under the source array
+/// variable name so later element reads can be treated as callable variables with
+/// a known signature. This helper mirrors that metadata onto a list-unpack target.
+fn copy_callable_metadata(checker: &mut Checker, dest: &str, src: &str) {
+    if let Some(return_ty) = checker.closure_return_types.get(src).cloned() {
+        checker
+            .closure_return_types
+            .insert(dest.to_string(), return_ty);
+    } else {
+        checker.closure_return_types.remove(dest);
+    }
+    if let Some(sig) = checker.callable_sigs.get(src).cloned() {
+        checker.callable_sigs.insert(dest.to_string(), sig);
+    } else {
+        checker.callable_sigs.remove(dest);
+    }
+    if let Some(captures) = checker.callable_captures.get(src).cloned() {
+        checker.callable_captures.insert(dest.to_string(), captures);
+    } else {
+        checker.callable_captures.remove(dest);
+    }
+    if let Some(target) = checker.callable_array_targets.get(src).cloned() {
+        checker
+            .callable_array_targets
+            .insert(dest.to_string(), target);
+    } else {
+        checker.callable_array_targets.remove(dest);
+    }
+    if let Some(target) = checker.first_class_callable_targets.get(src).cloned() {
+        checker
+            .first_class_callable_targets
+            .insert(dest.to_string(), target);
+    } else {
+        checker.first_class_callable_targets.remove(dest);
+    }
+}
+
+/// Clears all callable metadata for a list-unpack destination.
+fn clear_callable_metadata(checker: &mut Checker, dest: &str) {
+    checker.closure_return_types.remove(dest);
+    checker.callable_sigs.remove(dest);
+    checker.callable_captures.remove(dest);
+    checker.callable_array_targets.remove(dest);
+    checker.first_class_callable_targets.remove(dest);
 }
 
 /// Type-checks a `global` declaration and registers the variables as globals.
