@@ -136,7 +136,7 @@ fn expr_is_descriptor_backed_callable(expr: &Expr, ctx: &Context) -> bool {
 }
 
 /// Registers or reuses the generic Fiber wrapper that calls a descriptor invoker.
-fn prepare_descriptor_invoker_wrapper(ctx: &mut Context) -> String {
+pub(super) fn prepare_descriptor_invoker_wrapper(ctx: &mut Context) -> String {
     if let Some(existing) = ctx
         .deferred_fiber_wrappers
         .iter()

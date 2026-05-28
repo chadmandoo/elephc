@@ -125,7 +125,33 @@ $method_fiber = new Fiber($labeler->label(...));
 $method_fiber->start("run");
 echo $method_fiber->getReturn() . "\n";
 
-// 9) Variadic callbacks collect extra start() values in the usual ...$items array.
+// 9) Runtime descriptors also cover string callbacks, callable arrays, and __invoke objects.
+class FiberCallableJob {
+    public function __construct(private string $prefix) {}
+    public function run(string $value): string {
+        echo $this->prefix . $value . "\n";
+        return $this->prefix . "done";
+    }
+    public function __invoke(string $value): string {
+        echo "invoke:" . $value . "\n";
+        return "invoke:done";
+    }
+}
+
+$string_fiber = new Fiber("strlen");
+$string_fiber->start("string-run");
+echo "string length=" . $string_fiber->getReturn() . "\n";
+
+$array_job = new FiberCallableJob("array:");
+$array_fiber = new Fiber([$array_job, "run"]);
+$array_fiber->start("run");
+echo $array_fiber->getReturn() . "\n";
+
+$invoke_fiber = new Fiber($array_job);
+$invoke_fiber->start("run");
+echo $invoke_fiber->getReturn() . "\n";
+
+// 10) Variadic callbacks collect extra start() values in the usual ...$items array.
 $batch = new Fiber(function(string $label, ...$items): int {
     echo $label . " count=" . count($items) . "\n";
     return count($items);
@@ -133,7 +159,7 @@ $batch = new Fiber(function(string $label, ...$items): int {
 $batch->start("batch", 10, 20, 30);
 echo "variadic return=" . $batch->getReturn() . "\n";
 
-// 10) FiberError is an Error subclass — catch it directly or through Error.
+// 11) FiberError is an Error subclass — catch it directly or through Error.
 try {
     throw new FiberError("manual");
 } catch (Error $e) {

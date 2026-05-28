@@ -214,6 +214,134 @@ echo $f->getReturn();
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies that a runtime string user-function callback is materialized as a Fiber descriptor.
+#[test]
+fn test_fiber_string_user_function_callable_uses_descriptor_invoker() {
+    let out = compile_and_run(
+        r#"<?php
+function fiber_string_job(int $value): int {
+    echo $value;
+    return $value + 1;
+}
+
+$callback = "fiber_string_job";
+$f = new Fiber($callback);
+$v = $f->start(41);
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "41/null/42");
+}
+
+/// Verifies that a builtin string callback can run as a Fiber through descriptor metadata.
+#[test]
+fn test_fiber_string_builtin_callable_uses_descriptor_invoker() {
+    let out = compile_and_run(
+        r#"<?php
+$f = new Fiber("STRLEN");
+$v = $f->start("hello");
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "null/5");
+}
+
+/// Verifies that a declared extern string callback can run as a Fiber descriptor.
+#[test]
+fn test_fiber_string_extern_callable_uses_descriptor_invoker() {
+    let out = compile_and_run(
+        r#"<?php
+extern function atoi(string $value): int;
+
+$callback = "ATOI";
+$f = new Fiber($callback);
+$f->start("42");
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "42");
+}
+
+/// Verifies that a static-method callable-array literal is materialized for Fiber invocation.
+#[test]
+fn test_fiber_static_callable_array_literal_uses_descriptor_invoker() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberStaticJob {
+    public static function run(string $value): string {
+        echo "static:" . $value;
+        return "done";
+    }
+}
+
+$f = new Fiber([FiberStaticJob::class, "run"]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "static:go/null/done");
+}
+
+/// Verifies that an instance-method callable-array literal stores its receiver in the descriptor.
+#[test]
+fn test_fiber_instance_callable_array_literal_uses_descriptor_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberArrayJob {
+    public function __construct(private string $prefix) {}
+
+    public function run(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$job = new FiberArrayJob("array:");
+$f = new Fiber([$job, "run"]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "array:go/null/array:done");
+}
+
+/// Verifies that an invokable object variable is converted into a Fiber descriptor.
+#[test]
+fn test_fiber_invokable_object_callable_uses_descriptor_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberInvokerJob {
+    public function __construct(private string $prefix) {}
+
+    public function __invoke(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$job = new FiberInvokerJob("invoke:");
+$f = new Fiber($job);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "invoke:go/null/invoke:done");
+}
+
 /// Verifies that an inline variadic Fiber closure receives all start args in `...$args`.
 #[test]
 fn test_fiber_variadic_inline_closure_receives_start_args() {

@@ -1480,8 +1480,7 @@ fn emit_new_fiber(
     emitter.comment("new Fiber() — runtime construction");
 
     let wrapper_label = if let Some(callable_expr) = args.first() {
-        emit_expr(callable_expr, emitter, ctx, data);
-        super::fiber_wrapper::prepare_fiber_wrapper(callable_expr, ctx)
+        super::fiber_callable::emit_fiber_callable_descriptor(callable_expr, emitter, ctx, data)
     } else {
         emitter.comment("WARNING: Fiber constructor missing $callback argument");
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
