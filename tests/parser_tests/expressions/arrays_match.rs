@@ -54,4 +54,15 @@ fn test_parse_match() {
     }
 }
 
+/// Verifies that standalone `match` expressions parse as expression statements.
+#[test]
+fn test_parse_standalone_match_expression_statement() {
+    let stmts = parse_source("<?php match (1) { 1 => 2 }; echo 3;");
+    assert_eq!(stmts.len(), 2);
+    match &stmts[0].kind {
+        StmtKind::ExprStmt(expr) => assert!(matches!(&expr.kind, ExprKind::Match { .. })),
+        other => panic!("expected ExprStmt containing Match, got {:?}", other),
+    }
+}
+
 // --- Foreach with key => value ---
