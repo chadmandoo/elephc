@@ -716,7 +716,13 @@ pub(crate) fn check_callback_builtin_call(
 
 /// Returns true when a callback builtin can resolve string callbacks at runtime.
 fn callback_builtin_allows_runtime_string_descriptor(label: &str) -> bool {
-    matches!(label, "array_map() callback")
+    matches!(
+        label,
+        "array_map() callback"
+            | "array_filter() callback"
+            | "array_reduce() callback"
+            | "array_walk() callback"
+    )
 }
 
 /// Returns true when a callback builtin has codegen support for runtime-selected callable arrays.

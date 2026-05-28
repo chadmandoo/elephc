@@ -138,6 +138,56 @@ foreach ($b as $value) { echo $value; }
     assert_eq!(out, "2aaab");
 }
 
+/// Verifies array callback runtimes accept callback names selected through string variables.
+#[test]
+fn test_array_callback_runtimes_dynamic_string_callbacks_use_descriptor_invokers() {
+    let source = r#"<?php
+function even_runtime($value): bool {
+    return $value % 2 == 0;
+}
+
+function show_runtime($value): void {
+    echo $value;
+}
+
+function add_runtime($carry, $item): int {
+    return $carry + $item;
+}
+
+$name = "even_runtime";
+$filter = $name;
+$filtered = array_filter([1, 2, 3, 4], $filter);
+foreach ($filtered as $value) {
+    echo $value;
+}
+echo ":";
+
+$name = "show_runtime";
+$walk = $name;
+array_walk([5, 6], $walk);
+echo ":";
+
+$name = "add_runtime";
+$reduce = $name;
+echo array_reduce([1, 2, 3], $reduce, 0);
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "24:56:6");
+
+    let dir = make_cli_test_dir("elephc_array_callback_runtime_string_descriptors");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("__rt_array_filter")
+            && user_asm.contains("__rt_array_walk")
+            && user_asm.contains("__rt_array_reduce")
+            && user_asm.contains("callable_invoker"),
+        "array callback runtime string paths should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 // Tests `array_filter` when the callback returns falsy for every element, producing
 // an empty array and confirming count is 0.
 /// Verifies that array filter none pass.

@@ -17,6 +17,7 @@ use crate::parser::ast::Expr;
 use crate::types::PhpType;
 use super::callback_env;
 use super::runtime_callable_array_callback;
+use super::runtime_string_callback;
 
 /// Lowers a `array_walk($array, $callback, $userdata?)` call into target assembly.
 /// Evaluates the array argument first, then the callback argument, preserving PHP source
@@ -48,6 +49,25 @@ pub fn emit(
 
     // -- save array pointer --
     abi::emit_push_reg(emitter, result_reg);                                    // push the source array pointer onto the temporary stack
+
+    if runtime_string_callback::emit_after_saved_array(
+        &args[1],
+        Some(&arr_ty),
+        vec![source_elem_ty.clone()],
+        PhpType::Void,
+        array_arg_reg,
+        emitter,
+        ctx,
+        data,
+        |wrapper, emitter, _ctx, _data| {
+            callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+            abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+            callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+            abi::emit_call_label(emitter, "__rt_array_walk");                   // call the callback-driven walk runtime helper with a runtime string descriptor
+        },
+    ) {
+        return Some(PhpType::Void);
+    }
 
     if let Some(wrapper) = callback_env::emit_callable_array_descriptor_env_after_saved_array(
         &args[1],
