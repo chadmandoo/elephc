@@ -282,9 +282,9 @@ src/
 │   │   ├── tests/             ABI unit tests (`basics.rs`, `arguments.rs`, `symbols.rs`, `linux_x86_64.rs`)
 │   │   └── values.rs          Push/pop/load/store by PhpType
 │   ├── platform/              Target selection and Linux transforms
-│   │   ├── mod.rs             Platform / Arch / Target definitions
-│   │   ├── target.rs          Syscall tables and C-symbol remapping
-│   │   ├── linux_transform.rs Linux-specific post-emit transforms
+│   │   ├── mod.rs             Platform module root, re-exports Platform / Arch / Target
+│   │   ├── target.rs          Platform / Arch / Target definitions and derived codegen properties
+│   │   ├── linux_transform.rs Linux post-emit transforms, syscall mapping, C-symbol remapping
 │   │   └── toolchain.rs       Assembler / linker invocation
 │   ├── ffi.rs                 Extern function/global/class codegen
 │   ├── context.rs             Variables, labels, loop/finally stacks, ownership lattice
@@ -294,12 +294,12 @@ src/
 │   ├── builtins/              Built-in function codegen (one file per language function)
 │   │   ├── mod.rs             Dispatcher — chains to category modules
 │   │   ├── strings/           strlen, substr, strpos, explode, sprintf, md5, ... (58 files)
-│   │   ├── arrays/            count, array_push, buffer_len/free, sort, array_map, usort, ... (59 files)
+│   │   ├── arrays/            count, array_push, buffer_len/free, sort, array_map, usort, ... (64 files)
 │   │   ├── math/              abs, floor, pow, rand, fmod, fdiv, round, min, max, sin, cos, ... (32 files)
-│   │   ├── types/             is_*, gettype, empty, unset, settype, class introspection, ... (23 files)
+│   │   ├── types/             is_*, gettype, empty, unset, settype, class introspection, ... (24 files)
 │   │   ├── io/                fopen, fwrite, file_get_contents, scandir, ... (74 files)
 │   │   ├── pointers/          ptr, ptr_get, ptr_set, ptr_read8, ptr_write8, ptr_offset, ... (16 files)
-│   │   ├── spl/               spl_autoload_*, spl_classes, spl_object_id/hash (1 file)
+│   │   ├── spl/               iterator_to_array, iterator_count, iterator_apply, iterator_common (5 files)
 │   │   └── system/            exit, define, time, date, mktime, json_encode, preg_match, attribute reflection, ... (31 files)
 │   │
 │   └── runtime/               Runtime routines and target-specific emission helpers
@@ -309,16 +309,17 @@ src/
 │       ├── emitters.rs        Shared emit helpers used across runtime categories
 │       ├── x86_minimal.rs     Minimal x86_64 runtime slice for the Linux x86_64 target
 │       ├── strings/           itoa, concat, resource display, ftoa, sprintf, md5, sha1, str_persist, ... (58 files)
-│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (120 files)
-│       ├── callables/         Runtime `is_callable()` fallback for dynamic strings, arrays, hashes, objects, and Mixed values (2 files)
+│       ├── arrays/            heap_alloc, heap_free, array_free_deep, array_grow, hash_grow, hash_*, mixed boxing/freeing, mixed instanceof, sort, usort, refcount, gc/decref dispatch, ... (121 files)
+│       ├── callables/         Runtime `is_callable()` fallback for dynamic strings/arrays/hashes/objects/Mixed plus callable descriptor release (3 files)
 │       ├── io/                fopen, fgets, fread, stat, scandir, ... (30 files)
 │       ├── buffers/           buffer_new, buffer_len, bounds_fail, use_after_free helpers (5 files incl. mod.rs)
 │       ├── exceptions.rs      Exception runtime module root / re-exports
-│       ├── exceptions/        cleanup_frames, dynamic_instanceof, matches, throw_current, rethrow_current helpers (5 files)
+│       ├── exceptions/        cleanup_frames, dynamic_instanceof, matches, throw_current, rethrow_current, class_implements helpers (6 files)
 │       ├── system/            build_argv, time, getenv, shell_exec, php_uname, date, mktime, strtotime, match_unhandled, enum_from_fail, json_encode_*, json_decode, preg_*, ... (35 files)
 │       ├── pointers/          ptoa, ptr_check_nonnull, str_to_cstr, cstr_to_str, ptr_read_string, ptr_write_string, ... (7 files)
 │       ├── fibers/            stack allocation/free, context switch, entry trampoline (4 files) + `api/` (target-aware public API helpers)
 │       ├── objects/           stdClass, Mixed property/index access, JSON stdClass encoding helpers (4 files)
+│       ├── spl/               SplDoublyLinkedList and SplFixedArray runtime container helpers (3 files)
 │       └── generators/        Generator frame layout and __rt_gen_* helpers (2 files)
 │
 │

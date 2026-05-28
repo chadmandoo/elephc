@@ -776,12 +776,12 @@ fn bind_indexed_value_ref_aarch64(
     ctx: &mut Context,
 ) {
     if matches!(elem_ty, PhpType::Str) {
-        emitter.instruction("lsl x10, x0, #4");                               // scale the foreach index to the 16-byte string slot width
+        emitter.instruction("lsl x10, x0, #4");                                 // scale the foreach index to the 16-byte string slot width
     } else {
-        emitter.instruction("lsl x10, x0, #3");                               // scale the foreach index to the 8-byte payload slot width
+        emitter.instruction("lsl x10, x0, #3");                                 // scale the foreach index to the 8-byte payload slot width
     }
-    emitter.instruction("add x9, x9, #24");                                   // skip the indexed-array header to reach payload storage
-    emitter.instruction("add x9, x9, x10");                                   // compute the address of the current indexed-array element
+    emitter.instruction("add x9, x9, #24");                                     // skip the indexed-array header to reach payload storage
+    emitter.instruction("add x9, x9, x10");                                     // compute the address of the current indexed-array element
     super::release_foreach_value_ref_cell_before_rebind(
         value_var,
         fallback,

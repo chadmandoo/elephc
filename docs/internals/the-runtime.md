@@ -5,7 +5,7 @@ sidebar:
   order: 8
 ---
 
-**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `callables/`, `exceptions.rs`, `exceptions/`, `io/`, `objects/`, `system/`, `pointers/`, `fibers/`, `generators/`
+**Source:** `src/codegen/runtime/` — `mod.rs`, `emitters.rs`, `data/`, `x86_minimal.rs`, `strings/`, `arrays/`, `buffers/`, `callables/`, `exceptions.rs`, `exceptions/`, `io/`, `objects/`, `spl/`, `system/`, `pointers/`, `fibers/`, `generators/`
 
 The runtime is a collection of **hand-written assembly routines** that handle operations too complex for inline code generation. When the [code generator](the-codegen.md) needs to convert an integer to a string or concatenate two strings, it emits a `bl __rt_itoa` or `bl __rt_concat` — a call to a runtime routine.
 
@@ -206,6 +206,7 @@ Extern callback trampolines use the same descriptor invoker from a C-facing entr
 | `__rt_is_callable_assoc` | Validate associative callable-array payloads produced through boxed or dynamic data paths | hash pointer | `x0` = bool |
 | `__rt_is_callable_mixed` | Unbox a Mixed value and dispatch string, array, hash, or object callable checks | mixed pointer | `x0` = bool |
 | `__rt_is_callable_heap` | Dispatch callable checks from a raw heap pointer by inspecting its heap-kind tag | heap pointer | `x0` = bool |
+| `__rt_callable_descriptor_release` | Free a heap-backed callable descriptor copy plus the by-value capture slots appended after its static header; static `.data` descriptors are ignored | `x0` = descriptor pointer | — |
 
 ## Array routines
 
@@ -273,6 +274,7 @@ Common copy-producing array/hash routines now also have dedicated `_refcounted` 
 | `__rt_hash_array_union` | Build PHP associative+indexed union by cloning the left hash and appending right indexes absent from the shared key space | `x0`=left hash, `x1`=right array | `x0`=result hash |
 | `__rt_hash_count` | Count occupied entries | `x0`=hash | `x0`=count |
 | `__rt_hash_free_deep` | Free a hash table plus owned keys and nested heap-backed values | `x0`=hash | — |
+| `__rt_hash_to_mixed` | Copy-on-write a hash, then widen each entry payload into a boxed Mixed cell so by-reference `foreach` can alias a stable pointer slot | `x0`=hash | `x0` = same hash |
 | `__rt_mixed_from_value` | Box a tagged payload into a heap-allocated mixed cell | `x0`=value_tag, `x1`=value_lo, `x2`=value_hi | `x0` = mixed cell |
 | `__rt_mixed_write_stdout` | Print a boxed mixed value by inspecting its inner tag | `x0` = mixed cell | — |
 
@@ -313,6 +315,7 @@ See [Memory Model](memory-model.md) for the hash table memory layout.
 | `__rt_array_map` | Apply callback to each scalar element, return new array; an optional third argument carries a captured-closure environment for generated callback wrappers |
 | `__rt_array_map_str` | Apply callback to each scalar or string element and return a string array; an optional third argument carries a captured-closure environment |
 | `__rt_array_map_str_owned` | Apply a descriptor-wrapper callback that returns owned strings and transfer those strings directly into the result array |
+| `__rt_array_map_mixed` | Apply a descriptor-backed callback that returns owned boxed Mixed cells and store them directly into a newly allocated result array |
 | `__rt_array_filter` | Filter scalar elements where callback returns truthy; an optional third argument carries a captured-closure environment |
 | `__rt_array_reduce` | Reduce array to single value via callback; an optional fourth argument carries a captured-callback environment |
 | `__rt_array_walk` | Call callback on each element (side-effects); an optional third argument carries a captured-callback environment |
@@ -372,6 +375,7 @@ elephc lowers exceptions with a small runtime layer around `_setjmp` / `_longjmp
 | `__rt_exception_matches` | Check whether the active exception matches a catch target by class id or interface id | `x0` = exception object, `x1` = target id, `x2` = 0 for class / 1 for interface | `x0` = 1 if it matches, 0 otherwise |
 | `__rt_instanceof_lookup` | Resolve a dynamic class-string `instanceof` target through emitted case-insensitive class/interface metadata | `x1`/`x2` = target string | `x0` = found flag, `x1` = target id, `x2` = 0 class / 1 interface |
 | `__rt_instanceof_invalid_target` | Abort when a dynamic `instanceof` target is neither a string nor an object | — | does not return |
+| `__rt_class_implements_interface` | Test class metadata against an interface id for dynamic class-string checks without an object instance | `x0` = class id, `x1` = interface id | `x0` = 1 if implemented, 0 otherwise |
 | `__rt_throw_current` | Unwind to the nearest active handler or print the fatal uncaught-exception message and exit | reads `_exc_value`, `_exc_handler_top`, `_exc_call_frame_top` | does not return normally |
 | `__rt_rethrow_current` | Re-enter the ordinary throw path with the currently active exception | none (uses global exception state) | does not return normally |
 
@@ -542,7 +546,40 @@ These helpers support `stdClass`, `json_decode()` object results, and boxed Mixe
 | `__rt_mixed_property_get` | Unbox a Mixed object payload and dispatch stdClass property reads | boxed `mixed` + property string | boxed `mixed` payload |
 | `__rt_mixed_property_set` | Unbox a Mixed object payload and dispatch stdClass property writes | boxed `mixed` + property string + boxed value | — |
 | `__rt_mixed_array_get` | Unbox Mixed array/hash/stdClass payloads for `$mixed[$key]` access | boxed `mixed` + normalized key tuple | boxed `mixed` payload |
+| `__rt_mixed_array_set` | Unbox a Mixed indexed-array/hash payload and write a boxed Mixed value for `$mixed[$key] = ...`; consumes the boxed value on success | boxed `mixed` + normalized key tuple + boxed value | — |
 | `__rt_json_encode_stdclass` | Encode the dynamic-property hash backing stdClass as a JSON object | stdClass hash pointer | `x1`/`x2` = JSON string |
+
+## SPL and iterable routines
+
+**Source:** `src/codegen/runtime/spl/` (3 files including `mod.rs`)
+
+These helpers back SPL container classes whose PHP surface needs custom runtime storage. `SplDoublyLinkedList` (and its `SplStack` / `SplQueue` subclasses) store a class id, an owned indexed array of boxed `Mixed` cells, an iterator index, and iterator-mode bits. `SplFixedArray` stores a class id and a fixed-size storage array of owned boxed `Mixed` cells (or null for unset/null slots). Mutating methods take ownership of the boxed `Mixed` arguments prepared by call lowering, and resize/overwrite paths release any replaced cell first.
+
+### SplDoublyLinkedList / SplStack / SplQueue
+
+| Routine | What it does |
+|---|---|
+| `__rt_spl_dll_new` | Allocate an empty doubly-linked-list object with initial mixed-cell storage |
+| `__rt_spl_dll_push` / `__rt_spl_dll_pop` | Append to / remove from the end |
+| `__rt_spl_dll_unshift` / `__rt_spl_dll_shift` | Prepend to / remove from the front |
+| `__rt_spl_dll_top` / `__rt_spl_dll_bottom` | Peek the last / first element |
+| `__rt_spl_dll_insert` | Insert at an index honoring the iterator mode |
+| `__rt_spl_dll_count` / `__rt_spl_dll_is_empty` | Element count / emptiness check |
+| `__rt_spl_dll_set_iterator_mode` / `__rt_spl_dll_get_iterator_mode` | Write / read LIFO/FIFO and DELETE iterator-mode bits |
+| `__rt_spl_dll_rewind` / `__rt_spl_dll_valid` / `__rt_spl_dll_current` / `__rt_spl_dll_key` / `__rt_spl_dll_next` / `__rt_spl_dll_prev` | Iterator surface honoring the active iterator mode |
+| `__rt_spl_dll_offset_exists` / `__rt_spl_dll_offset_get` / `__rt_spl_dll_offset_set` / `__rt_spl_dll_offset_unset` | `ArrayAccess` operations |
+| `__rt_spl_dll_serialize` / `__rt_spl_dll_serialize_array` / `__rt_spl_dll_unserialize` | Serialization helpers |
+
+### SplFixedArray
+
+| Routine | What it does |
+|---|---|
+| `__rt_spl_fixed_new` | Allocate a fixed-size array object with a zero-initialized mixed-cell storage block |
+| `__rt_spl_fixed_count` | Return the fixed size |
+| `__rt_spl_fixed_set_size` | Resize storage, releasing dropped cells and zero-filling new slots |
+| `__rt_spl_fixed_offset_exists` / `__rt_spl_fixed_offset_get` / `__rt_spl_fixed_offset_set` / `__rt_spl_fixed_offset_unset` | `ArrayAccess` operations with bounds checking |
+| `__rt_spl_fixed_to_array` / `__rt_spl_fixed_from_array` / `__rt_spl_fixed_copy_from_array` | Convert to / build from a PHP array |
+| `__rt_spl_fixed_unserialize` | Serialization helper |
 
 ## Generator routines
 
@@ -599,20 +636,21 @@ pub fn emit_runtime(emitter: &mut Emitter) {
     // diagnostics: runtime warning emission and @ suppression state
     // strings: itoa, resource display/stdout, ftoa, concat, atoi, equality, formatting, trim/mask,
     // search/replace, explode/implode, hashing, encoding, sscanf, ...
-    // callables: dynamic is_callable() fallback for strings, arrays, hashes, objects, and Mixed
+    // callables: dynamic is_callable() fallback plus callable-descriptor release
     // system: argv, time, getenv, shell, date/mktime/strtotime, JSON, regex
-    // exceptions: cleanup walk, catch matching, throw/rethrow helpers
+    // exceptions: cleanup walk, catch matching, class-implements, throw/rethrow helpers
+    // generators: Generator current/key/valid/next/send/rewind/throw/getReturn helpers
     // arrays: heap alloc/free, array/hash helpers, sort, callbacks, refcount
+    // spl: SplDoublyLinkedList/SplStack/SplQueue and SplFixedArray storage helpers
+    // objects: stdClass dynamic properties and boxed Mixed property/index dispatch
     // buffers: contiguous buffer allocation, bounds checking, UAF traps
     // io: c-string buffers, file I/O, stat/fs helpers, scandir/glob/tempnam, CSV
-    // objects: stdClass dynamic properties and boxed Mixed property/index dispatch
     // pointers: ptoa, null check, str_to_cstr, cstr_to_str
-    // generators: Generator current/key/valid/next/send/rewind/throw/getReturn helpers
     // fibers: guarded stack allocation, context switch, entry trampoline, Fiber API
 }
 ```
 
-Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_instanceof_lookup`, `__rt_instanceof_invalid_target`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_iterable_write_stdout`, `__rt_iterable_unsupported_kind`, `__rt_gen_current`, `__rt_gen_send`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, `__rt_cstr_to_str`, `__rt_fiber_switch`, and `__rt_fiber_entry` in addition to the more user-visible helpers.
+Notable runtime-only helpers emitted here include `__rt_diag_push_suppression`, `__rt_diag_pop_suppression`, `__rt_diag_warning`, `__rt_exception_cleanup_frames`, `__rt_exception_matches`, `__rt_instanceof_lookup`, `__rt_instanceof_invalid_target`, `__rt_throw_current`, `__rt_heap_debug_fail`, `__rt_heap_kind`, `__rt_hash_insert_owned`, `__rt_hash_free_deep`, `__rt_array_column_ref`, `__rt_mixed_instanceof`, `__rt_iterable_write_stdout`, `__rt_iterable_unsupported_kind`, `__rt_class_implements_interface`, `__rt_callable_descriptor_release`, `__rt_spl_dll_new`, `__rt_spl_fixed_new`, `__rt_gen_current`, `__rt_gen_send`, `__rt_preg_strip`, `__rt_pcre_to_posix`, `__rt_str_to_cstr`, `__rt_cstr_to_str`, `__rt_fiber_switch`, and `__rt_fiber_entry` in addition to the more user-visible helpers.
 
 Every routine in the selected target runtime slice is linked into the binary, even if unused by the current program. elephc already does AST-side control-flow pruning and dead-code elimination before codegen, but runtime-specific dead stripping is still future work.
 
