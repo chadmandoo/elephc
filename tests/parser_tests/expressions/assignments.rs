@@ -87,6 +87,37 @@ fn test_parse_array_compound_assignment() {
     }
 }
 
+/// Verifies that array-element post-increment lowers to an `ArrayAssign` read-modify-write.
+#[test]
+fn test_parse_array_element_post_increment_assignment() {
+    let stmts = parse_source("<?php $items[0]++;");
+    match &stmts[0].kind {
+        StmtKind::ArrayAssign {
+            array,
+            index,
+            value,
+        } => {
+            assert_eq!(array, "items");
+            assert!(matches!(index.kind, ExprKind::IntLiteral(0)));
+            match &value.kind {
+                ExprKind::BinaryOp { left, op, right } => {
+                    assert_eq!(op, &BinOp::Add);
+                    assert!(matches!(right.kind, ExprKind::IntLiteral(1)));
+                    match &left.kind {
+                        ExprKind::ArrayAccess { array, index } => {
+                            assert!(matches!(array.kind, ExprKind::Variable(ref name) if name == "items"));
+                            assert!(matches!(index.kind, ExprKind::IntLiteral(0)));
+                        }
+                        other => panic!("Expected ArrayAccess lhs, got {:?}", other),
+                    }
+                }
+                other => panic!("Expected BinaryOp value, got {:?}", other),
+            }
+        }
+        other => panic!("Expected ArrayAssign, got {:?}", other),
+    }
+}
+
 /// Verifies that `<?php $items[idx()] += 3;` lowers to a `Synthetic` stmt containing
 /// a temporary assignment for `idx()` and a subsequent `ArrayAssign`.
 /// This protects against registering the call effect directly on the ArrayAssign.

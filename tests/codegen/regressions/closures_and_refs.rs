@@ -174,3 +174,17 @@ echo $x;
     );
     assert_eq!(out, "2");
 }
+
+/// Regression for #318: a by-reference captured array accepts post-increment on an element.
+#[test]
+fn test_closure_use_by_ref_array_element_post_increment() {
+    let out = compile_and_run(
+        r#"<?php
+$a = ["n" => 1];
+$f = function () use (&$a) { $a["n"]++; };
+$f();
+echo $a["n"];
+"#,
+    );
+    assert_eq!(out, "2");
+}

@@ -10,7 +10,7 @@
 
 use crate::errors::CompileError;
 use crate::lexer::Token;
-use crate::parser::ast::{Expr, ExprKind, InstanceOfTarget, Stmt, StmtKind};
+use crate::parser::ast::{BinOp, Expr, ExprKind, InstanceOfTarget, Stmt, StmtKind};
 use crate::parser::expr::{parse_assignment_value_expr, parse_expr};
 use crate::span::Span;
 
@@ -100,6 +100,45 @@ pub(in crate::parser::stmt) fn try_parse_postfix_assignment(
     };
 
     Ok(Some(Stmt::new(stmt, span)))
+}
+
+/// Parses discarded post-increment/decrement on a complex l-value target.
+///
+/// For statement contexts the original expression result is unused, so `$a[0]++`
+/// can be lowered to the same read-modify-write shape as `$a[0] += 1`.
+/// Simple local `$x++` is left to the existing local-variable parser.
+pub(in crate::parser::stmt) fn try_parse_postfix_incdec(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    span: Span,
+) -> Result<Option<Stmt>, CompileError> {
+    let start = *pos;
+    let Some((incdec_pos, is_increment)) = find_top_level_postfix_incdec(tokens, start) else {
+        return Ok(None);
+    };
+    if incdec_pos < start + 3 {
+        return Ok(None);
+    }
+
+    let lhs = &tokens[start..incdec_pos];
+    let contains_complex_target = lhs
+        .iter()
+        .skip(1)
+        .any(|(token, _)| matches!(token, Token::Arrow | Token::QuestionArrow | Token::LBracket));
+    if !contains_complex_target {
+        return Ok(None);
+    }
+
+    let mut lhs_pos = 0;
+    let lhs_expr = parse_expr(lhs, &mut lhs_pos)?;
+    if lhs_pos != lhs.len() {
+        return Err(CompileError::new(span, "Invalid increment target"));
+    }
+
+    *pos = incdec_pos + 1;
+    expect_semicolon(tokens, pos)?;
+
+    lower_postfix_incdec_assignment(lhs_expr, is_increment, span).map(Some)
 }
 
 /// Parses a scoped (static class member) postfix assignment, handling targets like
@@ -201,6 +240,41 @@ fn find_top_level_assignment(
                 if let Some(op) = assignment_operator(&tokens[pos].0) {
                     return Some((pos, op));
                 }
+            }
+            _ => {}
+        }
+        pos += 1;
+    }
+
+    None
+}
+
+/// Finds a top-level `++` or `--` before the statement semicolon.
+///
+/// Nested occurrences inside indexes or call arguments are ignored so expressions
+/// such as `$items[$i++] = 1` remain assignment statements with an effectful index.
+fn find_top_level_postfix_incdec(tokens: &[(Token, Span)], start: usize) -> Option<(usize, bool)> {
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut brace_depth = 0usize;
+    let mut pos = start;
+
+    while pos < tokens.len() {
+        match tokens[pos].0 {
+            Token::LParen => paren_depth += 1,
+            Token::RParen => paren_depth = paren_depth.saturating_sub(1),
+            Token::LBracket => bracket_depth += 1,
+            Token::RBracket => bracket_depth = bracket_depth.saturating_sub(1),
+            Token::LBrace => brace_depth += 1,
+            Token::RBrace => brace_depth = brace_depth.saturating_sub(1),
+            Token::Semicolon if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                return None;
+            }
+            Token::PlusPlus if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                return Some((pos, true));
+            }
+            Token::MinusMinus if paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 => {
+                return Some((pos, false));
             }
             _ => {}
         }
@@ -344,6 +418,53 @@ fn lower_effectful_postfix_assignment(
         _ => return Err(CompileError::new(span, "Invalid assignment target")),
     };
     Ok(lowerer.finish(lowered))
+}
+
+/// Lowers discarded post-increment/decrement to the existing assignment statement forms.
+fn lower_postfix_incdec_assignment(
+    lhs_expr: Expr,
+    is_increment: bool,
+    span: Span,
+) -> Result<Stmt, CompileError> {
+    let op = if is_increment {
+        AssignmentOperator::Compound(BinOp::Add)
+    } else {
+        AssignmentOperator::Compound(BinOp::Sub)
+    };
+    let one = Expr::new(ExprKind::IntLiteral(1), span);
+
+    if !can_replay_assignment_target(&lhs_expr) {
+        return lower_effectful_postfix_assignment(lhs_expr, op, one, span);
+    }
+
+    let value = assignment_value(lhs_expr.clone(), op, one, span);
+    let kind = match lhs_expr.kind {
+        ExprKind::ArrayAccess { array, index } => match array.kind {
+            ExprKind::Variable(array) => StmtKind::ArrayAssign {
+                array,
+                index: *index,
+                value,
+            },
+            ExprKind::PropertyAccess { object, property } => StmtKind::PropertyArrayAssign {
+                object,
+                property,
+                index: *index,
+                value,
+            },
+            _ => StmtKind::NestedArrayAssign {
+                target: Expr::new(ExprKind::ArrayAccess { array, index }, span),
+                value,
+            },
+        },
+        ExprKind::PropertyAccess { object, property } => StmtKind::PropertyAssign {
+            object,
+            property,
+            value,
+        },
+        _ => return Err(CompileError::new(span, "Invalid increment target")),
+    };
+
+    Ok(Stmt::new(kind, span))
 }
 
 /// Lowers a compound static property assignment where the target cannot be replayed safely.
