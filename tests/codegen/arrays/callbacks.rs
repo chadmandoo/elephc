@@ -188,6 +188,58 @@ echo array_reduce([1, 2, 3], $reduce, 0);
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Verifies sort callback runtimes accept comparator names selected through string variables.
+#[test]
+fn test_sort_callback_runtimes_dynamic_string_callbacks_use_descriptor_invokers() {
+    let source = r#"<?php
+function choose_sort_name(bool $descending): string {
+    return $descending ? "runtime_desc_compare" : "runtime_asc_compare";
+}
+
+function runtime_desc_compare($left, $right): int {
+    return $right - $left;
+}
+
+function runtime_asc_compare($left, $right): int {
+    return $left - $right;
+}
+
+$sort = choose_sort_name(true);
+
+$usorted = [1, 3, 2];
+usort($usorted, $sort);
+foreach ($usorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sort);
+foreach ($uksorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uasorted = [1, 3, 2];
+uasort($uasorted, $sort);
+foreach ($uasorted as $value) {
+    echo $value;
+}
+"#;
+    let out = compile_and_run(source);
+    assert_eq!(out, "321:321:321");
+
+    let dir = make_cli_test_dir("elephc_sort_callback_runtime_string_descriptors");
+    let (user_asm, _runtime_asm, _required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("__rt_usort") && user_asm.contains("callable_invoker"),
+        "sort callback runtime string paths should route through descriptor invokers:\n{}",
+        user_asm
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
 // Tests `array_filter` when the callback returns falsy for every element, producing
 // an empty array and confirming count is 0.
 /// Verifies that array filter none pass.
