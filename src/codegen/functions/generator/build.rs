@@ -217,6 +217,19 @@ fn visit_assignments(
                 }
                 visit_assignments(body, probe, probe_types, locals, param_names);
             }
+            StmtKind::Try {
+                try_body,
+                catches,
+                finally_body,
+            } => {
+                visit_assignments(try_body, probe, probe_types, locals, param_names);
+                for catch in catches {
+                    visit_assignments(&catch.body, probe, probe_types, locals, param_names);
+                }
+                if let Some(body) = finally_body {
+                    visit_assignments(body, probe, probe_types, locals, param_names);
+                }
+            }
             _ => {}
         }
     }
@@ -286,7 +299,7 @@ pub(super) fn build_nodes(
 /// Translates a single statement into a `ResumeNode`. Returns `None`
 /// for unsupported constructs — the caller converts this to
 /// `ResumeNode::Bail`. Handles assign, expr-stmt, if/while/do-while/for
-/// loops, break/continue, return, switch, and yield/yield-from.
+/// loops, break/continue, return, switch, try/finally, echo, and yield/yield-from.
 fn build_node(
     stmt: &Stmt,
     slots: &[String],
@@ -383,6 +396,10 @@ fn build_node(
             }
             _ => None,
         },
+        StmtKind::Echo(expr) => {
+            let src = classify_mixed_expr(&expr.kind, slots, types, data)?;
+            Some(ResumeNode::Stmt(BodyStmt::EchoMixed(src)))
+        }
         StmtKind::If {
             condition,
             then_body,
@@ -473,6 +490,21 @@ fn build_node(
                 subject: subject_src,
                 cases: translated_cases,
                 default: default_nodes,
+            })
+        }
+        StmtKind::Try {
+            try_body,
+            finally_body,
+            ..
+        } => {
+            let try_nodes = build_nodes(try_body, slots, types, num, data);
+            let finally_nodes = finally_body
+                .as_ref()
+                .map(|body| build_nodes(body, slots, types, num, data))
+                .unwrap_or_default();
+            Some(ResumeNode::Try {
+                try_body: try_nodes,
+                finally_body: finally_nodes,
             })
         }
         _ => None,

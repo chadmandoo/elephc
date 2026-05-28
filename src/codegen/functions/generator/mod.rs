@@ -14,9 +14,10 @@
 //!    statements, value boxing via `__rt_mixed_from_value`, refcount drops via
 //!    `__rt_decref_mixed`, and `TERMINATED` flag on fall-off).
 //!  - v1 body grammar accepts int locals + arithmetic, `$local = yield <expr>`
-//!    for `send`, post-inc/dec, `if`/`while`/`do-while`/`for`/`switch`/`break`/
-//!    `continue`, mixed int/string yield values, and `yield from` over
-//!    int-array literals or generator-returning function calls.
+//!    for `send`, post-inc/dec, `if`/`while`/`do-while`/`for`/`switch`/`try`
+//!    no-exception paths, `break`/`continue`, `echo`, mixed int/string yield
+//!    values, and `yield from` over int-array literals or generator-returning
+//!    function calls.
 //!  - Unsupported body shapes bail to the terminator silently — the wrapper
 //!    still compiles, the generator just yields nothing past the gap.
 

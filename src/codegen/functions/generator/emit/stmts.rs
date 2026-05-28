@@ -26,6 +26,7 @@ use super::yields::{
 };
 use super::{slot_offset, LoopLabels, ResumeCtx};
 use super::super::model::*;
+use crate::codegen::abi;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
 use crate::codegen::runtime::generators::frame as gen_frame;
@@ -55,6 +56,7 @@ pub(super) fn emit_body_stmt(emitter: &mut Emitter, stmt: &BodyStmt) {
             let off = slot_offset(*idx);
             emit_replace_mixed_slot(emitter, off, |em| emit_box_mixed_source(em, src));
         }
+        BodyStmt::EchoMixed(src) => emit_echo_mixed(emitter, src),
         BodyStmt::PostIncrement(idx) => {
             match emitter.target.arch {
                 Arch::AArch64 => {
@@ -82,6 +84,26 @@ pub(super) fn emit_body_stmt(emitter: &mut Emitter, stmt: &BodyStmt) {
                     emitter.instruction(&format!("mov QWORD PTR [r12 + {}], r10", slot_offset(*idx))); // write the decremented value back to the slot
                 }
             }
+        }
+    }
+}
+
+/// Emits a generator-body `echo` by boxing the source as Mixed, writing it with
+/// PHP echo semantics, and releasing the temporary box afterward.
+fn emit_echo_mixed(emitter: &mut Emitter, src: &MixedSource) {
+    emit_box_mixed_source(emitter, src);
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x20, x0");                                 // preserve the temporary Mixed box until echo finishes
+            abi::emit_call_label(emitter, "__rt_mixed_write_stdout");           // write the boxed value to stdout using PHP echo semantics
+            emitter.instruction("mov x0, x20");                                 // restore the temporary Mixed box for release
+            abi::emit_call_label(emitter, "__rt_decref_mixed");                 // release the temporary Mixed box created for echo
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov r13, rax");                                // preserve the temporary Mixed box until echo finishes
+            abi::emit_call_label(emitter, "__rt_mixed_write_stdout");           // write the boxed value to stdout using PHP echo semantics
+            emitter.instruction("mov rax, r13");                                // restore the temporary Mixed box for release
+            abi::emit_call_label(emitter, "__rt_decref_mixed");                 // release the temporary Mixed box created for echo
         }
     }
 }
@@ -188,6 +210,10 @@ fn emit_node(emitter: &mut Emitter, node: &ResumeNode, ctx: &mut ResumeCtx) {
         ResumeNode::Continue => emit_loop_jump(emitter, ctx, /* break_jump */ false),
         ResumeNode::Switch { subject, cases, default } => {
             emit_switch(emitter, subject, cases, default, ctx);
+        }
+        ResumeNode::Try { try_body, finally_body } => {
+            emit_nodes(emitter, try_body, ctx);
+            emit_nodes(emitter, finally_body, ctx);
         }
         ResumeNode::YieldFromGenerator { source, state_idx, result } => {
             emit_yield_from_generator(emitter, source, *state_idx, *result, ctx);
