@@ -694,7 +694,7 @@ pub(crate) fn check_callback_builtin_call(
             span,
             env,
             false,
-            false,
+            callback_builtin_allows_runtime_callable_array(label),
         )?
     {
         return Ok(ret_ty);
@@ -704,6 +704,18 @@ pub(crate) fn check_callback_builtin_call(
         callback.span,
         &format!("{} must have a statically known callable signature", label),
     ))
+}
+
+/// Returns true when a callback builtin has codegen support for runtime-selected callable arrays.
+fn callback_builtin_allows_runtime_callable_array(label: &str) -> bool {
+    matches!(
+        label,
+        "array_filter() callback"
+            | "array_walk() callback"
+            | "usort() callback"
+            | "uksort() callback"
+            | "uasort() callback"
+    )
 }
 
 /// Type-checks a callable-family builtin call.

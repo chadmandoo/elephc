@@ -11,6 +11,7 @@
 use crate::codegen::abi;
 use super::callback_env;
 use super::ensure_unique_arg::emit_ensure_unique_arg;
+use super::runtime_callable_array_callback;
 use super::store_mutating_arg::emit_store_mutating_arg;
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
@@ -77,6 +78,24 @@ pub fn emit(
         callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
         abi::emit_call_label(emitter, "__rt_usort");                            // call the sort runtime helper with a callable-array descriptor comparator
         callback_env::release_descriptor_callback_env(&wrapper, emitter);
+        return Some(PhpType::Void);
+    }
+
+    if runtime_callable_array_callback::emit_after_saved_array(
+        &args[1],
+        array_arg_reg,
+        vec![elem_ty.clone(), elem_ty.clone()],
+        PhpType::Int,
+        emitter,
+        ctx,
+        data,
+        |wrapper, emitter, _ctx, _data| {
+            callback_env::load_env_slot_to_reg(emitter, array_arg_reg, wrapper.array_slot_offset);
+            abi::emit_symbol_address(emitter, callback_arg_reg, &wrapper.wrapper_label);
+            callback_env::load_env_pointer_to_reg(emitter, env_arg_reg);
+            abi::emit_call_label(emitter, "__rt_usort");                        // call the sort runtime helper with a runtime callable-array descriptor
+        },
+    ) {
         return Some(PhpType::Void);
     }
 

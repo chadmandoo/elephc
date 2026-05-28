@@ -440,3 +440,139 @@ foreach ($uasorted as $value) {
     );
     assert_eq!(out, "34:23:11,12,:321:321:321");
 }
+
+/// Verifies runtime-selected instance callable arrays route fixed-return callbacks through descriptors.
+#[test]
+fn test_dynamic_instance_callable_array_variable_fixed_callback_runtimes() {
+    let out = compile_and_run(
+        r#"<?php
+class DynamicInstanceCallbackRuntime {
+    public int $limit = 0;
+    public int $offset = 0;
+    public bool $descending = false;
+
+    public function keep($value): bool {
+        return $value > $this->limit;
+    }
+
+    public function show($item): void {
+        echo $item + $this->offset;
+        echo ",";
+    }
+
+    public function compare($a, $b): int {
+        if ($this->descending) {
+            return $b - $a;
+        }
+        return $a - $b;
+    }
+}
+
+$box = new DynamicInstanceCallbackRuntime();
+$box->limit = 2;
+$box->offset = 10;
+$box->descending = true;
+
+$method = "keep";
+$filter = [$box, $method];
+$method = "show";
+$walk = [$box, $method];
+$method = "compare";
+$sort = [$box, $method];
+
+$box = new DynamicInstanceCallbackRuntime();
+$box->limit = 100;
+$box->offset = 100;
+$box->descending = false;
+
+$filtered = array_filter([1, 3, 4], $filter);
+foreach ($filtered as $value) {
+    echo $value;
+}
+echo ":";
+array_walk([1, 2], $walk);
+echo ":";
+
+$usorted = [1, 3, 2];
+usort($usorted, $sort);
+foreach ($usorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sort);
+foreach ($uksorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uasorted = [1, 3, 2];
+uasort($uasorted, $sort);
+foreach ($uasorted as $value) {
+    echo $value;
+}
+"#,
+    );
+    assert_eq!(out, "34:11,12,:321:321:321");
+}
+
+/// Verifies runtime-selected static callable arrays route fixed-return callbacks through descriptors.
+#[test]
+fn test_dynamic_static_callable_array_variable_fixed_callback_runtimes() {
+    let out = compile_and_run(
+        r#"<?php
+class DynamicStaticCallbackRuntime {
+    public static function keep($value): bool {
+        return $value > 2;
+    }
+
+    public static function show($item): void {
+        echo $item + 10;
+        echo ",";
+    }
+
+    public static function compare($a, $b): int {
+        return $b - $a;
+    }
+}
+
+$class = "DynamicStaticCallbackRuntime";
+$method = "keep";
+$filter = [$class, $method];
+$method = "show";
+$walk = [$class, $method];
+$method = "compare";
+$sort = [$class, $method];
+
+$filtered = array_filter([1, 3, 4], $filter);
+foreach ($filtered as $value) {
+    echo $value;
+}
+echo ":";
+array_walk([1, 2], $walk);
+echo ":";
+
+$usorted = [1, 3, 2];
+usort($usorted, $sort);
+foreach ($usorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sort);
+foreach ($uksorted as $value) {
+    echo $value;
+}
+echo ":";
+
+$uasorted = [1, 3, 2];
+uasort($uasorted, $sort);
+foreach ($uasorted as $value) {
+    echo $value;
+}
+"#,
+    );
+    assert_eq!(out, "34:11,12,:321:321:321");
+}
