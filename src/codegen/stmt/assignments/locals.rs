@@ -356,6 +356,14 @@ pub(crate) fn emit_assign_stmt(
                     ctx.closure_sigs.remove(name);
                     ctx.runtime_callable_vars.remove(name);
                 }
+            } else if is_callable_array_type(&ty) {
+                if let Some(sig) = crate::codegen::callables::callable_array_sig(value, ctx) {
+                    ctx.closure_sigs.insert(name.to_string(), sig);
+                    ctx.runtime_callable_vars.insert(name.to_string());
+                } else {
+                    ctx.closure_sigs.remove(name);
+                    ctx.runtime_callable_vars.remove(name);
+                }
             } else {
                 ctx.closure_sigs.remove(name);
                 ctx.runtime_callable_vars.remove(name);
@@ -375,6 +383,15 @@ pub(crate) fn emit_assign_stmt(
                 super::super::helpers::local_slot_ownership_after_store(&ty),
             );
         }
+    }
+}
+
+/// Returns true when an assigned value is an array whose elements are callable descriptors.
+fn is_callable_array_type(ty: &PhpType) -> bool {
+    match ty {
+        PhpType::Array(elem_ty) => elem_ty.as_ref() == &PhpType::Callable,
+        PhpType::AssocArray { value, .. } => value.as_ref() == &PhpType::Callable,
+        _ => false,
     }
 }
 

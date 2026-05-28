@@ -191,6 +191,8 @@ pub struct Context {
     pub callable_param_names: HashSet<String>,
     /// Callable signatures inferred for user-function callable returns.
     pub callable_return_sigs: HashMap<String, FunctionSig>,
+    /// Callable element signatures inferred for user-function array returns.
+    pub callable_array_return_sigs: HashMap<String, FunctionSig>,
     /// Captured variables per closure variable name: maps $fn -> [(capture_name, type, by_ref)].
     pub closure_captures: HashMap<String, Vec<(String, PhpType, bool)>>,
     /// Runtime-dispatch wrappers synthesized for PHP builtin callbacks selected
@@ -343,6 +345,7 @@ impl Context {
             callable_param_sigs: HashMap::new(),
             callable_param_names: HashSet::new(),
             callable_return_sigs: HashMap::new(),
+            callable_array_return_sigs: HashMap::new(),
             closure_captures: HashMap::new(),
             runtime_callable_builtin_wrappers: HashMap::new(),
             runtime_callable_extern_wrappers: HashMap::new(),

@@ -251,6 +251,93 @@ impl Checker {
         }
     }
 
+    /// Extracts the element callable signature from an expression that yields an array of callables.
+    ///
+    /// The checker stores homogeneous callable-array metadata under the array variable name.
+    /// Function calls use `callable_array_return_sigs` so callers can recover the element
+    /// signature without treating the function return itself as a callable.
+    pub(crate) fn resolve_expr_callable_array_sig(
+        &mut self,
+        expr: &Expr,
+        env: &TypeEnv,
+    ) -> Result<Option<FunctionSig>, CompileError> {
+        match &expr.kind {
+            ExprKind::ArrayLiteral(elems) => {
+                self.resolve_matching_callable_array_element_sig(elems.iter(), env)
+            }
+            ExprKind::ArrayLiteralAssoc(entries) => {
+                self.resolve_matching_callable_array_element_sig(
+                    entries.iter().map(|(_, value)| value),
+                    env,
+                )
+            }
+            ExprKind::FunctionCall { name, .. } => {
+                let resolved_name = self
+                    .canonical_function_name_folded(name.as_str())
+                    .unwrap_or_else(|| name.as_str().to_string());
+                Ok(self.callable_array_return_sigs.get(&resolved_name).cloned())
+            }
+            ExprKind::Variable(var_name) => Ok(self.callable_sigs.get(var_name).cloned()),
+            ExprKind::Assignment { value, .. } => self.resolve_expr_callable_array_sig(value, env),
+            ExprKind::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => self.resolve_matching_branch_callable_array_sig(then_expr, else_expr, env),
+            ExprKind::ShortTernary { value, default }
+            | ExprKind::NullCoalesce { value, default } => {
+                self.resolve_matching_branch_callable_array_sig(value, default, env)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Resolves one shared callable signature for all values in a callable array expression.
+    fn resolve_matching_callable_array_element_sig<'a>(
+        &mut self,
+        values: impl Iterator<Item = &'a Expr>,
+        env: &TypeEnv,
+    ) -> Result<Option<FunctionSig>, CompileError> {
+        let mut shared_sig: Option<FunctionSig> = None;
+        let mut saw_value = false;
+        for value in values {
+            saw_value = true;
+            let Some(sig) = self.resolve_expr_callable_sig(value, env)? else {
+                return Ok(None);
+            };
+            match &shared_sig {
+                Some(existing) if existing != &sig => return Ok(None),
+                Some(_) => {}
+                None => shared_sig = Some(sig),
+            }
+        }
+        if saw_value {
+            Ok(shared_sig)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Resolves a callable-array signature only when both branches share one element contract.
+    fn resolve_matching_branch_callable_array_sig(
+        &mut self,
+        left: &Expr,
+        right: &Expr,
+        env: &TypeEnv,
+    ) -> Result<Option<FunctionSig>, CompileError> {
+        let Some(left_sig) = self.resolve_expr_callable_array_sig(left, env)? else {
+            return Ok(None);
+        };
+        let Some(right_sig) = self.resolve_expr_callable_array_sig(right, env)? else {
+            return Ok(None);
+        };
+        if left_sig == right_sig {
+            Ok(Some(left_sig))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Resolves the callable signature for a ternary or merge branch pair by recursively
     /// resolving each branch and returning the signature only if both branches resolve to
     /// the same signature. Used for `?:` and `??` expressions whose both branches must

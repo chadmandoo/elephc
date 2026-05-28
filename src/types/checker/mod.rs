@@ -73,6 +73,8 @@ pub(crate) struct Checker {
     pub callable_param_sigs: HashMap<(String, String), FunctionSig>,
     /// Tracks callable signatures inferred for user-function callable returns.
     pub callable_return_sigs: HashMap<String, FunctionSig>,
+    /// Tracks callable element signatures inferred for user-function array returns.
+    pub callable_array_return_sigs: HashMap<String, FunctionSig>,
     /// Tracks capture payloads for closures assigned to variables, keyed by variable name.
     /// Each entry is (capture_name, capture_type, is_by_ref).
     pub callable_captures: HashMap<String, Vec<(String, PhpType, bool)>>,
@@ -164,6 +166,7 @@ pub fn check_types(program: &Program, target_platform: Platform) -> Result<Check
         functions: checker.functions,
         callable_param_sigs: checker.callable_param_sigs,
         callable_return_sigs: checker.callable_return_sigs,
+        callable_array_return_sigs: checker.callable_array_return_sigs,
         interfaces: checker.interfaces,
         classes: checker.classes,
         enums: checker.enums,

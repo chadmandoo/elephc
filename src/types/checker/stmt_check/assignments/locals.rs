@@ -281,6 +281,40 @@ pub(super) fn update_callable_assignment_metadata(
             checker.callable_captures.remove(name);
             checker.first_class_callable_targets.remove(name);
         }
+    } else if is_callable_array_type(ty) {
+        if let Some(sig) = checker.resolve_expr_callable_array_sig(callable_source, env)? {
+            checker
+                .closure_return_types
+                .insert(name.to_string(), sig.return_type.clone());
+            checker.callable_sigs.insert(name.to_string(), sig);
+            if let ExprKind::Variable(src_name) = &callable_source.kind {
+                if let Some(captures) = checker.callable_captures.get(src_name).cloned() {
+                    checker.callable_captures.insert(name.to_string(), captures);
+                } else {
+                    checker.callable_captures.remove(name);
+                }
+                if let Some(target) = checker.callable_array_targets.get(src_name).cloned() {
+                    checker
+                        .callable_array_targets
+                        .insert(name.to_string(), target);
+                } else {
+                    checker.callable_array_targets.remove(name);
+                }
+                if let Some(target) = checker.first_class_callable_targets.get(src_name).cloned() {
+                    checker
+                        .first_class_callable_targets
+                        .insert(name.to_string(), target);
+                } else {
+                    checker.first_class_callable_targets.remove(name);
+                }
+            } else {
+                checker.callable_captures.remove(name);
+                checker.callable_array_targets.remove(name);
+                checker.first_class_callable_targets.remove(name);
+            }
+        } else {
+            clear_callable_metadata(checker, name);
+        }
     } else {
         checker.closure_return_types.remove(name);
         checker.callable_sigs.remove(name);
@@ -288,6 +322,15 @@ pub(super) fn update_callable_assignment_metadata(
         checker.first_class_callable_targets.remove(name);
     }
     Ok(())
+}
+
+/// Returns true when a local assignment stores an array whose elements are callable descriptors.
+fn is_callable_array_type(ty: &PhpType) -> bool {
+    match ty {
+        PhpType::Array(elem_ty) => elem_ty.as_ref() == &PhpType::Callable,
+        PhpType::AssocArray { value, .. } => value.as_ref() == &PhpType::Callable,
+        _ => false,
+    }
 }
 
 /// Provides the Update callable array assignment metadata helper used by the locals module.

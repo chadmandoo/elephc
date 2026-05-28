@@ -210,6 +210,57 @@ foreach ($items as $from_array) {
     assert_eq!(out, "oldAda");
 }
 
+/// Verifies function-returned runtime callable arrays keep descriptor env metadata.
+#[test]
+fn test_returned_runtime_callable_array_map_uses_descriptor_env() {
+    let out = compile_and_run(
+        r#"<?php
+function make(string $prefix): callable {
+    return function(string $name) use ($prefix): string {
+        return $prefix . $name;
+    };
+}
+
+function callbacks(): array {
+    $cb = make("old");
+    return [$cb];
+}
+
+$items = callbacks();
+$from_array = $items[0];
+$out = array_map($from_array, ["Ada"]);
+echo $out[0];
+"#,
+    );
+    assert_eq!(out, "oldAda");
+}
+
+/// Verifies callable arrays passed to functions keep descriptor env metadata.
+#[test]
+fn test_array_param_runtime_callable_array_map_uses_descriptor_env() {
+    let out = compile_and_run(
+        r#"<?php
+function make(string $prefix): callable {
+    return function(string $name) use ($prefix): string {
+        return $prefix . $name;
+    };
+}
+
+function run($items): void {
+    $from_array = $items[0];
+    $out = array_map($from_array, ["Ada"]);
+    echo $out[0];
+}
+
+$cb = make("old");
+$items = [];
+$items[] = $cb;
+run($items);
+"#,
+    );
+    assert_eq!(out, "oldAda");
+}
+
 /// Verifies that an array-stored closure call reads by-value captures from the descriptor.
 #[test]
 fn test_expr_call_array_element_uses_descriptor_capture_snapshot() {

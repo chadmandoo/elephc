@@ -54,6 +54,7 @@ pub fn emit_function(
     all_functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     constants: &HashMap<String, (ExprKind, PhpType)>,
     all_global_var_names: &HashSet<String>,
@@ -89,6 +90,7 @@ pub fn emit_function(
         all_functions,
         callable_param_sigs,
         callable_return_sigs,
+        callable_array_return_sigs,
         function_variant_groups,
         constants,
         all_global_var_names,
@@ -116,6 +118,7 @@ pub fn emit_closure(
     current_class: Option<&str>,
     all_functions: &HashMap<String, FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     constants: &HashMap<String, (ExprKind, PhpType)>,
     interfaces: &HashMap<String, InterfaceInfo>,
@@ -157,6 +160,7 @@ pub fn emit_closure(
         all_functions,
         &empty_callable_param_sigs,
         callable_return_sigs,
+        callable_array_return_sigs,
         function_variant_groups,
         constants,
         &empty_globals,
@@ -185,6 +189,7 @@ pub fn emit_method(
     all_functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     constants: &HashMap<String, (ExprKind, PhpType)>,
     interfaces: &HashMap<String, InterfaceInfo>,
@@ -211,6 +216,7 @@ pub fn emit_method(
         all_functions,
         callable_param_sigs,
         callable_return_sigs,
+        callable_array_return_sigs,
         function_variant_groups,
         constants,
         &empty_globals,
@@ -240,6 +246,7 @@ fn emit_function_with_label(
     all_functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     constants: &HashMap<String, (ExprKind, PhpType)>,
     all_global_var_names: &HashSet<String>,
@@ -266,6 +273,7 @@ fn emit_function_with_label(
         all_functions,
         callable_param_sigs,
         callable_return_sigs,
+        callable_array_return_sigs,
         function_variant_groups,
         constants,
         all_global_var_names,
@@ -319,10 +327,10 @@ fn allocate_incoming_param(ctx: &mut Context, pname: &str, pty: &PhpType, is_ref
 /// route through descriptor metadata only for source-declared `callable` params.
 fn seed_callable_param_sigs(ctx: &mut Context, scope: Option<&str>, sig: &FunctionSig) {
     for (idx, (pname, pty)) in sig.params.iter().enumerate() {
-        if pty != &PhpType::Callable {
+        if pty != &PhpType::Callable && !is_callable_array_type(pty) {
             continue;
         }
-        if sig.declared_params.get(idx).copied().unwrap_or(false) {
+        if pty == &PhpType::Callable && sig.declared_params.get(idx).copied().unwrap_or(false) {
             ctx.callable_param_names.insert(pname.clone());
         }
         if let Some(scope) = scope {
@@ -332,8 +340,20 @@ fn seed_callable_param_sigs(ctx: &mut Context, scope: Option<&str>, sig: &Functi
                 .cloned()
             {
                 ctx.closure_sigs.insert(pname.clone(), callable_sig);
+                if is_callable_array_type(pty) {
+                    ctx.runtime_callable_vars.insert(pname.clone());
+                }
             }
         }
+    }
+}
+
+/// Returns true when a parameter is an array whose elements are callable descriptors.
+fn is_callable_array_type(ty: &PhpType) -> bool {
+    match ty {
+        PhpType::Array(elem_ty) => elem_ty.as_ref() == &PhpType::Callable,
+        PhpType::AssocArray { value, .. } => value.as_ref() == &PhpType::Callable,
+        _ => false,
     }
 }
 
@@ -354,6 +374,7 @@ fn emit_function_with_label_and_class(
     all_functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     constants: &HashMap<String, (ExprKind, PhpType)>,
     all_global_var_names: &HashSet<String>,
@@ -373,6 +394,7 @@ fn emit_function_with_label_and_class(
     ctx.functions = all_functions.clone();
     ctx.callable_param_sigs = callable_param_sigs.clone();
     ctx.callable_return_sigs = callable_return_sigs.clone();
+    ctx.callable_array_return_sigs = callable_array_return_sigs.clone();
     ctx.function_variant_groups = function_variant_groups.clone();
     ctx.constants = constants.clone();
     ctx.all_global_var_names = all_global_var_names.clone();
@@ -533,6 +555,7 @@ fn emit_function_with_label_and_class(
                     closure.current_class.as_deref(),
                     all_functions,
                     &ctx.callable_return_sigs,
+                    &ctx.callable_array_return_sigs,
                     &ctx.function_variant_groups,
                     constants,
                     interfaces,

@@ -49,6 +49,7 @@ pub(super) fn emit_main_and_finalize(
     functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     interfaces: &HashMap<String, InterfaceInfo>,
     traits: &HashSet<String>,
@@ -69,6 +70,7 @@ pub(super) fn emit_main_and_finalize(
         functions,
         callable_param_sigs,
         callable_return_sigs,
+        callable_array_return_sigs,
         function_variant_groups,
         interfaces,
         traits,
@@ -143,6 +145,7 @@ fn build_main_context(
     functions: &HashMap<String, FunctionSig>,
     callable_param_sigs: &HashMap<(String, String), FunctionSig>,
     callable_return_sigs: &HashMap<String, FunctionSig>,
+    callable_array_return_sigs: &HashMap<String, FunctionSig>,
     function_variant_groups: &HashSet<String>,
     interfaces: &HashMap<String, InterfaceInfo>,
     traits: &HashSet<String>,
@@ -160,6 +163,7 @@ fn build_main_context(
     ctx.functions = functions.clone();
     ctx.callable_param_sigs = callable_param_sigs.clone();
     ctx.callable_return_sigs = callable_return_sigs.clone();
+    ctx.callable_array_return_sigs = callable_array_return_sigs.clone();
     ctx.function_variant_groups = function_variant_groups.clone();
     ctx.constants = global_constants.clone();
     ctx.in_main = true;

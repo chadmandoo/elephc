@@ -88,6 +88,74 @@ pub(crate) fn callable_sig(callback: &Expr, ctx: &Context) -> Option<FunctionSig
     }
 }
 
+/// Returns the element callable signature for an expression that yields an array of callables.
+///
+/// This is kept separate from `callable_sig()` because a function returning
+/// `array<callable>` is not itself callable, but callers that later read an element
+/// from the returned array still need the element descriptor signature.
+pub(crate) fn callable_array_sig(callback_array: &Expr, ctx: &Context) -> Option<FunctionSig> {
+    match &callback_array.kind {
+        ExprKind::ArrayLiteral(elems) => matching_array_element_sig(elems.iter(), ctx),
+        ExprKind::ArrayLiteralAssoc(entries) => {
+            matching_array_element_sig(entries.iter().map(|(_, value)| value), ctx)
+        }
+        ExprKind::FunctionCall { name, .. } => {
+            let resolved_name = match lookup_function(ctx, name.as_str()) {
+                Some(FunctionLookup::UserFunction(name))
+                | Some(FunctionLookup::IncludeVariant(name)) => name,
+                _ => name.as_str().to_string(),
+            };
+            ctx.callable_array_return_sigs.get(&resolved_name).cloned()
+        }
+        ExprKind::Variable(name) => ctx.closure_sigs.get(name).cloned(),
+        ExprKind::Assignment { value, .. } => callable_array_sig(value, ctx),
+        ExprKind::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => matching_array_branch_sig(then_expr, else_expr, ctx),
+        ExprKind::ShortTernary { value, default }
+        | ExprKind::NullCoalesce { value, default } => {
+            matching_array_branch_sig(value, default, ctx)
+        }
+        _ => None,
+    }
+}
+
+/// Returns a shared callable signature only when every array element has the same contract.
+fn matching_array_element_sig<'a>(
+    values: impl Iterator<Item = &'a Expr>,
+    ctx: &Context,
+) -> Option<FunctionSig> {
+    let mut shared_sig: Option<FunctionSig> = None;
+    let mut saw_value = false;
+    for value in values {
+        saw_value = true;
+        let sig = callable_sig(value, ctx)?;
+        match &shared_sig {
+            Some(existing) if existing != &sig => return None,
+            Some(_) => {}
+            None => shared_sig = Some(sig),
+        }
+    }
+    if saw_value {
+        shared_sig
+    } else {
+        None
+    }
+}
+
+/// Returns a callable-array signature only when both branches share one element contract.
+fn matching_array_branch_sig(left: &Expr, right: &Expr, ctx: &Context) -> Option<FunctionSig> {
+    let left_sig = callable_array_sig(left, ctx)?;
+    let right_sig = callable_array_sig(right, ctx)?;
+    if left_sig == right_sig {
+        Some(left_sig)
+    } else {
+        None
+    }
+}
+
 /// Computes the callable signature metadata for direct first class function.
 pub(crate) fn direct_first_class_function_sig(
     callback: &Expr,
