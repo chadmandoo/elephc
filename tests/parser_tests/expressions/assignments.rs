@@ -42,6 +42,19 @@ fn test_compound_assignment_missing_ops_parse() {
     }
 }
 
+/// Verifies that direct reference assignment parses as a `RefAssign` statement.
+#[test]
+fn test_parse_reference_assignment() {
+    let stmts = parse_source("<?php $b =& $a;");
+    match &stmts[0].kind {
+        StmtKind::RefAssign { target, source } => {
+            assert_eq!(target, "b");
+            assert_eq!(source, "a");
+        }
+        other => panic!("expected RefAssign, got {:?}", other),
+    }
+}
+
 /// Verifies that `<?php $items[0] += 3;` parses to an `ArrayAssign` (not a generic `Assign`).
 /// Compound assignment on an array element must produce the correct AST shape.
 #[test]

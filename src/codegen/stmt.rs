@@ -115,6 +115,9 @@ pub fn emit_stmt(stmt: &Stmt, emitter: &mut Emitter, ctx: &mut Context, data: &m
         StmtKind::Assign { name, value } => {
             assignments::emit_assign_stmt(name, value, emitter, ctx, data);
         }
+        StmtKind::RefAssign { target, source } => {
+            assignments::emit_ref_assign_stmt(target, source, emitter, ctx);
+        }
         StmtKind::TypedAssign {
             type_expr: _,
             name,
