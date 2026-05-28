@@ -1282,6 +1282,40 @@ echo preg_replace_callback("/[A-Z]/", $callback, "AB");
     assert_eq!(out, "S:1S:1");
 }
 
+/// Verifies runtime string user callbacks route `preg_replace_callback()` through descriptors.
+#[test]
+fn test_preg_replace_callback_runtime_string_user_callback() {
+    let out = compile_and_run(
+        r#"<?php
+function runtime_regex_replace(array $matches): string {
+    return "U" . count($matches);
+}
+
+$callback = "runtime_regex_replace";
+echo preg_replace_callback("/[A-Z]/", $callback, "AB");
+"#,
+    );
+    assert_eq!(out, "U1U1");
+}
+
+/// Verifies runtime string static-method callbacks route regex replacements through descriptors.
+#[test]
+fn test_preg_replace_callback_runtime_string_static_method_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeStringRegexFormatter {
+    public static function replace(array $matches): string {
+        return "S" . count($matches);
+    }
+}
+
+$callback = "RuntimeStringRegexFormatter::replace";
+echo preg_replace_callback("/[A-Z]/", $callback, "AB");
+"#,
+    );
+    assert_eq!(out, "S1S1");
+}
+
 /// Verifies a branch-selected first-class callable keeps the selected descriptor
 /// environment when passed directly to `preg_replace_callback()`.
 #[test]

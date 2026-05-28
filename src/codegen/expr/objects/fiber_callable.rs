@@ -56,30 +56,37 @@ fn emit_callable_array_descriptor(
     data: &mut DataSection,
 ) -> bool {
     if let Some(target) = callable_array_literal_target(callable_expr, ctx) {
-        return emit_synthetic_first_class_callable(target, callable_expr, emitter, ctx, data);
-    }
-
-    let ExprKind::Variable(var_name) = &callable_expr.kind else {
-        return false;
-    };
-    let Some(target) = ctx.callable_array_targets.get(var_name).cloned() else {
-        return false;
-    };
-    match target {
-        CallableTarget::StaticMethod { .. } => {
-            emit_synthetic_first_class_callable(target, callable_expr, emitter, ctx, data)
-        }
-        CallableTarget::Method { object, method } => emit_stored_instance_callable_array_descriptor(
-            var_name,
-            &object,
-            &method,
+        return emit_callable_array_target_descriptor(
+            target,
             callable_expr,
             emitter,
             ctx,
             data,
-        ),
-        CallableTarget::Function(_) => false,
+        );
     }
+
+    if let ExprKind::Variable(var_name) = &callable_expr.kind {
+        if let Some(target) = ctx.callable_array_targets.get(var_name).cloned() {
+            return match target {
+                CallableTarget::StaticMethod { .. } => {
+                    emit_synthetic_first_class_callable(target, callable_expr, emitter, ctx, data)
+                }
+                CallableTarget::Method { object, method } => {
+                    emit_stored_instance_callable_array_descriptor(
+                        var_name,
+                        &object,
+                        &method,
+                        emitter,
+                        ctx,
+                        data,
+                    )
+                }
+                CallableTarget::Function(_) => false,
+            };
+        }
+    }
+
+    emit_runtime_callable_array_descriptor(callable_expr, emitter, ctx, data)
 }
 
 /// Emits a first-class-callable descriptor for an object with public `__invoke()`.
@@ -89,9 +96,6 @@ fn emit_invokable_object_descriptor(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> bool {
-    if !simple_receiver_expr(callable_expr) {
-        return false;
-    }
     let callable_ty = crate::codegen::functions::infer_contextual_type(callable_expr, ctx);
     let Some(class_name) = crate::codegen::functions::singular_object_class(&callable_ty) else {
         return false;
@@ -104,11 +108,14 @@ fn emit_invokable_object_descriptor(
         return false;
     }
 
-    let target = CallableTarget::Method {
-        object: Box::new(callable_expr.clone()),
-        method: "__invoke".to_string(),
-    };
-    emit_synthetic_first_class_callable(target, callable_expr, emitter, ctx, data)
+    emit_instance_receiver_expr_descriptor(
+        callable_expr,
+        "__invoke",
+        callable_expr.span,
+        emitter,
+        ctx,
+        data,
+    )
 }
 
 /// Emits runtime string-name descriptor selection for a Fiber callback.
@@ -141,13 +148,36 @@ fn emit_synthetic_first_class_callable(
     true
 }
 
+/// Emits a callable-array target as a descriptor suitable for Fiber storage.
+fn emit_callable_array_target_descriptor(
+    target: CallableTarget,
+    source_expr: &Expr,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> bool {
+    match target {
+        CallableTarget::StaticMethod { .. } => {
+            emit_synthetic_first_class_callable(target, source_expr, emitter, ctx, data)
+        }
+        CallableTarget::Method { object, method } => emit_instance_receiver_expr_descriptor(
+            &object,
+            &method,
+            source_expr.span,
+            emitter,
+            ctx,
+            data,
+        ),
+        CallableTarget::Function(_) => false,
+    }
+}
+
 /// Emits a descriptor whose receiver capture comes from slot zero of a stored callable array.
 #[allow(clippy::too_many_arguments)]
 fn emit_stored_instance_callable_array_descriptor(
     var_name: &str,
     object: &Expr,
     method: &str,
-    source_expr: &Expr,
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
@@ -163,47 +193,58 @@ fn emit_stored_instance_callable_array_descriptor(
         return false;
     };
 
-    let hidden_name = unique_hidden_param(FIBER_RECEIVER_CAPTURE_PARAM, &sig);
     let capture_ty = PhpType::Object(class_name.clone());
-    let captures = vec![(hidden_name.clone(), capture_ty.clone(), false)];
-    let hidden_params = vec![(hidden_name.clone(), capture_ty.clone(), false)];
-    let wrapper_label = ctx.next_label("fiber_callable_array_method");
-    let param_names: Vec<String> = sig.params.iter().map(|(name, _)| name.clone()).collect();
-    ctx.deferred_closures.push(DeferredClosure {
-        label: wrapper_label.clone(),
-        params: param_names,
-        body: callable_array_method_wrapper_body(&hidden_name, &resolved_method, &sig),
-        sig: sig.clone(),
-        captures: captures.clone(),
-        hidden_params: hidden_params.clone(),
-        current_class: Some(class_name.clone()),
-        needed: true,
-    });
-
-    let invoker_label = callable_dispatch::ensure_runtime_descriptor_invoker(
-        ctx,
-        &hidden_params,
+    let descriptor_label = receiver_bound_instance_method_descriptor(
+        class_name,
+        resolved_method,
         &sig,
-    );
-    let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
         data,
-        &wrapper_label,
-        None,
-        callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
-        Some(&sig),
-        &captures,
-        &hidden_params,
-        CallableDescriptorInvocation::method(
-            CallableDescriptorShape::InstanceMethod,
-            Some(class_name),
-            resolved_method,
-        ),
-        invoker_label.as_deref(),
+        ctx,
     );
 
     emit_runtime_descriptor_with_callable_array_receiver(
         var_name,
-        source_expr.span,
+        object.span,
+        &descriptor_label,
+        &capture_ty,
+        emitter,
+        ctx,
+        data,
+    );
+    true
+}
+
+/// Emits a receiver-bound instance method descriptor by evaluating the receiver expression once.
+fn emit_instance_receiver_expr_descriptor(
+    receiver: &Expr,
+    method: &str,
+    span: Span,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> bool {
+    let receiver_ty = crate::codegen::functions::infer_contextual_type(receiver, ctx);
+    let Some(class_name) =
+        crate::codegen::functions::singular_object_class(&receiver_ty).map(str::to_string)
+    else {
+        return false;
+    };
+    let Some((resolved_method, sig)) = callable_array_method_wrapper_sig(ctx, &class_name, method)
+    else {
+        return false;
+    };
+
+    let capture_ty = PhpType::Object(class_name.clone());
+    let descriptor_label = receiver_bound_instance_method_descriptor(
+        class_name,
+        resolved_method,
+        &sig,
+        data,
+        ctx,
+    );
+    emit_runtime_descriptor_with_receiver_expr(
+        receiver,
+        span,
         &descriptor_label,
         &capture_ty,
         emitter,
@@ -226,6 +267,50 @@ fn callable_array_method_wrapper_sig(
         .iter()
         .find(|(candidate, _)| php_symbol_key(candidate) == method_key)?;
     Some((resolved_method.clone(), callable_wrapper_sig(method_sig)))
+}
+
+/// Registers a receiver-bound wrapper and returns its static descriptor label.
+fn receiver_bound_instance_method_descriptor(
+    class_name: String,
+    resolved_method: String,
+    sig: &FunctionSig,
+    data: &mut DataSection,
+    ctx: &mut Context,
+) -> String {
+    let hidden_name = unique_hidden_param(FIBER_RECEIVER_CAPTURE_PARAM, sig);
+    let capture_ty = PhpType::Object(class_name.clone());
+    let captures = vec![(hidden_name.clone(), capture_ty.clone(), false)];
+    let hidden_params = vec![(hidden_name.clone(), capture_ty, false)];
+    let wrapper_label = ctx.next_label("fiber_callable_array_method");
+    let param_names: Vec<String> = sig.params.iter().map(|(name, _)| name.clone()).collect();
+    ctx.deferred_closures.push(DeferredClosure {
+        label: wrapper_label.clone(),
+        params: param_names,
+        body: callable_array_method_wrapper_body(&hidden_name, &resolved_method, sig),
+        sig: sig.clone(),
+        captures: captures.clone(),
+        hidden_params: hidden_params.clone(),
+        current_class: Some(class_name.clone()),
+        needed: true,
+    });
+
+    let invoker_label =
+        callable_dispatch::ensure_runtime_descriptor_invoker(ctx, &hidden_params, sig);
+    callable_descriptor::static_descriptor_with_optional_invoker_meta(
+        data,
+        &wrapper_label,
+        None,
+        callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
+        Some(sig),
+        &captures,
+        &hidden_params,
+        CallableDescriptorInvocation::method(
+            CallableDescriptorShape::InstanceMethod,
+            Some(class_name),
+            resolved_method,
+        ),
+        invoker_label.as_deref(),
+    )
 }
 
 /// Builds the synthetic wrapper body for a Fiber callable-array instance method.
@@ -322,6 +407,159 @@ fn emit_runtime_descriptor_with_callable_array_receiver(
     }
 }
 
+/// Evaluates a receiver expression and stores it as runtime descriptor capture slot zero.
+#[allow(clippy::too_many_arguments)]
+fn emit_runtime_descriptor_with_receiver_expr(
+    receiver: &Expr,
+    span: Span,
+    descriptor_label: &str,
+    receiver_ty: &PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let emitted_ty = crate::codegen::expr::emit_expr(receiver, emitter, ctx, data);
+    if matches!(emitted_ty.codegen_repr(), PhpType::Mixed) {
+        crate::codegen::expr::objects::emit_unbox_mixed_object_or_fatal(
+            b"Fatal error: Fiber callable receiver is not an object\n",
+            emitter,
+            ctx,
+            data,
+        );
+    }
+    if receiver_ty.is_refcounted()
+        && crate::codegen::expr::expr_result_heap_ownership(receiver) != HeapOwnership::Owned
+    {
+        abi::emit_incref_if_refcounted(emitter, receiver_ty);
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the evaluated Fiber callable receiver while allocating its descriptor
+    emit_runtime_descriptor_with_saved_receiver(span, descriptor_label, receiver_ty, emitter, data);
+}
+
+/// Stores the receiver currently saved on the temporary stack in descriptor capture slot zero.
+fn emit_runtime_descriptor_with_saved_receiver(
+    _span: Span,
+    descriptor_label: &str,
+    receiver_ty: &PhpType,
+    emitter: &mut Emitter,
+    _data: &mut DataSection,
+) {
+    let descriptor_reg = abi::nested_call_reg(emitter);
+    let total_bytes = callable_descriptor::CALLABLE_DESC_RUNTIME_CAPTURE_OFFSET + 16;
+
+    emitter.comment("fiber receiver-bound descriptor capture");
+    abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), total_bytes as i64);
+    abi::emit_call_label(emitter, "__rt_heap_alloc");
+    emitter.instruction(&format!("mov {}, {}", descriptor_reg, abi::int_result_reg(emitter))); // keep the Fiber descriptor pointer while copying its static header
+    callable_descriptor::emit_copy_static_descriptor_to_runtime(
+        emitter,
+        descriptor_reg,
+        descriptor_label,
+    );
+    abi::emit_push_reg(emitter, descriptor_reg);                                // preserve the runtime descriptor while the receiver capture is restored
+    abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 16);
+    callable_descriptor::emit_store_current_result_to_runtime_capture(
+        emitter,
+        descriptor_reg,
+        0,
+        receiver_ty,
+    );
+    abi::emit_pop_reg(emitter, descriptor_reg);                                 // restore the runtime descriptor after receiver capture storage
+    abi::emit_release_temporary_stack(emitter, 16);                             // discard the saved receiver after it has been copied into the descriptor
+    if descriptor_reg != abi::int_result_reg(emitter) {
+        emitter.instruction(&format!("mov {}, {}", abi::int_result_reg(emitter), descriptor_reg)); // return the receiver-bound Fiber callable descriptor
+    }
+}
+
+/// Emits descriptor selection for runtime callable-array Fiber callbacks.
+fn emit_runtime_callable_array_descriptor(
+    callable_expr: &Expr,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> bool {
+    if crate::codegen::builtins::arrays::runtime_callable_array_callback::emit_without_saved_array(
+        callable_expr,
+        emitter,
+        ctx,
+        data,
+        |case, receiver_ty, emitter, ctx, data| {
+            emit_selected_runtime_callable_array_descriptor(
+                case,
+                receiver_ty,
+                callable_expr.span,
+                emitter,
+                ctx,
+                data,
+            );
+        },
+    ) {
+        return true;
+    }
+
+    crate::codegen::builtins::arrays::runtime_callable_array_callback::emit_literal_without_saved_array(
+        callable_expr,
+        emitter,
+        ctx,
+        data,
+        |case, receiver_ty, emitter, ctx, data| {
+            emit_selected_runtime_callable_array_descriptor(
+                case,
+                receiver_ty,
+                callable_expr.span,
+                emitter,
+                ctx,
+                data,
+            );
+        },
+    )
+}
+
+/// Materializes the descriptor selected from a runtime callable array.
+fn emit_selected_runtime_callable_array_descriptor(
+    case: &RuntimeCallableCase,
+    receiver_ty: Option<&PhpType>,
+    span: Span,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let Some(receiver_ty) = receiver_ty else {
+        abi::emit_symbol_address(emitter, abi::int_result_reg(emitter), &case.descriptor_label);
+        return;
+    };
+
+    let Some((class_name, method_name)) = runtime_case_method_target(case) else {
+        emit_fiber_callable_no_match_abort(emitter, data);
+        return;
+    };
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                  // recover the selected runtime callable-array receiver
+    if receiver_ty.is_refcounted() {
+        abi::emit_incref_if_refcounted(emitter, receiver_ty);
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                  // preserve the retained receiver while building its descriptor
+    let Some((resolved_method, sig)) = callable_array_method_wrapper_sig(ctx, &class_name, &method_name)
+    else {
+        emit_fiber_callable_no_match_abort(emitter, data);
+        return;
+    };
+    let descriptor_label = receiver_bound_instance_method_descriptor(
+        class_name,
+        resolved_method,
+        &sig,
+        data,
+        ctx,
+    );
+    emit_runtime_descriptor_with_saved_receiver(span, &descriptor_label, receiver_ty, emitter, data);
+}
+
+/// Extracts the class and method names from a runtime callable case.
+fn runtime_case_method_target(case: &RuntimeCallableCase) -> Option<(String, String)> {
+    let php_name = case.php_name.as_ref()?;
+    let (class_name, method_name) = php_name.split_once("::")?;
+    Some((class_name.to_string(), method_name.to_string()))
+}
+
 /// Builds `$callback[$index]` for reading a stored callable-array slot.
 fn callable_array_slot_expr(var_name: &str, index: i64, span: Span) -> Expr {
     Expr::new(
@@ -404,9 +642,6 @@ fn callable_array_literal_target(expr: &Expr, ctx: &Context) -> Option<CallableT
             method: method.to_string(),
         });
     }
-    if !simple_receiver_expr(receiver) {
-        return None;
-    }
     Some(CallableTarget::Method {
         object: Box::new(receiver.clone()),
         method: method.to_string(),
@@ -457,11 +692,6 @@ fn resolve_class_name<'a>(ctx: &'a Context, class_name: &str) -> Option<&'a str>
         .keys()
         .find(|existing| php_symbol_key(existing) == class_key)
         .map(String::as_str)
-}
-
-/// Returns true when first-class callable lowering can capture the receiver without a temp slot.
-fn simple_receiver_expr(expr: &Expr) -> bool {
-    matches!(&expr.kind, ExprKind::Variable(_) | ExprKind::This)
 }
 
 /// Emits a fatal diagnostic when a runtime Fiber callable name has no descriptor case.

@@ -50,7 +50,9 @@ methods. Callable descriptors that require captures, object receivers, or
 late-static-binding context are rejected for raw C function-pointer slots,
 because the C ABI receives only the function address and has no descriptor
 environment pointer. Descriptor values whose environment-free status cannot be
-proven statically are rejected for the same reason.
+proven statically are rejected for the same reason. Stateful trampoline symbols
+for descriptor-backed callbacks are tracked as future shared-library/FFI work in
+the roadmap.
 
 ## String conversion
 - **Calling C**: elephc creates temporary null-terminated copy, frees after call

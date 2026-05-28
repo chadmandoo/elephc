@@ -493,7 +493,10 @@ impl Checker {
         };
         let Some(sig) = self.resolve_fiber_callable_sig(callback, env)? else {
             let callback_ty = self.infer_type(callback, env)?;
-            if callback_ty == PhpType::Callable || callback_ty == PhpType::Str {
+            if callback_ty == PhpType::Callable
+                || callback_ty == PhpType::Str
+                || crate::types::checker::builtins::runtime_callable_array_type(&callback_ty)
+            {
                 return Ok(());
             }
             return Err(CompileError::new(callback.span, "Fiber callback must be callable"));
@@ -531,7 +534,7 @@ impl Checker {
                 self.resolve_fiber_invokable_object_sig(callback, env)
             }
             ExprKind::This => self.resolve_fiber_invokable_object_sig(callback, env),
-            _ => Ok(None),
+            _ => self.resolve_fiber_invokable_object_sig(callback, env),
         }
     }
 
@@ -590,9 +593,6 @@ impl Checker {
         callback: &Expr,
         env: &TypeEnv,
     ) -> Result<Option<FunctionSig>, CompileError> {
-        if !simple_fiber_receiver_expr(callback) {
-            return Ok(None);
-        }
         let callback_ty = self.infer_type(callback, env)?;
         let Some(class_name) = self.fiber_object_class_name(&callback_ty) else {
             return Ok(None);
@@ -626,9 +626,6 @@ impl Checker {
                 receiver,
                 method: method.to_string(),
             }));
-        }
-        if !simple_fiber_receiver_expr(receiver) {
-            return Ok(None);
         }
         let receiver_ty = self.infer_type(receiver, env)?;
         if self.fiber_object_class_name(&receiver_ty).is_none() {
@@ -865,12 +862,6 @@ fn fiber_callable_array_parts(expr: &Expr) -> Option<(&Expr, &str)> {
     };
     Some((&elems[0], method.as_str()))
 }
-
-/// Returns true when Fiber codegen can capture a receiver without allocating a hidden temp.
-fn simple_fiber_receiver_expr(expr: &Expr) -> bool {
-    matches!(&expr.kind, ExprKind::Variable(_) | ExprKind::This)
-}
-
 
 /// Returns `true` if `class_name` is a reflection owner class
 /// (`ReflectionClass`, `ReflectionMethod`, `ReflectionProperty`).

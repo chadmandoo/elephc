@@ -316,6 +316,31 @@ echo $f->getReturn();
     assert_eq!(out, "array:go/null/array:done");
 }
 
+/// Verifies an inline object receiver in a Fiber callable-array literal is captured once.
+#[test]
+fn test_fiber_instance_callable_array_literal_accepts_inline_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberInlineArrayJob {
+    public function __construct(private string $prefix) {}
+
+    public function run(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$f = new Fiber([new FiberInlineArrayJob("inline:"), "run"]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "inline:go/null/inline:done");
+}
+
 /// Verifies that a stored instance-method callable array captures the receiver from slot zero.
 #[test]
 fn test_fiber_stored_instance_callable_array_uses_stored_receiver() {
@@ -344,6 +369,87 @@ echo $fiber->getReturn();
     assert_eq!(out, "first:go/null/first:done");
 }
 
+/// Verifies a runtime-selected instance callable-array variable is converted to a Fiber descriptor.
+#[test]
+fn test_fiber_runtime_selected_instance_callable_array_variable() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberRuntimeArrayJob {
+    public function __construct(private string $prefix) {}
+
+    public function run(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$first = new FiberRuntimeArrayJob("runtime:");
+$second = new FiberRuntimeArrayJob("bad:");
+$method = "run";
+$callback = [$first, $method];
+$fiber = new Fiber($callback);
+$callback = [$second, $method];
+$v = $fiber->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $fiber->getReturn();
+"#,
+    );
+    assert_eq!(out, "runtime:go/null/runtime:done");
+}
+
+/// Verifies a runtime-selected callable-array literal can provide a Fiber instance receiver.
+#[test]
+fn test_fiber_runtime_selected_instance_callable_array_literal() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberRuntimeLiteralJob {
+    public function __construct(private string $prefix) {}
+
+    public function run(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$method = "run";
+$f = new Fiber([new FiberRuntimeLiteralJob("literal:"), $method]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "literal:go/null/literal:done");
+}
+
+/// Verifies a runtime-selected static callable-array literal can start a Fiber.
+#[test]
+fn test_fiber_runtime_selected_static_callable_array_literal() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberRuntimeStaticJob {
+    public static function run(string $value): string {
+        echo "static:" . $value;
+        return "static:done";
+    }
+}
+
+$class = FiberRuntimeStaticJob::class;
+$method = "run";
+$f = new Fiber([$class, $method]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "static:go/null/static:done");
+}
+
 /// Verifies that an invokable object variable is converted into a Fiber descriptor.
 #[test]
 fn test_fiber_invokable_object_callable_uses_descriptor_receiver() {
@@ -368,6 +474,31 @@ echo $f->getReturn();
 "#,
     );
     assert_eq!(out, "invoke:go/null/invoke:done");
+}
+
+/// Verifies an inline invokable object is captured as a Fiber descriptor receiver.
+#[test]
+fn test_fiber_invokable_object_literal_uses_descriptor_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+class FiberInlineInvokerJob {
+    public function __construct(private string $prefix) {}
+
+    public function __invoke(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+
+$f = new Fiber(new FiberInlineInvokerJob("invoke-inline:"));
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+    );
+    assert_eq!(out, "invoke-inline:go/null/invoke-inline:done");
 }
 
 /// Verifies that an inline variadic Fiber closure receives all start args in `...$args`.

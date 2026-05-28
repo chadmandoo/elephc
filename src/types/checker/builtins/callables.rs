@@ -722,6 +722,7 @@ fn callback_builtin_allows_runtime_string_descriptor(label: &str) -> bool {
             | "array_filter() callback"
             | "array_reduce() callback"
             | "array_walk() callback"
+            | "preg_replace_callback() callback"
             | "usort() callback"
             | "uksort() callback"
             | "uasort() callback"
