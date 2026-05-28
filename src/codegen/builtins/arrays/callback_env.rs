@@ -411,6 +411,57 @@ pub(crate) fn emit_persistent_descriptor_callback_env_from_result(
     Some(wrapper_label)
 }
 
+/// Emits a heap-backed descriptor callback environment from a static descriptor label.
+///
+/// Any descriptor-prefix values must already be pushed on the temporary stack in
+/// source order. The helper stores them in persistent environment slots and
+/// releases those temporary stack slots before returning the env pointer.
+pub(crate) fn emit_persistent_descriptor_callback_env_from_static_descriptor(
+    descriptor_label: &str,
+    visible_arg_types: Vec<PhpType>,
+    descriptor_prefix_types: Vec<PhpType>,
+    descriptor_return_type: PhpType,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+) -> String {
+    let wrapper_label = ctx.next_label("descriptor_callback_wrapper");
+    let prefix_count = descriptor_prefix_types.len();
+    ctx.deferred_callback_wrappers.push(DeferredCallbackWrapper {
+        label: wrapper_label.clone(),
+        visible_arg_types,
+        target_visible_arg_types: None,
+        capture_types: Vec::new(),
+        descriptor_prefix_types: descriptor_prefix_types.clone(),
+        descriptor_return_type: Some(descriptor_return_type),
+    });
+
+    let env_bytes = (prefix_count + 1) * 16;
+    let prefix_bytes = prefix_count * 16;
+    emitter.comment("persistent static descriptor callback environment");
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("mov x0, #{}", env_bytes));            // request persistent descriptor callback environment storage
+            emitter.instruction("bl __rt_heap_alloc");                          // allocate the persistent descriptor callback environment
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov rax, {}", env_bytes));            // request persistent descriptor callback environment storage
+            emitter.instruction("call __rt_heap_alloc");                        // allocate the persistent descriptor callback environment
+        }
+    }
+    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));                 // keep the env pointer above saved descriptor-prefix values
+    abi::emit_symbol_address(emitter, abi::int_result_reg(emitter), descriptor_label);
+    store_current_result_to_persistent_env_slot(emitter, &PhpType::Callable, 0);
+    for (idx, prefix_ty) in descriptor_prefix_types.iter().enumerate() {
+        let saved_offset = 16 + (prefix_count - 1 - idx) * 16;
+        load_temporary_stack_slot_to_current_result(emitter, prefix_ty, saved_offset);
+        store_current_result_to_persistent_env_slot(emitter, prefix_ty, (idx + 1) * 16);
+        retain_persistent_capture_result(emitter, prefix_ty);
+    }
+    abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                  // return the persistent descriptor env pointer as the current result
+    abi::emit_release_temporary_stack(emitter, prefix_bytes);                  // discard saved descriptor-prefix values after env storage
+    wrapper_label
+}
+
 /// Returns true when a callback expression must preserve the selected runtime descriptor.
 pub(crate) fn expr_call_needs_descriptor_callback_env(callback: &Expr, ctx: &Context) -> bool {
     if runtime_callable_expr_result_needs_descriptor_callback_env(callback, ctx) {
@@ -879,6 +930,24 @@ fn store_current_result_to_persistent_env_slot(
         PhpType::Void | PhpType::Never => {}
         _ => {
             abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), env_reg, offset);
+        }
+    }
+}
+
+/// Loads a temporary-stack value into the standard expression result registers.
+fn load_temporary_stack_slot_to_current_result(emitter: &mut Emitter, ty: &PhpType, offset: usize) {
+    match ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_load_temporary_stack_slot(emitter, abi::float_result_reg(emitter), offset);
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+            abi::emit_load_temporary_stack_slot(emitter, ptr_reg, offset);
+            abi::emit_load_temporary_stack_slot(emitter, len_reg, offset + 8);
+        }
+        PhpType::Void | PhpType::Never => {}
+        _ => {
+            abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), offset);
         }
     }
 }

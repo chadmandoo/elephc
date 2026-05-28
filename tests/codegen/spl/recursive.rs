@@ -275,6 +275,52 @@ foreach ($it as $key => $value) {
     assert_eq!(out, "Ra;Rx;Ry;Rz;out:z=3;Rb;out:b=4;");
 }
 
+/// Verifies that recursive callback filter children keep a runtime-selected callable array.
+#[test]
+fn test_recursive_callback_filter_iterator_runtime_selected_callable_array() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeRecursiveGate {
+    private int $min;
+    private string $tag;
+
+    public function __construct(int $min, string $tag) {
+        $this->min = $min;
+        $this->tag = $tag;
+    }
+
+    public function keep(mixed $current, mixed $key, Iterator $iterator): bool {
+        echo $this->tag;
+        echo $key;
+        echo ";";
+        if (gettype($current) === "array") {
+            return true;
+        }
+        return $current > $this->min;
+    }
+}
+
+$gate = new RuntimeRecursiveGate(1, "D");
+$method = "keep";
+$callback = [$gate, $method];
+$filter = new RecursiveCallbackFilterIterator(
+    new RecursiveArrayIterator(["a" => ["x" => 1, "y" => 2, "z" => 3], "b" => 4]),
+    $callback
+);
+$callback = [new RuntimeRecursiveGate(3, "E"), $method];
+$it = new RecursiveIteratorIterator($filter);
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "Da;Dx;Dy;out:y=2;Dz;out:z=3;Db;out:b=4;");
+}
+
 /// Verifies that parent iterator filters parents recursively.
 #[test]
 fn test_parent_iterator_filters_parents_recursively() {

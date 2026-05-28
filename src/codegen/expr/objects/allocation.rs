@@ -8,7 +8,8 @@
 //! Key details:
 //! - Object handles, property storage, and class ids must stay consistent with emitted class tables.
 
-use crate::codegen::builtins::arrays::callback_env;
+use crate::codegen::builtins::arrays::{callback_env, runtime_callable_array_callback};
+use crate::codegen::callable_dispatch::RuntimeCallableCase;
 use crate::codegen::{abi, runtime_value_tag};
 use crate::codegen::context::{Context, HeapOwnership};
 use crate::codegen::data_section::DataSection;
@@ -558,44 +559,62 @@ fn emit_new_callback_filter_iterator(
     store_iterator_inner_property_from_result(emitter, inner_offset);
 
     if let Some(callback_expr) = normalized_args.get(1) {
-        let (_callback_ty, captures, target_visible_arg_types) =
-            emit_callback_filter_callable_arg(callback_expr, emitter, ctx, data);
-        if callback_env::expr_call_needs_descriptor_callback_env(callback_expr, ctx) {
-            let wrapper_label = callback_env::emit_persistent_descriptor_callback_env_from_result(
-                callback_expr,
-                callback_filter_visible_arg_types(),
-                PhpType::Bool,
-                emitter,
-                ctx,
-            )
-            .expect("type checker must reject unsupported callback-filter descriptor env ownership");
-            store_pointer_property_from_result(emitter, callback_env_offset);
-            emit_store_callback_filter_adapter_descriptor(
-                &wrapper_label,
-                callback_offset,
-                &[],
-                emitter,
-                data,
-            );
-        } else if captures.is_empty() {
-            store_callable_property_from_result(emitter, callback_offset);
-            store_pointer_property_zero(emitter, callback_env_offset);
-        } else {
-            let wrapper_label = callback_env::emit_persistent_callback_env_from_result(
-                &captures,
-                callback_filter_visible_arg_types(),
-                target_visible_arg_types,
-                emitter,
-                ctx,
-            );
-            store_pointer_property_from_result(emitter, callback_env_offset);
-            emit_store_callback_filter_adapter_descriptor(
-                &wrapper_label,
-                callback_offset,
-                &captures,
-                emitter,
-                data,
-            );
+        let handled_callable_array = emit_runtime_callable_array_callback_filter(
+            callback_expr,
+            callback_offset,
+            callback_env_offset,
+            emitter,
+            ctx,
+            data,
+        ) || emit_static_callable_array_callback_filter(
+            callback_expr,
+            callback_offset,
+            callback_env_offset,
+            emitter,
+            ctx,
+            data,
+        );
+        if !handled_callable_array {
+            let (_callback_ty, captures, target_visible_arg_types) =
+                emit_callback_filter_callable_arg(callback_expr, emitter, ctx, data);
+            if callback_env::expr_call_needs_descriptor_callback_env(callback_expr, ctx) {
+                let wrapper_label =
+                    callback_env::emit_persistent_descriptor_callback_env_from_result(
+                        callback_expr,
+                        callback_filter_visible_arg_types(),
+                        PhpType::Bool,
+                        emitter,
+                        ctx,
+                    )
+                    .expect("type checker must reject unsupported callback-filter descriptor env ownership");
+                store_pointer_property_from_result(emitter, callback_env_offset);
+                emit_store_callback_filter_adapter_descriptor(
+                    &wrapper_label,
+                    callback_offset,
+                    &[],
+                    emitter,
+                    data,
+                );
+            } else if captures.is_empty() {
+                store_callable_property_from_result(emitter, callback_offset);
+                store_pointer_property_zero(emitter, callback_env_offset);
+            } else {
+                let wrapper_label = callback_env::emit_persistent_callback_env_from_result(
+                    &captures,
+                    callback_filter_visible_arg_types(),
+                    target_visible_arg_types,
+                    emitter,
+                    ctx,
+                );
+                store_pointer_property_from_result(emitter, callback_env_offset);
+                emit_store_callback_filter_adapter_descriptor(
+                    &wrapper_label,
+                    callback_offset,
+                    &captures,
+                    emitter,
+                    data,
+                );
+            }
         }
     } else {
         emitter.comment(&format!("WARNING: {} constructor missing callback", class_name));
@@ -607,6 +626,105 @@ fn emit_new_callback_filter_iterator(
 
     abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));                   // restore the initialized callback-filter object as the expression result
     PhpType::Object(class_name.to_string())
+}
+
+/// Emits persistent callback state for a runtime-selected callable-array callback.
+fn emit_runtime_callable_array_callback_filter(
+    callback_expr: &Expr,
+    callback_offset: usize,
+    callback_env_offset: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> bool {
+    runtime_callable_array_callback::emit_without_saved_array(
+        callback_expr,
+        emitter,
+        ctx,
+        data,
+        |case, receiver_ty, emitter, ctx, data| {
+            emit_runtime_callable_array_callback_filter_case(
+                case,
+                receiver_ty,
+                callback_offset,
+                callback_env_offset,
+                emitter,
+                ctx,
+                data,
+            );
+        },
+    )
+}
+
+/// Stores one selected runtime callable-array descriptor on the callback-filter object.
+fn emit_runtime_callable_array_callback_filter_case(
+    case: &RuntimeCallableCase,
+    receiver_ty: Option<&PhpType>,
+    callback_offset: usize,
+    callback_env_offset: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    let descriptor_prefix_types = receiver_ty.iter().map(|ty| (*ty).clone()).collect();
+    let wrapper_label = callback_env::emit_persistent_descriptor_callback_env_from_static_descriptor(
+        &case.descriptor_label,
+        callback_filter_visible_arg_types(),
+        descriptor_prefix_types,
+        PhpType::Bool,
+        emitter,
+        ctx,
+    );
+    store_pointer_property_from_result(emitter, callback_env_offset);
+    emit_store_callback_filter_adapter_descriptor(
+        &wrapper_label,
+        callback_offset,
+        &[],
+        emitter,
+        data,
+    );
+}
+
+/// Emits persistent callback state for a statically known callable-array callback.
+fn emit_static_callable_array_callback_filter(
+    callback_expr: &Expr,
+    callback_offset: usize,
+    callback_env_offset: usize,
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) -> bool {
+    let Some(array_callback) =
+        callback_env::resolve_callable_array_descriptor_callback(callback_expr, ctx, data)
+    else {
+        return false;
+    };
+    let descriptor_prefix_types: Vec<PhpType> = array_callback
+        .receiver_prefix
+        .iter()
+        .map(|(_, ty)| ty.clone())
+        .collect();
+    if let Some((receiver, receiver_ty)) = &array_callback.receiver_prefix {
+        emit_expr(receiver, emitter, ctx, data);
+        abi::emit_push_result_value(emitter, receiver_ty);
+    }
+    let wrapper_label = callback_env::emit_persistent_descriptor_callback_env_from_static_descriptor(
+        &array_callback.descriptor_label,
+        callback_filter_visible_arg_types(),
+        descriptor_prefix_types,
+        PhpType::Bool,
+        emitter,
+        ctx,
+    );
+    store_pointer_property_from_result(emitter, callback_env_offset);
+    emit_store_callback_filter_adapter_descriptor(
+        &wrapper_label,
+        callback_offset,
+        &[],
+        emitter,
+        data,
+    );
+    true
 }
 
 /// Emits and stores the descriptor for a callback-filter adapter wrapper.

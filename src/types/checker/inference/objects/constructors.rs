@@ -101,6 +101,18 @@ impl Checker {
                     &format!("Constructor '{}::__construct'", class_name),
                     env,
                 )?;
+                let effective_sig = if matches!(
+                    class_name.as_str(),
+                    "CallbackFilterIterator" | "RecursiveCallbackFilterIterator"
+                ) {
+                    self.callback_filter_constructor_sig_for_args(
+                        &effective_sig,
+                        &normalized_args,
+                        env,
+                    )?
+                } else {
+                    effective_sig
+                };
                 self.check_known_callable_call(
                     &effective_sig,
                     &normalized_args,
@@ -535,6 +547,40 @@ impl Checker {
         }
 
         Ok(())
+    }
+
+    /// Adjusts callback-filter constructor typing for callable-array callback variables.
+    fn callback_filter_constructor_sig_for_args(
+        &mut self,
+        sig: &crate::types::FunctionSig,
+        args: &[Expr],
+        env: &TypeEnv,
+    ) -> Result<crate::types::FunctionSig, CompileError> {
+        let Some(callback) = args.get(1) else {
+            return Ok(sig.clone());
+        };
+        let actual_ty = self.infer_type(callback, env)?;
+        if !self.callback_filter_accepts_callable_array_variable(callback, &actual_ty) {
+            return Ok(sig.clone());
+        }
+        let mut adjusted_sig = sig.clone();
+        if let Some((_, callback_ty)) = adjusted_sig.params.get_mut(1) {
+            *callback_ty = actual_ty;
+        }
+        Ok(adjusted_sig)
+    }
+
+    /// Returns true when CallbackFilterIterator codegen can resolve a callable-array variable.
+    fn callback_filter_accepts_callable_array_variable(
+        &self,
+        callback: &Expr,
+        actual_ty: &PhpType,
+    ) -> bool {
+        let ExprKind::Variable(var_name) = &callback.kind else {
+            return false;
+        };
+        self.callable_array_targets.contains_key(var_name)
+            || crate::types::checker::builtins::runtime_callable_array_type(actual_ty)
     }
 
     /// Provides the Specialize callback filter function helper used by the constructors module.

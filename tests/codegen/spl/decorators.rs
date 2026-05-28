@@ -499,6 +499,80 @@ foreach ($it as $key => $value) {
     assert_eq!(out, "Ra:it;Rb:it;Rc:it;out:c=3;");
 }
 
+/// Verifies that callback filter iterator stores a runtime-selected instance callable array.
+#[test]
+fn test_callback_filter_iterator_runtime_selected_instance_callable_array() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeCallbackGate {
+    private int $min;
+    private string $tag;
+
+    public function __construct(int $min, string $tag) {
+        $this->min = $min;
+        $this->tag = $tag;
+    }
+
+    public function keep(int $current, string $key, Iterator $iterator): bool {
+        echo $this->tag;
+        echo $key;
+        echo ":";
+        echo $iterator instanceof ArrayIterator ? "it" : "bad";
+        echo ";";
+        return $current >= $this->min;
+    }
+}
+
+$first = new RuntimeCallbackGate(2, "A");
+$second = new RuntimeCallbackGate(3, "B");
+$method = "keep";
+$callback = [$first, $method];
+$it = new CallbackFilterIterator(new ArrayIterator(["a" => 1, "b" => 2, "c" => 3]), $callback);
+$callback = [$second, $method];
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "Aa:it;Ab:it;out:b=2;Ac:it;out:c=3;");
+}
+
+/// Verifies that callback filter iterator stores a runtime-selected static callable array.
+#[test]
+fn test_callback_filter_iterator_runtime_selected_static_callable_array() {
+    let out = compile_and_run(
+        r#"<?php
+class RuntimeCallbackStaticGate {
+    public static function keep(int $current, string $key, Iterator $iterator): bool {
+        echo "S";
+        echo $key;
+        echo ":";
+        echo $iterator instanceof ArrayIterator ? "it" : "bad";
+        echo ";";
+        return $current >= 2;
+    }
+}
+
+$class = "RuntimeCallbackStaticGate";
+$method = "keep";
+$callback = [$class, $method];
+$it = new CallbackFilterIterator(new ArrayIterator(["a" => 1, "b" => 2, "c" => 3]), $callback);
+foreach ($it as $key => $value) {
+    echo "out:";
+    echo $key;
+    echo "=";
+    echo $value;
+    echo ";";
+}
+"#,
+    );
+    assert_eq!(out, "Sa:it;Sb:it;out:b=2;Sc:it;out:c=3;");
+}
+
 /// Verifies that caching iterator tracks has next and string value.
 #[test]
 fn test_caching_iterator_tracks_has_next_and_string_value() {
