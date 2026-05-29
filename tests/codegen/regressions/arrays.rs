@@ -252,6 +252,16 @@ echo $x[2];
     assert_eq!(out, "330");
 }
 
+/// Verifies the checked-in large-arity by-ref array mutation stress example keeps
+/// the late by-reference array parameter connected to the caller's storage.
+#[test]
+fn test_large_arity_by_ref_array_mutation_example() {
+    let out = compile_and_run(include_str!(
+        "../../../examples/large-by-ref-array-mutation/main.php"
+    ));
+    assert_eq!(out, "41|42\n");
+}
+
 /// Verifies that appending after a negative integer key uses the next PHP auto key.
 /// Issue #305: appending after `$a[-2] = ...` should insert at key `-1`, not drop the value.
 #[test]
