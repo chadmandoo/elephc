@@ -207,6 +207,29 @@ pub(super) fn infer_function_call_type(
                 PhpType::Int
             }
         }
+        "clamp" => {
+            if args.len() >= 3 {
+                let arg_types: Vec<PhpType> = args
+                    .iter()
+                    .take(3)
+                    .map(|arg| infer_local_type(arg, sig, ctx).codegen_repr())
+                    .collect();
+                if arg_types.iter().all(|ty| *ty == PhpType::Str) {
+                    PhpType::Str
+                } else if arg_types.iter().all(|ty| *ty == PhpType::Int) {
+                    PhpType::Int
+                } else if arg_types
+                    .iter()
+                    .all(|ty| matches!(ty, PhpType::Int | PhpType::Float))
+                {
+                    PhpType::Float
+                } else {
+                    PhpType::Mixed
+                }
+            } else {
+                PhpType::Mixed
+            }
+        }
         "ptr" | "ptr_null" => PhpType::Pointer(None),
         "buffer_len" => PhpType::Int,
         "ptr_offset" => {

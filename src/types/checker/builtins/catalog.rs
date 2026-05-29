@@ -67,6 +67,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "chdir",
     "chr",
     "clearstatcache",
+    "clamp",
     "copy",
     "cos",
     "cosh",

@@ -289,6 +289,7 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "hypot" => Some(fixed(&["x", "y"])),
         "pow" => Some(fixed(&["num", "exponent"])),
         "intdiv" | "fmod" | "fdiv" => Some(fixed(&["num1", "num2"])),
+        "clamp" => Some(fixed(&["value", "min", "max"])),
         "min" | "max" => Some(variadic(&["value"], "values")),
         "rand" | "mt_rand" | "random_int" => Some(fixed(&["min", "max"])),
         "round" => Some(optional(&["num", "precision"], 1, vec![int_lit(0)])),
@@ -612,6 +613,11 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         "abs" | "min" | "max" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Mixed],
+            PhpType::Mixed,
+        )),
+        "clamp" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Mixed, PhpType::Mixed, PhpType::Mixed],
             PhpType::Mixed,
         )),
         "floor" | "ceil" | "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"

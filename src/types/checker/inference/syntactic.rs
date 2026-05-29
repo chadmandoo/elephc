@@ -261,7 +261,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
             "strpos" | "strrpos" | "array_search" | "grapheme_strrev" | "fileatime"
             | "filectime" | "fileperms" | "fileowner" | "filegroup" | "fileinode"
             | "filetype" | "stat" | "lstat" | "fstat" | "fgetc" | "readfile"
-            | "readlink" => PhpType::Mixed,
+            | "readlink" | "clamp" => PhpType::Mixed,
             "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::Bool]),
             "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv"
             | "rand" | "time" | "fpassthru" | "linkinfo" => PhpType::Int,
