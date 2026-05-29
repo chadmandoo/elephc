@@ -175,6 +175,22 @@ echo $x;
     assert_eq!(out, "2");
 }
 
+/// Regression for #306: by-reference captures must observe later outer mutations.
+#[test]
+fn test_closure_use_by_ref_observes_later_outer_mutation() {
+    let out = compile_and_run(
+        r#"<?php
+$x = 1;
+$f = function () use (&$x) {
+    echo $x;
+};
+$x = 2;
+$f();
+"#,
+    );
+    assert_eq!(out, "2");
+}
+
 /// Regression for #318: a by-reference captured array accepts post-increment on an element.
 #[test]
 fn test_closure_use_by_ref_array_element_post_increment() {
