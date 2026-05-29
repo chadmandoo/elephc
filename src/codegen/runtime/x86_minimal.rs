@@ -189,6 +189,7 @@ pub(super) fn emit_runtime_linux_x86_64_minimal(emitter: &mut Emitter) {
     arrays::emit_array_fill_keys_refcounted(emitter);
     arrays::emit_decref_array(emitter);
     arrays::emit_array_key_exists(emitter);
+    arrays::emit_undefined_array_key_warning(emitter);
     arrays::emit_array_search(emitter);
     arrays::emit_array_column(emitter);
     arrays::emit_array_column_mixed(emitter);
@@ -427,6 +428,7 @@ mod tests {
         assert!(asm.contains("__rt_array_filter_refcounted:\n"));
         assert!(asm.contains("__rt_array_reduce:\n"));
         assert!(asm.contains("__rt_array_walk:\n"));
+        assert!(asm.contains("__rt_warn_undefined_array_key_int:\n"));
         assert!(asm.contains("__rt_hash_fnv1a:\n"));
         assert!(asm.contains("__rt_hash_new:\n"));
         assert!(asm.contains("__rt_hash_set:\n"));
