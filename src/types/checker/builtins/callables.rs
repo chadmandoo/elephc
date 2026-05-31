@@ -1368,9 +1368,10 @@ pub(super) fn check_builtin(
             }
             checker.infer_type(&args[0], env)?;
             if let ExprKind::StringLiteral(cb_name) = &args[0].kind {
+                let cb_name = cb_name.trim_start_matches('\\');
                 let cb_name = checker
                     .canonical_function_name_folded(cb_name)
-                    .unwrap_or_else(|| cb_name.clone());
+                    .unwrap_or_else(|| cb_name.to_string());
                 if checker.fn_decls.contains_key(cb_name.as_str())
                     && !checker.functions.contains_key(cb_name.as_str())
                 {
