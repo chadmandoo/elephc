@@ -981,6 +981,41 @@ if (class_exists("demo\\thing")) {
     assert_eq!(out, "Demo\\Thing");
 }
 
+/// Verifies that a lowercased `class_exists()` autoload demand, an
+/// differently-cased `ReflectionClass` constructor, and attribute lookup all
+/// resolve to the same autoloaded class declaration.
+#[test]
+fn test_autoload_reflection_case_insensitive_class_lookup_reads_attributes() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "DemoThing.php",
+                "<?php\nnamespace Demo;\n#[Marker]\nclass Thing {}\n",
+            ),
+            (
+                "main.php",
+                r#"<?php
+spl_autoload_register(function ($name) {
+    if ($name === "Demo\\Thing") {
+        require __DIR__ . "/DemoThing.php";
+    }
+});
+
+if (class_exists("demo\\thing")) {
+    $r = new ReflectionClass("DEMO\\THING");
+    $attrs = $r->getAttributes();
+    echo $r->getName() . "\n";
+    echo count($attrs) . "\n";
+    echo $attrs[0]->getName() . "\n";
+}
+"#,
+            ),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "Demo\\Thing\n1\nDemo\\Marker\n");
+}
+
 /// Verifies that `ReflectionClass::getAttributes()` works when called on
 /// a temporary `ReflectionClass` object directly (without storing the
 /// reflector in a variable), and returns the correct attribute name and
