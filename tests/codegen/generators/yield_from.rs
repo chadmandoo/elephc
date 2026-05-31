@@ -89,6 +89,34 @@ foreach (outer() as $v) {
     assert_eq!(out, "1\n42\n");
 }
 
+/// Regression test for delegated generator sends: a typed generator may
+/// `return` its terminal value, and `send()` on the outer generator must
+/// deliver the payload into the currently active inner generator.
+#[test]
+fn test_generator_yield_from_typed_delegate_forwards_send_payload_and_return() {
+    let out = compile_and_run(
+        r#"<?php
+function inner(): Generator {
+    $v = yield "a";
+    yield $v;
+    return "done";
+}
+
+function outer(): Generator {
+    $r = yield from inner();
+    yield $r;
+}
+
+$g = outer();
+echo $g->current() . "\n";
+echo $g->send("b") . "\n";
+$g->next();
+echo $g->current() . "\n";
+"#,
+    );
+    assert_eq!(out, "a\nb\ndone\n");
+}
+
 /// Verifies a delegated generator return can be consumed by a normal
 /// generator-body diagnostic statement after `yield from` completes, while
 /// the outer generator still has a null return value when it does not return.
