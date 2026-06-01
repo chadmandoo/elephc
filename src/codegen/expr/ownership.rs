@@ -39,6 +39,7 @@ pub(crate) fn expr_result_heap_ownership(expr: &Expr) -> HeapOwnership {
         ExprKind::NullCoalesce { value, default } => {
             expr_result_heap_ownership(value).merge(expr_result_heap_ownership(default))
         }
+        ExprKind::Pipe { .. } => HeapOwnership::Owned,
         ExprKind::Ternary {
             then_expr,
             else_expr,

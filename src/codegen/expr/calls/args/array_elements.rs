@@ -57,7 +57,7 @@ pub(crate) fn array_element_stride(source_elem_ty: &PhpType) -> usize {
 
 /// Coerces a spread array element to the target type and pushes it as a call argument.
 /// First applies `coerce_current_value_to_target` using `source_elem_ty` and `target_ty`.
-/// Increments the refcount if the source is refcounted but not boxed to `Mixed`.
+/// Increments the refcount if the pushed value is refcounted but not boxed to `Mixed`.
 /// Returns the post-coercion `PhpType` that was pushed.
 pub(crate) fn push_loaded_array_element_arg(
     source_elem_ty: &PhpType,
@@ -66,11 +66,10 @@ pub(crate) fn push_loaded_array_element_arg(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> PhpType {
-    let source_repr = source_elem_ty.codegen_repr();
     let (pushed_ty, boxed_to_mixed) =
         coerce_current_value_to_target(emitter, ctx, data, source_elem_ty, target_ty);
     if !boxed_to_mixed {
-        abi::emit_incref_if_refcounted(emitter, &source_repr);
+        abi::emit_incref_if_refcounted(emitter, &pushed_ty);
     }
     push_arg_value(emitter, &pushed_ty);
     pushed_ty
