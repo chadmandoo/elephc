@@ -300,6 +300,10 @@ fn record_mixed_expr_use_hints(expr: &ExprKind, hints: &mut SlotUseHints) {
         ExprKind::Variable(name) => {
             hints.mixed.insert(name.clone());
         }
+        ExprKind::BinaryOp { left, op: BinOp::Concat, right } => {
+            record_mixed_expr_use_hints(&left.kind, hints);
+            record_mixed_expr_use_hints(&right.kind, hints);
+        }
         ExprKind::BinaryOp { left, op, right } if is_generator_int_binop(op) => {
             record_int_expr_use_hints(&left.kind, hints);
             record_int_expr_use_hints(&right.kind, hints);
@@ -647,10 +651,7 @@ fn build_node(
             }
             _ => None,
         },
-        StmtKind::Echo(expr) => {
-            let src = classify_mixed_expr(&expr.kind, slots, types, data)?;
-            Some(ResumeNode::Stmt(BodyStmt::EchoMixed(src)))
-        }
+        StmtKind::Echo(expr) => build_echo_node(expr, slots, types, data),
         StmtKind::If {
             condition,
             then_body,
@@ -763,6 +764,35 @@ fn build_node(
         }),
         _ => None,
     }
+}
+
+/// Translates `echo <expr>` into generator IR.
+///
+/// The narrow generator IR can lower concat echo expressions by emitting each
+/// operand in source order. Non-concat expressions use the normal Mixed boxing
+/// path.
+fn build_echo_node(
+    expr: &Expr,
+    slots: &[String],
+    types: &[SlotType],
+    data: &mut DataSection,
+) -> Option<ResumeNode> {
+    if let ExprKind::BinaryOp {
+        left,
+        op: BinOp::Concat,
+        right,
+    } = &expr.kind
+    {
+        return Some(ResumeNode::Block {
+            stmts: vec![
+                build_echo_node(left, slots, types, data)?,
+                build_echo_node(right, slots, types, data)?,
+            ],
+        });
+    }
+
+    let src = classify_mixed_expr(&expr.kind, slots, types, data)?;
+    Some(ResumeNode::Stmt(BodyStmt::EchoMixed(src)))
 }
 
 /// Returns true for PHP's global `var_dump` builtin name as it may appear

@@ -113,6 +113,31 @@ foreach (outer() as $v) {
     assert_eq!(out, "17");
 }
 
+/// Regression for issue #192: a delegated generator's return value remains
+/// available when the outer generator uses it in a concat echo after
+/// `yield from` completes.
+#[test]
+fn test_generator_yield_from_return_value_survives_concat_echo_after_delegation() {
+    let out = compile_and_run(
+        r#"<?php
+function inner() {
+    yield 1;
+    return 9;
+}
+
+function outer() {
+    $r = yield from inner();
+    echo ":" . $r;
+}
+
+foreach (outer() as $v) {
+    echo $v;
+}
+"#,
+    );
+    assert_eq!(out, "1:9");
+}
+
 /// Regression test for delegated generator sends: a typed generator may
 /// `return` its terminal value, and `send()` on the outer generator must
 /// deliver the payload into the currently active inner generator.
