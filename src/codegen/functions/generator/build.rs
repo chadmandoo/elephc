@@ -335,6 +335,10 @@ fn record_mixed_expr_use_hints(expr: &ExprKind, hints: &mut SlotUseHints) {
         ExprKind::Variable(name) => {
             hints.mixed.insert(name.clone());
         }
+        ExprKind::BinaryOp { left, op: BinOp::Concat, right } => {
+            record_mixed_expr_use_hints(&left.kind, hints);
+            record_mixed_expr_use_hints(&right.kind, hints);
+        }
         ExprKind::BinaryOp { left, op, right } if is_generator_int_binop(op) => {
             record_int_expr_use_hints(&left.kind, hints);
             record_int_expr_use_hints(&right.kind, hints);
@@ -828,15 +832,30 @@ fn build_node(
 
 /// Translates `echo <expr>` into generator IR.
 ///
-/// The narrow generator IR can lower ternary echo expressions by turning
-/// them into an `If` whose branches each emit one echo. Non-ternary
-/// expressions use the normal Mixed boxing path.
+/// The narrow generator IR lowers concat echo expressions by emitting each
+/// operand in source order, and lowers ternary echo expressions as an `If`
+/// whose branches each emit one echo. Other expressions use the normal Mixed
+/// boxing path.
 fn build_echo_node(
     expr: &Expr,
     slots: &[String],
     types: &[SlotType],
     data: &mut DataSection,
 ) -> Option<ResumeNode> {
+    if let ExprKind::BinaryOp {
+        left,
+        op: BinOp::Concat,
+        right,
+    } = &expr.kind
+    {
+        return Some(ResumeNode::Block {
+            stmts: vec![
+                build_echo_node(left, slots, types, data)?,
+                build_echo_node(right, slots, types, data)?,
+            ],
+        });
+    }
+
     if let ExprKind::Ternary {
         condition,
         then_expr,
