@@ -524,38 +524,46 @@ hand-written-and-commented assembly philosophy while removing the
 structural ceiling on optimization that the direct AST → ASM emitter
 imposed. See `docs/internals/the-ir.md`.
 
-- [ ] EIR design specification (`docs/internals/the-ir.md`) — types, instructions, terminators, effects, ownership, textual format
+- [x] EIR design specification (`docs/internals/the-ir.md`) — types, instructions, terminators, effects, ownership, textual format
 - [ ] `src/ir/` module — types, instructions, builder, validator, printer
 - [ ] AST → EIR lowering pass — every `ExprKind`/`StmtKind` variant
 - [ ] `--emit-ir` CLI flag for diagnostics and snapshot testing
 - [ ] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
-- [ ] `--ir-backend` CLI flag (opt-in stable)
-- [ ] Two-week soak period to collect external feedback
-- [ ] Default backend switch from AST to EIR
-- [ ] Deprecation warning on `--ast-backend`
-- [ ] Linear-scan register allocator (Poletto-Sarkar) with separate int / float pools and callee-saved preservation across calls
+- [ ] `--ir-backend` CLI flag (opt-in stable; `--ast-backend` remains default during the soak period)
+- [ ] CI dual-backend matrix and IR-only benchmark job for parity and regression tracking
+- [ ] Two-week `v0.24.0` soak period to collect external feedback before any default switch
+- [ ] Linear-scan register allocator (Poletto-Sarkar) with liveness analysis, live intervals, allocation table, separate int / float pools, and callee-saved preservation across calls
 - [ ] Register-pressure mitigations: caller-saved reuse for non-call-crossing intervals; better spill heuristic
 
-Expected outcome: feature parity at end of v0.24.0; ≥15% performance
-improvement on compute benchmarks at end of v0.24.x.
+Expected outcome: opt-in feature parity at v0.24.0; IR backend remains
+opt-in through the soak period; ≥15% performance improvement on compute
+benchmarks after Phase 06 by end of v0.24.x.
 
 ## v0.25.x — EIR optimization passes
 
-Build the IR-level passes that the AST optimizer could not reach.
+Switch the user-facing default to the IR backend after the v0.24.x soak,
+then build the IR-level passes that the AST optimizer could not reach.
 
+- [ ] Default backend switch from AST to EIR after the v0.24.x soak period
+- [ ] Deprecation warning on `--ast-backend` while keeping it available as a fallback for one minor version
+- [ ] Backend-switch release notes and documentation updates (`the-codegen.md`, `the-ir.md`)
+- [ ] Fixed-point IR pass driver with validation after each pass in test builds
 - [ ] Identity arithmetic folding (`x + 0`, `x * 1`, `x ^ x`, etc.)
-- [ ] Peephole patterns: redundant load/store, box/unbox cancellation, string-literal concat folding, paired acquire/release cancellation
+- [ ] Peephole patterns: redundant load/store, box/unbox cancellation, string-literal concat folding, paired acquire/release cancellation, redundant `Move` / `Borrow` cleanup
 - [ ] Dead instruction elimination over the IR CFG (absorbs former v0.23 "Dead code elimination v3")
 - [ ] Dead store elimination over PHP local slots
 - [ ] Branch simplification (constant-condition `CondBr`, empty-block jump threading, unreachable block removal)
+- [ ] Per-block constant propagation over EIR value IDs and local slots
+- [ ] Dominance analysis for cross-block optimization (`src/ir_passes/dominance.rs`)
 - [ ] Common subexpression elimination — per-block, then dominance-aware cross-block (absorbs former v0.23 "Constant propagation v4")
 - [ ] Loop detection and natural-loop construction (back edges, headers, preheaders)
 - [ ] Loop-invariant code motion for pure operations
 - [ ] Small-function inliner (size threshold 24 instructions, non-recursive, no try/catch, no generators/fibers) (absorbs former v0.23 "Inline small functions")
 - [ ] Pipeline integration in fixed-point order
 
-Expected outcome: additional 10–20% performance gain on loop-heavy and
-call-heavy benchmarks; cumulative ≥30% improvement vs end-of-v0.23
+Expected outcome: IR backend is the default, `--ast-backend` remains an
+escape hatch with a warning, additional 10–20% performance gain on loop-heavy
+and call-heavy benchmarks, and cumulative ≥30% improvement vs end-of-v0.23
 baseline.
 
 ## v0.26.x — Performance closure, legacy cleanup, and 0.x stabilization
@@ -575,9 +583,12 @@ and 0.x validation rather than by speculative pass work.
 - [ ] Tail-call optimization — direct tail self- and mutual-recursion lowering on top of EIR (`Br` to function entry with parameter rebinding)
 - [ ] Performance within 2x of C -O0 on compute benchmarks
 - [ ] Real-world CLI tools compiled as validation
-- [ ] Keep the legacy AST → ASM backend available as a fallback through validation; remove it only after the IR backend passes real-world validation
+- [ ] Keep the legacy AST → ASM backend available as a fallback until real-world validation has passed; do not remove it before this gate
+- [ ] Remove the deprecated `--ast-backend` CLI flag after validation; report it as unsupported once the IR backend is the only backend
+- [ ] Delete legacy AST → ASM emitter modules after all production paths consume the IR backend
 - [ ] Rename `src/codegen_ir/` to `src/codegen/`
 - [ ] Move historical codegen doc to `docs/internals/legacy-codegen.md`; refresh `docs/internals/the-codegen.md` to describe the IR pipeline
+- [ ] Refresh `docs/internals/the-ir.md` as the canonical, non-preview IR contract for v1.0
 - [ ] Apple notarization for direct downloads (codesign + notarytool)
 - [ ] Installation / packaging documentation for the supported host platforms
 
