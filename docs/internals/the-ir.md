@@ -5,9 +5,10 @@ sidebar:
   order: 13
 ---
 
-**Status:** design specification complete for the first v0.24.x EIR roadmap
-item. EIR implementation is still planned; the current production pipeline
-emits assembly directly from the checked and optimized AST.
+**Status:** design specification and `src/ir/` scaffolding are implemented.
+The diagnostic `--emit-ir` path lowers the checked and optimized AST into
+validated textual EIR. The current production pipeline still emits assembly
+directly from the AST until the EIR backend is implemented and soaked.
 
 **Implementation phases:** `.plans/eir-*.md`
 
@@ -47,11 +48,8 @@ EIR design specification (`docs/internals/the-ir.md`) - types, instructions,
 terminators, effects, ownership, textual format
 ```
 
-It does **not** include:
+It originally did **not** include:
 
-- `src/ir/` implementation
-- AST -> EIR lowering
-- `--emit-ir`
 - EIR -> assembly backend
 - `--ir-backend`
 - register allocation
@@ -715,6 +713,22 @@ Required properties:
 - effects printed when non-pure
 - ownership printed for values whose ownership is not obvious
 - heap subkind and PHP type shown for heap/boxed values
+
+## Using `--emit-ir`
+
+`--emit-ir` is a diagnostic output mode:
+
+```bash
+cargo run -- --emit-ir examples/hello/main.php
+```
+
+The compiler runs the normal frontend order through type checking and AST
+optimization, lowers the optimized AST to EIR, validates the module, prints the
+textual format to stdout, and exits before runtime-cache preparation,
+assembly generation, assembling, or linking.
+
+`--emit-ir`, `--emit-asm`, and `--check` are mutually exclusive because each is
+a terminal output mode for the same source file.
 
 Example:
 
