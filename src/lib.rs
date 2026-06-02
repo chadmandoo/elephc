@@ -17,6 +17,8 @@ pub mod conditional;
 pub mod errors;
 /// Intrinsic call handling.
 pub mod intrinsics;
+/// Intermediate representation used by the EIR backend track.
+pub mod ir;
 /// Lexer for tokenizing PHP source.
 pub mod lexer;
 /// Magic constant substitution.

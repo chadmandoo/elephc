@@ -14,6 +14,8 @@ mod codegen;
 mod conditional;
 mod errors;
 mod intrinsics;
+#[allow(dead_code, unused_imports)]
+mod ir;
 mod linker;
 mod lexer;
 mod magic_constants;

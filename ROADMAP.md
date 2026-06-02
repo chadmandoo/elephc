@@ -525,7 +525,7 @@ structural ceiling on optimization that the direct AST → ASM emitter
 imposed. See `docs/internals/the-ir.md`.
 
 - [x] EIR design specification (`docs/internals/the-ir.md`) — types, instructions, terminators, effects, ownership, textual format
-- [ ] `src/ir/` module — types, instructions, builder, validator, printer
+- [x] `src/ir/` module — types, instructions, builder, validator, printer
 - [ ] AST → EIR lowering pass — every `ExprKind`/`StmtKind` variant
 - [ ] `--emit-ir` CLI flag for diagnostics and snapshot testing
 - [ ] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
