@@ -14,16 +14,34 @@ use std::path::{Path, PathBuf};
 use crate::codegen::platform::Target;
 use crate::ir::print_module;
 
+mod corpus;
+mod exhaustive;
+
 /// Runs frontend, type checking, optimization, and EIR lowering for a source string.
 fn lower_source(source: &str) -> crate::ir::Module {
+    lower_source_at(source, Path::new("main.php"), Path::new("."))
+}
+
+/// Runs frontend, type checking, optimization, and EIR lowering for a file.
+fn lower_file(path: &Path) -> crate::ir::Module {
+    let source = std::fs::read_to_string(path).expect("failed to read PHP fixture");
+    let parent = path.parent().unwrap_or(Path::new("."));
+    lower_source_at(&source, path, parent)
+}
+
+/// Runs the `--emit-ir` frontend ordering for a source string and base path.
+fn lower_source_at(source: &str, main_file_path: &Path, parent: &Path) -> crate::ir::Module {
     let target = Target::detect_host();
     let tokens = crate::lexer::tokenize(source).expect("tokenize failed");
     let parsed = crate::parser::parse(&tokens).expect("parse failed");
-    let parsed =
-        crate::magic_constants::substitute_file_and_scope_constants(parsed, &PathBuf::from("main.php"));
+    let main_file_path = PathBuf::from(main_file_path);
+    let parsed = crate::magic_constants::substitute_file_and_scope_constants(parsed, &main_file_path);
     let parsed = crate::conditional::apply(parsed, &HashSet::new());
-    let ast = crate::resolver::resolve(parsed, Path::new(".")).expect("resolver failed");
+    let (autoload_registry, parsed) = crate::autoload::Registry::build(parent, parsed);
+    let ast = crate::resolver::resolve(parsed, parent).expect("resolver failed");
+    let ast = crate::autoload::collect_aliases(ast);
     let ast = crate::name_resolver::resolve(ast).expect("name resolution failed");
+    let ast = crate::autoload::run(ast, parent, &autoload_registry).expect("autoload failed");
     let ast = crate::optimize::fold_constants(ast);
     let check_result = crate::types::check_with_target(&ast, target).expect("type check failed");
     let ast = crate::optimize::propagate_constants(ast);

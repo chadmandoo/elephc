@@ -649,16 +649,16 @@ fn lower_args(ctx: &mut LoweringContext<'_, '_>, args: &[Expr]) -> Vec<crate::ir
 
 /// Returns the best available return type for a function-like call.
 fn call_return_type(ctx: &LoweringContext<'_, '_>, name: &str) -> PhpType {
-    if let Some(sig) = ctx.functions.get(name) {
-        return sig.return_type.clone();
-    }
-    if let Some(sig) = ctx.extern_functions.get(name) {
-        return sig.return_type.clone();
-    }
-    if let Some(sig) = crate::types::builtin_call_sig(name) {
-        return sig.return_type;
-    }
-    PhpType::Mixed
+    let php_type = if let Some(sig) = ctx.functions.get(name) {
+        sig.return_type.clone()
+    } else if let Some(sig) = ctx.extern_functions.get(name) {
+        sig.return_type.clone()
+    } else if let Some(sig) = crate::types::builtin_call_sig(name) {
+        sig.return_type
+    } else {
+        PhpType::Mixed
+    };
+    normalize_value_php_type(php_type)
 }
 
 /// Lowers an indexed array literal.
@@ -1230,10 +1230,14 @@ fn callable_target_name(target: &CallableTarget) -> String {
 
 /// Returns a syntactic fallback PHP type for an expression.
 fn fallback_expr_type(expr: &Expr) -> PhpType {
-    let ty = infer_expr_type_syntactic(expr);
-    if matches!(ty, PhpType::Never) {
+    normalize_value_php_type(infer_expr_type_syntactic(expr))
+}
+
+/// Normalizes non-materializable expression types to the EIR null sentinel.
+fn normalize_value_php_type(php_type: PhpType) -> PhpType {
+    if matches!(php_type, PhpType::Never) {
         PhpType::Void
     } else {
-        ty
+        php_type
     }
 }
