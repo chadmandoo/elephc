@@ -61,6 +61,7 @@ pub(crate) fn compile_source_to_asm_with_defines(
     let optimized = elephc::optimize::prune_constant_control_flow(optimized);
     let optimized = elephc::optimize::normalize_control_flow(optimized);
     let optimized = elephc::optimize::eliminate_dead_code(optimized);
+    validate_ir_lowering_for_codegen_fixture(&optimized, &check_result);
     let (user_asm, runtime_asm) = elephc::codegen::generate(
         &optimized,
         &check_result.global_env,
@@ -90,6 +91,17 @@ pub(crate) fn compile_source_to_asm_with_defines(
     }
     // user assembly is already platform-correct (emitters handle platform at emit time)
     (user_asm, runtime_asm, required_libraries)
+}
+
+/// Validates that codegen fixtures also lower to structurally valid EIR.
+fn validate_ir_lowering_for_codegen_fixture(
+    program: &elephc::parser::ast::Program,
+    check_result: &elephc::types::CheckResult,
+) {
+    let module = elephc::ir_lower::lower_program(program, check_result, target())
+        .expect("AST-to-EIR lowering failed for codegen fixture");
+    elephc::ir::validate_module(&module)
+        .expect("EIR validation failed for codegen fixture");
 }
 
 // Injects an exit harness into user assembly before the final `ret` instruction.

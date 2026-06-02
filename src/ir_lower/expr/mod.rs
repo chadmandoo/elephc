@@ -598,8 +598,9 @@ fn lower_inc_dec(
 ) -> LoweredValue {
     let old = ctx.load_local(name, Some(expr.span));
     let one = lower_int_literal(ctx, 1, expr);
+    let operand = coerce_to_int(ctx, old, expr);
     let op = if increment { Op::IAdd } else { Op::ISub };
-    let new = ctx.emit_value(op, vec![old.value, one.value], None, PhpType::Int, op.default_effects(), Some(expr.span));
+    let new = ctx.emit_value(op, vec![operand.value, one.value], None, PhpType::Int, op.default_effects(), Some(expr.span));
     ctx.store_local(name, new, PhpType::Int, Some(expr.span));
     if post { old } else { new }
 }
@@ -1134,6 +1135,23 @@ fn lower_instanceof(
     };
     let op = if immediate.is_some() { Op::InstanceOf } else { Op::InstanceOfDynamic };
     ctx.emit_value(op, operands, immediate, PhpType::Bool, op.default_effects(), Some(expr.span))
+}
+
+/// Coerces a value to integer storage before integer-only operations.
+fn coerce_to_int(ctx: &mut LoweringContext<'_, '_>, value: LoweredValue, expr: &Expr) -> LoweredValue {
+    match value.ir_type {
+        IrType::I64 => value,
+        IrType::F64 => ctx.emit_value(Op::FToI, vec![value.value], None, PhpType::Int, Op::FToI.default_effects(), Some(expr.span)),
+        IrType::Str => ctx.emit_value(Op::StrToI, vec![value.value], None, PhpType::Int, Op::StrToI.default_effects(), Some(expr.span)),
+        _ => ctx.emit_value(
+            Op::Cast,
+            vec![value.value],
+            Some(Immediate::CastTarget(IrType::I64)),
+            PhpType::Int,
+            Op::Cast.default_effects(),
+            Some(expr.span),
+        ),
+    }
 }
 
 /// Coerces a value to float when the storage type allows a direct conversion.

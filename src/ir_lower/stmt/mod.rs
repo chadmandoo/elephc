@@ -186,7 +186,7 @@ fn lower_ref_assign(ctx: &mut LoweringContext<'_, '_>, target: &str, source: &st
     ctx.store_local(target, value, php_type, Some(span));
 }
 
-/// Lowers an `if` / `elseif` / `else` chain.
+/// Lowers an `if` / `elseif` / `else` chain and terminates unreachable merge blocks explicitly.
 fn lower_if(
     ctx: &mut LoweringContext<'_, '_>,
     condition: &Expr,
@@ -196,11 +196,15 @@ fn lower_if(
     span: Span,
 ) {
     let merge = ctx.builder.create_named_block("if.merge", Vec::new());
-    lower_if_chain(ctx, condition, then_body, elseif_clauses, else_body, merge, span);
+    let merge_reachable =
+        lower_if_chain(ctx, condition, then_body, elseif_clauses, else_body, merge, span);
     ctx.builder.position_at_end(merge);
+    if !merge_reachable {
+        ctx.builder.terminate(Terminator::Unreachable);
+    }
 }
 
-/// Recursively emits one condition node in an `if` chain.
+/// Recursively emits one condition node in an `if` chain and reports whether the merge is reachable.
 fn lower_if_chain(
     ctx: &mut LoweringContext<'_, '_>,
     condition: &Expr,
@@ -209,7 +213,7 @@ fn lower_if_chain(
     else_body: Option<&[Stmt]>,
     merge: BlockId,
     span: Span,
-) {
+) -> bool {
     let cond_value = lower_expr(ctx, condition);
     let cond_value = ctx.truthy(cond_value, Some(condition.span));
     let then_block = ctx.builder.create_named_block("if.then", Vec::new());
@@ -224,18 +228,30 @@ fn lower_if_chain(
 
     ctx.builder.position_at_end(then_block);
     lower_block(ctx, then_body);
-    branch_to(ctx, merge);
+    let mut merge_reachable = false;
+    if !ctx.builder.insertion_block_is_terminated() {
+        merge_reachable = true;
+        branch_to(ctx, merge);
+    }
 
     ctx.builder.position_at_end(else_block);
     if let Some(((next_condition, next_body), rest)) = elseif_clauses.split_first() {
-        lower_if_chain(ctx, next_condition, next_body, rest, else_body, merge, span);
+        merge_reachable |=
+            lower_if_chain(ctx, next_condition, next_body, rest, else_body, merge, span);
     } else if let Some(else_body) = else_body {
         lower_block(ctx, else_body);
-        branch_to(ctx, merge);
+        if !ctx.builder.insertion_block_is_terminated() {
+            merge_reachable = true;
+            branch_to(ctx, merge);
+        }
     } else {
         lower_noop(ctx, span);
-        branch_to(ctx, merge);
+        if !ctx.builder.insertion_block_is_terminated() {
+            merge_reachable = true;
+            branch_to(ctx, merge);
+        }
     }
+    merge_reachable
 }
 
 /// Lowers a residual `ifdef`; normally the conditional pass removes these first.
@@ -477,7 +493,7 @@ fn lower_foreach(
     ctx.builder.position_at_end(exit);
 }
 
-/// Lowers a `switch` using integer switch cases when literals are available.
+/// Lowers a `switch` and terminates the shared exit block when every arm exits earlier.
 fn lower_switch(
     ctx: &mut LoweringContext<'_, '_>,
     subject: &Expr,
@@ -507,18 +523,28 @@ fn lower_switch(
     });
 
     ctx.loop_stack.push(LoopFrame { break_block: exit, continue_block: exit });
+    let mut exit_reachable = false;
     for ((_, body), block) in cases.iter().zip(blocks) {
         ctx.builder.position_at_end(block);
         lower_block(ctx, body);
-        branch_to(ctx, exit);
+        if !ctx.builder.insertion_block_is_terminated() {
+            exit_reachable = true;
+            branch_to(ctx, exit);
+        }
     }
     ctx.builder.position_at_end(default_block);
     if let Some(default) = default {
         lower_block(ctx, default);
     }
-    branch_to(ctx, exit);
+    if !ctx.builder.insertion_block_is_terminated() {
+        exit_reachable = true;
+        branch_to(ctx, exit);
+    }
     ctx.loop_stack.pop();
     ctx.builder.position_at_end(exit);
+    if !exit_reachable {
+        ctx.builder.terminate(Terminator::Unreachable);
+    }
 }
 
 /// Lowers include/require statements through a high-level runtime call.
