@@ -60,6 +60,7 @@ How elephc works under the hood — from lexing to code generation and runtime s
 - [The Type Checker](internals/the-type-checker.md) — compile-time type inference and validation
 - [The Optimizer](internals/the-optimizer.md) — constant folding, constant propagation, purity / may-throw reasoning, control-flow pruning, normalization, and dead-code elimination on the AST
 - [The Code Generator](internals/the-codegen.md) — optimized checked AST to target assembly (with an AArch64-focused walkthrough)
+- [The EIR Design](internals/the-ir.md) — planned PHP-shaped intermediate representation for backend migration and IR-level optimization
 - [The Runtime](internals/the-runtime.md) — hand-written assembly routines
 - [Memory Model](internals/memory-model.md) — stack frames, heap, reference counting
 - [Architecture](internals/architecture.md) — module map, calling conventions

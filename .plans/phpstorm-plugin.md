@@ -99,7 +99,7 @@ class ptr {}
 
 Registrato via `PhpAdditionalLibraryRootsProvider` — PhpStorm lo indicizza automaticamente.
 
-Riferimento per le firme: `src/types/checker/builtins.rs` (contiene tipi e validazione per ogni `ptr_*` built-in).
+Riferimento per le firme: `src/types/checker/builtins/pointers.rs` e `src/types/checker/builtins/catalog.rs` (contengono tipi, catalogo e validazione per ogni `ptr_*` built-in).
 
 ### 2. HighlightInfoFilter (soppressione errori)
 
@@ -122,7 +122,7 @@ Questo è il componente più critico — senza, l'IDE è inutilizzabile su codic
 
 L'indice alimenta completion e navigation.
 
-Riferimento per la sintassi esatta: `src/parser/stmt.rs` funzione `parse_extern_stmts`.
+Riferimento per la sintassi esatta: `src/parser/stmt/ffi.rs`.
 
 ### 4. Completion Contributor
 
@@ -170,10 +170,10 @@ Riferimento per la sintassi esatta: `src/parser/stmt.rs` funzione `parse_extern_
 
 ## File di riferimento nel codebase elephc
 
-- `src/parser/ast.rs` — definisce tutti i nodi AST custom (ExternFunctionDecl, PtrCast, CType, ecc.)
-- `src/parser/stmt.rs` — parsing delle dichiarazioni extern (`parse_extern_stmts`)
-- `src/parser/expr.rs` — parsing di `ptr_cast<T>()`
-- `src/types/checker/builtins.rs` — firme e validazione dei built-in `ptr_*`
+- `src/parser/ast/stmt.rs`, `src/parser/ast/expr.rs`, `src/parser/ast/ffi.rs` — definiscono i nodi AST custom (ExternFunctionDecl, PtrCast, CType, ecc.)
+- `src/parser/stmt/ffi.rs` — parsing delle dichiarazioni extern
+- `src/parser/expr/prefix_complex.rs` — parsing di `ptr_cast<T>()`
+- `src/types/checker/builtins/pointers.rs` e `src/types/checker/builtins/catalog.rs` — firme, catalogo e validazione dei built-in `ptr_*`
 - `examples/ffi/main.php` — esempio canonico con tutta la sintassi extern
 
 ## Verifica
