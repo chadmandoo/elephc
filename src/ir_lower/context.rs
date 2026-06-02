@@ -11,7 +11,7 @@
 //! - Control-flow joins can reload locals from slots, so Phase 03 does not need
 //!   to synthesize block-parameter phis for every PHP variable yet.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::ir::{
     BlockId, Builder, DataId, DataPool, Effects, Immediate, IrType, LocalKind, LocalSlotId, Op,
@@ -40,7 +40,9 @@ pub(crate) struct LoweringContext<'m, 'f> {
     pub builder: Builder<'f>,
     pub data: &'m mut DataPool,
     pub local_slots: HashMap<String, LocalSlotId>,
+    pub local_kinds: HashMap<String, LocalKind>,
     pub local_types: TypeEnv,
+    initialized_slots: HashSet<LocalSlotId>,
     pub functions: &'m HashMap<String, FunctionSig>,
     pub extern_functions: &'m HashMap<String, ExternFunctionSig>,
     pub loop_stack: Vec<LoopFrame>,
@@ -64,7 +66,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             builder,
             data,
             local_slots: HashMap::new(),
+            local_kinds: HashMap::new(),
             local_types: env,
+            initialized_slots: HashSet::new(),
             functions,
             extern_functions,
             loop_stack: Vec::new(),
@@ -127,8 +131,16 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             kind,
         );
         self.local_slots.insert(name.to_string(), slot);
+        self.local_kinds.insert(name.to_string(), kind);
         self.local_types.entry(name.to_string()).or_insert(php_type);
         slot
+    }
+
+    /// Marks a local slot as initialized by caller or synthetic setup.
+    pub(crate) fn mark_local_initialized(&mut self, name: &str) {
+        if let Some(slot) = self.local_slots.get(name) {
+            self.initialized_slots.insert(*slot);
+        }
     }
 
     /// Declares a fresh hidden temporary slot and returns its synthetic name.
@@ -163,7 +175,22 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 
     /// Emits a store to a PHP local slot and updates the local type fact.
     pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) {
+        let previous_slot = self.local_slots.get(name).copied();
+        let previous_type = self.local_type(name);
+        let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
         let slot = self.declare_local(name, php_type.clone());
+        if previous_kind == LocalKind::PhpLocal
+            && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
+            && Ownership::php_type_needs_lifetime_tracking(&previous_type)
+        {
+            let previous = self.load_local(name, span);
+            crate::ir_lower::ownership::release_if_owned(self, previous, span);
+        }
+        let value = if previous_kind == LocalKind::PhpLocal {
+            crate::ir_lower::ownership::acquire_if_refcounted(self, value, span)
+        } else {
+            value
+        };
         self.store_slot(slot, value, span);
         self.set_local_type(name, php_type);
     }
@@ -180,6 +207,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             Op::StoreLocal.default_effects(),
             span,
         );
+        self.initialized_slots.insert(slot);
     }
 
     /// Emits a void opcode with optional operands and source span.

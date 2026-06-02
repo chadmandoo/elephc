@@ -16,6 +16,7 @@ use crate::ir::print_module;
 
 mod corpus;
 mod exhaustive;
+mod ownership;
 
 /// Runs frontend, type checking, optimization, and EIR lowering for a source string.
 fn lower_source(source: &str) -> crate::ir::Module {

@@ -17,9 +17,13 @@ use crate::ir_lower::context::{LoweredValue, LoweringContext};
 use crate::span::Span;
 
 /// Emits an acquire operation when the value can carry runtime lifetime state.
-pub(crate) fn acquire_if_refcounted(ctx: &mut LoweringContext<'_, '_>, value: LoweredValue, span: Option<Span>) {
+pub(crate) fn acquire_if_refcounted(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Option<Span>,
+) -> LoweredValue {
     if value.ir_type.is_refcounted_storage() {
-        ctx.emit_value(
+        return ctx.emit_value(
             Op::Acquire,
             vec![value.value],
             None,
@@ -28,6 +32,7 @@ pub(crate) fn acquire_if_refcounted(ctx: &mut LoweringContext<'_, '_>, value: Lo
             span,
         );
     }
+    value
 }
 
 /// Emits a release operation when the value can carry runtime lifetime state.

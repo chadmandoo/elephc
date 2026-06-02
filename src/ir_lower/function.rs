@@ -143,6 +143,7 @@ fn lower_body_into_function(
     );
     for (name, php_type) in params {
         ctx.declare_local(name, php_type.clone());
+        ctx.mark_local_initialized(name);
     }
     for stmt in body {
         crate::ir_lower::stmt::lower_stmt(&mut ctx, stmt);
