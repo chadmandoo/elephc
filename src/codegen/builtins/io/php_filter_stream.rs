@@ -46,7 +46,10 @@ pub fn emit(
     let parsed = spec.and_then(parse_filter_url);
     let (mode_bits, id, resource) = match parsed {
         Some(v) => v,
-        None => return emit_false(emitter, ctx),
+        None => {
+            super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
+            return emit_false(emitter, ctx);
+        }
     };
 
     // Open the underlying resource with the caller's mode, reusing fopen's full
@@ -55,7 +58,8 @@ pub fn emit(
         kind: ExprKind::StringLiteral(resource),
         span: args[0].span,
     };
-    let synthetic = [resource_expr, args[1].clone()];
+    let mut synthetic = vec![resource_expr, args[1].clone()];
+    synthetic.extend(args.iter().skip(2).cloned());
     super::fopen::emit(name, &synthetic, emitter, ctx, data);
 
     // The result is a boxed Mixed cell: tag 9 (resource) on success, tag 3

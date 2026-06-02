@@ -137,7 +137,7 @@ them.
 
 | Function | Signature | Description |
 |---|---|---|
-| `fopen()` | `fopen($filename, $mode): resource\|false` | Open file (modes: r, w, a, r+, w+, a+), or `false` on failure |
+| `fopen()` | `fopen($filename, $mode, $use_include_path = false, $context = null): resource\|false` | Open file (modes: r, w, a, r+, w+, a+), or `false` on failure. The 3rd/4th args are evaluated in source order before opening, but the active context still comes from the global stream-context slot. |
 | `fclose()` | `fclose(resource $handle): bool` | Close file handle |
 | `fread()` | `fread(resource $handle, $length): string` | Read up to $length bytes |
 | `fwrite()` | `fwrite(resource $handle, $data): int` | Write to file |

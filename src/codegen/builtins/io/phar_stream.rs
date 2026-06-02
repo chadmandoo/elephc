@@ -61,9 +61,10 @@ pub fn emit(
         ExprKind::StringLiteral(path) => extract_phar_entry(path),
         _ => None,
     };
-    // The mode is evaluated for its side effects; phar:// streams are read-only
-    // regardless of the requested mode (Milestone-1).
-    emit_expr(&args[1], emitter, ctx, data);
+    // The mode and optional fopen args are evaluated for side effects;
+    // phar:// streams are read-only regardless of the requested mode
+    // (Milestone-1).
+    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     match bytes {
         Some(payload) => {
             let (symbol, len) = data.add_string(&payload);
@@ -128,9 +129,9 @@ fn emit_write(
     ctx: &mut Context,
     data: &mut DataSection,
 ) -> Option<PhpType> {
-    // The mode is a string literal here; evaluate it for parity with the read
-    // path (no observable side effects for a literal).
-    emit_expr(&args[1], emitter, ctx, data);
+    // The mode is a string literal here; evaluate it plus optional args for
+    // parity with the read path.
+    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     let target = match &args[0].kind {
         ExprKind::StringLiteral(url) => resolve_write_target(url),
         _ => None,

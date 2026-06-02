@@ -3271,6 +3271,44 @@ fclose($m);
     assert_eq!(out, "ok");
 }
 
+/// Verifies that literal fopen wrappers evaluate ignored optional args before opening.
+#[test]
+fn test_fopen_literal_wrapper_evaluates_optional_args_in_source_order() {
+    let out = compile_and_run(
+        r#"<?php
+function mode_arg(): string { echo "M"; return "r+"; }
+function use_include_path_arg(): bool { echo "U"; return false; }
+function context_arg($ctx) { echo "C"; return $ctx; }
+$ctx = stream_context_create();
+$m = fopen("php://memory", mode_arg(), use_include_path_arg(), context_arg($ctx));
+echo is_resource($m) ? "R" : "F";
+fclose($m);
+"#,
+    );
+    assert_eq!(out, "MUCR");
+}
+
+/// Verifies that non-literal fopen paths evaluate optional args before the open side effect.
+#[test]
+fn test_fopen_dynamic_path_evaluates_optional_args_before_open() {
+    let out = compile_and_run(
+        r#"<?php
+function create_before_open(string $path): bool {
+    echo "O";
+    file_put_contents($path, "x");
+    return false;
+}
+$path = tempnam(sys_get_temp_dir(), "elephc_fopen_order_");
+unlink($path);
+$f = fopen($path, "r", create_before_open($path));
+echo is_resource($f) ? "R" : "F";
+if ($f !== false) { fclose($f); }
+unlink($path);
+"#,
+    );
+    assert_eq!(out, "OR");
+}
+
 #[test]
 fn test_stream_context_set_option_four_arg_per_option_updates() {
     // Phase 11 B2: the 4-arg form

@@ -15,7 +15,6 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::emit_expr;
 use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
@@ -33,9 +32,9 @@ pub fn emit(
         ExprKind::StringLiteral(path) => decode_data_uri(path),
         _ => None,
     };
-    // The mode is evaluated for its side effects; data:// streams are
-    // read-only regardless of the requested mode.
-    emit_expr(&args[1], emitter, ctx, data);
+    // The mode and optional fopen args are evaluated for side effects;
+    // data:// streams are read-only regardless of the requested mode.
+    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     match decoded {
         Some(bytes) => {
             let (symbol, len) = data.add_string(&bytes);

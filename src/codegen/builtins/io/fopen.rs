@@ -16,10 +16,12 @@ use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
-/// Emits the `fopen` builtin call, evaluating filename (arg[0]) and mode (arg[1]) in
-/// source order before materializing arguments in ABI order for `__rt_fopen`. On success,
-/// boxes the native file descriptor as a PHP resource (tag 9). On failure (negative
-/// descriptor), boxes PHP false (tag 3) to distinguish from empty string or empty array.
+/// Emits the `fopen` builtin call, evaluating arguments in source order before
+/// materializing filename and mode in ABI order for `__rt_fopen`.
+///
+/// On success, boxes the native file descriptor as a PHP resource (tag 9). On
+/// failure (negative descriptor), boxes PHP false (tag 3) to distinguish from
+/// empty string or empty array.
 pub fn emit(
     _name: &str,
     args: &[Expr],
@@ -33,14 +35,14 @@ pub fn emit(
     // without touching the filesystem; the mode is still evaluated for effects.
     if let ExprKind::StringLiteral(path) = &args[0].kind {
         if let Some(fd) = php_standard_stream_fd(path) {
-            emit_expr(&args[1], emitter, ctx, data);
+            emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
             emit_standard_stream_resource(fd, emitter);
             return Some(PhpType::Mixed);
         }
         if let Some(fd) = php_fd_stream(path) {
             // php://fd/N opens descriptor N directly. Useful for forwarding
             // pre-opened descriptors into the PHP stream layer.
-            emit_expr(&args[1], emitter, ctx, data);
+            emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
             emit_standard_stream_resource(fd, emitter);
             return Some(PhpType::Mixed);
         }
@@ -48,7 +50,7 @@ pub fn emit(
             // php://memory and php://temp are backed by an anonymous temp
             // file: a real descriptor, so every fd-based stream builtin
             // operates on them unchanged. The mode is evaluated for effects.
-            emit_expr(&args[1], emitter, ctx, data);
+            emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
             abi::emit_call_label(emitter, "__rt_tmpfile");                      // create the anonymous backing descriptor
             box_fopen_result(emitter, ctx);
             return Some(PhpType::Mixed);
@@ -107,7 +109,10 @@ pub fn emit(
             emit_expr(&args[1], emitter, ctx, data);
             emitter.instruction("mov x3, x1");                                  // move the mode pointer into the secondary runtime string-argument pair
             emitter.instruction("mov x4, x2");                                  // move the mode length into the secondary runtime string-argument pair
-            emitter.instruction("ldp x1, x2, [sp], #16");                       // restore the filename ptr/len after evaluating the mode expression
+            emitter.instruction("stp x3, x4, [sp, #-16]!");                     // preserve the mode ptr/len while optional args are evaluated
+            emit_ignored_optional_args(args, emitter, ctx, data);
+            emitter.instruction("ldp x3, x4, [sp], #16");                       // restore the mode ptr/len after optional args
+            emitter.instruction("ldp x1, x2, [sp], #16");                       // restore the filename ptr/len after evaluating later arguments
             abi::emit_call_label(emitter, "__rt_fopen_maybe_phar");             // open the file (routes a non-literal phar:// read URL to the runtime phar reader, else __rt_fopen)
         }
         Arch::X86_64 => {
@@ -115,29 +120,38 @@ pub fn emit(
             emit_expr(&args[1], emitter, ctx, data);
             emitter.instruction("mov rdi, rax");                                // move the mode pointer into the x86_64 secondary runtime string-argument slot
             emitter.instruction("mov rsi, rdx");                                // move the mode length into the x86_64 secondary runtime string-argument slot
-            abi::emit_pop_reg_pair(emitter, "rax", "rdx");                      // restore the filename ptr/len after evaluating the mode expression
+            abi::emit_push_reg_pair(emitter, "rdi", "rsi");                     // preserve the mode ptr/len while optional args are evaluated
+            emit_ignored_optional_args(args, emitter, ctx, data);
+            abi::emit_pop_reg_pair(emitter, "rdi", "rsi");                      // restore the mode ptr/len after optional args
+            abi::emit_pop_reg_pair(emitter, "rax", "rdx");                      // restore the filename ptr/len after evaluating later arguments
             abi::emit_call_label(emitter, "__rt_fopen_maybe_phar");             // open the file (routes a non-literal phar:// read URL to the runtime phar reader, else __rt_fopen)
-        }
-    }
-    // The 3rd ($use_include_path) and 4th ($context) args are accepted
-    // for source compatibility but not yet honored. Evaluate them after
-    // the open so any side effects (e.g. argument expressions with
-    // function calls) are observed — saving x0 across the evaluations.
-    if args.len() >= 3 {
-        match emitter.target.arch {
-            Arch::AArch64 => abi::emit_push_reg(emitter, "x0"),
-            Arch::X86_64 => abi::emit_push_reg(emitter, "rax"),
-        }
-        for arg in &args[2..] {
-            emit_expr(arg, emitter, ctx, data);
-        }
-        match emitter.target.arch {
-            Arch::AArch64 => abi::emit_pop_reg(emitter, "x0"),
-            Arch::X86_64 => abi::emit_pop_reg(emitter, "rax"),
         }
     }
     box_fopen_result(emitter, ctx);
     Some(PhpType::Mixed)
+}
+
+/// Evaluates the mode argument and any currently-ignored optional fopen arguments.
+pub(super) fn emit_mode_and_ignored_optional_args(
+    args: &[Expr],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    emit_expr(&args[1], emitter, ctx, data);
+    emit_ignored_optional_args(args, emitter, ctx, data);
+}
+
+/// Evaluates fopen's optional 3rd/4th arguments in source order for side effects.
+pub(super) fn emit_ignored_optional_args(
+    args: &[Expr],
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+) {
+    for arg in &args[2..] {
+        emit_expr(arg, emitter, ctx, data);
+    }
 }
 
 /// Maps a `php://` standard-stream URL to its file descriptor. The `php://memory`

@@ -37,6 +37,7 @@ pub fn emit(
         ExprKind::StringLiteral(path) => path.strip_prefix("compress.zlib://").map(str::to_string),
         _ => None,
     };
+    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     let underlying = match underlying {
         Some(p) if !p.is_empty() => p,
         _ => {

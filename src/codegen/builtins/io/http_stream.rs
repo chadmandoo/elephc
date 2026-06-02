@@ -23,7 +23,6 @@
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::expr::emit_expr;
 use crate::codegen::{abi, platform::Arch};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
@@ -41,8 +40,9 @@ pub fn emit(
         ExprKind::StringLiteral(url) => parse_http_url(url),
         _ => None,
     };
-    // The mode is evaluated for its side effects; http:// streams are read-only.
-    emit_expr(&args[1], emitter, ctx, data);
+    // The mode and optional fopen args are evaluated for side effects;
+    // http:// streams are read-only.
+    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     match parsed {
         Some(parsed) => {
             let (addr_sym, addr_len) = data.add_string(parsed.addr.as_bytes());
