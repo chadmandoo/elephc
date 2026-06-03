@@ -150,10 +150,32 @@ try {
 `PDO::errorCode()` returns the SQLite result code as a string and
 `PDO::errorInfo()` returns `[code, code, message]`.
 
+The error mode is configurable through `ATTR_ERRMODE`:
+
+```php
+<?php
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+$rows = $db->exec("UPDATE …");       // false on error instead of throwing
+if ($db->exec("BAD SQL") === false) {
+    echo $db->errorInfo()[2];
+}
+```
+
+- `ERRMODE_EXCEPTION` (default) throws a `PDOException`.
+- `ERRMODE_SILENT` suppresses it: `exec()` returns `false`, and `query()` /
+  `prepare()` return a falsy value (check with `if (!$stmt)`).
+- `ERRMODE_WARNING` writes the message to `STDERR` and returns the same failure
+  value as `SILENT`.
+
+The mode can also be seeded from the constructor's options array:
+`new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT])`.
+`getAttribute()` reads it back; `ATTR_DRIVER_NAME` reports `"sqlite"`.
+
 ## Supported surface
 
 - **PDO**: `__construct`, `exec`, `query`, `prepare`, `quote`, `lastInsertId`,
-  `beginTransaction`, `commit`, `rollBack`, `errorCode`, `errorInfo`.
+  `beginTransaction`, `commit`, `rollBack`, `errorCode`, `errorInfo`,
+  `getAttribute`, `setAttribute`.
 - **PDOStatement**: `execute`, `bindValue`, `bindParam`, `setFetchMode`, `fetch`,
   `fetchAll`, `fetchColumn`, `rowCount`, `columnCount`; Traversable, so a statement
   can be walked with `foreach`.
@@ -162,8 +184,8 @@ try {
   argument to `setFetchMode(PDO::FETCH_COLUMN, $col)`).
 - **Parameters**: positional `?` and named `:name`; `PARAM_INT` / `PARAM_STR` /
   `PARAM_NULL` / `PARAM_BOOL` constants.
-- **Constants**: the fetch-mode, parameter, and `ATTR_ERRMODE` / `ERRMODE_*`
-  constants used above.
+- **Constants**: the fetch-mode, parameter, `ATTR_ERRMODE` / `ATTR_DRIVER_NAME`,
+  and `ERRMODE_*` constants used above.
 
 ## Limitations
 
@@ -175,7 +197,11 @@ try {
   set whose column names are `0, 1, 2, …` degrades to an array.
 - **Binary / BLOB values with embedded NUL bytes** are not round-tripped through
   the text path.
-- **`getAttribute` / `setAttribute`** (beyond the accepted constants) and
-  persistent connections are not implemented.
+- **`ERRMODE_SILENT` / `ERRMODE_WARNING` on `query()` / `prepare()`** return `null`
+  (a falsy value) rather than `false` on error, so guard with `if (!$stmt)` rather
+  than `=== false`. `exec()` returns a real `false`.
+- **`getAttribute` / `setAttribute`** support `ATTR_ERRMODE` and `ATTR_DRIVER_NAME`;
+  other attributes are stored and read back but have no effect. Persistent
+  connections are not implemented.
 - Avoid `new PDOStatement(...)` directly — statements are created by `query()` /
   `prepare()`.

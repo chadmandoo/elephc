@@ -76,40 +76,90 @@ class PDO {
     const PARAM_STR = 2;
     const PARAM_BOOL = 5;
     const ATTR_ERRMODE = 3;
+    const ATTR_DRIVER_NAME = 16;
     const ERRMODE_SILENT = 0;
     const ERRMODE_WARNING = 1;
     const ERRMODE_EXCEPTION = 2;
 
     private int $conn;
+    private int $errMode;
+    private array $attributes;
 
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null) {
-        // SQLite ignores credentials/options; reference these PDO-compatible
-        // optional parameters so they are not flagged as unused.
-        $_unused = [$username, $password, $options];
+        // SQLite ignores credentials; reference these PDO-compatible optional
+        // parameters so they are not flagged as unused.
+        $_unused = [$username, $password];
+        $this->errMode = 2;
+        $this->attributes = [];
         $this->conn = elephc_sqlite_open($dsn);
         if ($this->conn < 0) {
             throw new PDOException(elephc_sqlite_last_open_error());
         }
+        // A driver-options array may seed attributes, e.g.
+        // new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT]).
+        if ($options !== null) {
+            foreach ($options as $_attr => $_val) {
+                $this->setAttribute((int) $_attr, $_val);
+            }
+        }
     }
 
-    public function exec(string $statement): int {
+    private function fail(string $message): void {
+        // Apply the current error mode to a failed operation. EXCEPTION throws;
+        // WARNING writes to stderr and lets the caller return its failure value;
+        // SILENT is quiet and the caller returns its failure value.
+        if ($this->errMode == 2) {
+            throw new PDOException($message);
+        }
+        if ($this->errMode == 1) {
+            fwrite(STDERR, "PDO error: " . $message . "\n");
+        }
+    }
+
+    public function setAttribute(int $attribute, $value): bool {
+        if ($attribute == 3) {
+            $this->errMode = (int) $value;
+        }
+        $this->attributes[$attribute] = $value;
+        return true;
+    }
+
+    public function getAttribute(int $attribute): mixed {
+        if ($attribute == 3) {
+            return $this->errMode;
+        }
+        if ($attribute == 16) {
+            return "sqlite";
+        }
+        if (isset($this->attributes[$attribute])) {
+            return $this->attributes[$attribute];
+        }
+        return null;
+    }
+
+    public function exec(string $statement): int|bool {
         $_affected = elephc_sqlite_exec($this->conn, $statement);
         if ($_affected < 0) {
-            throw new PDOException(elephc_sqlite_errmsg($this->conn));
+            $this->fail(elephc_sqlite_errmsg($this->conn));
+            return false;
         }
         return $_affected;
     }
 
-    public function prepare(string $query): PDOStatement {
+    public function prepare(string $query): ?PDOStatement {
         $_handle = elephc_sqlite_prepare($this->conn, $query);
         if ($_handle < 0) {
-            throw new PDOException(elephc_sqlite_errmsg($this->conn));
+            $this->fail(elephc_sqlite_errmsg($this->conn));
+            return null;
         }
         return new PDOStatement($_handle, $this->conn);
     }
 
-    public function query(string $query): PDOStatement {
+    public function query(string $query): ?PDOStatement {
         $_statement = $this->prepare($query);
+        if ($_statement === null) {
+            return null;
+        }
         $_statement->execute();
         return $_statement;
     }

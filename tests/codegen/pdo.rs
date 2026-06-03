@@ -425,3 +425,67 @@ foreach ($stmt as $v) {
     );
     assert_eq!(out, "x;y;z;");
 }
+
+/// `getAttribute`/`setAttribute` round-trip `ATTR_ERRMODE`; the default mode is
+/// `ERRMODE_EXCEPTION` (2) and `ATTR_DRIVER_NAME` reports the SQLite driver.
+#[test]
+fn test_pdo_get_set_attribute() {
+    let out = compile_and_run(
+        r#"<?php
+$db = new PDO("sqlite::memory:");
+echo $db->getAttribute(PDO::ATTR_ERRMODE);
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+echo ":" . $db->getAttribute(PDO::ATTR_ERRMODE);
+echo ":" . $db->getAttribute(PDO::ATTR_DRIVER_NAME);
+"#,
+    );
+    assert_eq!(out, "2:0:sqlite");
+}
+
+/// `ERRMODE_SILENT` suppresses exceptions: `exec()` returns `false` and `query()`
+/// returns a falsy value on a SQL error instead of throwing.
+#[test]
+fn test_pdo_errmode_silent_returns_falsy() {
+    let out = compile_and_run(
+        r#"<?php
+$db = new PDO("sqlite::memory:");
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
+$r = $db->exec("THIS IS NOT SQL");
+$stmt = $db->query("SELECT * FROM does_not_exist");
+echo (($r === false) ? "false" : "other") . ":" . ((!$stmt) ? "falsy" : "stmt");
+"#,
+    );
+    assert_eq!(out, "false:falsy");
+}
+
+/// The default `ERRMODE_EXCEPTION` still throws a `PDOException` on a SQL error.
+#[test]
+fn test_pdo_errmode_exception_default_throws() {
+    let out = compile_and_run(
+        r#"<?php
+$db = new PDO("sqlite::memory:");
+echo $db->getAttribute(PDO::ATTR_ERRMODE);
+try {
+    $db->exec("BAD SQL");
+    echo ":no";
+} catch (PDOException $e) {
+    echo ":caught";
+}
+"#,
+    );
+    assert_eq!(out, "2:caught");
+}
+
+/// A driver-options array passed to the constructor seeds attributes, e.g.
+/// `ATTR_ERRMODE`, so `exec()` returns `false` instead of throwing.
+#[test]
+fn test_pdo_constructor_options_errmode() {
+    let out = compile_and_run(
+        r#"<?php
+$db = new PDO("sqlite::memory:", null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT]);
+echo $db->getAttribute(PDO::ATTR_ERRMODE);
+echo ":" . (($db->exec("BAD") === false) ? "false" : "other");
+"#,
+    );
+    assert_eq!(out, "0:false");
+}
