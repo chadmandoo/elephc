@@ -32,6 +32,12 @@ pub(super) fn lower_is_truthy(ctx: &mut FunctionContext<'_>, inst: &Instruction)
             emit_float_result_nonzero_bool(ctx);
         }
         PhpType::Str => emit_string_truthiness(ctx, value)?,
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            ctx.load_value_to_result(value)?;
+            let result_reg = abi::int_result_reg(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, result_reg, result_reg, 0);
+            emit_int_result_nonzero_bool(ctx);
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "{} for PHP type {:?}",

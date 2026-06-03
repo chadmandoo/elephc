@@ -527,6 +527,30 @@ fn ir_backend_handles_basic_indexed_arrays() {
     );
 }
 
+/// Verifies array truthiness follows PHP length rules for empty and non-empty containers.
+#[test]
+fn ir_backend_handles_array_truthiness() {
+    for (name, source, expected) in [
+        (
+            "empty_indexed_array_truthiness",
+            "<?php $a = []; echo $a ? \"T\" : \"F\"; echo \":\"; echo !$a ? \"T\" : \"F\";",
+            "F:T",
+        ),
+        (
+            "non_empty_indexed_array_truthiness",
+            "<?php $a = [1]; if ($a) { echo \"T\"; } echo \":\"; echo !$a ? \"T\" : \"F\";",
+            "T:F",
+        ),
+        (
+            "non_empty_assoc_array_truthiness",
+            "<?php $h = [\"a\" => 1]; echo $h ? \"T\" : \"F\"; echo \":\"; echo !$h ? \"T\" : \"F\";",
+            "T:F",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies string builtins that produce or consume indexed arrays through runtime helpers.
 #[test]
 fn ir_backend_handles_string_array_builtins() {
