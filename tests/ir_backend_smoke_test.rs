@@ -306,6 +306,11 @@ fn ir_backend_handles_scalar_builtins() {
             "ababab:[]:5",
         ),
         (
+            "ucwords_strings",
+            "<?php echo ucwords('hello world'); echo ':'; echo ucwords(\"two\\twords\");",
+            "Hello World:Two\tWords",
+        ),
+        (
             "ord_chr_strings",
             "<?php echo ord('A'); echo ':'; echo ord(''); echo ':'; echo chr(65);",
             "65:0:A",

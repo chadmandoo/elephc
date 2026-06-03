@@ -94,6 +94,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "substr" => strings::lower_substr(ctx, inst),
         "ucfirst" => strings::lower_ucfirst(ctx, inst),
         "lcfirst" => strings::lower_lcfirst(ctx, inst),
+        "ucwords" => strings::lower_unary_string_runtime(ctx, inst, "ucwords", "__rt_ucwords"),
         "trim" => strings::lower_trim_like(ctx, inst, "trim", "__rt_trim", "__rt_trim_mask"),
         "ltrim" => strings::lower_trim_like(ctx, inst, "ltrim", "__rt_ltrim", "__rt_ltrim_mask"),
         "rtrim" | "chop" => {
