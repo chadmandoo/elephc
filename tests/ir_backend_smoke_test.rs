@@ -280,6 +280,11 @@ fn ir_backend_handles_scalar_builtins() {
             "<?php echo strtolower('Hello WORLD'); echo ':'; echo strtoupper('Hello World'); echo ':'; echo ucfirst('hello'); echo ':'; echo lcfirst('Hello'); echo ':'; echo strrev('Hello');",
             "hello world:HELLO WORLD:Hello:hello:olleH",
         ),
+        (
+            "ord_chr_strings",
+            "<?php echo ord('A'); echo ':'; echo ord(''); echo ':'; echo chr(65);",
+            "65:0:A",
+        ),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);
     }

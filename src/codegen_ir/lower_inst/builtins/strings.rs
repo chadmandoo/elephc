@@ -45,6 +45,47 @@ pub(super) fn lower_lcfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     store_if_result(ctx, inst)
 }
 
+/// Lowers `ord()` by returning the first byte of a string or zero for empty input.
+pub(super) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_single_string_arg(ctx, inst, "ord")?;
+    let empty_label = ctx.next_label("ord_empty");
+    let done_label = ctx.next_label("ord_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz x2, {}", empty_label));       // return zero when ord() receives an empty string
+            ctx.emitter.instruction("ldrb w0, [x1]");                           // load the first byte as an unsigned integer
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip the empty-string fallback after loading the first byte
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rdx, rdx");                           // return zero when ord() receives an empty string
+            ctx.emitter.instruction(&format!("jz {}", empty_label));            // branch to the empty-string fallback when the length is zero
+            ctx.emitter.instruction("movzx eax, BYTE PTR [rax]");               // load the first byte as an unsigned integer
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip the empty-string fallback after loading the first byte
+        }
+    }
+    ctx.emitter.label(&empty_label);
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+    ctx.emitter.label(&done_label);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `chr()` by converting an integer code point into a one-byte string.
+pub(super) fn lower_chr(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 1 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "chr expected 1 arg, got {}",
+            inst.operands.len()
+        )));
+    }
+    let value = expect_operand(inst, 0)?;
+    load_as_int(ctx, value, "chr")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the character code to the x86_64 runtime helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_chr");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `number_format()` by arranging its runtime helper arguments.
 pub(super) fn lower_number_format(
     ctx: &mut FunctionContext<'_>,

@@ -87,6 +87,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "strrev" => strings::lower_unary_string_runtime(ctx, inst, "strrev", "__rt_strrev"),
         "ucfirst" => strings::lower_ucfirst(ctx, inst),
         "lcfirst" => strings::lower_lcfirst(ctx, inst),
+        "ord" => strings::lower_ord(ctx, inst),
+        "chr" => strings::lower_chr(ctx, inst),
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
     }
 }
