@@ -551,6 +551,23 @@ fn ir_backend_handles_basic_indexed_arrays() {
     );
 }
 
+/// Verifies indexed-array aggregate builtins that delegate to runtime helpers.
+#[test]
+fn ir_backend_handles_indexed_array_aggregates() {
+    for (name, source, expected) in [
+        ("array_sum_ints", "<?php $a = [10, 20, 30]; echo array_sum($a);", "60"),
+        ("array_sum_empty", "<?php $a = []; echo array_sum($a);", "0"),
+        (
+            "array_product_ints",
+            "<?php $a = [2, 3, 4]; echo array_product($a);",
+            "24",
+        ),
+        ("array_product_empty", "<?php $a = []; echo array_product($a);", "1"),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies array truthiness follows PHP length rules for empty and non-empty containers.
 #[test]
 fn ir_backend_handles_array_truthiness() {

@@ -21,6 +21,7 @@ use super::{expect_data, expect_operand, predicates, store_if_result};
 use crate::codegen_ir::{CodegenIrError, Result};
 
 mod is_numeric;
+mod arrays;
 mod ctype;
 mod math;
 mod strings;
@@ -59,6 +60,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "phpversion" => lower_phpversion(ctx, inst),
         "strlen" => lower_strlen(ctx, inst),
         "count" => lower_count(ctx, inst),
+        "array_sum" => arrays::lower_array_sum(ctx, inst),
+        "array_product" => arrays::lower_array_product(ctx, inst),
         "intval" => lower_intval(ctx, inst),
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
