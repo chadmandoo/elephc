@@ -55,6 +55,13 @@ fn ir_backend_branches_on_integer_comparison() {
     );
 }
 
+/// Verifies branch back-edges and repeated local slot updates in a while loop.
+#[test]
+fn ir_backend_runs_simple_while_loop() {
+    let source = "<?php $i = 0; while ($i < 3) { echo $i; $i = $i + 1; }";
+    assert_eq!(compile_and_run_ir_backend("while_loop", source), "012");
+}
+
 /// Compiles `source` with `--ir-backend`, runs the output binary, and returns stdout.
 fn compile_and_run_ir_backend(name: &str, source: &str) -> String {
     compile_and_run_ir_backend_with_args(name, source, &[])
