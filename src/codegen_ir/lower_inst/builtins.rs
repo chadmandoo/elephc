@@ -62,6 +62,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "intval" => lower_intval(ctx, inst),
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
+        "empty" => lower_empty(ctx, inst),
         "gettype" => lower_gettype(ctx, inst),
         "define" => lower_define(ctx, inst),
         "defined" => lower_defined(ctx, inst),
@@ -537,6 +538,107 @@ fn lower_boolval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()
         }
     }
     store_if_result(ctx, inst)
+}
+
+/// Lowers `empty()` for concrete scalar and array-like operands.
+fn lower_empty(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "empty", 1)?;
+    let value = expect_operand(inst, 0)?;
+    match ctx.value_php_type(value)?.codegen_repr() {
+        PhpType::Int | PhpType::Bool => {
+            ctx.load_value_to_result(value)?;
+            emit_int_result_zero_bool(ctx);
+        }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+        }
+        PhpType::Float => {
+            ctx.load_value_to_result(value)?;
+            emit_float_result_zero_bool(ctx);
+        }
+        PhpType::Str => {
+            ctx.load_value_to_result(value)?;
+            emit_string_length_zero_bool(ctx);
+        }
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            predicates::emit_array_truthiness(ctx, value)?;
+            invert_bool_result(ctx);
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_is_empty");
+        }
+        PhpType::Callable | PhpType::Object(_) | PhpType::Resource(_) => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "empty for PHP type {:?}",
+                other
+            )))
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Emits true when the canonical integer result register is zero.
+fn emit_int_result_zero_bool(ctx: &mut FunctionContext<'_>) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", result_reg));        // compare the empty() integer operand against zero
+            ctx.emitter.instruction(&format!("cset {}, eq", result_reg));       // return true when the integer operand is zero
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, 0", result_reg));         // compare the empty() integer operand against zero
+            ctx.emitter.instruction("sete al");                                 // materialize true when the integer operand is zero
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+        }
+    }
+}
+
+/// Emits true when the canonical float result register is zero.
+fn emit_float_result_zero_bool(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("fcmp d0, #0.0");                           // compare the empty() float operand against zero
+            ctx.emitter.instruction("cset x0, eq");                             // return true when the float operand is zero
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("xorpd xmm1, xmm1");                        // materialize a zero float register for empty() comparison
+            ctx.emitter.instruction("ucomisd xmm0, xmm1");                      // compare the empty() float operand against zero
+            ctx.emitter.instruction("sete al");                                 // materialize true when the float operand is zero
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+        }
+    }
+}
+
+/// Emits true when the loaded string length register is zero.
+fn emit_string_length_zero_bool(ctx: &mut FunctionContext<'_>) {
+    let len_reg = abi::string_result_regs(ctx.emitter).1;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", len_reg));           // compare the empty() string length against zero
+            ctx.emitter.instruction("cset x0, eq");                             // return true when the string length is zero
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, 0", len_reg));            // compare the empty() string length against zero
+            ctx.emitter.instruction("sete al");                                 // materialize true when the string length is zero
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+        }
+    }
+}
+
+/// Inverts a canonical 0/1 boolean result in the integer result register.
+fn invert_bool_result(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("eor x0, x0, #1");                          // invert the canonical boolean result for empty()
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("xor rax, 1");                              // invert the canonical boolean result for empty()
+        }
+    }
 }
 
 /// Lowers a static `is_*` predicate for concrete non-Mixed values.

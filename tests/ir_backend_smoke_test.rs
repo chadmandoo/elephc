@@ -407,6 +407,30 @@ line2:The quick |brown fox:4142:AB"#,
     }
 }
 
+/// Verifies `empty()` lowering for scalar, array, hash, and iterable operands.
+#[test]
+fn ir_backend_handles_empty_builtin() {
+    assert_eq!(
+        compile_and_run_ir_backend(
+            "empty_scalar_values",
+            "<?php echo empty(0) ? 'T' : 'F'; echo empty(42) ? 'T' : 'F'; echo empty('') ? 'T' : 'F'; echo empty('hi') ? 'T' : 'F'; echo empty(null) ? 'T' : 'F'; echo empty(false) ? 'T' : 'F'; echo empty(true) ? 'T' : 'F'; echo empty(0.0) ? 'T' : 'F'; echo empty(1.5) ? 'T' : 'F';",
+        ),
+        "TFTFTTFTF"
+    );
+    assert_eq!(
+        compile_and_run_ir_backend(
+            "empty_array_values",
+            "<?php $empty = []; $full = [1]; $hash = ['a' => 1]; echo empty($empty) ? 'E' : 'N'; echo ':'; echo empty($full) ? 'E' : 'N'; echo ':'; echo empty($hash) ? 'E' : 'N';",
+        ),
+        "E:N:N"
+    );
+    let iterable_source = "<?php function describe(iterable $items): string { return empty($items) ? 'empty' : 'not'; } echo describe([]); echo '|'; echo describe([1]); echo '|'; echo describe(['a' => 1]);";
+    assert_eq!(
+        compile_and_run_ir_backend("empty_iterable_values", iterable_source),
+        "empty|not|not"
+    );
+}
+
 /// Verifies `intdiv()` division-by-zero follows the legacy fatal diagnostic.
 #[test]
 fn ir_backend_handles_intdiv_division_by_zero() {

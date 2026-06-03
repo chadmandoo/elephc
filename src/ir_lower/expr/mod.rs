@@ -782,7 +782,7 @@ fn numeric_builtin_return_type(
 /// Returns precise builtin return types needed by EIR value materialization.
 fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "define" | "defined" | "function_exists" | "is_callable" | "is_numeric" => {
+        "define" | "defined" | "empty" | "function_exists" | "is_callable" | "is_numeric" => {
             Some(PhpType::Bool)
         }
         "printf" => Some(PhpType::Int),
