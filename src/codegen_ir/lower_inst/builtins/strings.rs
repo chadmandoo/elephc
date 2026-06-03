@@ -73,6 +73,36 @@ pub(super) fn lower_trim_like(
     store_if_result(ctx, inst)
 }
 
+/// Lowers a two-argument string builtin that directly delegates to a runtime helper.
+pub(super) fn lower_binary_string_runtime(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    load_binary_string_args(ctx, inst, name)?;
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `str_contains()` through `strpos()` and converts found positions to bool.
+pub(super) fn lower_str_contains(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_binary_string_args(ctx, inst, "str_contains")?;
+    abi::emit_call_label(ctx.emitter, "__rt_strpos");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // check whether strpos() found the needle at any non-negative position
+            ctx.emitter.instruction("cset x0, ge");                             // normalize the signed strpos() result into a PHP boolean
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 0");                              // check whether strpos() found the needle at any non-negative position
+            ctx.emitter.instruction("setge al");                                // normalize the signed strpos() result into the low boolean byte
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized boolean byte into the integer result register
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `ord()` by returning the first byte of a string or zero for empty input.
 pub(super) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "ord")?;
@@ -216,6 +246,62 @@ fn lower_trim_mask_arg(
         }
     }
     Ok(())
+}
+
+/// Materializes two string operands into the runtime helper's target ABI registers.
+fn load_binary_string_args(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expected 2 args, got {}",
+            name,
+            inst.operands.len()
+        )));
+    }
+    let first = expect_string_operand(ctx, inst, 0, name)?;
+    let second = expect_string_operand(ctx, inst, 1, name)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_string_value_to_regs(first, "x1", "x2")?;
+            ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                 // preserve the first string pointer and length while loading the second
+            ctx.load_string_value_to_regs(second, "x1", "x2")?;
+            ctx.emitter.instruction("mov x3, x1");                              // pass the second string pointer as the secondary string argument
+            ctx.emitter.instruction("mov x4, x2");                              // pass the second string length as the secondary string argument
+            ctx.emitter.instruction("ldp x1, x2, [sp], #16");                   // restore the first string pointer and length into primary argument registers
+        }
+        Arch::X86_64 => {
+            ctx.load_string_value_to_regs(first, "rax", "rdx")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            ctx.load_string_value_to_regs(second, "rax", "rdx")?;
+            ctx.emitter.instruction("mov rcx, rdx");                            // pass the second string length as the fourth SysV string argument
+            ctx.emitter.instruction("mov rdx, rax");                            // pass the second string pointer as the third SysV string argument
+            abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
+        }
+    }
+    Ok(())
+}
+
+/// Returns a string operand after validating the EIR builtin call shape.
+fn expect_string_operand(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+    index: usize,
+    name: &str,
+) -> Result<ValueId> {
+    let value = expect_operand(inst, index)?;
+    let ty = ctx.value_php_type(value)?;
+    if ty == PhpType::Str {
+        return Ok(value);
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "{} arg {} for PHP type {:?}",
+        name,
+        index + 1,
+        ty
+    )))
 }
 
 /// Emits target-aware first-byte ASCII case adjustment for `ucfirst()` and `lcfirst()`.

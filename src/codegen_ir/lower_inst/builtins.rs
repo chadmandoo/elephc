@@ -97,6 +97,23 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "rtrim" | "chop" => {
             strings::lower_trim_like(ctx, inst, key.as_str(), "__rt_rtrim", "__rt_rtrim_mask")
         }
+        "strcmp" => strings::lower_binary_string_runtime(ctx, inst, "strcmp", "__rt_strcmp"),
+        "strcasecmp" => {
+            strings::lower_binary_string_runtime(ctx, inst, "strcasecmp", "__rt_strcasecmp")
+        }
+        "str_contains" => strings::lower_str_contains(ctx, inst),
+        "str_starts_with" => strings::lower_binary_string_runtime(
+            ctx,
+            inst,
+            "str_starts_with",
+            "__rt_str_starts_with",
+        ),
+        "str_ends_with" => strings::lower_binary_string_runtime(
+            ctx,
+            inst,
+            "str_ends_with",
+            "__rt_str_ends_with",
+        ),
         "ord" => strings::lower_ord(ctx, inst),
         "chr" => strings::lower_chr(ctx, inst),
         "addslashes" => strings::lower_unary_string_runtime(

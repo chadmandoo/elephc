@@ -286,6 +286,11 @@ fn ir_backend_handles_scalar_builtins() {
             "hello:left:right:tail:hello:left:right",
         ),
         (
+            "string_search_predicates",
+            "<?php echo strcmp('abc', 'abc'); echo ':'; echo strcmp('abc', 'abd') < 0 ? 'lt' : 'ge'; echo ':'; echo strcasecmp('ABC', 'abc'); echo ':'; echo str_contains('hello world', 'world') ? '1' : '0'; echo str_contains('hello', 'z') ? '1' : '0'; echo str_starts_with('hello', 'he') ? '1' : '0'; echo str_starts_with('hello', 'zz') ? '1' : '0'; echo str_ends_with('hello', 'lo') ? '1' : '0'; echo str_ends_with('hello', 'zz') ? '1' : '0';",
+            "0:lt:0:101010",
+        ),
+        (
             "ord_chr_strings",
             "<?php echo ord('A'); echo ':'; echo ord(''); echo ':'; echo chr(65);",
             "65:0:A",
