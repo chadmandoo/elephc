@@ -133,6 +133,22 @@ pub(super) fn lower_substr(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `str_repeat(string, times)` through the shared runtime helper.
+pub(super) fn lower_str_repeat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "str_repeat expected 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_str_repeat_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_str_repeat_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_str_repeat");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `ord()` by returning the first byte of a string or zero for empty input.
 pub(super) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "ord")?;
@@ -437,6 +453,30 @@ fn load_substr_string_and_offset_x86_64(
     abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
     load_as_int(ctx, offset, "substr offset")?;
     abi::emit_push_reg(ctx.emitter, "rax");
+    Ok(())
+}
+
+/// Materializes AArch64 `str_repeat()` runtime arguments.
+fn lower_str_repeat_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "str_repeat")?;
+    let times = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(source, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the source string while materializing the repeat count
+    load_as_int(ctx, times, "str_repeat times")?;
+    ctx.emitter.instruction("mov x3, x0");                                      // pass the repeat count as the third string-helper argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the source string into runtime argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 `str_repeat()` runtime arguments.
+fn lower_str_repeat_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "str_repeat")?;
+    let times = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(source, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    load_as_int(ctx, times, "str_repeat times")?;
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the repeat count as the extra x86_64 runtime argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
     Ok(())
 }
 

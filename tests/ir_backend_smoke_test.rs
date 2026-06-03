@@ -301,6 +301,11 @@ fn ir_backend_handles_scalar_builtins() {
             "World:Hello:World:[]:[]",
         ),
         (
+            "str_repeat_strings",
+            "<?php echo str_repeat('ab', 3); echo ':'; echo '['; echo str_repeat('x', 0); echo ']'; echo ':'; echo strlen(str_repeat('a', 5));",
+            "ababab:[]:5",
+        ),
+        (
             "ord_chr_strings",
             "<?php echo ord('A'); echo ':'; echo ord(''); echo ':'; echo chr(65);",
             "65:0:A",
