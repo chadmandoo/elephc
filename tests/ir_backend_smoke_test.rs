@@ -220,6 +220,28 @@ fn ir_backend_handles_power_and_spaceship() {
     );
 }
 
+/// Verifies explicit ownership ops emitted around string local slots.
+#[test]
+fn ir_backend_handles_string_ownership_ops() {
+    for (name, source, expected) in [
+        ("literal_string_acquire", "<?php $s = \"hello\"; echo $s;", "hello"),
+        ("concat_string_acquire", "<?php $x = \"a\" . $argc; echo $x;", "a1"),
+        (
+            "string_copy_survives_source_release",
+            "<?php $x = \"a\" . $argc; $y = $x; $x = \"b\" . $argc; echo $y;",
+            "a1",
+        ),
+        (
+            "string_release_on_overwrite",
+            "<?php $x = \"a\" . $argc; $x = \"b\" . $argc; echo $x;",
+            "b1",
+        ),
+        ("empty_string_release", "<?php $x = (string)false; $x = \"z\"; echo $x;", "z"),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Compiles `source` with `--ir-backend`, runs the output binary, and returns stdout.
 fn compile_and_run_ir_backend(name: &str, source: &str) -> String {
     compile_and_run_ir_backend_with_args(name, source, &[])

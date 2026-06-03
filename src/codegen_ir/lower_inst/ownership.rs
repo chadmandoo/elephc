@@ -1,0 +1,110 @@
+//! Purpose:
+//! Lowers explicit EIR ownership operations for the Phase 04 backend.
+//! Handles string persistence, heap retains, releases, and pure forwarding ops.
+//!
+//! Called from:
+//! - `crate::codegen_ir::lower_inst::lower_instruction()`.
+//!
+//! Key details:
+//! - `Acquire` turns PHP strings into heap-owned storage so local slots do not
+//!   alias transient concat buffers or immutable data-section literals.
+
+use crate::codegen::abi;
+use crate::codegen::platform::Arch;
+use crate::ir::{Instruction, Ownership};
+use crate::types::PhpType;
+
+use super::super::context::FunctionContext;
+use super::{expect_operand, store_if_result};
+use crate::codegen_ir::{CodegenIrError, Result};
+
+/// Lowers an ownership acquire by making the operand safe to store as a new owner.
+pub(super) fn lower_acquire(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let value = expect_operand(inst, 0)?;
+    let ty = ctx.load_value_to_result(value)?;
+    match ty {
+        PhpType::Str => {
+            abi::emit_call_label(ctx.emitter, "__rt_str_persist");
+        }
+        PhpType::Callable => {
+            abi::emit_incref_if_refcounted(ctx.emitter, &ty);
+        }
+        other if other.is_refcounted() => {
+            abi::emit_incref_if_refcounted(ctx.emitter, &other);
+        }
+        PhpType::Void | PhpType::Never => {}
+        other => {
+            if inst.result.is_some() {
+                return Err(CodegenIrError::unsupported(format!(
+                    "acquire for PHP type {:?}",
+                    other
+                )));
+            }
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers an ownership release for values that may hold runtime-managed storage.
+pub(super) fn lower_release(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let value = expect_operand(inst, 0)?;
+    let ownership = ctx.value_ownership(value)?;
+    if matches!(
+        ownership,
+        Ownership::NonHeap | Ownership::Borrowed | Ownership::Persistent | Ownership::Moved
+    ) {
+        return Ok(());
+    }
+
+    let ty = ctx.load_value_to_result(value)?;
+    match ty {
+        PhpType::Str => {
+            release_loaded_string(ctx);
+        }
+        PhpType::Callable => {
+            abi::emit_decref_if_refcounted(ctx.emitter, &ty);
+        }
+        other if other.is_refcounted() => {
+            abi::emit_decref_if_refcounted(ctx.emitter, &other);
+        }
+        PhpType::Void | PhpType::Never => {}
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "release for PHP type {:?}",
+                other
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Lowers a pure ownership forwarding opcode by copying the operand into the result slot.
+pub(super) fn lower_forward(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let value = expect_operand(inst, 0)?;
+    ctx.load_value_to_result(value)?;
+    store_if_result(ctx, inst)
+}
+
+/// Releases a loaded string result while treating zero-length strings as non-owning.
+fn release_loaded_string(ctx: &mut FunctionContext<'_>) {
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    let skip_label = ctx.next_label("release_empty_str");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz {}, {}", len_reg, skip_label)); // skip release for zero-length strings without owned heap storage
+            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, ptr_reg)); // pass the loaded string pointer to the heap-free helper
+            abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe");
+            ctx.emitter.label(&skip_label);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("test {}, {}", len_reg, len_reg)); // check whether the loaded string has any owned bytes
+            ctx.emitter.instruction(&format!("je {}", skip_label));             // skip release for zero-length strings without owned heap storage
+            if ptr_reg != result_reg {
+                ctx.emitter.instruction(&format!("mov {}, {}", result_reg, ptr_reg)); // pass the loaded string pointer to the heap-free helper
+            }
+            abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe");
+            ctx.emitter.label(&skip_label);
+        }
+    }
+}

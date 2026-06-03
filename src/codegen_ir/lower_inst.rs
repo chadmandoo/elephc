@@ -23,6 +23,7 @@ mod builtins;
 mod comparisons;
 mod conversions;
 mod floats;
+mod ownership;
 mod predicates;
 mod strings;
 
@@ -81,6 +82,9 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StrCharAt => strings::lower_str_char_at(ctx, &inst),
         Op::Call => lower_direct_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
+        Op::Acquire => ownership::lower_acquire(ctx, &inst),
+        Op::Release => ownership::lower_release(ctx, &inst),
+        Op::Move | Op::Borrow => ownership::lower_forward(ctx, &inst),
         Op::EchoValue => lower_echo_value(ctx, &inst),
         Op::PrintValue => lower_print_value(ctx, &inst),
         Op::Nop => Ok(()),

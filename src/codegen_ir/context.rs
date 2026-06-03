@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use crate::codegen::abi;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::ir::{BlockId, DataId, Function, LocalSlotId, Module, ValueId};
+use crate::ir::{BlockId, DataId, Function, LocalSlotId, Module, Ownership, ValueId};
 use crate::types::PhpType;
 
 use super::frame::FrameLayout;
@@ -97,6 +97,14 @@ impl<'a> FunctionContext<'a> {
         self.function
             .value(value)
             .map(|metadata| metadata.php_type.codegen_repr())
+            .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))
+    }
+
+    /// Returns the EIR ownership metadata attached to an SSA value.
+    pub(super) fn value_ownership(&self, value: ValueId) -> Result<Ownership> {
+        self.function
+            .value(value)
+            .map(|metadata| metadata.ownership)
             .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))
     }
 
