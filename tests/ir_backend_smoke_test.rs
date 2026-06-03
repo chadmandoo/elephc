@@ -551,6 +551,40 @@ fn ir_backend_handles_basic_indexed_arrays() {
     );
 }
 
+/// Verifies simple positional list destructuring through indexed-array reads.
+#[test]
+fn ir_backend_handles_simple_list_unpack() {
+    for (name, source, expected) in [
+        (
+            "list_unpack_int_literal",
+            "<?php [$a, $b, $c] = [10, 20, 30]; echo $a . ' ' . $b . ' ' . $c;",
+            "10 20 30",
+        ),
+        (
+            "list_unpack_string_literal",
+            "<?php [$x, $y] = ['hello', 'world']; echo $x . ' ' . $y;",
+            "hello world",
+        ),
+        (
+            "list_unpack_from_variable",
+            "<?php $arr = [1, 2, 3]; [$a, $b, $c] = $arr; echo $a . ' ' . $b . ' ' . $c;",
+            "1 2 3",
+        ),
+        (
+            "list_unpack_after_int_append",
+            "<?php $items = []; $items[] = 7; [$a] = $items; echo $a;",
+            "7",
+        ),
+        (
+            "list_unpack_after_string_append",
+            "<?php $items = []; $items[] = 'z'; [$a] = $items; echo $a;",
+            "z",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies AArch64 far-slot materialization does not clobber indexed-array receiver registers.
 #[test]
 fn ir_backend_keeps_indexed_array_receiver_across_far_slot_loads() {

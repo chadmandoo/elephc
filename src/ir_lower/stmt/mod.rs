@@ -409,6 +409,28 @@ fn lower_array_push(ctx: &mut LoweringContext<'_, '_>, array: &str, value: &Expr
         Op::RuntimeCall
     };
     ctx.emit_void(op, vec![array_value.value, value.value], None, op.default_effects(), Some(span));
+    if op == Op::ArrayPush {
+        let current_ty = ctx.builder.value_php_type(array_value.value);
+        let value_ty = ctx.builder.value_php_type(value.value);
+        if let Some(updated_ty) = array_push_updated_type(current_ty, value_ty) {
+            ctx.set_local_type(array, updated_ty);
+        }
+    }
+}
+
+/// Returns the refined array type after appending to a statically empty indexed array.
+fn array_push_updated_type(current_ty: PhpType, value_ty: PhpType) -> Option<PhpType> {
+    match current_ty.codegen_repr() {
+        PhpType::Array(elem_ty) if is_empty_indexed_array_element(elem_ty.as_ref()) => {
+            Some(PhpType::Array(Box::new(normalize_materialized_element_type(value_ty))))
+        }
+        _ => None,
+    }
+}
+
+/// Returns true for the placeholder element type used by empty indexed arrays.
+fn is_empty_indexed_array_element(elem_ty: &PhpType) -> bool {
+    matches!(elem_ty.codegen_repr(), PhpType::Void)
 }
 
 /// Lowers an assignment with a declared type.
@@ -699,27 +721,61 @@ fn lower_const_decl(ctx: &mut LoweringContext<'_, '_>, name: &str, value: &Expr,
     );
 }
 
-/// Lowers list destructuring through a high-level unpack opcode plus local writes.
+/// Lowers simple positional list destructuring into indexed reads plus local writes.
 fn lower_list_unpack(ctx: &mut LoweringContext<'_, '_>, vars: &[String], value: &Expr, span: Span) {
-    let value = lower_expr(ctx, value);
-    ctx.emit_void(
-        Op::ListUnpack,
-        vec![value.value],
-        None,
-        Op::ListUnpack.default_effects(),
-        Some(span),
-    );
-    for var in vars {
-        let data = ctx.intern_string(var);
+    let source = lower_expr(ctx, value);
+    let item_type = list_unpack_item_type(ctx, source.value);
+    let get_op = list_unpack_get_op(source.ir_type);
+    for (index, var) in vars.iter().enumerate() {
+        let index_value = lower_list_unpack_index(ctx, index, span);
         let item = ctx.emit_value(
-            Op::RuntimeCall,
-            vec![value.value],
-            Some(Immediate::Data(data)),
-            PhpType::Mixed,
-            effects_lookup::runtime_effects(),
+            get_op,
+            vec![source.value, index_value.value],
+            None,
+            item_type.clone(),
+            get_op.default_effects(),
             Some(span),
         );
-        ctx.store_local(var, item, PhpType::Mixed, Some(span));
+        ctx.store_local(var, item, item_type.clone(), Some(span));
+    }
+}
+
+/// Emits the positional integer key used to read one list-unpack element.
+fn lower_list_unpack_index(ctx: &mut LoweringContext<'_, '_>, index: usize, span: Span) -> LoweredValue {
+    ctx.emit_value(
+        Op::ConstI64,
+        Vec::new(),
+        Some(Immediate::I64(index as i64)),
+        PhpType::Int,
+        Op::ConstI64.default_effects(),
+        Some(span),
+    )
+}
+
+/// Returns the element-read opcode for a list-unpack source value.
+fn list_unpack_get_op(source_type: IrType) -> Op {
+    match source_type {
+        IrType::Heap(crate::ir::IrHeapKind::Array) => Op::ArrayGet,
+        IrType::Heap(crate::ir::IrHeapKind::Hash) => Op::HashGet,
+        _ => Op::RuntimeCall,
+    }
+}
+
+/// Returns the PHP type assigned to each simple list-unpack destination.
+fn list_unpack_item_type(ctx: &LoweringContext<'_, '_>, source: crate::ir::ValueId) -> PhpType {
+    let item_type = match ctx.builder.value_php_type(source).codegen_repr() {
+        PhpType::Array(elem_ty) => *elem_ty,
+        PhpType::AssocArray { value, .. } => *value,
+        _ => PhpType::Mixed,
+    };
+    normalize_materialized_element_type(item_type)
+}
+
+/// Normalizes non-materializable element metadata to the null sentinel.
+fn normalize_materialized_element_type(item_type: PhpType) -> PhpType {
+    match item_type {
+        PhpType::Never => PhpType::Void,
+        other => other,
     }
 }
 
