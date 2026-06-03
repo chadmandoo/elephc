@@ -511,6 +511,50 @@ fn ir_backend_handles_basic_indexed_arrays() {
     );
 }
 
+/// Verifies string builtins that produce or consume indexed arrays through runtime helpers.
+#[test]
+fn ir_backend_handles_string_array_builtins() {
+    for (name, source, expected) in [
+        (
+            "explode_strings",
+            r#"<?php $parts = explode(",", "a,b,c"); echo count($parts); echo ":"; echo $parts[0] . "," . $parts[1] . "," . $parts[2];"#,
+            "3:a,b,c",
+        ),
+        (
+            "str_split_chunks",
+            r#"<?php $parts = str_split("Hello", 2); echo count($parts); echo ":"; echo $parts[0] . "," . $parts[1] . "," . $parts[2];"#,
+            "3:He,ll,o",
+        ),
+        (
+            "str_split_default",
+            r#"<?php $parts = str_split("abc"); echo $parts[0] . "," . $parts[1] . "," . $parts[2];"#,
+            "a,b,c",
+        ),
+        (
+            "implode_string_array",
+            r#"<?php echo implode(" ", ["Hello", "World"]);"#,
+            "Hello World",
+        ),
+        (
+            "implode_int_array",
+            r#"<?php echo implode(", ", [1, 2, 3]);"#,
+            "1, 2, 3",
+        ),
+        (
+            "explode_implode_roundtrip",
+            r#"<?php $parts = explode("-", "one-two-three"); echo implode(", ", $parts);"#,
+            "one, two, three",
+        ),
+        (
+            "sscanf_strings",
+            r#"<?php $result = sscanf("John 30", "%s %d"); echo $result[0] . ":" . $result[1];"#,
+            "John:30",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies basic associative-array allocation, lookup, update, and count lowering.
 #[test]
 fn ir_backend_handles_basic_associative_arrays() {

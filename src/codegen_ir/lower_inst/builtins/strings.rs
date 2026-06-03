@@ -93,6 +93,59 @@ pub(super) fn lower_binary_string_runtime(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `explode(delimiter, string)` into the shared string-array splitter helper.
+pub(super) fn lower_explode(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_split_pair_args(ctx, inst, "explode")?;
+    abi::emit_call_label(ctx.emitter, "__rt_explode");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `sscanf(string, format)` into the shared scanner helper.
+pub(super) fn lower_sscanf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() < 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "sscanf expected at least 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    load_input_and_pattern_args(ctx, inst, "sscanf")?;
+    abi::emit_call_label(ctx.emitter, "__rt_sscanf");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `str_split(string, length?)` into the fixed-width string-array splitter.
+pub(super) fn lower_str_split(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "str_split expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_str_split_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_str_split_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_str_split");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `implode(glue, array)` by selecting the string or integer array helper.
+pub(super) fn lower_implode(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "implode expected 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    let runtime_label = implode_runtime_label(ctx, inst)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_implode_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_implode_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `hash(algo, data)` through the shared runtime digest dispatcher.
 pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() != 2 {
@@ -722,6 +775,194 @@ fn lower_hash_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     ctx.emitter.instruction("mov rdi, rax");                                    // pass the data string pointer as the secondary hash argument
     ctx.emitter.instruction("mov rsi, rdx");                                    // pass the data string length as the secondary hash argument
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes delimiter/payload string pairs for split-style array helpers.
+fn load_split_pair_args(ctx: &mut FunctionContext<'_>, inst: &Instruction, name: &str) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expected 2 args, got {}",
+            name,
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => load_split_pair_args_aarch64(ctx, inst, name),
+        Arch::X86_64 => load_split_pair_args_x86_64(ctx, inst, name),
+    }
+}
+
+/// Materializes AArch64 delimiter and subject strings for `explode()`.
+fn load_split_pair_args_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    let delimiter = expect_string_operand(ctx, inst, 0, name)?;
+    let subject = expect_string_operand(ctx, inst, 1, name)?;
+    ctx.load_string_value_to_regs(delimiter, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the delimiter string while materializing the subject string
+    ctx.load_string_value_to_regs(subject, "x1", "x2")?;
+    ctx.emitter.instruction("mov x3, x1");                                      // pass the subject string pointer as the secondary split argument
+    ctx.emitter.instruction("mov x4, x2");                                      // pass the subject string length as the secondary split argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the delimiter string into primary split argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 delimiter and subject strings for `explode()`.
+fn load_split_pair_args_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    let delimiter = expect_string_operand(ctx, inst, 0, name)?;
+    let subject = expect_string_operand(ctx, inst, 1, name)?;
+    ctx.load_string_value_to_regs(delimiter, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    ctx.load_string_value_to_regs(subject, "rax", "rdx")?;
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the subject string pointer as the secondary split argument
+    ctx.emitter.instruction("mov rsi, rdx");                                    // pass the subject string length as the secondary split argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes primary input and pattern strings for scanner-style helpers.
+fn load_input_and_pattern_args(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => load_input_and_pattern_args_aarch64(ctx, inst, name),
+        Arch::X86_64 => load_input_and_pattern_args_x86_64(ctx, inst, name),
+    }
+}
+
+/// Materializes AArch64 input and pattern strings for `sscanf()`.
+fn load_input_and_pattern_args_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    let input = expect_string_operand(ctx, inst, 0, name)?;
+    let pattern = expect_string_operand(ctx, inst, 1, name)?;
+    ctx.load_string_value_to_regs(input, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the scanner input while materializing the pattern string
+    ctx.load_string_value_to_regs(pattern, "x1", "x2")?;
+    ctx.emitter.instruction("mov x3, x1");                                      // pass the pattern pointer as the secondary scanner argument
+    ctx.emitter.instruction("mov x4, x2");                                      // pass the pattern length as the secondary scanner argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the scanner input into primary argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 input and pattern strings for `sscanf()`.
+fn load_input_and_pattern_args_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    let input = expect_string_operand(ctx, inst, 0, name)?;
+    let pattern = expect_string_operand(ctx, inst, 1, name)?;
+    ctx.load_string_value_to_regs(input, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    ctx.load_string_value_to_regs(pattern, "rax", "rdx")?;
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the pattern pointer as the secondary scanner argument
+    ctx.emitter.instruction("mov rsi, rdx");                                    // pass the pattern length as the secondary scanner argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes AArch64 source string and optional chunk length for `str_split()`.
+fn lower_str_split_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "str_split")?;
+    ctx.load_string_value_to_regs(source, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the source string while materializing the chunk length
+    materialize_str_split_length_aarch64(ctx, inst)?;
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the source string before calling the splitter helper
+    Ok(())
+}
+
+/// Materializes x86_64 source string and optional chunk length for `str_split()`.
+fn lower_str_split_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "str_split")?;
+    ctx.load_string_value_to_regs(source, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    materialize_str_split_length_x86_64(ctx, inst)?;
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes the AArch64 optional `str_split()` chunk length.
+fn materialize_str_split_length_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 2 {
+        let length = expect_operand(inst, 1)?;
+        load_as_int(ctx, length, "str_split length")?;
+        ctx.emitter.instruction("mov x3, x0");                                  // pass the requested chunk length to the splitter helper
+    } else {
+        ctx.emitter.instruction("mov x3, #1");                                  // default to one-byte chunks when length is omitted
+    }
+    Ok(())
+}
+
+/// Materializes the x86_64 optional `str_split()` chunk length.
+fn materialize_str_split_length_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 2 {
+        let length = expect_operand(inst, 1)?;
+        load_as_int(ctx, length, "str_split length")?;
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the requested chunk length to the splitter helper
+    } else {
+        ctx.emitter.instruction("mov rdi, 1");                                  // default to one-byte chunks when length is omitted
+    }
+    Ok(())
+}
+
+/// Returns the runtime helper label required for an `implode()` array operand.
+fn implode_runtime_label(ctx: &FunctionContext<'_>, inst: &Instruction) -> Result<&'static str> {
+    let array = expect_operand(inst, 1)?;
+    match ctx.value_php_type(array)? {
+        PhpType::Array(elem_ty) => match elem_ty.codegen_repr() {
+            PhpType::Int | PhpType::Bool => Ok("__rt_implode_int"),
+            PhpType::Str | PhpType::Mixed | PhpType::Never => Ok("__rt_implode"),
+            other => Err(CodegenIrError::unsupported(format!(
+                "implode array element PHP type {:?}",
+                other
+            ))),
+        },
+        other => Err(CodegenIrError::unsupported(format!(
+            "implode array PHP type {:?}",
+            other
+        ))),
+    }
+}
+
+/// Materializes AArch64 glue and array arguments for `implode()`.
+fn lower_implode_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let glue = expect_string_operand(ctx, inst, 0, "implode")?;
+    let array = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(glue, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the glue string while materializing the array argument
+    ctx.load_value_to_reg(array, "x0")?;
+    ctx.emitter.instruction("mov x3, x0");                                      // pass the indexed array pointer as the third implode argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the glue string into primary implode argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 glue and array arguments for `implode()`.
+fn lower_implode_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let glue = expect_string_operand(ctx, inst, 0, "implode")?;
+    let array = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(glue, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    ctx.load_value_to_reg(array, "rax")?;
+    ctx.emitter.instruction("mov rdx, rax");                                    // pass the indexed array pointer as the third implode argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
     Ok(())
 }
 
