@@ -789,7 +789,7 @@ fn array_builtin_return_type(
 ) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "array_merge" => array_merge_builtin_return_type(ctx, operands),
-        "array_reverse" | "array_unique" => {
+        "array_reverse" | "array_unique" | "array_values" => {
             let array = operands.first()?;
             match ctx.builder.value_php_type(*array).codegen_repr() {
                 PhpType::Array(elem) => Some(PhpType::Array(elem)),

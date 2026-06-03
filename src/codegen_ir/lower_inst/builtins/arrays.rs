@@ -79,6 +79,17 @@ pub(super) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instructio
     store_if_result(ctx, inst)
 }
 
+/// Lowers `array_values()` for indexed arrays by returning an owned alias of the input array.
+pub(super) fn lower_array_values(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_values", 1)?;
+    let array = expect_operand(inst, 0)?;
+    let array_ty = ctx.value_php_type(array)?;
+    require_indexed_array_builtin(array_ty.clone(), "array_values")?;
+    ctx.load_value_to_result(array)?;
+    abi::emit_incref_if_refcounted(ctx.emitter, &array_ty);
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_rand()` for indexed arrays.
 pub(super) fn lower_array_rand(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_rand", 1)?;

@@ -687,6 +687,16 @@ fn ir_backend_handles_indexed_array_merge_empty_left() {
     );
 }
 
+/// Verifies indexed-array `array_values()` returns an alias that still observes COW on writes.
+#[test]
+fn ir_backend_handles_indexed_array_values() {
+    let source = "<?php $a = [10, 20]; $b = array_values($a); echo count($b); echo ':'; echo $b[0] . $b[1]; $b[0] = 99; echo ':'; echo $a[0] . ':' . $b[0];";
+    assert_eq!(
+        compile_and_run_ir_backend("array_values_indexed", source),
+        "2:1020:10:99"
+    );
+}
+
 /// Verifies indexed-array key existence delegates to the runtime bounds helper.
 #[test]
 fn ir_backend_handles_indexed_array_key_exists() {
