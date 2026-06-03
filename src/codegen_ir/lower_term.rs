@@ -10,7 +10,8 @@
 //! - Throw and generator suspension remain explicit unsupported Phase 04 paths.
 
 use crate::codegen::platform::Arch;
-use crate::ir::{DataId, SwitchCase, Terminator, ValueId};
+use crate::ir::{BlockId, DataId, IrType, SwitchCase, Terminator, ValueId};
+use crate::types::PhpType;
 
 use crate::codegen::abi;
 
@@ -39,9 +40,7 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
             Ok(())
         }
         Terminator::Br { target, args } => {
-            ensure_no_block_args(args, "br")?;
-            let label = ctx.block_label_for_id(*target)?;
-            abi::emit_jump(ctx.emitter, &label);
+            lower_branch(ctx, *target, args, "br")?;
             Ok(())
         }
         Terminator::CondBr {
@@ -51,13 +50,17 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
             else_target,
             else_args,
         } => {
-            ensure_no_block_args(then_args, "cond_br then")?;
-            ensure_no_block_args(else_args, "cond_br else")?;
             ctx.load_value_to_result(*cond)?;
+            validate_block_args(ctx, *then_target, then_args, "cond_br then")?;
+            validate_block_args(ctx, *else_target, else_args, "cond_br else")?;
             let then_label = ctx.block_label_for_id(*then_target)?;
             let else_label = ctx.block_label_for_id(*else_target)?;
-            abi::emit_branch_if_int_result_nonzero(ctx.emitter, &then_label);
-            abi::emit_jump(ctx.emitter, &else_label);
+            let then_edge = edge_label(ctx, then_args, &then_label, "cond_then_args");
+            let else_edge = edge_label(ctx, else_args, &else_label, "cond_else_args");
+            abi::emit_branch_if_int_result_nonzero(ctx.emitter, &then_edge);
+            abi::emit_jump(ctx.emitter, &else_edge);
+            emit_edge_args(ctx, &then_edge, *then_target, then_args, "cond_br then")?;
+            emit_edge_args(ctx, &else_edge, *else_target, else_args, "cond_br else")?;
             Ok(())
         }
         Terminator::Switch {
@@ -65,16 +68,26 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
             cases,
             default,
             default_args,
-        } => {
-            ensure_no_block_args(default_args, "switch default")?;
-            lower_switch(ctx, *scrutinee, cases, *default)
-        }
+        } => lower_switch(ctx, *scrutinee, cases, *default, default_args),
         Terminator::Throw { .. } => Err(CodegenIrError::unsupported("throw terminator")),
         Terminator::Fatal { message } => lower_fatal(ctx, *message),
         Terminator::GeneratorSuspend { .. } => {
             Err(CodegenIrError::unsupported("generator_suspend terminator"))
         }
     }
+}
+
+/// Lowers an unconditional branch and copies any target block parameters.
+fn lower_branch(
+    ctx: &mut FunctionContext<'_>,
+    target: BlockId,
+    args: &[ValueId],
+    context: &str,
+) -> Result<()> {
+    materialize_block_args(ctx, target, args, context)?;
+    let label = ctx.block_label_for_id(target)?;
+    abi::emit_jump(ctx.emitter, &label);
+    Ok(())
 }
 
 /// Emits a target-native trap for a block that should never execute.
@@ -119,30 +132,42 @@ fn lower_switch(
     ctx: &mut FunctionContext<'_>,
     scrutinee: ValueId,
     cases: &[SwitchCase],
-    default: crate::ir::BlockId,
+    default: BlockId,
+    default_args: &[ValueId],
 ) -> Result<()> {
+    validate_block_args(ctx, default, default_args, "switch default")?;
     for case in cases {
-        ensure_no_block_args(&case.args, "switch case")?;
+        validate_block_args(ctx, case.target, &case.args, "switch case")?;
     }
     ctx.load_value_to_result(scrutinee)?;
     let result_reg = abi::int_result_reg(ctx.emitter);
     let case_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let mut case_edges = Vec::new();
     for case in cases {
         let target_label = ctx.block_label_for_id(case.target)?;
+        let branch_label = edge_label(ctx, &case.args, &target_label, "switch_case_args");
         abi::emit_load_int_immediate(ctx.emitter, case_reg, case.value);
         match ctx.emitter.target.arch {
             Arch::AArch64 => {
                 ctx.emitter.instruction(&format!("cmp {}, {}", result_reg, case_reg)); // compare switch scrutinee with the case value
-                ctx.emitter.instruction(&format!("b.eq {}", target_label));     // branch to the matching switch case
+                ctx.emitter.instruction(&format!("b.eq {}", branch_label));     // branch to the matching switch case
             }
             Arch::X86_64 => {
                 ctx.emitter.instruction(&format!("cmp {}, {}", result_reg, case_reg)); // compare switch scrutinee with the case value
-                ctx.emitter.instruction(&format!("je {}", target_label));       // branch to the matching switch case
+                ctx.emitter.instruction(&format!("je {}", branch_label));       // branch to the matching switch case
             }
+        }
+        if !case.args.is_empty() {
+            case_edges.push((branch_label, case.target, case.args.clone()));
         }
     }
     let default_label = ctx.block_label_for_id(default)?;
-    abi::emit_jump(ctx.emitter, &default_label);
+    let default_edge = edge_label(ctx, default_args, &default_label, "switch_default_args");
+    abi::emit_jump(ctx.emitter, &default_edge);
+    emit_edge_args(ctx, &default_edge, default, default_args, "switch default")?;
+    for (label, target, args) in case_edges {
+        emit_edge_args(ctx, &label, target, &args, "switch case")?;
+    }
     Ok(())
 }
 
@@ -157,15 +182,129 @@ fn jump_to_function_epilogue(ctx: &mut FunctionContext<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Rejects block arguments until Phase 04 implements block parameter movement.
-fn ensure_no_block_args(args: &[ValueId], context: &str) -> Result<()> {
+/// Returns the target label directly when an edge has no arguments, otherwise a copy-stub label.
+fn edge_label(
+    ctx: &mut FunctionContext<'_>,
+    args: &[ValueId],
+    target_label: &str,
+    prefix: &str,
+) -> String {
+    if args.is_empty() {
+        return target_label.to_string();
+    }
+    ctx.next_label(prefix)
+}
+
+/// Emits an edge copy stub for branch arguments and jumps to the real target block.
+fn emit_edge_args(
+    ctx: &mut FunctionContext<'_>,
+    label: &str,
+    target: BlockId,
+    args: &[ValueId],
+    context: &str,
+) -> Result<()> {
     if args.is_empty() {
         return Ok(());
     }
-    Err(CodegenIrError::unsupported(format!(
-        "{} block arguments",
-        context
-    )))
+    ctx.emitter.label(label);
+    materialize_block_args(ctx, target, args, context)?;
+    let target_label = ctx.block_label_for_id(target)?;
+    abi::emit_jump(ctx.emitter, &target_label);
+    Ok(())
+}
+
+/// Copies branch arguments into the target block parameter slots using parallel-move semantics.
+fn materialize_block_args(
+    ctx: &mut FunctionContext<'_>,
+    target: BlockId,
+    args: &[ValueId],
+    context: &str,
+) -> Result<()> {
+    let params = validate_block_args(ctx, target, args, context)?;
+    if args.is_empty() {
+        return Ok(());
+    }
+    let mut arg_types = Vec::with_capacity(args.len());
+    for arg in args {
+        let ty = ctx.load_value_to_result(*arg)?;
+        abi::emit_push_result_value(ctx.emitter, &ty);
+        arg_types.push(ty);
+    }
+    for (param, ty) in params.iter().zip(arg_types.iter()).rev() {
+        pop_result_value(ctx, ty);
+        ctx.store_result_value(*param)?;
+    }
+    Ok(())
+}
+
+/// Validates that an edge supplies one storage-compatible value for each target block parameter.
+fn validate_block_args(
+    ctx: &FunctionContext<'_>,
+    target: BlockId,
+    args: &[ValueId],
+    context: &str,
+) -> Result<Vec<ValueId>> {
+    let block = ctx
+        .function
+        .block(target)
+        .ok_or_else(|| CodegenIrError::missing_entry("block", target.as_raw()))?;
+    if block.params.len() != args.len() {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} supplies {} block arguments for target '{}' with {} parameters",
+            context,
+            args.len(),
+            block.name,
+            block.params.len()
+        )));
+    }
+    for (index, (param, arg)) in block.params.iter().zip(args.iter()).enumerate() {
+        let expected = value_ir_type(ctx, *param)?;
+        let actual = value_ir_type(ctx, *arg)?;
+        if expected != actual {
+            return Err(CodegenIrError::invalid_module(format!(
+                "{} argument {} has EIR type {:?}, expected {:?}",
+                context, index, actual, expected
+            )));
+        }
+    }
+    Ok(block.params.clone())
+}
+
+/// Returns one value's EIR storage type or a structured backend error.
+fn value_ir_type(ctx: &FunctionContext<'_>, value: ValueId) -> Result<IrType> {
+    ctx.function
+        .value(value)
+        .map(|metadata| metadata.ir_type)
+        .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))
+}
+
+/// Restores one temporary stack value into the canonical result register(s).
+fn pop_result_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
+    match ty.codegen_repr() {
+        PhpType::Bool
+        | PhpType::Int
+        | PhpType::Resource(_)
+        | PhpType::Iterable
+        | PhpType::Mixed
+        | PhpType::Union(_)
+        | PhpType::Array(_)
+        | PhpType::AssocArray { .. }
+        | PhpType::Buffer(_)
+        | PhpType::Callable
+        | PhpType::Object(_)
+        | PhpType::Packed(_)
+        | PhpType::Pointer(_) => {
+            abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        }
+        PhpType::Float => {
+            abi::emit_pop_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        PhpType::Void | PhpType::Never => {}
+    }
 }
 
 #[cfg(test)]
@@ -181,7 +320,7 @@ mod tests {
 
     use crate::codegen::platform::{Arch, Platform, Target};
     use crate::codegen_ir::generate_user_asm_from_ir;
-    use crate::ir::{Builder, Function, IrType, Module, Terminator};
+    use crate::ir::{Builder, Function, IrType, Module, SwitchCase, Terminator};
     use crate::types::PhpType;
 
     /// Verifies ARM64 unreachable terminators lower to the Phase 04 trap opcode.
@@ -200,6 +339,33 @@ mod tests {
         assert!(asm.contains("ud2"), "{asm}");
     }
 
+    /// Verifies unconditional branch arguments are copied into target block parameter slots.
+    #[test]
+    fn br_arguments_are_copied_to_target_params() {
+        let asm = generate_branch_arg_main_asm(Target::new(Platform::Linux, Arch::AArch64));
+
+        assert!(asm.contains("ldur x0, [x29, #-16]"), "{asm}");
+        assert!(asm.contains("stur x0, [x29, #-8]"), "{asm}");
+    }
+
+    /// Verifies conditional branch arguments use per-edge copy stubs.
+    #[test]
+    fn cond_br_arguments_emit_edge_copy_stubs() {
+        let asm = generate_cond_branch_arg_main_asm(Target::new(Platform::Linux, Arch::X86_64));
+
+        assert!(asm.contains("_eir_cond_then_args_0:"), "{asm}");
+        assert!(asm.contains("_eir_cond_else_args_1:"), "{asm}");
+    }
+
+    /// Verifies switch case and default arguments use per-edge copy stubs.
+    #[test]
+    fn switch_arguments_emit_edge_copy_stubs() {
+        let asm = generate_switch_arg_main_asm(Target::new(Platform::Linux, Arch::AArch64));
+
+        assert!(asm.contains("_eir_switch_case_args_0:"), "{asm}");
+        assert!(asm.contains("_eir_switch_default_args_1:"), "{asm}");
+    }
+
     /// Builds a minimal EIR main function ending in `Unreachable` and returns its ASM.
     fn generate_unreachable_main_asm(target: Target) -> String {
         let mut module = Module::new(target);
@@ -215,5 +381,96 @@ mod tests {
         module.add_function(function);
 
         generate_user_asm_from_ir(&module, false, false).expect("unreachable module should lower")
+    }
+
+    /// Builds a minimal `br` fixture with one integer block argument.
+    fn generate_branch_arg_main_asm(target: Target) -> String {
+        let mut module = Module::new(target);
+        let mut function = Function::new("main".to_string(), IrType::Void, PhpType::Void);
+        function.flags.is_main = true;
+        {
+            let mut builder = Builder::new(&mut function);
+            let entry = builder.create_named_block("entry", Vec::new());
+            let body = builder.create_named_block("body", vec![(IrType::I64, PhpType::Int)]);
+            builder.set_entry(entry);
+            builder.position_at_end(entry);
+            let value = builder.emit_const_i64(7);
+            builder.terminate(Terminator::Br {
+                target: body,
+                args: vec![value],
+            });
+            builder.position_at_end(body);
+            builder.terminate(Terminator::Unreachable);
+        }
+        module.add_function(function);
+
+        generate_user_asm_from_ir(&module, false, false).expect("branch-arg module should lower")
+    }
+
+    /// Builds a minimal `cond_br` fixture with one integer argument on each edge.
+    fn generate_cond_branch_arg_main_asm(target: Target) -> String {
+        let mut module = Module::new(target);
+        let mut function = Function::new("main".to_string(), IrType::Void, PhpType::Void);
+        function.flags.is_main = true;
+        {
+            let mut builder = Builder::new(&mut function);
+            let entry = builder.create_named_block("entry", Vec::new());
+            let then_block = builder.create_named_block("then", vec![(IrType::I64, PhpType::Int)]);
+            let else_block = builder.create_named_block("else", vec![(IrType::I64, PhpType::Int)]);
+            builder.set_entry(entry);
+            builder.position_at_end(entry);
+            let cond = builder.emit_const_bool(true);
+            let then_value = builder.emit_const_i64(7);
+            let else_value = builder.emit_const_i64(8);
+            builder.terminate(Terminator::CondBr {
+                cond,
+                then_target: then_block,
+                then_args: vec![then_value],
+                else_target: else_block,
+                else_args: vec![else_value],
+            });
+            builder.position_at_end(then_block);
+            builder.terminate(Terminator::Unreachable);
+            builder.position_at_end(else_block);
+            builder.terminate(Terminator::Unreachable);
+        }
+        module.add_function(function);
+
+        generate_user_asm_from_ir(&module, false, false).expect("cond-branch-arg module should lower")
+    }
+
+    /// Builds a minimal `switch` fixture with case/default block arguments.
+    fn generate_switch_arg_main_asm(target: Target) -> String {
+        let mut module = Module::new(target);
+        let mut function = Function::new("main".to_string(), IrType::Void, PhpType::Void);
+        function.flags.is_main = true;
+        {
+            let mut builder = Builder::new(&mut function);
+            let entry = builder.create_named_block("entry", Vec::new());
+            let case_block = builder.create_named_block("case", vec![(IrType::I64, PhpType::Int)]);
+            let default_block = builder.create_named_block("default", vec![(IrType::I64, PhpType::Int)]);
+            builder.set_entry(entry);
+            builder.position_at_end(entry);
+            let scrutinee = builder.emit_const_i64(1);
+            let case_value = builder.emit_const_i64(7);
+            let default_value = builder.emit_const_i64(8);
+            builder.terminate(Terminator::Switch {
+                scrutinee,
+                cases: vec![SwitchCase {
+                    value: 1,
+                    target: case_block,
+                    args: vec![case_value],
+                }],
+                default: default_block,
+                default_args: vec![default_value],
+            });
+            builder.position_at_end(case_block);
+            builder.terminate(Terminator::Unreachable);
+            builder.position_at_end(default_block);
+            builder.terminate(Terminator::Unreachable);
+        }
+        module.add_function(function);
+
+        generate_user_asm_from_ir(&module, false, false).expect("switch-arg module should lower")
     }
 }
