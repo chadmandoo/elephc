@@ -270,6 +270,11 @@ fn ir_backend_handles_scalar_builtins() {
             "<?php echo rand(1, 1); echo ':'; echo mt_rand(5, 5); echo ':'; echo random_int(42, 42); echo ':'; $r = rand(); echo $r >= 0 ? 'ok' : 'bad';",
             "1:5:42:ok",
         ),
+        (
+            "number_format_strings",
+            "<?php echo number_format(1234567); echo ':'; echo number_format(1234.5678, 2); echo ':'; echo number_format(1234567.89, 2, ',', '.'); echo ':'; echo number_format(1234567.89, 2, '.', '');",
+            "1,234,567:1,234.57:1.234.567,89:1234567.89",
+        ),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);
     }

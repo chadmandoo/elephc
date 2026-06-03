@@ -22,6 +22,7 @@ use crate::codegen_ir::{CodegenIrError, Result};
 
 mod is_numeric;
 mod math;
+mod strings;
 
 const DEFINE_ALREADY_DEFINED_WARNING: &str =
     "Warning: define(): Constant already defined\n";
@@ -70,6 +71,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_null" => lower_is_null_builtin(ctx, inst),
         "is_string" => lower_static_type_predicate(ctx, inst, "is_string", PhpType::Str),
         "is_numeric" => is_numeric::lower_is_numeric(ctx, inst),
+        "number_format" => strings::lower_number_format(ctx, inst),
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
     }
 }
