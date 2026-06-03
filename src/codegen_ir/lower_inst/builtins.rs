@@ -32,6 +32,10 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
     let key = php_symbol_key(name.trim_start_matches('\\'));
     match key.as_str() {
         "abs" => math::lower_abs(ctx, inst),
+        "floor" => math::lower_floor(ctx, inst),
+        "ceil" => math::lower_ceil(ctx, inst),
+        "round" => math::lower_round(ctx, inst),
+        "sqrt" => math::lower_sqrt(ctx, inst),
         "min" => math::lower_min_max(ctx, inst, false),
         "max" => math::lower_min_max(ctx, inst, true),
         "pi" => lower_pi(ctx, inst),

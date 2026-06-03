@@ -26,12 +26,59 @@ pub(super) fn lower_abs(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Re
     match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Float => emit_float_abs(ctx),
         PhpType::Int | PhpType::Bool => emit_int_abs(ctx),
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "abs for PHP type {:?}",
                 other
             )))
         }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `floor()` for concrete integer-like and floating operands.
+pub(super) fn lower_floor(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_float_rounding_builtin(ctx, inst, "floor", "frintm", 1)
+}
+
+/// Lowers `ceil()` for concrete integer-like and floating operands.
+pub(super) fn lower_ceil(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_float_rounding_builtin(ctx, inst, "ceil", "frintp", 2)
+}
+
+/// Lowers `sqrt()` for concrete integer-like and floating operands.
+pub(super) fn lower_sqrt(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "sqrt", 1)?;
+    let value = expect_operand(inst, 0)?;
+    load_numeric_as_float(ctx, value, "sqrt")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("fsqrt d0, d0");                            // compute the square root in the floating-point result register
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("sqrtsd xmm0, xmm0");                       // compute the square root in the floating-point result register
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `round()` for concrete integer-like and floating operands.
+pub(super) fn lower_round(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "round expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    let value = expect_operand(inst, 0)?;
+    load_numeric_as_float(ctx, value, "round")?;
+    if inst.operands.len() == 1 {
+        emit_round_loaded_float(ctx);
+    } else {
+        emit_round_loaded_float_with_precision(ctx, inst)?;
     }
     store_if_result(ctx, inst)
 }
@@ -68,6 +115,82 @@ pub(super) fn lower_min_max(
     store_if_result(ctx, inst)
 }
 
+/// Lowers a one-argument float rounding builtin with target-native instructions.
+fn lower_float_rounding_builtin(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    aarch64_op: &str,
+    x86_round_mode: u8,
+) -> Result<()> {
+    ensure_arg_count(inst, name, 1)?;
+    let value = expect_operand(inst, 0)?;
+    load_numeric_as_float(ctx, value, name)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("{} d0, d0", aarch64_op));         // round the floating-point argument with the builtin's direction
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("roundsd xmm0, xmm0, {}", x86_round_mode)); // round the floating-point argument with the builtin's direction
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Rounds the loaded float to the nearest integer using PHP's ties-away behavior.
+fn emit_round_loaded_float(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("frinta d0, d0");                           // round to nearest with ties away from zero
+        }
+        Arch::X86_64 => {
+            ctx.emitter.bl_c("round");
+        }
+    }
+}
+
+/// Rounds the loaded float after applying the optional decimal precision.
+fn emit_round_loaded_float_with_precision(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("str d0, [sp, #-16]!");                     // preserve the round() value while computing the precision multiplier
+            let precision = expect_operand(inst, 1)?;
+            load_precision_as_int(ctx, precision, "round")?;
+            ctx.emitter.instruction("scvtf d1, x0");                            // convert the precision to a floating exponent for pow()
+            ctx.emitter.instruction("str d1, [sp, #-16]!");                     // preserve the exponent while materializing the pow() base
+            ctx.emitter.instruction("fmov d0, #10.0");                          // materialize 10.0 as the precision multiplier base
+            ctx.emitter.instruction("ldr d1, [sp], #16");                       // restore the exponent into the second pow() argument
+            ctx.emitter.bl_c("pow");
+            ctx.emitter.instruction("ldr d1, [sp], #16");                       // restore the original value after pow() returns the multiplier
+            ctx.emitter.instruction("fmul d1, d1, d0");                         // scale the original value by the precision multiplier
+            ctx.emitter.instruction("str d0, [sp, #-16]!");                     // preserve the multiplier for the final division
+            ctx.emitter.instruction("frinta d0, d1");                           // round the scaled value with ties away from zero
+            ctx.emitter.instruction("ldr d1, [sp], #16");                       // restore the precision multiplier for rescaling
+            ctx.emitter.instruction("fdiv d0, d0, d1");                         // scale the rounded value back to the requested precision
+        }
+        Arch::X86_64 => {
+            abi::emit_push_float_reg(ctx.emitter, "xmm0");
+            let precision = expect_operand(inst, 1)?;
+            load_precision_as_int(ctx, precision, "round")?;
+            ctx.emitter.instruction("cvtsi2sd xmm1, rax");                      // convert the precision to a floating exponent for pow()
+            ctx.emitter.instruction("mov rax, 0x4024000000000000");             // materialize the IEEE-754 payload for 10.0
+            ctx.emitter.instruction("movq xmm0, rax");                          // move 10.0 into the first pow() argument
+            ctx.emitter.bl_c("pow");
+            abi::emit_pop_float_reg(ctx.emitter, "xmm1");
+            ctx.emitter.instruction("mulsd xmm1, xmm0");                        // scale the original value by the precision multiplier
+            abi::emit_push_float_reg(ctx.emitter, "xmm0");
+            ctx.emitter.instruction("movsd xmm0, xmm1");                        // move the scaled value into the round() argument register
+            ctx.emitter.bl_c("round");
+            abi::emit_pop_float_reg(ctx.emitter, "xmm1");
+            ctx.emitter.instruction("divsd xmm0, xmm1");                        // scale the rounded value back to the requested precision
+        }
+    }
+    Ok(())
+}
+
 /// Emits absolute value for the loaded floating-point result.
 fn emit_float_abs(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
@@ -96,6 +219,29 @@ fn emit_int_abs(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.instruction("xor rax, r10");                            // flip payload bits when the input was negative
             ctx.emitter.instruction("sub rax, r10");                            // finish two's-complement absolute value
         }
+    }
+}
+
+/// Loads a `round()` precision operand as an integer in the result register.
+fn load_precision_as_int(
+    ctx: &mut FunctionContext<'_>,
+    value: crate::ir::ValueId,
+    name: &str,
+) -> Result<()> {
+    match ctx.load_value_to_result(value)?.codegen_repr() {
+        PhpType::Int | PhpType::Bool => Ok(()),
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+            Ok(())
+        }
+        PhpType::Float => {
+            abi::emit_float_result_to_int_result(ctx.emitter);
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} precision for PHP type {:?}",
+            name, other
+        ))),
     }
 }
 
@@ -142,6 +288,11 @@ fn load_numeric_as_float(
     match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Float => Ok(()),
         PhpType::Int | PhpType::Bool => {
+            abi::emit_int_result_to_float_result(ctx.emitter);
+            Ok(())
+        }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
             abi::emit_int_result_to_float_result(ctx.emitter);
             Ok(())
         }

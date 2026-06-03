@@ -230,6 +230,16 @@ fn ir_backend_handles_scalar_builtins() {
             "<?php echo min(1.5, 2.5); echo ':'; echo max(1.5, 2.5);",
             "1.5:2.5",
         ),
+        (
+            "rounding_math",
+            "<?php echo floor(3.7); echo ':'; echo ceil(3.2); echo ':'; echo round(3.5); echo ':'; echo round(3.555, 2);",
+            "3:4:4:3.56",
+        ),
+        (
+            "sqrt_math",
+            "<?php echo sqrt(16.0); echo ':'; echo sqrt(2.0);",
+            "4:1.4142135623731",
+        ),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);
     }
