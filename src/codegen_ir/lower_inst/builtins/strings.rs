@@ -167,6 +167,22 @@ pub(super) fn lower_strstr(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `wordwrap(string, width?, break?, cut?)` through the shared runtime helper.
+pub(super) fn lower_wordwrap(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 4 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "wordwrap expected 1 to 4 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_wordwrap_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_wordwrap_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_wordwrap");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `ord()` by returning the first byte of a string or zero for empty input.
 pub(super) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "ord")?;
@@ -558,6 +574,94 @@ fn lower_strstr_x86_64(
     ctx.emitter.label(found_label);
     ctx.emitter.instruction("add rax, r8");                                     // advance the haystack pointer to the matching suffix
     ctx.emitter.instruction("sub rdx, r8");                                     // shrink the haystack length to the matching suffix length
+    Ok(())
+}
+
+/// Materializes AArch64 `wordwrap()` runtime arguments.
+fn lower_wordwrap_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let input = expect_string_operand(ctx, inst, 0, "wordwrap")?;
+    ctx.load_string_value_to_regs(input, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the input string while materializing width and break arguments
+    materialize_wordwrap_width_aarch64(ctx, inst)?;
+    materialize_wordwrap_break_aarch64(ctx, inst)?;
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the input string into primary runtime argument registers
+    Ok(())
+}
+
+/// Materializes the AArch64 wordwrap width argument.
+fn materialize_wordwrap_width_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 2 {
+        let width = expect_operand(inst, 1)?;
+        load_as_int(ctx, width, "wordwrap width")?;
+        ctx.emitter.instruction("mov x3, x0");                                  // pass the requested wrap width to the runtime helper
+    } else {
+        ctx.emitter.instruction("mov x3, #75");                                 // use PHP's default wrap width when omitted
+    }
+    Ok(())
+}
+
+/// Materializes the AArch64 wordwrap break-string argument.
+fn materialize_wordwrap_break_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 3 {
+        let break_string = expect_string_operand(ctx, inst, 2, "wordwrap")?;
+        ctx.load_string_value_to_regs(break_string, "x1", "x2")?;
+        ctx.emitter.instruction("mov x4, x1");                                  // pass the break-string pointer to the runtime helper
+        ctx.emitter.instruction("mov x5, x2");                                  // pass the break-string length to the runtime helper
+    } else {
+        let (label, len) = ctx.data.add_string(b"\n");
+        abi::emit_symbol_address(ctx.emitter, "x4", &label);
+        abi::emit_load_int_immediate(ctx.emitter, "x5", len as i64);
+    }
+    Ok(())
+}
+
+/// Materializes x86_64 `wordwrap()` runtime arguments.
+fn lower_wordwrap_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let input = expect_string_operand(ctx, inst, 0, "wordwrap")?;
+    ctx.load_string_value_to_regs(input, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    materialize_wordwrap_width_x86_64(ctx, inst)?;
+    materialize_wordwrap_break_x86_64(ctx, inst)?;
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes the x86_64 wordwrap width argument.
+fn materialize_wordwrap_width_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 2 {
+        let width = expect_operand(inst, 1)?;
+        load_as_int(ctx, width, "wordwrap width")?;
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the requested wrap width to the runtime helper
+    } else {
+        ctx.emitter.instruction("mov rdi, 75");                                 // use PHP's default wrap width when omitted
+    }
+    Ok(())
+}
+
+/// Materializes the x86_64 wordwrap break-string argument.
+fn materialize_wordwrap_break_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 3 {
+        let break_string = expect_string_operand(ctx, inst, 2, "wordwrap")?;
+        ctx.load_string_value_to_regs(break_string, "rax", "rdx")?;
+        ctx.emitter.instruction("mov rcx, rax");                                // pass the break-string pointer to the runtime helper
+        ctx.emitter.instruction("mov r8, rdx");                                 // pass the break-string length to the runtime helper
+    } else {
+        let (label, len) = ctx.data.add_string(b"\n");
+        abi::emit_symbol_address(ctx.emitter, "rcx", &label);
+        abi::emit_load_int_immediate(ctx.emitter, "r8", len as i64);
+    }
     Ok(())
 }
 

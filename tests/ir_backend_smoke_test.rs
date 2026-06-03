@@ -322,9 +322,9 @@ fn ir_backend_handles_scalar_builtins() {
         ),
         (
             "escape_and_hex_strings",
-            r#"<?php echo addslashes("He said \"hi\" and it's ok"); echo ':'; echo stripslashes("He said \\\"hi\\\""); echo ':'; echo nl2br("line1\nline2"); echo ':'; echo bin2hex("AB"); echo ':'; echo hex2bin("4142");"#,
+            r#"<?php echo addslashes("He said \"hi\" and it's ok"); echo ':'; echo stripslashes("He said \\\"hi\\\""); echo ':'; echo nl2br("line1\nline2"); echo ':'; echo wordwrap("The quick brown fox", 10, "|"); echo ':'; echo bin2hex("AB"); echo ':'; echo hex2bin("4142");"#,
             r#"He said \"hi\" and it\'s ok:He said "hi":line1<br />
-line2:4142:AB"#,
+line2:The quick |brown fox:4142:AB"#,
         ),
         (
             "html_entity_strings",
