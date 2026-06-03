@@ -198,6 +198,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "hash" => strings::lower_hash(ctx, inst),
         "str_pad" => strings::lower_str_pad(ctx, inst),
         "sprintf" => strings::lower_sprintf(ctx, inst),
+        "printf" => strings::lower_printf(ctx, inst),
         "ctype_alpha" => ctype::lower_ctype_alpha(ctx, inst),
         "ctype_digit" => ctype::lower_ctype_digit(ctx, inst),
         "ctype_alnum" => ctype::lower_ctype_alnum(ctx, inst),

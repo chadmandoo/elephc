@@ -263,7 +263,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
             | "filetype" | "stat" | "lstat" | "fstat" | "fgetc" | "readfile"
             | "readlink" | "clamp" => PhpType::Mixed,
             "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::Bool]),
-            "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv"
+            "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv" | "printf"
             | "rand" | "time" | "fpassthru" | "linkinfo" => PhpType::Int,
             "floatval" | "floor" | "ceil" | "round" | "sqrt" | "pow" | "fmod" | "sin" | "cos"
             | "tan" | "asin" | "acos" | "atan" | "atan2" | "sinh" | "cosh" | "tanh" | "log"

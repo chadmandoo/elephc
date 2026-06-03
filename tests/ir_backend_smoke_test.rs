@@ -357,6 +357,11 @@ line2:The quick |brown fox:4142:AB"#,
             "Hello age 30 3.14 %:00042",
         ),
         (
+            "printf_strings",
+            r#"<?php $n = printf("Hi %s", "Bob"); echo ':'; echo $n;"#,
+            "Hi Bob:6",
+        ),
+        (
             "ctype_strings",
             "<?php echo ctype_alpha('Hello') ? '1' : '0'; echo ctype_alpha('Hello123') ? '1' : '0'; echo ctype_digit('12345') ? '1' : '0'; echo ctype_digit('123abc') ? '1' : '0'; echo ctype_alnum('Hello123') ? '1' : '0'; echo ctype_alnum('Hello 123') ? '1' : '0'; echo ctype_space(\" \\t\\n\") ? '1' : '0'; echo ctype_space('hello') ? '1' : '0';",
             "10101010",

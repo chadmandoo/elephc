@@ -111,14 +111,34 @@ pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 
 /// Lowers `sprintf(format, values...)` by packing variadic records for `__rt_sprintf`.
 pub(super) fn lower_sprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    emit_sprintf_runtime_call(ctx, inst, "sprintf")?;
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `printf(format, values...)` as `sprintf()` followed by stdout emission.
+pub(super) fn lower_printf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    emit_sprintf_runtime_call(ctx, inst, "printf")?;
+    emit_printf_write_result(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Packs sprintf-style operands and calls the shared `__rt_sprintf` formatter.
+fn emit_sprintf_runtime_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
     if inst.operands.is_empty() {
-        return Err(CodegenIrError::invalid_module("sprintf expected at least 1 arg"));
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expected at least 1 arg",
+            name
+        )));
     }
     for index in (1..inst.operands.len()).rev() {
         let value = expect_operand(inst, index)?;
         pack_sprintf_arg(ctx, value)?;
     }
-    let format = expect_string_operand(ctx, inst, 0, "sprintf")?;
+    let format = expect_string_operand(ctx, inst, 0, name)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.load_string_value_to_regs(format, "x1", "x2")?;
@@ -130,7 +150,7 @@ pub(super) fn lower_sprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_sprintf");
-    store_if_result(ctx, inst)
+    Ok(())
 }
 
 /// Lowers `str_contains()` through `strpos()` and converts found positions to bool.
@@ -928,6 +948,26 @@ fn pack_sprintf_arg_x86_64(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Resul
         }
     }
     Ok(())
+}
+
+/// Writes the formatted string result to stdout and leaves printf's byte count in the int result register.
+fn emit_printf_write_result(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #1");                              // pass stdout as the destination file descriptor
+            ctx.emitter.syscall(4);
+            ctx.emitter.instruction("mov x0, x2");                              // return the formatted byte count as printf()'s integer result
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r8, rdx");                             // preserve the formatted byte count across syscall-clobbered registers
+            ctx.emitter.instruction("mov rsi, rax");                            // pass the formatted string pointer as the write buffer
+            ctx.emitter.instruction("mov rdx, r8");                             // pass the formatted string length as the write byte count
+            ctx.emitter.instruction("mov edi, 1");                              // pass stdout as the destination file descriptor
+            ctx.emitter.instruction("mov eax, 1");                              // select Linux x86_64 syscall 1 for write
+            ctx.emitter.instruction("syscall");                                 // write the formatted printf() result to stdout
+            ctx.emitter.instruction("mov rax, r8");                             // return the formatted byte count as printf()'s integer result
+        }
+    }
 }
 
 /// Boxes a raw string-search position result into the Mixed pointer representation.
