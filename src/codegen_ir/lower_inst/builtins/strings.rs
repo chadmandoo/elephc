@@ -85,6 +85,22 @@ pub(super) fn lower_binary_string_runtime(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `hash(algo, data)` through the shared runtime digest dispatcher.
+pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "hash expected 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_hash_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_hash_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_hash");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `str_contains()` through `strpos()` and converts found positions to bool.
 pub(super) fn lower_str_contains(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_binary_string_args(ctx, inst, "str_contains")?;
@@ -574,6 +590,32 @@ fn lower_strstr_x86_64(
     ctx.emitter.label(found_label);
     ctx.emitter.instruction("add rax, r8");                                     // advance the haystack pointer to the matching suffix
     ctx.emitter.instruction("sub rdx, r8");                                     // shrink the haystack length to the matching suffix length
+    Ok(())
+}
+
+/// Materializes AArch64 `hash()` runtime arguments.
+fn lower_hash_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let algorithm = expect_string_operand(ctx, inst, 0, "hash")?;
+    let data = expect_string_operand(ctx, inst, 1, "hash")?;
+    ctx.load_string_value_to_regs(algorithm, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the algorithm string while materializing the data string
+    ctx.load_string_value_to_regs(data, "x1", "x2")?;
+    ctx.emitter.instruction("mov x3, x1");                                      // pass the data string pointer as the secondary hash argument
+    ctx.emitter.instruction("mov x4, x2");                                      // pass the data string length as the secondary hash argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the algorithm string into primary hash argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 `hash()` runtime arguments.
+fn lower_hash_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let algorithm = expect_string_operand(ctx, inst, 0, "hash")?;
+    let data = expect_string_operand(ctx, inst, 1, "hash")?;
+    ctx.load_string_value_to_regs(algorithm, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    ctx.load_string_value_to_regs(data, "rax", "rdx")?;
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the data string pointer as the secondary hash argument
+    ctx.emitter.instruction("mov rsi, rdx");                                    // pass the data string length as the secondary hash argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
     Ok(())
 }
 

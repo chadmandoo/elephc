@@ -337,6 +337,11 @@ line2:The quick |brown fox:4142:AB"#,
             "hello+world%26foo%3Dbar:hello world&foo=bar:hello%20world:hello world:SGVsbG8=:Hello",
         ),
         (
+            "hash_strings",
+            r#"<?php echo md5("Hello"); echo ':'; echo sha1("Hello"); echo ':'; echo hash("md5", "Hello"); echo ':'; echo hash("sha1", "Hello"); echo ':'; echo hash("sha256", "Hello");"#,
+            "8b1a9953c4611296a827abf8c47804d7:f7ff9e8b7bb2e09b70935a5d785e0cc5d9d0abf0:8b1a9953c4611296a827abf8c47804d7:f7ff9e8b7bb2e09b70935a5d785e0cc5d9d0abf0:185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969",
+        ),
+        (
             "ctype_strings",
             "<?php echo ctype_alpha('Hello') ? '1' : '0'; echo ctype_alpha('Hello123') ? '1' : '0'; echo ctype_digit('12345') ? '1' : '0'; echo ctype_digit('123abc') ? '1' : '0'; echo ctype_alnum('Hello123') ? '1' : '0'; echo ctype_alnum('Hello 123') ? '1' : '0'; echo ctype_space(\" \\t\\n\") ? '1' : '0'; echo ctype_space('hello') ? '1' : '0';",
             "10101010",
