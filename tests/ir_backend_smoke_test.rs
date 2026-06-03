@@ -90,6 +90,26 @@ fn ir_backend_handles_scalar_ops_and_string_coercions() {
     }
 }
 
+/// Verifies scalar equality opcodes generated for loose comparisons, strict comparisons, and match.
+#[test]
+fn ir_backend_handles_scalar_equality() {
+    for (name, source, expected) in [
+        ("loose_int_eq", "<?php if ($argc == 1) { echo 1; }", "1"),
+        ("loose_int_ne", "<?php if ($argc != 2) { echo 2; }", "2"),
+        ("strict_int_eq", "<?php if (1 === 1) { echo 3; }", "3"),
+        ("strict_int_ne", "<?php if (1 !== 2) { echo 4; }", "4"),
+        ("strict_type_mismatch", "<?php if (1 !== true) { echo 5; }", "5"),
+        ("loose_bool_truthy", "<?php if (($argc + 1) == true) { echo 6; }", "6"),
+        ("strict_string_eq", "<?php if (\"a\" === \"a\") { echo 7; }", "7"),
+        ("strict_string_ne", "<?php if (\"a\" !== \"b\") { echo 8; }", "8"),
+        ("loose_string_eq", "<?php if (\"a\" == \"a\") { echo 9; }", "9"),
+        ("loose_string_ne", "<?php if (\"a\" != \"b\") { echo 10; }", "10"),
+        ("match_int", "<?php echo match ($argc) { 1 => 11, default => 0 };", "11"),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies direct user-defined function calls with scalar params and returns.
 #[test]
 fn ir_backend_calls_user_functions() {
