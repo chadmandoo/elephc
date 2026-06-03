@@ -568,6 +568,35 @@ fn ir_backend_handles_indexed_array_aggregates() {
     }
 }
 
+/// Verifies indexed-array key existence delegates to the runtime bounds helper.
+#[test]
+fn ir_backend_handles_indexed_array_key_exists() {
+    for (name, source, expected) in [
+        (
+            "array_key_exists_present",
+            "<?php $a = [10, 20, 30]; echo array_key_exists(1, $a) ? \"yes\" : \"no\";",
+            "yes",
+        ),
+        (
+            "array_key_exists_oob",
+            "<?php $a = [10, 20, 30]; echo array_key_exists(5, $a) ? \"yes\" : \"no\";",
+            "no",
+        ),
+        (
+            "array_key_exists_negative",
+            "<?php $a = [10, 20, 30]; echo array_key_exists(-1, $a) ? \"yes\" : \"no\";",
+            "no",
+        ),
+        (
+            "array_key_exists_bool_key",
+            "<?php $a = [10, 20, 30]; echo array_key_exists(false, $a) ? \"yes\" : \"no\";",
+            "yes",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies array truthiness follows PHP length rules for empty and non-empty containers.
 #[test]
 fn ir_backend_handles_array_truthiness() {
