@@ -11,6 +11,7 @@
 mod autoload;
 mod cli;
 mod codegen;
+mod codegen_ir;
 mod conditional;
 mod errors;
 mod intrinsics;

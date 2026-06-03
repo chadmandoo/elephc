@@ -14,7 +14,7 @@ use std::process;
 use crate::codegen::platform::Target;
 
 /// Usage string printed to stderr when command-line arguments are invalid or missing.
-pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-ir] [--emit-asm] [--check] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
+pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-ir] [--ir-backend] [--emit-asm] [--check] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
 
 /// Configuration derived from command-line arguments, passed to the compile pipeline.
 /// Controls heap allocation size, debug output, code generation options, and linking behavior.
@@ -24,6 +24,7 @@ pub(crate) struct CliConfig {
     pub(crate) gc_stats: bool,
     pub(crate) heap_debug: bool,
     pub(crate) emit_ir: bool,
+    pub(crate) ir_backend: bool,
     pub(crate) emit_asm: bool,
     pub(crate) check_only: bool,
     pub(crate) emit_timings: bool,
@@ -46,6 +47,7 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     let mut gc_stats = false;
     let mut heap_debug = false;
     let mut emit_ir = false;
+    let mut ir_backend = false;
     let mut emit_asm = false;
     let mut check_only = false;
     let mut emit_timings = false;
@@ -73,6 +75,8 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
             heap_debug = true;
         } else if arg == "--emit-ir" {
             emit_ir = true;
+        } else if arg == "--ir-backend" {
+            ir_backend = true;
         } else if arg == "--emit-asm" {
             emit_asm = true;
         } else if arg == "--check" {
@@ -136,6 +140,7 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
         gc_stats,
         heap_debug,
         emit_ir,
+        ir_backend,
         emit_asm,
         check_only,
         emit_timings,

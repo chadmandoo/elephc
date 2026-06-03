@@ -11,6 +11,8 @@
 pub mod autoload;
 /// Compiler pipeline for autoloading classes.
 pub mod codegen;
+/// EIR-consuming assembly backend track.
+pub mod codegen_ir;
 /// Conditional compilation directives.
 pub mod conditional;
 /// Error and warning reporting.
