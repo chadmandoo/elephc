@@ -92,6 +92,23 @@ impl<'a> FunctionContext<'a> {
         })
     }
 
+    /// Returns true when an extern declaration exists for a PHP function name.
+    pub(super) fn has_extern_function(&self, name: &str) -> bool {
+        let key = crate::names::php_symbol_key(name.trim_start_matches('\\'));
+        self.module.extern_decls.iter().any(|function| {
+            crate::names::php_symbol_key(function.name.trim_start_matches('\\')) == key
+        })
+    }
+
+    /// Returns the public include-variant group name matching a PHP function name.
+    pub(super) fn function_variant_group_name(&self, name: &str) -> Option<String> {
+        let key = crate::names::php_symbol_key(name.trim_start_matches('\\'));
+        super::function_variants::collect_dispatch_groups(self.module)
+            .into_iter()
+            .find(|group| crate::names::php_symbol_key(group.name.trim_start_matches('\\')) == key)
+            .map(|group| group.name)
+    }
+
     /// Returns the concrete function whose signature should be used for a PHP call target.
     pub(super) fn callable_function_by_name(&self, name: &str) -> Option<&'a Function> {
         self.function_by_name(name)

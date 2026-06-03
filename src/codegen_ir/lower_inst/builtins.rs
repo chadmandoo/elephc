@@ -11,8 +11,9 @@
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
-use crate::ir::Instruction;
+use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
 use crate::names::php_symbol_key;
+use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
@@ -29,12 +30,48 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "intval" => lower_intval(ctx, inst),
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
+        "function_exists" => lower_function_exists(ctx, inst),
         "is_int" => lower_static_type_predicate(ctx, inst, "is_int", PhpType::Int),
         "is_float" => lower_static_type_predicate(ctx, inst, "is_float", PhpType::Float),
         "is_bool" => lower_static_type_predicate(ctx, inst, "is_bool", PhpType::Bool),
         "is_null" => lower_is_null_builtin(ctx, inst),
         "is_string" => lower_static_type_predicate(ctx, inst, "is_string", PhpType::Str),
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
+    }
+}
+
+/// Lowers `function_exists("name")` for compile-time string names.
+fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "function_exists", 1)?;
+    let value = expect_operand(inst, 0)?;
+    let function_name = const_string_operand(ctx, value)?;
+    if let Some(group_name) = ctx.function_variant_group_name(&function_name) {
+        emit_variant_function_exists(ctx, &group_name);
+    } else {
+        let exists = ctx.function_by_name(&function_name).is_some()
+            || ctx.has_extern_function(&function_name)
+            || canonical_builtin_function_name(function_name.trim_start_matches('\\')).is_some();
+        emit_static_bool(ctx, exists);
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Emits a runtime check for whether an include-loaded function variant is active.
+fn emit_variant_function_exists(ctx: &mut FunctionContext<'_>, function_name: &str) {
+    let active_symbol = crate::names::function_variant_active_symbol(function_name);
+    ctx.data.add_comm(active_symbol.clone(), 8);
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_symbol_to_reg(ctx.emitter, result_reg, &active_symbol, 0);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", result_reg));        // test whether an include has activated this function variant
+            ctx.emitter.instruction(&format!("cset {}, ne", result_reg));       // return true only when a function variant is active
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("test {}, {}", result_reg, result_reg)); // test whether an include has activated this function variant
+            ctx.emitter.instruction("setne al");                                // return true only when a function variant is active
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+        }
     }
 }
 
@@ -204,6 +241,39 @@ fn emit_static_bool(ctx: &mut FunctionContext<'_>, value: bool) {
         abi::int_result_reg(ctx.emitter),
         i64::from(value),
     );
+}
+
+/// Returns a string literal value defined by a `ConstStr` instruction.
+fn const_string_operand(ctx: &FunctionContext<'_>, value: ValueId) -> Result<String> {
+    let value_ref = ctx
+        .function
+        .value(value)
+        .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))?;
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Err(CodegenIrError::unsupported(
+            "function_exists with non-literal function name",
+        ));
+    };
+    let inst_ref = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    if inst_ref.op != Op::ConstStr {
+        return Err(CodegenIrError::unsupported(
+            "function_exists with non-literal function name",
+        ));
+    }
+    let Some(Immediate::Data(data)) = inst_ref.immediate else {
+        return Err(CodegenIrError::invalid_module(
+            "function_exists string literal has no data id",
+        ));
+    };
+    ctx.module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .cloned()
+        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
 }
 
 /// Verifies that the builtin call has the expected number of lowered operands.

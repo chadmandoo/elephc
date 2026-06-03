@@ -364,6 +364,55 @@ fn ir_backend_handles_require_once_function_variant() {
     assert_eq!(out, "10");
 }
 
+/// Verifies function_exists() sees include-loaded variants only after activation.
+#[test]
+fn ir_backend_tracks_function_exists_for_include_variants() {
+    let files = &[
+        (
+            "main.php",
+            r#"<?php
+if ($argc > 1) {
+    include 'lib.php';
+}
+if (function_exists('optional_exists')) {
+    echo optional_exists();
+} else {
+    echo 'missing';
+}
+"#,
+        ),
+        ("lib.php", "<?php function optional_exists() { return 'loaded'; }"),
+    ];
+    assert_eq!(
+        compile_and_run_ir_backend_files(
+            "function_exists_include_variant_unloaded",
+            files,
+            "main.php",
+            &[],
+        ),
+        "missing"
+    );
+    assert_eq!(
+        compile_and_run_ir_backend_files(
+            "function_exists_include_variant_loaded",
+            files,
+            "main.php",
+            &["extra"],
+        ),
+        "loaded"
+    );
+}
+
+/// Verifies function_exists() returns static booleans for builtins and unknown names.
+#[test]
+fn ir_backend_handles_static_function_exists_checks() {
+    let source = "<?php echo function_exists('strlen') ? 'yes' : 'no'; echo ':'; echo function_exists('definitely_missing') ? 'yes' : 'no';";
+    assert_eq!(
+        compile_and_run_ir_backend("function_exists_static_names", source),
+        "yes:no"
+    );
+}
+
 /// Verifies function-variant dispatch fails until the include path activates the variant.
 #[test]
 fn ir_backend_requires_include_before_function_variant_dispatch() {

@@ -15,7 +15,7 @@ use crate::ir::{
 };
 use crate::ir_lower::context::{value_ir_type, LoweredValue, LoweringContext};
 use crate::ir_lower::effects_lookup;
-use crate::names::Name;
+use crate::names::{php_symbol_key, Name};
 use crate::parser::ast::{
     BinOp, CallableTarget, CastType, Expr, ExprKind, InstanceOfTarget, MagicConstant,
     StaticReceiver,
@@ -665,7 +665,9 @@ fn lower_args(ctx: &mut LoweringContext<'_, '_>, args: &[Expr]) -> Vec<crate::ir
 
 /// Returns the best available return type for a function-like call.
 fn call_return_type(ctx: &LoweringContext<'_, '_>, name: &str) -> PhpType {
-    let php_type = if let Some(sig) = ctx.functions.get(name) {
+    let php_type = if let Some(php_type) = builtin_return_type_override(name) {
+        php_type
+    } else if let Some(sig) = ctx.functions.get(name) {
         sig.return_type.clone()
     } else if let Some(sig) = ctx.extern_functions.get(name) {
         sig.return_type.clone()
@@ -677,6 +679,14 @@ fn call_return_type(ctx: &LoweringContext<'_, '_>, name: &str) -> PhpType {
         PhpType::Mixed
     };
     normalize_value_php_type(php_type)
+}
+
+/// Returns precise builtin return types needed by EIR value materialization.
+fn builtin_return_type_override(name: &str) -> Option<PhpType> {
+    match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "function_exists" => Some(PhpType::Bool),
+        _ => None,
+    }
 }
 
 /// Lowers an indexed array literal.
