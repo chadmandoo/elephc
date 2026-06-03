@@ -89,6 +89,25 @@ pub(super) fn lower_float_binop(
     store_if_result(ctx, inst)
 }
 
+/// Lowers floating-point exponentiation through libc `pow`.
+pub(super) fn lower_float_pow(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let lhs = expect_operand(inst, 0)?;
+    let rhs = expect_operand(inst, 1)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            require_float(ctx.load_value_to_reg(lhs, "d0")?, inst)?;
+            require_float(ctx.load_value_to_reg(rhs, "d1")?, inst)?;
+            ctx.emitter.bl_c("pow");
+        }
+        Arch::X86_64 => {
+            require_float(ctx.load_value_to_reg(lhs, "xmm0")?, inst)?;
+            require_float(ctx.load_value_to_reg(rhs, "xmm1")?, inst)?;
+            ctx.emitter.instruction("call pow");                                // compute floating-point exponentiation through libc pow()
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers floating-point negation.
 pub(super) fn lower_float_neg(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;

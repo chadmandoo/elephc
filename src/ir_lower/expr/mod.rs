@@ -234,6 +234,18 @@ fn lower_numeric_binary(
 ) -> LoweredValue {
     let lhs = lower_expr(ctx, left);
     let rhs = lower_expr(ctx, right);
+    if matches!(op, BinOp::Pow) {
+        let lhs = coerce_to_float(ctx, lhs, expr);
+        let rhs = coerce_to_float(ctx, rhs, expr);
+        return ctx.emit_value(
+            Op::FPow,
+            vec![lhs.value, rhs.value],
+            None,
+            PhpType::Float,
+            Op::FPow.default_effects(),
+            Some(expr.span),
+        );
+    }
     if lhs.ir_type == IrType::F64 || rhs.ir_type == IrType::F64 {
         let lhs = coerce_to_float(ctx, lhs, expr);
         let rhs = coerce_to_float(ctx, rhs, expr);
@@ -242,7 +254,6 @@ fn lower_numeric_binary(
             BinOp::Sub => Op::FSub,
             BinOp::Mul => Op::FMul,
             BinOp::Div => Op::FDiv,
-            BinOp::Pow => Op::FPow,
             _ => Op::RuntimeCall,
         };
         return ctx.emit_value(fop, vec![lhs.value, rhs.value], None, PhpType::Float, fop.default_effects(), Some(expr.span));

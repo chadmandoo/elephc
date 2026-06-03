@@ -209,6 +209,17 @@ fn ir_backend_handles_scalar_casts_and_string_indexing() {
     }
 }
 
+/// Verifies dynamic scalar power and spaceship operators lowered by the EIR backend.
+#[test]
+fn ir_backend_handles_power_and_spaceship() {
+    let source = "<?php echo $argc ** 3; echo \":\"; echo ($argc + 0.5) ** 2.0; echo \":\"; echo $argc <=> 2; echo \":\"; echo 2 <=> $argc;";
+    assert_eq!(compile_and_run_ir_backend("pow_spaceship_argc_one", source), "1:2.25:-1:1");
+    assert_eq!(
+        compile_and_run_ir_backend_with_args("pow_spaceship_argc_two", source, &["extra"]),
+        "8:6.25:0:0"
+    );
+}
+
 /// Compiles `source` with `--ir-backend`, runs the output binary, and returns stdout.
 fn compile_and_run_ir_backend(name: &str, source: &str) -> String {
     compile_and_run_ir_backend_with_args(name, source, &[])
