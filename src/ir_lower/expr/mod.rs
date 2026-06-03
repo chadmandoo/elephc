@@ -764,11 +764,16 @@ fn lower_array_access(ctx: &mut LoweringContext<'_, '_>, array: &Expr, index: &E
         IrType::Str if index_value.ir_type == IrType::I64 => Op::StrCharAt,
         _ => Op::RuntimeCall,
     };
+    let result_type = if op == Op::StrCharAt {
+        PhpType::Str
+    } else {
+        fallback_expr_type(expr)
+    };
     ctx.emit_value(
         op,
         vec![array_value.value, index_value.value],
         None,
-        fallback_expr_type(expr),
+        result_type,
         op.default_effects(),
         Some(expr.span),
     )

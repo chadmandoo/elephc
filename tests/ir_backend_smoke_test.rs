@@ -175,6 +175,40 @@ fn ir_backend_handles_scalar_builtins() {
     }
 }
 
+/// Verifies scalar casts and string indexing lowered by the EIR backend.
+#[test]
+fn ir_backend_handles_scalar_casts_and_string_indexing() {
+    for (name, source, expected) in [
+        (
+            "string_casts_to_numbers",
+            "<?php echo (int)\"42xyz\"; echo \":\"; echo (float)\"2.5x\";",
+            "42:2.5",
+        ),
+        (
+            "scalar_casts_to_string",
+            "<?php echo (string)7; echo \":\"; echo (string)1.5; echo \":\"; echo (string)false;",
+            "7:1.5:",
+        ),
+        (
+            "scalar_casts_to_bool",
+            "<?php echo (bool)\"0\"; echo \":\"; echo (bool)\"hi\";",
+            ":1",
+        ),
+        (
+            "string_indexing",
+            "<?php echo \"hello\"[1]; echo \":\"; echo \"hello\"[-1]; echo \":\"; echo \"hi\"[9];",
+            "e:o:",
+        ),
+        (
+            "string_switch_subject",
+            "<?php switch (\"2\") { case 2: echo \"hit\"; }",
+            "hit",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Compiles `source` with `--ir-backend`, runs the output binary, and returns stdout.
 fn compile_and_run_ir_backend(name: &str, source: &str) -> String {
     compile_and_run_ir_backend_with_args(name, source, &[])

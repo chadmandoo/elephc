@@ -21,6 +21,7 @@ use super::{CodegenIrError, Result};
 mod arithmetic;
 mod builtins;
 mod comparisons;
+mod conversions;
 mod floats;
 mod predicates;
 mod strings;
@@ -69,7 +70,13 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::FToI => floats::lower_float_to_int(ctx, &inst),
         Op::IToStr => strings::lower_int_like_to_string(ctx, &inst),
         Op::FToStr => strings::lower_float_to_string(ctx, &inst),
+        Op::BoolToStr => strings::lower_int_like_to_string(ctx, &inst),
+        Op::StrToI => conversions::lower_str_to_int(ctx, &inst),
+        Op::StrToF => conversions::lower_str_to_float(ctx, &inst),
+        Op::Cast => conversions::lower_cast(ctx, &inst),
         Op::StrConcat => strings::lower_str_concat(ctx, &inst),
+        Op::StrLen => strings::lower_str_len(ctx, &inst),
+        Op::StrCharAt => strings::lower_str_char_at(ctx, &inst),
         Op::Call => lower_direct_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
         Op::EchoValue => lower_echo_value(ctx, &inst),
