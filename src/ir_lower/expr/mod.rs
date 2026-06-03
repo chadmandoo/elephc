@@ -22,6 +22,8 @@ use crate::parser::ast::{
 };
 use crate::types::{checker::infer_expr_type_syntactic, PhpType};
 
+mod constants;
+
 /// Lowers an expression and returns its EIR value.
 pub(crate) fn lower_expr(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> LoweredValue {
     match &expr.kind {
@@ -71,7 +73,7 @@ pub(crate) fn lower_expr(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> Lowe
         ExprKind::Spread(inner) => lower_expr(ctx, inner),
         ExprKind::ClosureCall { var, args } => lower_closure_call(ctx, var, args, expr),
         ExprKind::ExprCall { callee, args } => lower_expr_call(ctx, callee, args, expr),
-        ExprKind::ConstRef(name) => lower_const_ref(ctx, name, expr),
+        ExprKind::ConstRef(name) => constants::lower_const_ref(ctx, name, expr),
         ExprKind::NewObject { class_name, args } => lower_new_object(ctx, class_name, args, expr),
         ExprKind::NewDynamicObject { class_name, fallback_class, required_parent, args } => {
             lower_new_dynamic_object(ctx, class_name, fallback_class, required_parent, args, expr)
@@ -622,7 +624,8 @@ fn lower_inc_dec(
 
 /// Lowers a direct function, builtin, or extern call.
 fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[Expr], expr: &Expr) -> LoweredValue {
-    if let Some(value) = lower_static_defined_call(ctx, name, args, expr) {
+    constants::register_static_define_call(ctx, name, args);
+    if let Some(value) = constants::lower_static_defined_call(ctx, name, args, expr) {
         return value;
     }
     let operands = lower_args(ctx, args);
@@ -661,23 +664,6 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     )
 }
 
-/// Lowers `defined("NAME")` to a compile-time boolean when the name is literal.
-fn lower_static_defined_call(
-    ctx: &mut LoweringContext<'_, '_>,
-    name: &Name,
-    args: &[Expr],
-    expr: &Expr,
-) -> Option<LoweredValue> {
-    if php_symbol_key(name.as_str().trim_start_matches('\\')) != "defined" || args.len() != 1 {
-        return None;
-    }
-    let ExprKind::StringLiteral(constant_name) = &args[0].kind else {
-        return None;
-    };
-    let exists = ctx.constant_value(constant_name).is_some();
-    Some(lower_bool_literal(ctx, exists, expr))
-}
-
 /// Lowers positional/named/spread call arguments in source order.
 fn lower_args(ctx: &mut LoweringContext<'_, '_>, args: &[Expr]) -> Vec<crate::ir::ValueId> {
     args.iter().map(|arg| lower_expr(ctx, arg).value).collect()
@@ -704,7 +690,9 @@ fn call_return_type(ctx: &LoweringContext<'_, '_>, name: &str) -> PhpType {
 /// Returns precise builtin return types needed by EIR value materialization.
 fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "defined" | "function_exists" | "is_callable" | "is_numeric" => Some(PhpType::Bool),
+        "define" | "defined" | "function_exists" | "is_callable" | "is_numeric" => {
+            Some(PhpType::Bool)
+        }
         _ => None,
     }
 }
@@ -922,88 +910,6 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
     let mut operands = vec![lower_expr(ctx, callee).value];
     operands.extend(lower_args(ctx, args));
     ctx.emit_value(Op::ExprCall, operands, None, fallback_expr_type(expr), Op::ExprCall.default_effects(), Some(expr.span))
-}
-
-/// Lowers a constant reference.
-fn lower_const_ref(ctx: &mut LoweringContext<'_, '_>, name: &Name, expr: &Expr) -> LoweredValue {
-    if let Some((value, php_type)) = ctx.constant_value(name.as_str()) {
-        return lower_constant_value(ctx, value, php_type, expr);
-    }
-    let data = ctx.intern_global_name(name.as_str());
-    ctx.emit_value(
-        Op::LoadGlobal,
-        Vec::new(),
-        Some(Immediate::GlobalName(data)),
-        fallback_expr_type(expr),
-        Op::LoadGlobal.default_effects(),
-        Some(expr.span),
-    )
-}
-
-/// Lowers a prescanned constant value using its checker-visible PHP type.
-fn lower_constant_value(
-    ctx: &mut LoweringContext<'_, '_>,
-    value: ExprKind,
-    php_type: PhpType,
-    expr: &Expr,
-) -> LoweredValue {
-    match value {
-        ExprKind::IntLiteral(value) => emit_typed_constant(
-            ctx,
-            Op::ConstI64,
-            Some(Immediate::I64(value)),
-            php_type,
-            expr,
-        ),
-        ExprKind::FloatLiteral(value) => emit_typed_constant(
-            ctx,
-            Op::ConstF64,
-            Some(Immediate::F64(value)),
-            php_type,
-            expr,
-        ),
-        ExprKind::StringLiteral(value) => {
-            let data = ctx.intern_string(&value);
-            emit_typed_constant(ctx, Op::ConstStr, Some(Immediate::Data(data)), php_type, expr)
-        }
-        ExprKind::BoolLiteral(value) => emit_typed_constant(
-            ctx,
-            Op::ConstBool,
-            Some(Immediate::Bool(value)),
-            php_type,
-            expr,
-        ),
-        ExprKind::Null => emit_typed_constant(ctx, Op::ConstNull, None, php_type, expr),
-        other => {
-            let synthetic = Expr::new(other, expr.span);
-            lower_expr(ctx, &synthetic)
-        }
-    }
-}
-
-/// Emits a literal constant opcode with caller-supplied PHP metadata.
-fn emit_typed_constant(
-    ctx: &mut LoweringContext<'_, '_>,
-    op: Op,
-    immediate: Option<Immediate>,
-    php_type: PhpType,
-    expr: &Expr,
-) -> LoweredValue {
-    let ir_type = value_ir_type(&php_type);
-    let value = ctx
-        .builder
-        .emit_with_effects(
-            op,
-            Vec::new(),
-            immediate,
-            ir_type,
-            php_type.clone(),
-            Ownership::for_php_type(&php_type),
-            op.default_effects(),
-            Some(expr.span),
-        )
-        .expect("constant opcode produces a value");
-    LoweredValue { value, ir_type }
 }
 
 /// Lowers fixed-class object construction.

@@ -12,7 +12,7 @@
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
-use crate::names::php_symbol_key;
+use crate::names::{define_seen_symbol, ir_global_symbol, php_symbol_key};
 use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::PhpType;
 
@@ -21,6 +21,9 @@ use super::{expect_data, expect_operand, predicates, store_if_result};
 use crate::codegen_ir::{CodegenIrError, Result};
 
 mod is_numeric;
+
+const DEFINE_ALREADY_DEFINED_WARNING: &str =
+    "Warning: define(): Constant already defined\n";
 
 /// Lowers a scalar builtin call by matching the canonical PHP function name.
 pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
@@ -34,6 +37,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "intval" => lower_intval(ctx, inst),
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
+        "define" => lower_define(ctx, inst),
         "defined" => lower_defined(ctx, inst),
         "function_exists" => lower_function_exists(ctx, inst),
         "is_callable" => lower_is_callable(ctx, inst),
@@ -45,6 +49,53 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_numeric" => is_numeric::lower_is_numeric(ctx, inst),
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
     }
+}
+
+/// Lowers `define("NAME", value)` with the legacy duplicate-name runtime guard.
+fn lower_define(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "define", 2)?;
+    let name_value = expect_operand(inst, 0)?;
+    let value = expect_operand(inst, 1)?;
+    let constant_name = const_string_operand(ctx, name_value)?;
+    let flag_symbol = ctx.data.add_comm(define_seen_symbol(&constant_name), 8);
+    let global_symbol = ir_global_symbol(&constant_name);
+    let value_ty = ctx.value_php_type(value)?;
+    ctx.data
+        .add_comm(global_symbol.clone(), value_ty.codegen_repr().stack_size().max(8));
+
+    let first_label = ctx.next_label("define_first");
+    let done_label = ctx.next_label("define_done");
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_symbol_to_reg(ctx.emitter, result_reg, &flag_symbol, 0);
+    abi::emit_branch_if_int_result_zero(ctx.emitter, &first_label);
+    emit_duplicate_define_warning(ctx);
+    abi::emit_load_int_immediate(ctx.emitter, result_reg, 0);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&first_label);
+    ctx.load_value_to_result(value)?;
+    abi::emit_store_result_to_symbol(ctx.emitter, &global_symbol, &value_ty, false);
+    abi::emit_load_int_immediate(ctx.emitter, result_reg, 1);
+    abi::emit_store_reg_to_symbol(ctx.emitter, result_reg, &flag_symbol, 0);
+
+    ctx.emitter.label(&done_label);
+    store_if_result(ctx, inst)
+}
+
+/// Emits the PHP warning for a repeated `define()` call.
+fn emit_duplicate_define_warning(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.adrp("x1", "_diag_define_already_defined_msg");
+            ctx.emitter.add_lo12("x1", "x1", "_diag_define_already_defined_msg");
+            ctx.emitter.instruction(&format!("mov x2, #{}", DEFINE_ALREADY_DEFINED_WARNING.len())); // pass the duplicate-define warning byte length
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("lea rdi, [rip + _diag_define_already_defined_msg]"); // pass the duplicate-define warning pointer
+            ctx.emitter.instruction(&format!("mov esi, {}", DEFINE_ALREADY_DEFINED_WARNING.len())); // pass the duplicate-define warning byte length
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
 }
 
 /// Lowers `pi()` as the same data-section float constant used by the legacy backend.

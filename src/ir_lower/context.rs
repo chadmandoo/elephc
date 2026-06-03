@@ -45,7 +45,7 @@ pub(crate) struct LoweringContext<'m, 'f> {
     initialized_slots: HashSet<LocalSlotId>,
     pub functions: &'m HashMap<String, FunctionSig>,
     pub extern_functions: &'m HashMap<String, ExternFunctionSig>,
-    pub constants: &'m HashMap<String, (ExprKind, PhpType)>,
+    pub constants: HashMap<String, (ExprKind, PhpType)>,
     pub loop_stack: Vec<LoopFrame>,
     pub return_type: IrType,
     pub return_php_type: PhpType,
@@ -73,7 +73,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             initialized_slots: HashSet::new(),
             functions,
             extern_functions,
-            constants,
+            constants: constants.clone(),
             loop_stack: Vec::new(),
             return_type,
             return_php_type,
@@ -112,6 +112,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             .get(name)
             .or_else(|| self.constants.get(name.trim_start_matches('\\')))
             .cloned()
+    }
+
+    /// Records a constant discovered while lowering source-order `define()` calls.
+    pub(crate) fn register_constant(&mut self, name: String, value: ExprKind, ty: PhpType) {
+        self.constants.entry(name).or_insert((value, ty));
     }
 
     /// Updates the current known PHP type for a local.

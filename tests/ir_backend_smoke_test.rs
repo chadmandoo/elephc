@@ -459,6 +459,54 @@ fn ir_backend_handles_global_constants_and_defined() {
     );
 }
 
+/// Verifies `define()` return values, source-order constant use, and duplicate guards.
+#[test]
+fn ir_backend_handles_define_builtin() {
+    for (name, source, expected) in [
+        (
+            "define_string",
+            "<?php define(\"APP_NAME\", \"elephc\"); echo APP_NAME;",
+            "elephc",
+        ),
+        (
+            "define_returns_true",
+            "<?php echo define(\"FEATURE_ON\", true); echo FEATURE_ON;",
+            "11",
+        ),
+        (
+            "define_duplicate_suppressed",
+            "<?php define(\"DUPLICATE_CONST\", 1); echo @define(\"DUPLICATE_CONST\", 2) ? \"bad\" : \"ok\"; echo DUPLICATE_CONST;",
+            "ok1",
+        ),
+        (
+            "define_duplicate_runtime_function",
+            "<?php function once() { return define(\"RUNTIME_DUPLICATE\", 1); } echo once() ? \"T\" : \"F\"; echo @once() ? \"T\" : \"F\"; echo RUNTIME_DUPLICATE;",
+            "TF1",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+
+    let duplicate = compile_ir_backend_and_run(
+        "define_duplicate_warning",
+        "<?php define(\"DUPLICATE_WARN\", 1); echo define(\"DUPLICATE_WARN\", 2) ? \"bad\" : \"ok\"; echo DUPLICATE_WARN;",
+        &[],
+    );
+    assert!(
+        duplicate.status.success(),
+        "IR backend duplicate define fixture failed"
+    );
+    assert_eq!(
+        String::from_utf8(duplicate.stdout).expect("stdout should be utf8"),
+        "ok1"
+    );
+    let stderr = String::from_utf8(duplicate.stderr).expect("stderr should be utf8");
+    assert!(
+        stderr.contains("Warning: define()"),
+        "expected duplicate define warning, got stderr={stderr}"
+    );
+}
+
 /// Verifies is_callable() static string and scalar decisions match the legacy backend.
 #[test]
 fn ir_backend_handles_static_is_callable_checks() {
