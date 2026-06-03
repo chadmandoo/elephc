@@ -201,6 +201,22 @@ pub(super) fn lower_substr(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `substr_replace(string, replacement, start, length?)`.
+pub(super) fn lower_substr_replace(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() < 3 || inst.operands.len() > 4 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "substr_replace expected 3 or 4 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_substr_replace_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_substr_replace_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_substr_replace");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `str_repeat(string, times)` through the shared runtime helper.
 pub(super) fn lower_str_repeat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() != 2 {
@@ -706,6 +722,72 @@ fn lower_hash_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     ctx.emitter.instruction("mov rdi, rax");                                    // pass the data string pointer as the secondary hash argument
     ctx.emitter.instruction("mov rsi, rdx");                                    // pass the data string length as the secondary hash argument
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes AArch64 `substr_replace()` runtime arguments.
+fn lower_substr_replace_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let subject = expect_string_operand(ctx, inst, 0, "substr_replace")?;
+    let replacement = expect_string_operand(ctx, inst, 1, "substr_replace")?;
+    let start = expect_operand(inst, 2)?;
+    ctx.load_string_value_to_regs(subject, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the subject string while materializing replacement and slice bounds
+    ctx.load_string_value_to_regs(replacement, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the replacement string while materializing slice bounds
+    load_as_int(ctx, start, "substr_replace start")?;
+    abi::emit_push_reg(ctx.emitter, "x0");
+    materialize_substr_replace_length_aarch64(ctx, inst)?;
+    abi::emit_pop_reg(ctx.emitter, "x0");
+    ctx.emitter.instruction("ldp x3, x4, [sp], #16");                           // restore replacement into the secondary runtime string argument
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore subject into the primary runtime string argument
+    Ok(())
+}
+
+/// Materializes x86_64 `substr_replace()` runtime arguments.
+fn lower_substr_replace_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let subject = expect_string_operand(ctx, inst, 0, "substr_replace")?;
+    let replacement = expect_string_operand(ctx, inst, 1, "substr_replace")?;
+    let start = expect_operand(inst, 2)?;
+    ctx.load_string_value_to_regs(subject, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    ctx.load_string_value_to_regs(replacement, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    load_as_int(ctx, start, "substr_replace start")?;
+    abi::emit_push_reg(ctx.emitter, "rax");
+    materialize_substr_replace_length_x86_64(ctx, inst)?;
+    abi::emit_pop_reg(ctx.emitter, "rcx");
+    abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes the AArch64 optional `substr_replace()` length argument.
+fn materialize_substr_replace_length_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 4 {
+        let length = expect_operand(inst, 3)?;
+        load_as_int(ctx, length, "substr_replace length")?;
+        ctx.emitter.instruction("mov x7, x0");                                  // pass the explicit replacement length to the runtime helper
+    } else {
+        ctx.emitter.instruction("mov x7, #-1");                                 // use -1 sentinel so replacement runs through the subject end
+    }
+    Ok(())
+}
+
+/// Materializes the x86_64 optional `substr_replace()` length argument.
+fn materialize_substr_replace_length_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.operands.len() >= 4 {
+        let length = expect_operand(inst, 3)?;
+        load_as_int(ctx, length, "substr_replace length")?;
+        ctx.emitter.instruction("mov r8, rax");                                 // pass the explicit replacement length to the runtime helper
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, "r8", -1);
+    }
     Ok(())
 }
 

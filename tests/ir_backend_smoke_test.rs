@@ -316,6 +316,11 @@ fn ir_backend_handles_scalar_builtins() {
             "World:Hello:World:[]:[]",
         ),
         (
+            "substr_replace_strings",
+            r#"<?php echo substr_replace("hello world", "PHP", 6, 5); echo ':'; echo substr_replace("hello world", "!", 5);"#,
+            "hello PHP:hello!",
+        ),
+        (
             "str_repeat_strings",
             "<?php echo str_repeat('ab', 3); echo ':'; echo '['; echo str_repeat('x', 0); echo ']'; echo ':'; echo strlen(str_repeat('a', 5));",
             "ababab:[]:5",
