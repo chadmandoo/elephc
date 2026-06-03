@@ -50,6 +50,8 @@ mod array_product;
 mod array_push_int;
 mod array_push_refcounted;
 mod array_push_str;
+mod array_set_int;
+mod array_set_str;
 mod array_rand;
 mod random_u32;
 mod random_uniform;
@@ -215,6 +217,10 @@ pub use array_push_refcounted::emit_array_push_refcounted;
 /// Emit refcounted array push helper.
 pub use array_push_str::emit_array_push_str;
 /// Emit string-optimized array push helper.
+pub use array_set_int::emit_array_set_int;
+/// Emit scalar indexed-array set helper.
+pub use array_set_str::emit_array_set_str;
+/// Emit string indexed-array set helper.
 pub use array_rand::emit_array_rand;
 /// Emit random array element helper.
 pub use random_u32::emit_random_u32;

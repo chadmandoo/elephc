@@ -57,6 +57,26 @@ pub(super) fn lower_array_get(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     }
 }
 
+/// Lowers an indexed-array element write through target-aware runtime helpers.
+pub(super) fn lower_array_set(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let array = expect_operand(inst, 0)?;
+    let index = expect_operand(inst, 1)?;
+    let value = expect_operand(inst, 2)?;
+    let elem_ty = indexed_array_element_type(&ctx.value_php_type(array)?, inst)?;
+    let value_ty = effective_array_set_value_type(&elem_ty, &ctx.value_php_type(value)?, inst)?;
+    require_integer_like_index(ctx.value_php_type(index)?, inst)?;
+    let source_local = source_load_local_slot(ctx, array)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_array_set_aarch64(ctx, array, index, value, &value_ty)?,
+        Arch::X86_64 => lower_array_set_x86_64(ctx, array, index, value, &value_ty)?,
+    }
+    ctx.store_result_value(array)?;
+    if let Some(slot) = source_local {
+        ctx.store_value_to_local(slot, array)?;
+    }
+    Ok(())
+}
+
 /// Lowers an indexed-array append through the runtime helper for the value type.
 pub(super) fn lower_array_push(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let array = expect_operand(inst, 0)?;
@@ -103,6 +123,35 @@ fn lower_array_get_aarch64(
     store_if_result(ctx, inst)
 }
 
+/// Lowers an indexed-array element write for AArch64 targets.
+fn lower_array_set_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+    index: ValueId,
+    value: ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    ctx.load_value_to_reg(array, "x0")?;
+    ctx.load_value_to_reg(index, "x1")?;
+    match value_ty {
+        PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float => {
+            ctx.load_value_to_reg(value, "x2")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_set_int");
+        }
+        PhpType::Str => {
+            ctx.load_string_value_to_regs(value, "x2", "x3")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_set_str");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "array_set value PHP type {:?}",
+                other
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Lowers an indexed-array element read for x86_64 targets.
 fn lower_array_get_x86_64(
     ctx: &mut FunctionContext<'_>,
@@ -130,6 +179,35 @@ fn lower_array_get_x86_64(
     emit_array_get_null_fallback(ctx, elem_ty);
     ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
+}
+
+/// Lowers an indexed-array element write for x86_64 targets.
+fn lower_array_set_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+    index: ValueId,
+    value: ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    ctx.load_value_to_reg(array, "rdi")?;
+    ctx.load_value_to_reg(index, "rsi")?;
+    match value_ty {
+        PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float => {
+            ctx.load_value_to_reg(value, "rdx")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_set_int");
+        }
+        PhpType::Str => {
+            ctx.load_string_value_to_regs(value, "rdx", "rcx")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_set_str");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "array_set value PHP type {:?}",
+                other
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Emits the in-bounds indexed-array payload load for AArch64.
@@ -320,6 +398,53 @@ fn indexed_array_element_type(array_ty: &PhpType, inst: &Instruction) -> Result<
             other
         ))),
     }
+}
+
+/// Resolves the runtime value type that an indexed array write can store.
+fn effective_array_set_value_type(
+    elem_ty: &PhpType,
+    value_ty: &PhpType,
+    inst: &Instruction,
+) -> Result<PhpType> {
+    let elem_ty = elem_ty.codegen_repr();
+    let value_ty = value_ty.codegen_repr();
+    if matches!(elem_ty, PhpType::Never | PhpType::Void) {
+        return require_supported_array_set_value(value_ty, inst);
+    }
+    if elem_ty == value_ty {
+        return require_supported_array_set_value(value_ty, inst);
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "array_set element PHP type {:?} with value PHP type {:?}",
+        elem_ty, value_ty
+    )))
+}
+
+/// Rejects indexed-array write payload types that do not have Phase 04 storage lowering yet.
+fn require_supported_array_set_value(value_ty: PhpType, inst: &Instruction) -> Result<PhpType> {
+    if matches!(
+        value_ty,
+        PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str
+    ) {
+        return Ok(value_ty);
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "{} value PHP type {:?}",
+        inst.op.name(),
+        value_ty
+    )))
+}
+
+/// Verifies that an indexed-array write uses an integer-like offset value.
+fn require_integer_like_index(index_ty: PhpType, inst: &Instruction) -> Result<()> {
+    if matches!(index_ty.codegen_repr(), PhpType::Int | PhpType::Bool | PhpType::Callable) {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "{} index PHP type {:?}",
+        inst.op.name(),
+        index_ty
+    )))
 }
 
 /// Rejects array-get result shapes that do not match the lowered array element type.

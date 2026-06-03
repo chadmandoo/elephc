@@ -258,6 +258,12 @@ fn ir_backend_handles_basic_indexed_arrays() {
             "<?php $a = []; $a[] = 1; $a[] = 2; $a[] = 3; $a[] = 4; $a[] = 5; echo count($a);",
             "5",
         ),
+        ("array_set_int", "<?php $a = [10, 20]; $a[1] = 99; echo $a[1];", "99"),
+        ("array_set_float", "<?php $a = [1.5, 2.5]; $a[0] = 3.5; echo $a[0];", "3.5"),
+        ("array_set_string", "<?php $a = [\"a\", \"b\"]; $a[1] = \"z\"; echo $a[1];", "z"),
+        ("array_set_extends_int", "<?php $a = [1]; $a[3] = 9; echo count($a); echo \":\"; echo $a[0];", "4:1"),
+        ("array_set_extends_string", "<?php $a = [\"a\"]; $a[2] = \"z\"; echo count($a); echo \":\"; echo $a[2];", "3:z"),
+        ("array_set_empty_count", "<?php $a = []; $a[2] = 7; echo count($a);", "3"),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);
     }
