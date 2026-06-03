@@ -90,6 +90,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
             "__rt_strtoupper",
         ),
         "strrev" => strings::lower_unary_string_runtime(ctx, inst, "strrev", "__rt_strrev"),
+        "substr" => strings::lower_substr(ctx, inst),
         "ucfirst" => strings::lower_ucfirst(ctx, inst),
         "lcfirst" => strings::lower_lcfirst(ctx, inst),
         "trim" => strings::lower_trim_like(ctx, inst, "trim", "__rt_trim", "__rt_trim_mask"),

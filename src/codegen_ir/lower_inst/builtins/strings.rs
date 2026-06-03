@@ -116,6 +116,23 @@ pub(super) fn lower_string_position(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `substr(string, offset, length?)` with target-local pointer arithmetic.
+pub(super) fn lower_substr(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() < 2 || inst.operands.len() > 3 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "substr expected 2 or 3 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    let neg_done = ctx.next_label("substr_neg_done");
+    let len_done = ctx.next_label("substr_len_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_substr_aarch64(ctx, inst, &neg_done, &len_done)?,
+        Arch::X86_64 => lower_substr_x86_64(ctx, inst, &neg_done, &len_done)?,
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `ord()` by returning the first byte of a string or zero for empty input.
 pub(super) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "ord")?;
@@ -315,6 +332,112 @@ fn expect_string_operand(
         index + 1,
         ty
     )))
+}
+
+/// Emits the AArch64 inline substring pointer/length calculation.
+fn lower_substr_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    neg_done: &str,
+    len_done: &str,
+) -> Result<()> {
+    load_substr_string_and_offset_aarch64(ctx, inst)?;
+    if inst.operands.len() >= 3 {
+        let length = expect_operand(inst, 2)?;
+        load_as_int(ctx, length, "substr length")?;
+        ctx.emitter.instruction("mov x3, x0");                                  // move the explicit substring length into the clamp register
+    } else {
+        ctx.emitter.instruction("mov x3, #-1");                                 // use -1 as the sentinel for an omitted substring length
+    }
+    ctx.emitter.instruction("ldr x0, [sp], #16");                               // restore the substring offset after optional length materialization
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the source string pointer and length
+    ctx.emitter.instruction("cmp x0, #0");                                      // check whether the requested offset is negative
+    ctx.emitter.instruction(&format!("b.ge {}", neg_done));                     // skip tail-relative offset adjustment for non-negative offsets
+    ctx.emitter.instruction("add x0, x2, x0");                                  // convert the negative offset into a tail-relative byte index
+    ctx.emitter.instruction("cmp x0, #0");                                      // check whether the tail-relative offset still points before the string
+    ctx.emitter.instruction("csel x0, xzr, x0, lt");                            // clamp underflowing offsets back to the start of the string
+    ctx.emitter.label(neg_done);
+    ctx.emitter.instruction("cmp x0, x2");                                      // compare the final offset against the full source-string length
+    ctx.emitter.instruction("csel x0, x2, x0, gt");                             // clamp offsets past the end to the source-string length
+    ctx.emitter.instruction("add x1, x1, x0");                                  // advance the result pointer to the selected substring start
+    ctx.emitter.instruction("sub x2, x2, x0");                                  // compute the remaining byte length after the selected offset
+    ctx.emitter.instruction("cmn x3, #1");                                      // check whether the optional length argument was omitted
+    ctx.emitter.instruction(&format!("b.eq {}", len_done));                     // keep the full remaining tail when no explicit length was provided
+    ctx.emitter.instruction("cmp x3, #0");                                      // check whether the requested substring length is negative
+    ctx.emitter.instruction("csel x3, xzr, x3, lt");                            // clamp negative requested lengths to zero
+    ctx.emitter.instruction("cmp x3, x2");                                      // compare requested length against the remaining tail length
+    ctx.emitter.instruction("csel x2, x3, x2, lt");                             // shrink the result length when the requested length is shorter
+    ctx.emitter.label(len_done);
+    Ok(())
+}
+
+/// Loads the source string and offset for AArch64 `substr()` lowering.
+fn load_substr_string_and_offset_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "substr")?;
+    let offset = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(source, "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the source string while materializing numeric arguments
+    load_as_int(ctx, offset, "substr offset")?;
+    ctx.emitter.instruction("str x0, [sp, #-16]!");                             // preserve the substring offset while materializing the optional length
+    Ok(())
+}
+
+/// Emits the x86_64 inline substring pointer/length calculation.
+fn lower_substr_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    neg_done: &str,
+    len_done: &str,
+) -> Result<()> {
+    load_substr_string_and_offset_x86_64(ctx, inst)?;
+    if inst.operands.len() >= 3 {
+        let length = expect_operand(inst, 2)?;
+        load_as_int(ctx, length, "substr length")?;
+        ctx.emitter.instruction("mov rcx, rax");                                // move the explicit substring length into the clamp register
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, "rcx", -1);
+    }
+    abi::emit_pop_reg(ctx.emitter, "rax");
+    abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
+    ctx.emitter.instruction("cmp rax, 0");                                      // check whether the requested offset is negative
+    ctx.emitter.instruction(&format!("jge {}", neg_done));                      // skip tail-relative offset adjustment for non-negative offsets
+    ctx.emitter.instruction("add rax, rsi");                                    // convert the negative offset into a tail-relative byte index
+    ctx.emitter.instruction("cmp rax, 0");                                      // check whether the tail-relative offset still points before the string
+    ctx.emitter.instruction("mov r8, 0");                                       // materialize zero for offset and length clamping
+    ctx.emitter.instruction("cmovl rax, r8");                                   // clamp underflowing offsets back to the start of the string
+    ctx.emitter.label(neg_done);
+    ctx.emitter.instruction("cmp rax, rsi");                                    // compare the final offset against the full source-string length
+    ctx.emitter.instruction("cmovg rax, rsi");                                  // clamp offsets past the end to the source-string length
+    ctx.emitter.instruction("add rdi, rax");                                    // advance the result pointer to the selected substring start
+    ctx.emitter.instruction("sub rsi, rax");                                    // compute the remaining byte length after the selected offset
+    ctx.emitter.instruction("cmp rcx, -1");                                     // check whether the optional length argument was omitted
+    ctx.emitter.instruction(&format!("je {}", len_done));                       // keep the full remaining tail when no explicit length was provided
+    ctx.emitter.instruction("cmp rcx, 0");                                      // check whether the requested substring length is negative
+    ctx.emitter.instruction("mov r8, 0");                                       // materialize zero for negative length clamping
+    ctx.emitter.instruction("cmovl rcx, r8");                                   // clamp negative requested lengths to zero
+    ctx.emitter.instruction("cmp rcx, rsi");                                    // compare requested length against the remaining tail length
+    ctx.emitter.instruction("cmovl rsi, rcx");                                  // shrink the result length when the requested length is shorter
+    ctx.emitter.label(len_done);
+    ctx.emitter.instruction("mov rax, rdi");                                    // return the selected substring pointer in the string result register
+    ctx.emitter.instruction("mov rdx, rsi");                                    // return the selected substring length in the string result register
+    Ok(())
+}
+
+/// Loads the source string and offset for x86_64 `substr()` lowering.
+fn load_substr_string_and_offset_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let source = expect_string_operand(ctx, inst, 0, "substr")?;
+    let offset = expect_operand(inst, 1)?;
+    ctx.load_string_value_to_regs(source, "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    load_as_int(ctx, offset, "substr offset")?;
+    abi::emit_push_reg(ctx.emitter, "rax");
+    Ok(())
 }
 
 /// Boxes a raw string-search position result into the Mixed pointer representation.
