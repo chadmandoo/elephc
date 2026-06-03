@@ -665,6 +665,19 @@ fn ir_backend_handles_indexed_array_search() {
     }
 }
 
+/// Verifies indexed-array random key selection returns an in-bounds integer key.
+#[test]
+fn ir_backend_handles_indexed_array_rand() {
+    let source = r#"<?php
+$a = [10, 20, 30];
+$i = array_rand($a);
+echo array_key_exists($i, $a) ? "ok" : "bad";
+echo ":";
+echo $i >= 0 && $i < count($a) ? "range" : "bad";
+"#;
+    assert_eq!(compile_and_run_ir_backend("array_rand_indexed", source), "ok:range");
+}
+
 /// Verifies array truthiness follows PHP length rules for empty and non-empty containers.
 #[test]
 fn ir_backend_handles_array_truthiness() {

@@ -29,6 +29,19 @@ pub(super) fn lower_array_product(ctx: &mut FunctionContext<'_>, inst: &Instruct
     lower_indexed_array_aggregate(ctx, inst, "array_product", "__rt_array_product")
 }
 
+/// Lowers `array_rand()` for indexed arrays.
+pub(super) fn lower_array_rand(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_rand", 1)?;
+    let array = expect_operand(inst, 0)?;
+    require_indexed_array_builtin(ctx.value_php_type(array)?, "array_rand")?;
+    ctx.load_value_to_result(array)?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the indexed-array pointer as the random-key helper argument
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_array_rand");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_key_exists()` for indexed arrays with integer-like keys.
 pub(super) fn lower_array_key_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_key_exists", 2)?;
@@ -102,6 +115,18 @@ fn lower_indexed_array_aggregate(
 fn require_supported_indexed_array(ty: PhpType, name: &str) -> Result<()> {
     match ty.codegen_repr() {
         PhpType::Array(elem) if matches!(*elem, PhpType::Int | PhpType::Bool | PhpType::Never) => Ok(()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} for PHP type {:?}",
+            name,
+            other
+        ))),
+    }
+}
+
+/// Verifies a builtin receives an indexed array operand.
+fn require_indexed_array_builtin(ty: PhpType, name: &str) -> Result<()> {
+    match ty.codegen_repr() {
+        PhpType::Array(_) => Ok(()),
         other => Err(CodegenIrError::unsupported(format!(
             "{} for PHP type {:?}",
             name,

@@ -541,13 +541,18 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             &[PhpType::Str, PhpType::Str],
             PhpType::Bool,
         )),
-        "array_keys" | "array_values" | "array_reverse" | "array_unique" | "array_rand" => {
+        "array_keys" | "array_values" | "array_reverse" | "array_unique" => {
             Some(typed_first_class_builtin_sig(
                 name,
                 &[PhpType::Array(Box::new(PhpType::Mixed))],
                 PhpType::Array(Box::new(PhpType::Mixed)),
             ))
         }
+        "array_rand" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Array(Box::new(PhpType::Mixed))],
+            PhpType::Int,
+        )),
         "array_chunk" | "array_pad" | "array_fill" | "array_slice" | "array_diff"
         | "array_intersect" | "range" => return_typed_first_class_builtin_sig(
             name,
