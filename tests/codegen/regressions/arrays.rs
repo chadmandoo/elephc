@@ -705,3 +705,49 @@ echo $c->go();
     );
     assert_eq!(out, "10");
 }
+
+/// Verifies an `[]`-initialized property that receives only string-keyed writes survives being
+/// returned whole from a method and re-indexed through a local.
+/// Regression: the `[]` default was emitted as indexed-list storage even though the property's
+/// refined type is associative, so after the array crossed the method-return boundary the hash
+/// lookup missed every key and decoded to the null sentinel (9223372036854775806). The default
+/// must be stored as an empty hash to match the property's associative storage.
+#[test]
+fn test_empty_array_init_property_string_keyed_then_returned() {
+    let out = compile_and_run(
+        r#"<?php
+class C {
+    private $row = [];
+    public function set() { $this->row["a"] = 10; $this->row["b"] = 20; }
+    public function get() { return $this->row; }
+}
+$c = new C();
+$c->set();
+$r = $c->get();
+echo $r["a"] . "," . $r["b"];
+"#,
+    );
+    assert_eq!(out, "10,20");
+}
+
+/// Verifies a positional-literal default (`[1, 2, 3]`) on a property later given string keys is
+/// stored associatively, so the whole array survives a cross-method return and string re-indexing.
+/// Regression companion: the positional default must also be rewritten to hash storage when the
+/// property's refined type is associative, not left as an indexed-list array.
+#[test]
+fn test_positional_array_init_property_string_keyed_then_returned() {
+    let out = compile_and_run(
+        r#"<?php
+class C {
+    private $row = [1, 2, 3];
+    public function set() { $this->row["a"] = 10; }
+    public function get() { return $this->row; }
+}
+$c = new C();
+$c->set();
+$r = $c->get();
+echo $r["a"];
+"#,
+    );
+    assert_eq!(out, "10");
+}
