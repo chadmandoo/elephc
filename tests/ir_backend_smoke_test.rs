@@ -327,6 +327,11 @@ fn ir_backend_handles_scalar_builtins() {
 line2:4142:AB"#,
         ),
         (
+            "html_entity_strings",
+            r#"<?php echo htmlspecialchars("<b>\"Hi\" & 'bye'</b>"); echo ':'; echo htmlentities("<a>"); echo ':'; echo html_entity_decode("&lt;b&gt;hi&lt;/b&gt;"); echo ':'; echo html_entity_decode(htmlspecialchars("<div>\"test\"</div>"));"#,
+            r#"&lt;b&gt;&quot;Hi&quot; &amp; &#039;bye&#039;&lt;/b&gt;:&lt;a&gt;:<b>hi</b>:<div>"test"</div>"#,
+        ),
+        (
             "url_and_base64_strings",
             r#"<?php echo urlencode("hello world&foo=bar"); echo ':'; echo urldecode("hello+world%26foo%3Dbar"); echo ':'; echo rawurlencode("hello world"); echo ':'; echo rawurldecode("hello%20world"); echo ':'; echo base64_encode("Hello"); echo ':'; echo base64_decode("SGVsbG8=");"#,
             "hello+world%26foo%3Dbar:hello world&foo=bar:hello%20world:hello world:SGVsbG8=:Hello",

@@ -137,6 +137,24 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "nl2br" => strings::lower_unary_string_runtime(ctx, inst, "nl2br", "__rt_nl2br"),
         "bin2hex" => strings::lower_unary_string_runtime(ctx, inst, "bin2hex", "__rt_bin2hex"),
         "hex2bin" => strings::lower_unary_string_runtime(ctx, inst, "hex2bin", "__rt_hex2bin"),
+        "htmlspecialchars" => strings::lower_unary_string_runtime(
+            ctx,
+            inst,
+            "htmlspecialchars",
+            "__rt_htmlspecialchars",
+        ),
+        "htmlentities" => strings::lower_unary_string_runtime(
+            ctx,
+            inst,
+            "htmlentities",
+            "__rt_htmlspecialchars",
+        ),
+        "html_entity_decode" => strings::lower_unary_string_runtime(
+            ctx,
+            inst,
+            "html_entity_decode",
+            "__rt_html_entity_decode",
+        ),
         "urlencode" => strings::lower_unary_string_runtime(
             ctx,
             inst,
