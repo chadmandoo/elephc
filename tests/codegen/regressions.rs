@@ -23,3 +23,5 @@ mod string_memory;
 mod builtins_misc;
 #[path = "regressions/param_inference.rs"]
 mod param_inference;
+#[path = "regressions/mixed_method_dispatch.rs"]
+mod mixed_method_dispatch;

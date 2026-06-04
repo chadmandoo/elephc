@@ -40,14 +40,19 @@ impl Checker {
             }
             return self.infer_method_call_on_class_type(class_name, method, args, expr, env);
         }
-        // Method calls on a nullable / union object type (`?Foo`, `Foo|null`)
-        // are allowed when the union resolves to a single class — at runtime
-        // a null receiver still faults as in PHP, but the type-checker
-        // surfaces the proper return type so callers can chain further work.
+        // Method calls on a union object type are allowed when the union has a
+        // single object class. `?Foo` / `Foo|null` faults on a null receiver as in
+        // PHP; `Foo|false` (and other object-plus-scalar unions) dispatch on the
+        // runtime class id and fault when the value is not an object. Either way
+        // the checker surfaces the method's return type so callers can chain.
         if let PhpType::Union(_) = &obj_ty {
-            if let Some((class_name, _nullable)) =
-                self.nullsafe_object_receiver(&obj_ty, expr, "method call")?
-            {
+            let class_name = self.union_single_object_class(&obj_ty).or_else(|| {
+                self.nullsafe_object_receiver(&obj_ty, expr, "method call")
+                    .ok()
+                    .flatten()
+                    .map(|(name, _nullable)| name)
+            });
+            if let Some(class_name) = class_name {
                 if self.interfaces.contains_key(&class_name) {
                     return self.infer_method_call_on_interface_type(
                         &class_name,
@@ -59,6 +64,9 @@ impl Checker {
                 }
                 return self.infer_method_call_on_class_type(&class_name, method, args, expr, env);
             }
+            // No single object class: re-run the strict check to surface its
+            // diagnostic (e.g. a union of two distinct object classes).
+            self.nullsafe_object_receiver(&obj_ty, expr, "method call")?;
         }
         Ok(PhpType::Int)
     }
