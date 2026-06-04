@@ -9,8 +9,8 @@
 //! - Object payload layout must match the legacy backend and runtime helpers:
 //!   heap kind word before payload, class id at payload offset 0, then 16 bytes
 //!   per declared property slot.
-//! - This slice intentionally rejects constructors, dynamic properties, references,
-//!   interface method metadata, and default property expressions until their runtime paths land.
+//! - This slice intentionally rejects dynamic properties, references, interface
+//!   method metadata, and default property expressions until their runtime paths land.
 
 use std::collections::HashSet;
 
@@ -18,10 +18,11 @@ use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::ir::Instruction;
+use crate::names::{method_symbol, php_symbol_key};
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
-use super::{expect_data, expect_operand, store_if_result};
+use super::{direct_call_stack_pad_bytes, expect_data, expect_operand, materialize_direct_call_args, store_if_result};
 use crate::codegen_ir::{CodegenIrError, Result};
 
 const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
@@ -35,15 +36,11 @@ struct PropertySlot {
     is_declared: bool,
 }
 
-/// Lowers fixed-class object allocation for classes without constructor work.
+/// Lowers fixed-class object allocation and optional constructor invocation.
 pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    if !inst.operands.is_empty() {
-        return Err(CodegenIrError::unsupported(
-            "object construction with constructor arguments",
-        ));
-    }
     let class_name = class_name_immediate(ctx, inst)?.to_string();
-    let (class_id, property_count, uninitialized_marker_offsets) = {
+    let constructor_key = php_symbol_key("__construct");
+    let (class_id, property_count, uninitialized_marker_offsets, constructor_impl) = {
         let class_info = ctx
             .module
             .class_infos
@@ -51,16 +48,38 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
         if class_info.allow_dynamic_properties
             || class_info.defaults.iter().any(Option::is_some)
-            || class_info.methods.contains_key("__construct")
             || class_interfaces_require_method_metadata(ctx, class_info)
         {
             return Err(CodegenIrError::unsupported(format!(
-                "object allocation requiring dynamic, default, constructor, or interface method metadata for {}",
+                "object allocation requiring dynamic, default, or interface method metadata for {}",
                 class_name
             )));
         }
+        let constructor_impl = if let Some(constructor) = class_info.methods.get(&constructor_key) {
+            if constructor.params.len() != inst.operands.len() {
+                return Err(CodegenIrError::unsupported(format!(
+                    "constructor call to {}::__construct with {} args for {} params",
+                    class_name,
+                    inst.operands.len(),
+                    constructor.params.len()
+                )));
+            }
+            let impl_class = class_info
+                .method_impl_classes
+                .get(&constructor_key)
+                .cloned()
+                .unwrap_or_else(|| class_name.clone());
+            Some(impl_class)
+        } else if !inst.operands.is_empty() {
+            return Err(CodegenIrError::unsupported(format!(
+                "constructor arguments for class {} without __construct",
+                class_name
+            )));
+        } else {
+            None
+        };
         let marker_offsets = uninitialized_property_marker_offsets(class_info);
-        (class_info.class_id, class_info.properties.len(), marker_offsets)
+        (class_info.class_id, class_info.properties.len(), marker_offsets, constructor_impl)
     };
     emit_object_allocation(
         ctx,
@@ -68,7 +87,34 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         property_count,
         &uninitialized_marker_offsets,
     )?;
-    store_if_result(ctx, inst)
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("object_new missing result value"))?;
+    ctx.store_result_value(result)?;
+    if let Some(impl_class) = constructor_impl {
+        emit_constructor_call(ctx, result, &inst.operands, &impl_class, &constructor_key)?;
+    }
+    Ok(())
+}
+
+/// Calls the resolved `__construct` method with the newly allocated object as `$this`.
+fn emit_constructor_call(
+    ctx: &mut FunctionContext<'_>,
+    object: crate::ir::ValueId,
+    constructor_args: &[crate::ir::ValueId],
+    impl_class: &str,
+    constructor_key: &str,
+) -> Result<()> {
+    let mut args = Vec::with_capacity(constructor_args.len() + 1);
+    args.push(object);
+    args.extend(constructor_args.iter().copied());
+    let overflow_bytes = materialize_direct_call_args(ctx, &args)?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, overflow_bytes);
+    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_call_label(ctx.emitter, &method_symbol(impl_class, constructor_key));
+    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
+    Ok(())
 }
 
 /// Lowers a declared object property read for statically known object receivers.

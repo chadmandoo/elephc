@@ -338,11 +338,12 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
     match inst.op {
         ConstI64 | ConstBool | ConstNull => check_count(inst_id, inst, 0, "0"),
         ConstF64 | ConstStr | ConstClassName | ConstEnumCase | DataAddr | ArrayNew | HashNew
-        | ObjectNew | ClosureNew | FirstClassCallableNew | CallableArrayNew
+        | ClosureNew | FirstClassCallableNew | CallableArrayNew
         | GeneratorNew | ErrorSuppressBegin | ErrorSuppressEnd | IncludeOnceMark
         | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | Nop => {
             check_count(inst_id, inst, 0, "0")
         }
+        ObjectNew => Ok(()),
         IAdd | ISub | IMul | IDiv | ISDiv | ISMod | IPow | IBitAnd | IBitOr | IBitXor
         | IShl | IShrA => check_binary(function, inst_id, inst, IrType::I64, "I64"),
         FAdd | FSub | FMul | FDiv | FPow => check_binary(function, inst_id, inst, IrType::F64, "F64"),

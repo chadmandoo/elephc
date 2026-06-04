@@ -1315,14 +1315,12 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
 
 /// Lowers fixed-class object construction.
 fn lower_new_object(ctx: &mut LoweringContext<'_, '_>, class_name: &Name, args: &[Expr], expr: &Expr) -> LoweredValue {
-    for arg in args {
-        lower_expr(ctx, arg);
-    }
+    let operands = lower_args(ctx, args);
     let php_type = PhpType::Object(class_name.as_str().to_string());
     let data = ctx.intern_class_name(class_name.as_str());
     ctx.emit_value(
         Op::ObjectNew,
-        Vec::new(),
+        operands,
         Some(Immediate::Data(data)),
         php_type,
         Op::ObjectNew.default_effects(),

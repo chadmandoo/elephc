@@ -1030,6 +1030,26 @@ echo MathBox::add(2, 3);
     );
 }
 
+/// Verifies fixed-class object construction calls `__construct` through the EIR method ABI.
+#[test]
+fn ir_backend_calls_simple_constructor() {
+    let source = r#"<?php
+class Box {
+    public int $i;
+
+    public function __construct(int $i) {
+        $this->i = $i;
+    }
+}
+$box = new Box(9);
+echo $box->i;
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("simple_constructor_call", source),
+        "9"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {
