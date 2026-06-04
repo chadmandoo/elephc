@@ -19,5 +19,18 @@ crate-type = ["staticlib", "rlib"]
 libsqlite3-sys = { version = "0.30", features = ["bundled"] }
 # The synchronous, pure-Rust PostgreSQL client (no system libpq), so compiled
 # PHP binaries stay standalone. Connects to a running PostgreSQL server over
-# TCP/Unix sockets when a `pgsql:` DSN is opened.
-postgres = "0.19"
+# TCP/Unix sockets when a `pgsql:` DSN is opened. The `with-*` features add the
+# FromSql decoders for date/time, json, and uuid columns so the driver can read
+# those types back as their PHP-string representation.
+postgres = { version = "0.19", features = [
+    "with-chrono-0_4",
+    "with-serde_json-1",
+    "with-uuid-1",
+] }
+# Type crates named directly in the column decoder (the postgres features above
+# only wire up the FromSql impls). rust_decimal's `db-postgres` feature adds the
+# numeric/decimal FromSql impl (postgres has no built-in one).
+chrono = "0.4"
+serde_json = "1"
+uuid = "1"
+rust_decimal = { version = "1", features = ["db-postgres"] }

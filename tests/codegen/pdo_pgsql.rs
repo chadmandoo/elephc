@@ -148,6 +148,36 @@ $db->exec("DROP TABLE pg_tx");
     assert_eq!(out, "1:2");
 }
 
+/// Rich PostgreSQL types decode to their text representation: `numeric` keeps its
+/// scale, date/time/timestamp use PostgreSQL's text format, `uuid` and `json`
+/// round-trip, and a `numeric` value binds through a parameter (coerced from
+/// text).
+#[test]
+#[ignore]
+fn test_pgsql_rich_types() {
+    let out = compile_and_run(&pg_program(
+        r#"
+$db->exec("DROP TABLE IF EXISTS pg_rich");
+$db->exec("CREATE TABLE pg_rich (money NUMERIC(10,2), d DATE, ts TIMESTAMP, u UUID, j JSON)");
+$ins = $db->prepare("INSERT INTO pg_rich VALUES (:m, :d, :ts, :u, :j)");
+$ins->execute([
+    ":m"  => "1234.50",
+    ":d"  => "2024-01-15",
+    ":ts" => "2024-01-15 10:30:00",
+    ":u"  => "550e8400-e29b-41d4-a716-446655440000",
+    ":j"  => '{"a":1}',
+]);
+$r = $db->query("SELECT money, d, ts, u, j FROM pg_rich")->fetch(PDO::FETCH_ASSOC);
+echo $r["money"] . "|" . $r["d"] . "|" . $r["ts"] . "|" . $r["u"] . "|" . $r["j"];
+$db->exec("DROP TABLE pg_rich");
+"#,
+    ));
+    assert_eq!(
+        out,
+        "1234.50|2024-01-15|2024-01-15 10:30:00|550e8400-e29b-41d4-a716-446655440000|{\"a\":1}"
+    );
+}
+
 /// The default exception error mode throws a catchable `PDOException` on bad SQL,
 /// and `ERRMODE_SILENT` makes `exec()` return `false` instead.
 #[test]

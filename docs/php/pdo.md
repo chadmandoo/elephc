@@ -141,9 +141,13 @@ points:
   session's last sequence value (`lastval()`), or `lastInsertId($sequence)`
   returns `currval($sequence)`. Use a `SERIAL`/`IDENTITY` column or `RETURNING`.
 - **Types.** `integer`/`bigint` → int, `real`/`double precision` → float,
-  `boolean` → `0`/`1`, text types → string, `NULL` → null. Columns without a
-  direct scalar decoding (e.g. `numeric`, arrays, JSON, date/time) are best read
-  with an explicit `::text` (or `::float8`) cast in the query.
+  `boolean` → `0`/`1`, text types → string, `NULL` → null. The rich types are
+  returned as their text representation: `numeric`/`decimal` (scale preserved),
+  `date` / `time` / `timestamp` / `timestamptz`, `uuid`, and `json`/`jsonb`. The
+  same values bind as parameters (text is coerced to the column type). `json` /
+  `jsonb` are re-serialized compactly, so whitespace may differ from the server's
+  text output, but the value is equivalent. Other types (arrays, `bytea`, network
+  types) are best read with an explicit `::text` cast.
 
 ## Transactions
 

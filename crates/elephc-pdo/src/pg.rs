@@ -89,34 +89,40 @@ impl ToSql for Param {
         ty: &Type,
         out: &mut postgres::types::private::BytesMut,
     ) -> Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
-        match &self.bind {
-            Bind::Null => Ok(IsNull::Yes),
-            Bind::Int(v) => match *ty {
-                Type::INT2 => (*v as i16).to_sql(ty, out),
-                Type::INT4 => (*v as i32).to_sql(ty, out),
-                Type::INT8 | Type::OID => v.to_sql(ty, out),
-                Type::FLOAT4 => (*v as f32).to_sql(ty, out),
-                Type::FLOAT8 => (*v as f64).to_sql(ty, out),
-                Type::BOOL => (*v != 0).to_sql(ty, out),
-                _ => v.to_string().to_sql(ty, out),
-            },
-            Bind::Float(v) => match *ty {
-                Type::FLOAT4 => (*v as f32).to_sql(ty, out),
-                Type::FLOAT8 => v.to_sql(ty, out),
-                Type::INT2 => (*v as i16).to_sql(ty, out),
-                Type::INT4 => (*v as i32).to_sql(ty, out),
-                Type::INT8 => (*v as i64).to_sql(ty, out),
-                _ => v.to_string().to_sql(ty, out),
-            },
-            Bind::Text(s) => match *ty {
-                Type::INT2 => s.trim().parse::<i16>().unwrap_or(0).to_sql(ty, out),
-                Type::INT4 => s.trim().parse::<i32>().unwrap_or(0).to_sql(ty, out),
-                Type::INT8 => s.trim().parse::<i64>().unwrap_or(0).to_sql(ty, out),
-                Type::FLOAT4 => s.trim().parse::<f32>().unwrap_or(0.0).to_sql(ty, out),
-                Type::FLOAT8 => s.trim().parse::<f64>().unwrap_or(0.0).to_sql(ty, out),
-                Type::BOOL => matches!(s.trim(), "1" | "t" | "true" | "TRUE").to_sql(ty, out),
-                _ => s.to_sql(ty, out),
-            },
+        if let Bind::Null = self.bind {
+            return Ok(IsNull::Yes);
+        }
+        // PDO/PHP sends parameters as text and lets the server coerce them to the
+        // column type. We replicate that: take the bound value's canonical string
+        // form and re-encode it for the parameter type the prepared statement
+        // inferred. A value that cannot parse into the target type surfaces as a
+        // query error (an unparseable timestamp, etc.).
+        let s = match &self.bind {
+            Bind::Int(v) => v.to_string(),
+            Bind::Float(v) => v.to_string(),
+            Bind::Text(t) => t.clone(),
+            Bind::Null => unreachable!(),
+        };
+        let st = s.trim();
+        match *ty {
+            Type::BOOL => matches!(st, "1" | "t" | "true" | "TRUE" | "on").to_sql(ty, out),
+            Type::INT2 => st.parse::<i16>()?.to_sql(ty, out),
+            Type::INT4 => st.parse::<i32>()?.to_sql(ty, out),
+            Type::INT8 | Type::OID => st.parse::<i64>()?.to_sql(ty, out),
+            Type::FLOAT4 => st.parse::<f32>()?.to_sql(ty, out),
+            Type::FLOAT8 => st.parse::<f64>()?.to_sql(ty, out),
+            Type::NUMERIC => st.parse::<rust_decimal::Decimal>()?.to_sql(ty, out),
+            Type::DATE => st.parse::<chrono::NaiveDate>()?.to_sql(ty, out),
+            Type::TIME => st.parse::<chrono::NaiveTime>()?.to_sql(ty, out),
+            Type::TIMESTAMP => parse_naive_datetime(st)?.to_sql(ty, out),
+            Type::TIMESTAMPTZ => parse_datetime_utc(st)?.to_sql(ty, out),
+            Type::UUID => st.parse::<uuid::Uuid>()?.to_sql(ty, out),
+            Type::JSON | Type::JSONB => {
+                serde_json::from_str::<serde_json::Value>(&s)?.to_sql(ty, out)
+            }
+            // Text family and anything else: send the text and let the server
+            // parse it (the `accepts` override below allows the unknown type).
+            _ => s.to_sql(ty, out),
         }
     }
 
@@ -127,6 +133,29 @@ impl ToSql for Param {
     }
 
     to_sql_checked!();
+}
+
+/// Parses a `timestamp` text value (`YYYY-MM-DD HH:MM:SS[.ffffff]`, with a space
+/// or `T` separator) into a `NaiveDateTime` for binding.
+fn parse_naive_datetime(s: &str) -> Result<chrono::NaiveDateTime, chrono::ParseError> {
+    chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f")
+        .or_else(|_| chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f"))
+}
+
+/// Parses a `timestamptz` text value into a UTC `DateTime` for binding. Accepts a
+/// trailing offset (`+00`, `+00:00`, `Z`); a value with no offset is taken as UTC.
+fn parse_datetime_utc(
+    s: &str,
+) -> Result<chrono::DateTime<chrono::Utc>, Box<dyn std::error::Error + Sync + Send>> {
+    use chrono::TimeZone;
+    if let Ok(dt) = chrono::DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f%#z") {
+        return Ok(dt.with_timezone(&chrono::Utc));
+    }
+    if let Ok(dt) = chrono::DateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f%#z") {
+        return Ok(dt.with_timezone(&chrono::Utc));
+    }
+    let naive = parse_naive_datetime(s)?;
+    Ok(chrono::Utc.from_utc_datetime(&naive))
 }
 
 /// Parses a PDO `pgsql:` DSN (semicolon-separated `key=value` pairs) into a
@@ -547,6 +576,40 @@ fn decode_row(row: &Row) -> Vec<Cell> {
                     .get::<_, Option<String>>(i)
                     .map(Cell::Text)
                     .unwrap_or(Cell::Null),
+                // numeric/decimal: returned as a string to preserve precision,
+                // matching PHP's PDO_pgsql.
+                Type::NUMERIC => row
+                    .get::<_, Option<rust_decimal::Decimal>>(i)
+                    .map(|d| Cell::Text(d.to_string()))
+                    .unwrap_or(Cell::Null),
+                // Date/time/timestamp: formatted as PostgreSQL's text output.
+                Type::DATE => row
+                    .get::<_, Option<chrono::NaiveDate>>(i)
+                    .map(|d| Cell::Text(d.format("%Y-%m-%d").to_string()))
+                    .unwrap_or(Cell::Null),
+                Type::TIME => row
+                    .get::<_, Option<chrono::NaiveTime>>(i)
+                    .map(|t| Cell::Text(t.format("%H:%M:%S%.f").to_string()))
+                    .unwrap_or(Cell::Null),
+                Type::TIMESTAMP => row
+                    .get::<_, Option<chrono::NaiveDateTime>>(i)
+                    .map(|t| Cell::Text(t.format("%Y-%m-%d %H:%M:%S%.f").to_string()))
+                    .unwrap_or(Cell::Null),
+                Type::TIMESTAMPTZ => row
+                    .get::<_, Option<chrono::DateTime<chrono::Utc>>>(i)
+                    .map(|t| Cell::Text(t.format("%Y-%m-%d %H:%M:%S%.f+00").to_string()))
+                    .unwrap_or(Cell::Null),
+                // json/jsonb: the JSON value re-serialized as a compact string.
+                Type::JSON | Type::JSONB => row
+                    .get::<_, Option<serde_json::Value>>(i)
+                    .map(|v| Cell::Text(v.to_string()))
+                    .unwrap_or(Cell::Null),
+                Type::UUID => row
+                    .get::<_, Option<uuid::Uuid>>(i)
+                    .map(|u| Cell::Text(u.to_string()))
+                    .unwrap_or(Cell::Null),
+                // Any other type (arrays, bytea, network types, …): best-effort
+                // text read, else null. Read these with an explicit `::text` cast.
                 _ => match row.try_get::<_, Option<String>>(i) {
                     Ok(Some(s)) => Cell::Text(s),
                     _ => Cell::Null,
