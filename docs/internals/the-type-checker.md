@@ -240,6 +240,10 @@ pub struct FunctionSig {
 - `variadic` holds the name of the variadic parameter (e.g., `$args` in `function foo(...$args)`). Extra arguments beyond the regular parameters are collected into an array.
 - `deprecation` carries PHP 8.4 `#[Deprecated]` metadata when present, so call sites can surface the warning consistently.
 
+### Call-site inference for untyped parameters
+
+Parameters without a type hint start from an `Int` fallback and are specialized from the actual argument types observed at call sites. The checker accumulates the argument types seen across *all* call sites for each undeclared parameter: a parameter called with a single type takes that type, while a parameter called with incompatible types (e.g. `int` at one site and `string` at another) widens to a `Union` so each argument keeps its own runtime representation instead of being coerced to the last-seen type. A union whose members are all `int`/`bool` collapses back to `Int` (preserving the int fallback for int- or bool-only calls), and a `void` argument never specializes a parameter. Because `Union` lowers to the same boxed runtime shape as `Mixed`, such arguments are boxed at the call site and unboxed where they are used.
+
 This information is then used when checking calls to that function.
 
 ## Diagnostics and warnings

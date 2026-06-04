@@ -60,6 +60,11 @@ pub(crate) struct Checker {
     pub function_variant_groups: HashMap<String, Vec<String>>,
     /// Canonical function signatures indexed by fully-qualified name.
     pub functions: HashMap<String, FunctionSig>,
+    /// Accumulated call-site argument types observed for undeclared (untyped) parameters,
+    /// keyed by `(function_name, regular_param_index)`. Used to widen an inferred parameter
+    /// type to a union when distinct call sites pass incompatible types (e.g. `int` then
+    /// `string`), instead of letting the last call overwrite the previous inference.
+    pub fn_param_observed_types: HashMap<(String, usize), PhpType>,
     /// Top-level constant types indexed by canonical name.
     pub constants: HashMap<String, PhpType>,
     /// Tracks the return type of closures assigned to variables, keyed by variable name.
