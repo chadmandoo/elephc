@@ -599,6 +599,35 @@ fn ir_backend_handles_indexed_array_pop() {
     }
 }
 
+/// Verifies `array_shift()` mutates indexed arrays and compacts remaining elements.
+#[test]
+fn ir_backend_handles_indexed_array_shift() {
+    for (name, source, expected) in [
+        (
+            "array_shift_int_mutates_count",
+            "<?php $a = [10, 20, 30]; $v = array_shift($a); echo $v; echo ' '; echo count($a);",
+            "10 2",
+        ),
+        (
+            "array_shift_int_compacts_slots",
+            "<?php $a = [10, 20, 30]; array_shift($a); echo $a[0]; echo ':'; echo $a[1];",
+            "20:30",
+        ),
+        (
+            "array_shift_string_value",
+            "<?php $a = ['a', 'b', 'c']; $v = array_shift($a); echo $v; echo ':'; echo $a[0]; echo ':'; echo count($a);",
+            "a:b:2",
+        ),
+        (
+            "array_shift_empty_null",
+            "<?php $a = [1]; array_shift($a); $v = array_shift($a); echo is_null($v) ? 'null' : 'value';",
+            "null",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies indexed arrays can read pointer-sized nested array elements.
 #[test]
 fn ir_backend_handles_nested_indexed_array_reads() {

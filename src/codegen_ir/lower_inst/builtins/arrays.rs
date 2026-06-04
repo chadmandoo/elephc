@@ -21,6 +21,7 @@ use super::super::{expect_operand, store_if_result};
 
 mod key_exists;
 mod keys;
+mod shift;
 mod values;
 
 /// Lowers `array_sum()` over supported indexed-array payloads.
@@ -155,6 +156,11 @@ pub(super) fn lower_array_pop(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         Arch::X86_64 => lower_array_pop_x86_64(ctx, array, &elem_ty)?,
     }
     store_if_result(ctx, inst)
+}
+
+/// Lowers `array_shift()` for indexed arrays by compacting slots and boxing `T|null` as Mixed.
+pub(super) fn lower_array_shift(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    shift::lower_array_shift(ctx, inst)
 }
 
 /// Lowers `array_key_exists()` through the dedicated key-existence builtin emitter.
