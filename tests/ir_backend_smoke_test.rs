@@ -901,6 +901,30 @@ fn ir_backend_handles_indexed_array_combine() {
     }
 }
 
+/// Verifies `array_flip()` builds associative arrays from indexed integer and string values.
+#[test]
+fn ir_backend_handles_indexed_array_flip() {
+    for (name, source, expected) in [
+        (
+            "array_flip_count",
+            "<?php $a = [10, 20, 30]; $f = array_flip($a); echo count($f);",
+            "3",
+        ),
+        (
+            "array_flip_integer_values_are_integer_keys",
+            "<?php $a = [10, 20]; $f = array_flip($a); echo $f[10]; echo '|'; echo $f['20'];",
+            "0|1",
+        ),
+        (
+            "array_flip_string_values_normalize_numeric_keys",
+            "<?php $a = ['1', '02', '2']; $f = array_flip($a); echo count($f); echo '|'; echo $f[1]; echo '|'; echo $f['02']; echo '|'; echo $f['2'];",
+            "3|0|1|2",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies indexed-array reversal returns a reversed copy without mutating the source.
 #[test]
 fn ir_backend_handles_indexed_array_reverse() {

@@ -789,6 +789,7 @@ fn array_builtin_return_type(
 ) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "array_combine" => array_combine_builtin_return_type(ctx, operands),
+        "array_flip" => array_flip_builtin_return_type(ctx, operands),
         "array_fill_keys" => array_fill_keys_builtin_return_type(ctx, operands),
         "array_merge" => array_merge_builtin_return_type(ctx, operands),
         "array_values" => {
@@ -833,6 +834,25 @@ fn array_fill_keys_builtin_return_type(
         key: Box::new(key_ty),
         value: Box::new(value_ty),
     })
+}
+
+/// Returns precise return metadata for `array_flip(array)`.
+fn array_flip_builtin_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    operands: &[crate::ir::ValueId],
+) -> Option<PhpType> {
+    let array = operands.first()?;
+    match ctx.builder.value_php_type(*array).codegen_repr() {
+        PhpType::Array(value) => Some(PhpType::AssocArray {
+            key: Box::new(array_key_type_from_value_type(value.codegen_repr())),
+            value: Box::new(PhpType::Int),
+        }),
+        PhpType::AssocArray { key, value } => Some(PhpType::AssocArray {
+            key: Box::new(array_key_type_from_value_type(value.codegen_repr())),
+            value: key,
+        }),
+        _ => None,
+    }
 }
 
 /// Returns precise return metadata for `array_combine(keys, values)`.

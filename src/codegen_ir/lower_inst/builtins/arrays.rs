@@ -124,6 +124,20 @@ pub(super) fn lower_array_combine(ctx: &mut FunctionContext<'_>, inst: &Instruct
     store_if_result(ctx, inst)
 }
 
+/// Lowers `array_flip()` through the legacy hash-building runtime helpers.
+pub(super) fn lower_array_flip(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_flip", 1)?;
+    let array = expect_operand(inst, 0)?;
+    let value_elem_ty = array_flip_source_element_type(ctx.value_php_type(array)?)?;
+    require_array_flip_result_type(&value_elem_ty, &inst.result_php_type.codegen_repr())?;
+    ctx.load_value_to_result(array)?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the source indexed-array pointer as the flip helper argument
+    }
+    abi::emit_call_label(ctx.emitter, array_flip_runtime_helper(&value_elem_ty));
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_reverse()` for indexed arrays with 8-byte payload slots.
 pub(super) fn lower_array_reverse(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_reverse", 1)?;
@@ -502,6 +516,23 @@ fn require_array_combine_result_type(value_elem_ty: &PhpType, result_ty: &PhpTyp
     }
 }
 
+/// Verifies `array_flip()` produces a hash with normalized keys and integer source indexes.
+fn require_array_flip_result_type(value_elem_ty: &PhpType, result_ty: &PhpType) -> Result<()> {
+    let expected_key_ty = array_key_type_from_value_type(value_elem_ty.clone()).codegen_repr();
+    match result_ty {
+        PhpType::AssocArray { key, value }
+            if key.codegen_repr() == expected_key_ty && value.codegen_repr() == PhpType::Int =>
+        {
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_flip result PHP type {:?} for value element PHP type {:?}",
+            other,
+            value_elem_ty
+        ))),
+    }
+}
+
 /// Verifies the destination element type matches the fill layout or is a Mixed widening.
 fn require_array_fill_result_type(value_ty: &PhpType, result_elem_ty: &PhpType) -> Result<()> {
     if value_ty == result_elem_ty || result_elem_ty == &PhpType::Mixed {
@@ -613,6 +644,15 @@ fn array_combine_runtime_helper(value_elem_ty: &PhpType) -> &'static str {
     }
 }
 
+/// Returns the helper matching the flipped source value slot layout.
+fn array_flip_runtime_helper(value_elem_ty: &PhpType) -> &'static str {
+    if value_elem_ty == &PhpType::Str {
+        "__rt_array_flip_string"
+    } else {
+        "__rt_array_flip"
+    }
+}
+
 /// Returns the element type for indexed arrays supported by scalar 8-byte helpers.
 fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
     match ty.codegen_repr() {
@@ -636,6 +676,29 @@ fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpT
             )))
         }
         other => Err(CodegenIrError::unsupported(format!("{} for PHP type {:?}", name, other))),
+    }
+}
+
+/// Returns the source element type when `array_flip()` can use existing runtime helpers.
+fn array_flip_source_element_type(ty: PhpType) -> Result<PhpType> {
+    match ty.codegen_repr() {
+        PhpType::Array(elem) => {
+            let elem = elem.codegen_repr();
+            if matches!(
+                elem,
+                PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never
+            ) {
+                return Ok(elem);
+            }
+            Err(CodegenIrError::unsupported(format!(
+                "array_flip source element PHP type {:?}",
+                elem
+            )))
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_flip for PHP type {:?}",
+            other
+        ))),
     }
 }
 

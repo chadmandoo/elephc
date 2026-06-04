@@ -84,8 +84,8 @@ fn lower_hash_get_aarch64(
     key: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_reg(hash, "x0")?;
     materialize_hash_key_aarch64(ctx, key)?;
+    ctx.load_value_to_reg(hash, "x0")?;
     abi::emit_call_label(ctx.emitter, "__rt_hash_get");
     let miss = ctx.next_label("hash_get_miss");
     let done = ctx.next_label("hash_get_done");
@@ -106,8 +106,8 @@ fn lower_hash_get_x86_64(
     key: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_reg(hash, "rdi")?;
     materialize_hash_key_x86_64(ctx, key)?;
+    ctx.load_value_to_reg(hash, "rdi")?;
     abi::emit_call_label(ctx.emitter, "__rt_hash_get");
     let miss = ctx.next_label("hash_get_miss");
     let done = ctx.next_label("hash_get_done");
@@ -129,9 +129,11 @@ fn lower_hash_set_aarch64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    materialize_hash_value_aarch64(ctx, value, value_ty)?;
-    ctx.load_value_to_reg(hash, "x0")?;
     materialize_hash_key_aarch64(ctx, key)?;
+    abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+    materialize_hash_value_aarch64(ctx, value, value_ty)?;
+    abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+    ctx.load_value_to_reg(hash, "x0")?;
     abi::emit_load_int_immediate(ctx.emitter, "x5", crate::codegen::runtime_value_tag(value_ty) as i64);
     abi::emit_call_label(ctx.emitter, "__rt_hash_set");
     Ok(())
@@ -145,9 +147,11 @@ fn lower_hash_set_x86_64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    materialize_hash_value_x86_64(ctx, value, value_ty)?;
-    ctx.load_value_to_reg(hash, "rdi")?;
     materialize_hash_key_x86_64(ctx, key)?;
+    abi::emit_push_reg_pair(ctx.emitter, "rsi", "rdx");
+    materialize_hash_value_x86_64(ctx, value, value_ty)?;
+    abi::emit_pop_reg_pair(ctx.emitter, "rsi", "rdx");
+    ctx.load_value_to_reg(hash, "rdi")?;
     abi::emit_load_int_immediate(ctx.emitter, "r9", crate::codegen::runtime_value_tag(value_ty) as i64);
     abi::emit_call_label(ctx.emitter, "__rt_hash_set");
     Ok(())
@@ -156,7 +160,11 @@ fn lower_hash_set_x86_64(
 /// Materializes an EIR value as a normalized hash key for AArch64.
 fn materialize_hash_key_aarch64(ctx: &mut FunctionContext<'_>, key: ValueId) -> Result<()> {
     match ctx.value_php_type(key)? {
-        PhpType::Str => ctx.load_string_value_to_regs(key, "x1", "x2"),
+        PhpType::Str => {
+            ctx.load_string_value_to_regs(key, "x1", "x2")?;
+            abi::emit_call_label(ctx.emitter, "__rt_hash_normalize_key");
+            Ok(())
+        }
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.load_value_to_reg(key, "x1")?;
             abi::emit_load_int_immediate(ctx.emitter, "x2", -1);
@@ -172,7 +180,12 @@ fn materialize_hash_key_aarch64(ctx: &mut FunctionContext<'_>, key: ValueId) -> 
 /// Materializes an EIR value as a normalized hash key for x86_64.
 fn materialize_hash_key_x86_64(ctx: &mut FunctionContext<'_>, key: ValueId) -> Result<()> {
     match ctx.value_php_type(key)? {
-        PhpType::Str => ctx.load_string_value_to_regs(key, "rsi", "rdx"),
+        PhpType::Str => {
+            ctx.load_string_value_to_regs(key, "rax", "rdx")?;
+            abi::emit_call_label(ctx.emitter, "__rt_hash_normalize_key");
+            ctx.emitter.instruction("mov rsi, rax");                            // move the normalized string-or-integer key low word into the hash ABI register
+            Ok(())
+        }
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.load_value_to_reg(key, "rsi")?;
             abi::emit_load_int_immediate(ctx.emitter, "rdx", -1);
