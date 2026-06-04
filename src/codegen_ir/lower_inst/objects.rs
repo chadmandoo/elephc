@@ -111,7 +111,7 @@ pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction
         emit_false(ctx);
         return store_if_result(ctx, inst);
     };
-    reject_method_metadata_target(ctx, class_name)?;
+    reject_interface_method_metadata_target(ctx, class_name)?;
     match value_ty {
         PhpType::Object(_) => {
             ctx.load_value_to_reg(value, abi::int_arg_reg_name(ctx.emitter.target, 0))?;
@@ -648,13 +648,13 @@ fn classify_named_target(
         .map(|interface_info| (interface_info.interface_id, 1))
 }
 
-/// Rejects targets whose runtime metadata would reference method symbols not emitted yet.
-fn reject_method_metadata_target(ctx: &FunctionContext<'_>, class_name: &str) -> Result<()> {
+/// Rejects targets whose runtime metadata would reference interface wrappers not emitted yet.
+fn reject_interface_method_metadata_target(ctx: &FunctionContext<'_>, class_name: &str) -> Result<()> {
     let normalized = class_name.trim_start_matches('\\');
     if let Some(class_info) = ctx.module.class_infos.get(normalized) {
-        if !class_info.vtable_methods.is_empty() || !class_info.static_vtable_methods.is_empty() {
+        if class_interfaces_require_method_metadata(ctx, class_info) {
             return Err(CodegenIrError::unsupported(format!(
-                "instanceof target with method metadata {}",
+                "instanceof target with interface method metadata {}",
                 normalized
             )));
         }

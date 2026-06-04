@@ -779,6 +779,26 @@ echo ($child instanceof Missing) ? "T" : "F";
     );
 }
 
+/// Verifies named `instanceof` works when class metadata includes method tables.
+#[test]
+fn ir_backend_handles_instanceof_on_classes_with_methods() {
+    let source = r#"<?php
+class Base {
+    public function value(): int {
+        return 1;
+    }
+}
+class Child extends Base {}
+$child = new Child();
+echo ($child instanceof Child) ? "T" : "F";
+echo ($child instanceof Base) ? "T" : "F";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("instanceof_classes_with_methods", source),
+        "TT"
+    );
+}
+
 /// Verifies dynamic `instanceof` targets resolve through EIR runtime metadata.
 #[test]
 fn ir_backend_handles_dynamic_instanceof_targets() {
