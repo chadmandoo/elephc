@@ -85,6 +85,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "rsort" => arrays::lower_rsort(ctx, inst),
         "asort" => arrays::lower_asort(ctx, inst),
         "arsort" => arrays::lower_arsort(ctx, inst),
+        "ksort" => arrays::lower_ksort(ctx, inst),
+        "krsort" => arrays::lower_krsort(ctx, inst),
         "natsort" => arrays::lower_natsort(ctx, inst),
         "natcasesort" => arrays::lower_natcasesort(ctx, inst),
         "shuffle" => arrays::lower_shuffle(ctx, inst),

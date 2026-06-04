@@ -321,6 +321,16 @@ pub(super) fn lower_arsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     lower_indexed_array_sort(ctx, inst, "arsort", "__rt_arsort")
 }
 
+/// Lowers `ksort()` through the legacy key-sort helper surface.
+pub(super) fn lower_ksort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_array_key_sort(ctx, inst, "ksort", "__rt_ksort")
+}
+
+/// Lowers `krsort()` through the legacy reverse key-sort helper surface.
+pub(super) fn lower_krsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_array_key_sort(ctx, inst, "krsort", "__rt_krsort")
+}
+
 /// Lowers `natsort()` for indexed integer arrays through the natural-sort runtime wrapper.
 pub(super) fn lower_natsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "natsort", "__rt_natsort")
@@ -457,6 +467,33 @@ fn lower_indexed_array_sort(
     store_if_result(ctx, inst)
 }
 
+/// Calls the legacy key-sort helper for array-like values.
+fn lower_array_key_sort(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    helper: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 1)?;
+    let array = expect_operand(inst, 0)?;
+    require_array_key_sort_type(ctx.value_php_type(array)?, name)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(array, "x0")?;
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(array, "rdi")?;
+        }
+    }
+    abi::emit_call_label(ctx.emitter, helper);
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        0x7fff_ffff_ffff_fffe,
+    );
+    store_if_result(ctx, inst)
+}
+
 /// Verifies the sort runtime helper can compare the indexed-array payload slots safely.
 fn require_indexed_int_sort_array(ty: PhpType, name: &str) -> Result<()> {
     match ty.codegen_repr() {
@@ -473,6 +510,14 @@ fn require_indexed_int_sort_array(ty: PhpType, name: &str) -> Result<()> {
             name,
             elem.codegen_repr()
         ))),
+        other => Err(CodegenIrError::unsupported(format!("{} for PHP type {:?}", name, other))),
+    }
+}
+
+/// Verifies key-sort helpers only receive array-like PHP values.
+fn require_array_key_sort_type(ty: PhpType, name: &str) -> Result<()> {
+    match ty.codegen_repr() {
+        PhpType::Array(_) | PhpType::AssocArray { .. } => Ok(()),
         other => Err(CodegenIrError::unsupported(format!("{} for PHP type {:?}", name, other))),
     }
 }

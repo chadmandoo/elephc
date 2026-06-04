@@ -682,6 +682,16 @@ fn ir_backend_handles_indexed_array_sorting() {
             "321",
         ),
         (
+            "ksort_indexed_ints_preserves_slots",
+            "<?php $a = [3, 1, 2]; ksort($a); echo $a[0]; echo $a[1]; echo $a[2];",
+            "312",
+        ),
+        (
+            "krsort_indexed_ints_preserves_slots",
+            "<?php $a = [1, 2, 3]; krsort($a); echo $a[0]; echo $a[1]; echo $a[2];",
+            "123",
+        ),
+        (
             "natsort_indexed_ints",
             "<?php $a = [3, 1, 2]; natsort($a); echo $a[0]; echo $a[1]; echo $a[2];",
             "123",
