@@ -563,6 +563,16 @@ fn ir_backend_handles_basic_indexed_arrays() {
         ("array_set_extends_int", "<?php $a = [1]; $a[3] = 9; echo count($a); echo \":\"; echo $a[0];", "4:1"),
         ("array_set_extends_string", "<?php $a = [\"a\"]; $a[2] = \"z\"; echo count($a); echo \":\"; echo $a[2];", "3:z"),
         ("array_set_empty_count", "<?php $a = []; $a[2] = 7; echo count($a);", "3"),
+        (
+            "array_push_builtin_mutates_local",
+            "<?php $a = [10]; array_push($a, 20); echo count($a); echo ' '; echo $a[1];",
+            "2 20",
+        ),
+        (
+            "array_push_builtin_return_is_legacy_null",
+            "<?php $a = [10]; $n = array_push($a, 20); echo $n; echo ':'; echo $a[1];",
+            ":20",
+        ),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);
     }

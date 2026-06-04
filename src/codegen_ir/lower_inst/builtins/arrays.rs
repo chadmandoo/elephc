@@ -35,6 +35,18 @@ pub(super) fn lower_array_product(ctx: &mut FunctionContext<'_>, inst: &Instruct
     lower_indexed_array_aggregate(ctx, inst, "array_product", "__rt_array_product")
 }
 
+/// Lowers `array_push()` by appending one value and publishing the mutated array.
+pub(super) fn lower_array_push(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_push", 2)?;
+    super::super::arrays::lower_array_push(ctx, inst)?;
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        0x7fff_ffff_ffff_fffe,
+    );
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_fill()` for pointer-sized scalar and refcounted payloads.
 pub(super) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_fill", 3)?;
