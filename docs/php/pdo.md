@@ -162,8 +162,8 @@ if ($db->exec("BAD SQL") === false) {
 ```
 
 - `ERRMODE_EXCEPTION` (default) throws a `PDOException`.
-- `ERRMODE_SILENT` suppresses it: `exec()` returns `false`, and `query()` /
-  `prepare()` return a falsy value (check with `if (!$stmt)`).
+- `ERRMODE_SILENT` suppresses it: `exec()`, `query()`, and `prepare()` all return
+  `false` on error (check with `=== false`).
 - `ERRMODE_WARNING` writes the message to `STDERR` and returns the same failure
   value as `SILENT`.
 
@@ -197,9 +197,6 @@ The mode can also be seeded from the constructor's options array:
   set whose column names are `0, 1, 2, …` degrades to an array.
 - **Binary / BLOB values with embedded NUL bytes** are not round-tripped through
   the text path.
-- **`ERRMODE_SILENT` / `ERRMODE_WARNING` on `query()` / `prepare()`** return `null`
-  (a falsy value) rather than `false` on error, so guard with `if (!$stmt)` rather
-  than `=== false`. `exec()` returns a real `false`.
 - **`getAttribute` / `setAttribute`** support `ATTR_ERRMODE` and `ATTR_DRIVER_NAME`;
   other attributes are stored and read back but have no effect. Persistent
   connections are not implemented.

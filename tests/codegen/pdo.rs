@@ -442,20 +442,24 @@ echo ":" . $db->getAttribute(PDO::ATTR_DRIVER_NAME);
     assert_eq!(out, "2:0:sqlite");
 }
 
-/// `ERRMODE_SILENT` suppresses exceptions: `exec()` returns `false` and `query()`
-/// returns a falsy value on a SQL error instead of throwing.
+/// `ERRMODE_SILENT` suppresses exceptions: `exec()`, `query()`, and `prepare()`
+/// all return `false` (a real `false`, matched with `=== false`) on a SQL error
+/// instead of throwing.
 #[test]
-fn test_pdo_errmode_silent_returns_falsy() {
+fn test_pdo_errmode_silent_returns_false() {
     let out = compile_and_run(
         r#"<?php
 $db = new PDO("sqlite::memory:");
 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_SILENT);
 $r = $db->exec("THIS IS NOT SQL");
 $stmt = $db->query("SELECT * FROM does_not_exist");
-echo (($r === false) ? "false" : "other") . ":" . ((!$stmt) ? "falsy" : "stmt");
+$prep = $db->prepare("ALSO NOT SQL");
+echo (($r === false) ? "1" : "0")
+    . (($stmt === false) ? "1" : "0")
+    . (($prep === false) ? "1" : "0");
 "#,
     );
-    assert_eq!(out, "false:falsy");
+    assert_eq!(out, "111");
 }
 
 /// The default `ERRMODE_EXCEPTION` still throws a `PDOException` on a SQL error.

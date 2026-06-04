@@ -146,19 +146,19 @@ class PDO {
         return $_affected;
     }
 
-    public function prepare(string $query): ?PDOStatement {
+    public function prepare(string $query): PDOStatement|bool {
         $_handle = elephc_sqlite_prepare($this->conn, $query);
         if ($_handle < 0) {
             $this->fail(elephc_sqlite_errmsg($this->conn));
-            return null;
+            return false;
         }
         return new PDOStatement($_handle, $this->conn);
     }
 
-    public function query(string $query): ?PDOStatement {
+    public function query(string $query): PDOStatement|bool {
         $_statement = $this->prepare($query);
-        if ($_statement === null) {
-            return null;
+        if ($_statement === false) {
+            return false;
         }
         $_statement->execute();
         return $_statement;
