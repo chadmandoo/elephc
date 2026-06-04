@@ -31,6 +31,16 @@ pub(super) fn lower_const_str(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     store_if_result(ctx, inst)
 }
 
+/// Lowers a `::class` constant by materializing the interned class-name string.
+pub(super) fn lower_const_class_name(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let data_id = expect_data(inst)?;
+    let (label, len) = ctx.intern_class_name_data(data_id)?;
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
+    abi::emit_load_int_immediate(ctx.emitter, len_reg, len as i64);
+    store_if_result(ctx, inst)
+}
+
 /// Lowers a string concatenation by loading both string pairs into `__rt_concat`'s ABI.
 pub(super) fn lower_str_concat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let lhs = expect_operand(inst, 0)?;

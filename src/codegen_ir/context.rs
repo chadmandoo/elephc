@@ -232,6 +232,17 @@ impl<'a> FunctionContext<'a> {
         Ok(self.data.add_string(value.as_bytes()))
     }
 
+    /// Interns a module class-name data-pool entry into the assembly data section.
+    pub(super) fn intern_class_name_data(&mut self, data_id: DataId) -> Result<(String, usize)> {
+        let value = self
+            .module
+            .data
+            .class_names
+            .get(data_id.as_raw() as usize)
+            .ok_or_else(|| CodegenIrError::missing_entry("class data", data_id.as_raw()))?;
+        Ok(self.data.add_string(value.as_bytes()))
+    }
+
     /// Returns a module data-pool function name.
     pub(super) fn function_name_data(&self, data_id: DataId) -> Result<&str> {
         self.module

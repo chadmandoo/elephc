@@ -720,6 +720,16 @@ echo buffer_len($values);
     );
 }
 
+/// Verifies `ClassName::class` materializes the compile-time class-name string.
+#[test]
+fn ir_backend_handles_named_class_constant() {
+    let source = r#"<?php
+class C {}
+echo C::class;
+"#;
+    assert_eq!(compile_and_run_ir_backend("named_class_constant", source), "C");
+}
+
 /// Verifies selected type predicates inspect boxed Mixed payloads in the EIR backend.
 #[test]
 fn ir_backend_handles_mixed_type_predicates() {

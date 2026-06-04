@@ -47,6 +47,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::ConstBool => lower_const_bool(ctx, &inst),
         Op::ConstNull => lower_const_null(ctx, &inst),
         Op::ConstStr => strings::lower_const_str(ctx, &inst),
+        Op::ConstClassName => strings::lower_const_class_name(ctx, &inst),
         Op::LoadLocal => lower_load_local(ctx, &inst),
         Op::StoreLocal => lower_store_local(ctx, &inst),
         Op::LoadGlobal => lower_load_global(ctx, &inst),
