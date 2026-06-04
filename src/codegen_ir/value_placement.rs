@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::ir::{Function, IrType, Op, ValueDef, ValueId};
 
-const ITERATOR_STATE_BYTES: usize = 16;
+const ITERATOR_STATE_BYTES: usize = 64;
 
 /// Stack-slot table for the Phase 04 spill-everything backend.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +56,7 @@ fn bytes_for_value(func: &Function, value: ValueId, ty: IrType) -> usize {
     bytes_for(ty)
 }
 
-/// Returns true when a value is the stack-resident iterator state produced by `IterStart`.
+/// Returns true when a value is the fixed stack-resident iterator state produced by `IterStart`.
 fn is_iter_start_value(func: &Function, value: ValueId) -> bool {
     let Some(value) = func.value(value) else {
         return false;
@@ -137,9 +137,9 @@ mod tests {
         assert_eq!(bytes_for(IrType::Void), 0);
     }
 
-    /// Verifies iterator handles reserve both source-array and cursor words.
+    /// Verifies iterator handles reserve the fixed source/cursor/current-payload state.
     #[test]
-    fn allocates_iter_start_value_as_two_words() {
+    fn allocates_iter_start_value_as_iterator_state() {
         let mut function = Function::new("test".to_string(), IrType::I64, PhpType::Int);
         let mut builder = Builder::new(&mut function);
         let entry = builder.create_named_block("entry", Vec::new());
@@ -169,7 +169,7 @@ mod tests {
         let placement = allocate(&function);
 
         assert_eq!(placement.slot(array), Some(8));
-        assert_eq!(placement.slot(iterator), Some(24));
-        assert_eq!(placement.total_slot_bytes, 32);
+        assert_eq!(placement.slot(iterator), Some(72));
+        assert_eq!(placement.total_slot_bytes, 80);
     }
 }

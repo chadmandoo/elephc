@@ -1227,6 +1227,30 @@ fn ir_backend_handles_indexed_range_foreach() {
     }
 }
 
+/// Verifies associative-array foreach lowering preserves insertion-order keys and values.
+#[test]
+fn ir_backend_handles_assoc_array_foreach() {
+    for (name, source, expected) in [
+        (
+            "assoc_foreach_string_keys",
+            "<?php foreach (['a' => 1, 'b' => 2] as $key => $value) { echo $key; echo ':'; echo $value; echo ';'; }",
+            "a:1;b:2;",
+        ),
+        (
+            "assoc_foreach_int_and_string_keys",
+            "<?php foreach ([2 => 'x', 'name' => 'y'] as $key => $value) { echo $key; echo '='; echo $value; echo ';'; }",
+            "2=x;name=y;",
+        ),
+        (
+            "assoc_foreach_values_only",
+            "<?php foreach (['first' => 'A', 'second' => 'B'] as $value) { echo $value; }",
+            "AB",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies array truthiness follows PHP length rules for empty and non-empty containers.
 #[test]
 fn ir_backend_handles_array_truthiness() {
