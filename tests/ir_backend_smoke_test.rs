@@ -947,6 +947,31 @@ if ($box->b) { echo "T"; } else { echo "F"; }
     );
 }
 
+/// Verifies object allocation works for classes whose metadata includes method tables.
+#[test]
+fn ir_backend_handles_object_properties_on_classes_with_methods() {
+    let source = r#"<?php
+class Box {
+    public int $i;
+
+    public function value(): int {
+        return 1;
+    }
+
+    public static function marker(): int {
+        return 2;
+    }
+}
+$box = new Box();
+$box->i = 7;
+echo $box->i;
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("object_properties_with_methods", source),
+        "7"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {

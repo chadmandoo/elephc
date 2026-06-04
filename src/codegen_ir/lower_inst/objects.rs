@@ -10,7 +10,9 @@
 //!   heap kind word before payload, class id at payload offset 0, then 16 bytes
 //!   per declared property slot.
 //! - This slice intentionally rejects constructors, dynamic properties, references,
-//!   default property expressions, and method metadata until their runtime paths land.
+//!   interface method metadata, and default property expressions until their runtime paths land.
+
+use std::collections::HashSet;
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
@@ -49,11 +51,11 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
         if class_info.allow_dynamic_properties
             || class_info.defaults.iter().any(Option::is_some)
-            || !class_info.vtable_methods.is_empty()
-            || !class_info.static_vtable_methods.is_empty()
+            || class_info.methods.contains_key("__construct")
+            || class_interfaces_require_method_metadata(ctx, class_info)
         {
             return Err(CodegenIrError::unsupported(format!(
-                "object allocation requiring dynamic, default, or method metadata for {}",
+                "object allocation requiring dynamic, default, constructor, or interface method metadata for {}",
                 class_name
             )));
         }
@@ -184,6 +186,28 @@ fn emit_object_allocation(
         }
     }
     Ok(())
+}
+
+/// Returns true when implemented interfaces require method-wrapper metadata not emitted here.
+fn class_interfaces_require_method_metadata(
+    ctx: &FunctionContext<'_>,
+    class_info: &crate::types::ClassInfo,
+) -> bool {
+    let mut seen = HashSet::new();
+    let mut stack = class_info.interfaces.iter().map(String::as_str).collect::<Vec<_>>();
+    while let Some(interface_name) = stack.pop() {
+        if !seen.insert(interface_name.to_string()) {
+            continue;
+        }
+        let Some(interface_info) = ctx.module.interface_infos.get(interface_name) else {
+            return true;
+        };
+        if !interface_info.method_order.is_empty() {
+            return true;
+        }
+        stack.extend(interface_info.parents.iter().map(String::as_str));
+    }
+    false
 }
 
 /// Collects property high-word offsets that should start with the typed-property sentinel.
