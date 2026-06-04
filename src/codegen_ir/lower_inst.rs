@@ -114,6 +114,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::PropGet => objects::lower_prop_get(ctx, &inst),
         Op::PropSet => objects::lower_prop_set(ctx, &inst),
         Op::InstanceOf => objects::lower_instanceof(ctx, &inst),
+        Op::InstanceOfDynamic => objects::lower_instanceof_dynamic(ctx, &inst),
         Op::Call => lower_direct_call(ctx, &inst),
         Op::ExternCall => externs::lower_extern_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),

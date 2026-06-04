@@ -128,6 +128,9 @@ fn finalize_user_asm(module: &Module, emitter: Emitter, data: DataSection) -> St
 /// Returns classes that EIR object allocation or named `instanceof` can reference at runtime.
 fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
     let mut names = HashSet::new();
+    if module_uses_dynamic_instanceof(module) {
+        names.extend(dynamic_instanceof_class_names(module));
+    }
     for class_name in referenced_class_data_names(module) {
         if module.class_infos.contains_key(&class_name) {
             names.insert(class_name);
@@ -143,6 +146,9 @@ fn runtime_referenced_interfaces(
     class_names: &HashSet<String>,
 ) -> HashMap<String, InterfaceInfo> {
     let mut names = HashSet::new();
+    if module_uses_dynamic_instanceof(module) {
+        names.extend(dynamic_instanceof_interface_names(module));
+    }
     for class_name in referenced_class_data_names(module) {
         if module.interface_infos.contains_key(&class_name) {
             names.insert(class_name);
@@ -158,6 +164,93 @@ fn runtime_referenced_interfaces(
         .into_iter()
         .filter_map(|name| module.interface_infos.get(&name).cloned().map(|info| (name, info)))
         .collect()
+}
+
+/// Returns whether any lowered EIR function uses dynamic `instanceof`.
+fn module_uses_dynamic_instanceof(module: &Module) -> bool {
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        if function
+            .instructions
+            .iter()
+            .any(|inst| matches!(inst.op, Op::InstanceOfDynamic))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns class names safe to include in dynamic lookup metadata for the current EIR slice.
+fn dynamic_instanceof_class_names(module: &Module) -> HashSet<String> {
+    module
+        .class_infos
+        .keys()
+        .filter(|name| class_metadata_supported_for_dynamic_instanceof(name, &module.class_infos))
+        .cloned()
+        .collect()
+}
+
+/// Returns interface names safe to include in dynamic lookup metadata for the current EIR slice.
+fn dynamic_instanceof_interface_names(module: &Module) -> HashSet<String> {
+    module
+        .interface_infos
+        .keys()
+        .filter(|name| interface_metadata_supported_for_dynamic_instanceof(name, &module.interface_infos))
+        .cloned()
+        .collect()
+}
+
+/// Returns true when class metadata does not require method symbols missing from EIR output.
+fn class_metadata_supported_for_dynamic_instanceof(
+    class_name: &str,
+    classes: &HashMap<String, ClassInfo>,
+) -> bool {
+    let mut seen = HashSet::new();
+    let mut current = Some(class_name);
+    while let Some(name) = current {
+        if !seen.insert(name.to_string()) {
+            return false;
+        }
+        let Some(class_info) = classes.get(name) else {
+            return false;
+        };
+        if !class_info.vtable_methods.is_empty() || !class_info.static_vtable_methods.is_empty() {
+            return false;
+        }
+        current = class_info.parent.as_deref();
+    }
+    true
+}
+
+/// Returns true when interface metadata does not require wrapper symbols missing from EIR output.
+fn interface_metadata_supported_for_dynamic_instanceof(
+    interface_name: &str,
+    interfaces: &HashMap<String, InterfaceInfo>,
+) -> bool {
+    let mut seen = HashSet::new();
+    let mut stack = vec![interface_name];
+    while let Some(name) = stack.pop() {
+        if !seen.insert(name.to_string()) {
+            continue;
+        }
+        let Some(interface_info) = interfaces.get(name) else {
+            return false;
+        };
+        if !interface_info.method_order.is_empty() {
+            return false;
+        }
+        stack.extend(interface_info.parents.iter().map(String::as_str));
+    }
+    true
 }
 
 /// Returns class-name data entries attached to runtime object metadata opcodes.

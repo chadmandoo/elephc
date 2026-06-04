@@ -779,6 +779,67 @@ echo ($child instanceof Missing) ? "T" : "F";
     );
 }
 
+/// Verifies dynamic `instanceof` targets resolve through EIR runtime metadata.
+#[test]
+fn ir_backend_handles_dynamic_instanceof_targets() {
+    let source = r#"<?php
+interface Marker {}
+class Base {}
+class Child extends Base implements Marker {}
+class Other {}
+$child = new Child();
+$className = "Base";
+$interfaceName = "Marker";
+$otherName = "Other";
+$lowerName = "child";
+$absoluteName = "\\Base";
+$missing = "Missing";
+$targetChild = new Child();
+$targetOther = new Other();
+echo ($child instanceof $className) ? "T" : "F";
+echo ($child instanceof $interfaceName) ? "T" : "F";
+echo ($child instanceof $otherName) ? "T" : "F";
+echo ($child instanceof $lowerName) ? "T" : "F";
+echo ($child instanceof $absoluteName) ? "T" : "F";
+echo ($child instanceof $missing) ? "T" : "F";
+echo (42 instanceof $className) ? "T" : "F";
+echo ($child instanceof $targetChild) ? "T" : "F";
+echo ($child instanceof $targetOther) ? "T" : "F";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("dynamic_instanceof_targets", source),
+        "TTFTTFFTF"
+    );
+}
+
+/// Verifies invalid dynamic `instanceof` targets use the runtime fatal path.
+#[test]
+fn ir_backend_fatals_on_invalid_dynamic_instanceof_target() {
+    let run = compile_ir_backend_and_run(
+        "invalid_dynamic_instanceof_target",
+        r#"<?php
+class User {}
+$user = new User();
+$target = 42;
+echo ($user instanceof $target) ? "T" : "F";
+"#,
+        &[],
+    );
+    assert!(
+        !run.status.success(),
+        "IR backend invalid dynamic instanceof fixture unexpectedly succeeded"
+    );
+    assert_eq!(
+        String::from_utf8(run.stdout).expect("fatal stdout should be utf8"),
+        ""
+    );
+    let stderr = String::from_utf8(run.stderr).expect("fatal stderr should be utf8");
+    assert!(
+        stderr.contains("Fatal error: Class name must be a valid object or a string"),
+        "unexpected fatal stderr: {stderr}"
+    );
+}
+
 /// Verifies simple declared object properties round-trip through EIR object slots.
 #[test]
 fn ir_backend_handles_simple_object_properties() {

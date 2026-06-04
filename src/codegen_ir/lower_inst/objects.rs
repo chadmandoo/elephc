@@ -1,6 +1,6 @@
 //! Purpose:
 //! Lowers object metadata opcodes for the Phase 04 EIR backend.
-//! Supports simple object allocation, declared property access, and named `instanceof` checks.
+//! Supports simple object allocation, declared property access, and named or dynamic `instanceof` checks.
 //!
 //! Called from:
 //! - `crate::codegen_ir::lower_inst::lower_instruction()`.
@@ -121,6 +121,26 @@ pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction
         }
         _ => emit_false(ctx),
     }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers dynamic `instanceof` where the target is resolved from a runtime string or object.
+pub(super) fn lower_instanceof_dynamic(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let value = expect_operand(inst, 0)?;
+    let target = expect_operand(inst, 1)?;
+    let value_ty = ctx.value_php_type(value)?;
+    let target_ty = ctx.value_php_type(target)?;
+    let target_false = ctx.next_label("instanceof_dynamic_target_false");
+    let done = ctx.next_label("instanceof_dynamic_done");
+    emit_normalized_dynamic_instanceof_value(ctx, value, &value_ty)?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    emit_dynamic_target_metadata(ctx, target, &target_ty, &target_false)?;
+    emit_dynamic_match_call(ctx);
+    abi::emit_jump(ctx.emitter, &done);
+    ctx.emitter.label(&target_false);
+    abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    emit_false(ctx);
+    ctx.emitter.label(&done);
     store_if_result(ctx, inst)
 }
 
@@ -393,6 +413,180 @@ fn emit_uninitialized_typed_property_fatal(
         }
     }
     abi::emit_exit(ctx.emitter, 1);
+}
+
+/// Normalizes the tested value into an object pointer or null for dynamic `instanceof`.
+fn emit_normalized_dynamic_instanceof_value(
+    ctx: &mut FunctionContext<'_>,
+    value: crate::ir::ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    match value_ty {
+        PhpType::Object(_) => {
+            ctx.load_value_to_reg(value, abi::int_result_reg(ctx.emitter))?;
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(value, abi::int_result_reg(ctx.emitter))?;
+            emit_mixed_instanceof_value_normalization(ctx);
+        }
+        _ => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
+    }
+    Ok(())
+}
+
+/// Unboxes a Mixed/Union tested value and leaves only object payloads as matchable.
+fn emit_mixed_instanceof_value_normalization(ctx: &mut FunctionContext<'_>) {
+    let object_label = ctx.next_label("instanceof_dynamic_value_object");
+    let done = ctx.next_label("instanceof_dynamic_value_done");
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #6");                              // runtime tag 6 means the tested mixed payload is an object
+            ctx.emitter.instruction(&format!("b.eq {}", object_label));         // object payloads can be matched after dynamic target resolution
+            ctx.emitter.instruction("mov x0, #0");                              // scalar mixed payloads become null so the matcher returns false
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip object-payload promotion for scalar payloads
+            ctx.emitter.label(&object_label);
+            ctx.emitter.instruction("mov x0, x1");                              // promote the unboxed object pointer into the normal result register
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 6");                              // runtime tag 6 means the tested mixed payload is an object
+            ctx.emitter.instruction(&format!("je {}", object_label));           // object payloads can be matched after dynamic target resolution
+            ctx.emitter.instruction("xor eax, eax");                            // scalar mixed payloads become null so the matcher returns false
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip object-payload promotion for scalar payloads
+            ctx.emitter.label(&object_label);
+            ctx.emitter.instruction("mov rax, rdi");                            // promote the unboxed object pointer into the normal result register
+        }
+    }
+    ctx.emitter.label(&done);
+}
+
+/// Resolves the dynamic `instanceof` target into matcher id/kind registers.
+fn emit_dynamic_target_metadata(
+    ctx: &mut FunctionContext<'_>,
+    target: crate::ir::ValueId,
+    target_ty: &PhpType,
+    false_label: &str,
+) -> Result<()> {
+    match target_ty {
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            ctx.load_string_value_to_regs(target, ptr_reg, len_reg)?;
+            emit_lookup_string_target(ctx, false_label);
+        }
+        PhpType::Object(_) => {
+            ctx.load_value_to_reg(target, abi::int_result_reg(ctx.emitter))?;
+            emit_object_target_metadata(ctx);
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(target, abi::int_result_reg(ctx.emitter))?;
+            emit_mixed_target_metadata(ctx, false_label);
+        }
+        _ => emit_invalid_dynamic_target_fatal(ctx),
+    }
+    Ok(())
+}
+
+/// Looks up a string dynamic target in the runtime class/interface name table.
+fn emit_lookup_string_target(ctx: &mut FunctionContext<'_>, false_label: &str) {
+    abi::emit_call_label(ctx.emitter, "__rt_instanceof_lookup");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // did the dynamic string resolve to a known class or interface?
+            ctx.emitter.instruction(&format!("b.eq {}", false_label));          // unresolved class-string targets make instanceof false
+            ctx.emitter.instruction("mov x0, x1");                              // move the resolved target id into the matcher target-id register
+            ctx.emitter.instruction("mov x1, x2");                              // move the resolved target kind into the matcher target-kind register
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // did the dynamic string resolve to a known class or interface?
+            ctx.emitter.instruction(&format!("je {}", false_label));            // unresolved class-string targets make instanceof false
+            ctx.emitter.instruction("mov rax, rdi");                            // move the resolved target id into the matcher target-id register
+        }
+    }
+}
+
+/// Extracts matcher metadata from an object-typed dynamic target.
+fn emit_object_target_metadata(ctx: &mut FunctionContext<'_>) {
+    let ok_label = ctx.next_label("instanceof_dynamic_object_target_ok");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbnz x0, {}", ok_label));         // non-null object targets can provide runtime class metadata
+            emit_invalid_dynamic_target_fatal(ctx);
+            ctx.emitter.label(&ok_label);
+            ctx.emitter.instruction("ldr x0, [x0]");                            // load the runtime class id from the target object header
+            ctx.emitter.instruction("mov x1, #0");                              // object targets always resolve to class target kind
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // null object targets are not valid dynamic instanceof targets
+            ctx.emitter.instruction(&format!("jne {}", ok_label));              // non-null object targets can provide runtime class metadata
+            emit_invalid_dynamic_target_fatal(ctx);
+            ctx.emitter.label(&ok_label);
+            ctx.emitter.instruction("mov rax, QWORD PTR [rax]");                // load the runtime class id from the target object header
+            ctx.emitter.instruction("xor edx, edx");                            // object targets always resolve to class target kind
+        }
+    }
+}
+
+/// Unboxes a Mixed/Union target and routes strings or objects to the matching target resolver.
+fn emit_mixed_target_metadata(ctx: &mut FunctionContext<'_>, false_label: &str) {
+    let string_label = ctx.next_label("instanceof_dynamic_target_string");
+    let object_label = ctx.next_label("instanceof_dynamic_target_object");
+    let done = ctx.next_label("instanceof_dynamic_target_done");
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #1");                              // runtime tag 1 means the dynamic target is a string
+            ctx.emitter.instruction(&format!("b.eq {}", string_label));         // resolve boxed string targets through class-string lookup
+            ctx.emitter.instruction("cmp x0, #6");                              // runtime tag 6 means the dynamic target is an object
+            ctx.emitter.instruction(&format!("b.eq {}", object_label));         // resolve boxed object targets through their runtime class id
+            emit_invalid_dynamic_target_fatal(ctx);
+            ctx.emitter.label(&string_label);
+            emit_lookup_string_target(ctx, false_label);
+            abi::emit_jump(ctx.emitter, &done);
+            ctx.emitter.label(&object_label);
+            ctx.emitter.instruction("mov x0, x1");                              // move the unboxed target object pointer into the result register
+            emit_object_target_metadata(ctx);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 1");                              // runtime tag 1 means the dynamic target is a string
+            ctx.emitter.instruction(&format!("je {}", string_label));           // resolve boxed string targets through class-string lookup
+            ctx.emitter.instruction("cmp rax, 6");                              // runtime tag 6 means the dynamic target is an object
+            ctx.emitter.instruction(&format!("je {}", object_label));           // resolve boxed object targets through their runtime class id
+            emit_invalid_dynamic_target_fatal(ctx);
+            ctx.emitter.label(&string_label);
+            ctx.emitter.instruction("mov rax, rdi");                            // move the unboxed target string pointer into the lookup input register
+            emit_lookup_string_target(ctx, false_label);
+            abi::emit_jump(ctx.emitter, &done);
+            ctx.emitter.label(&object_label);
+            ctx.emitter.instruction("mov rax, rdi");                            // move the unboxed target object pointer into the result register
+            emit_object_target_metadata(ctx);
+        }
+    }
+    ctx.emitter.label(&done);
+}
+
+/// Emits a dynamic `instanceof` matcher call after target id/kind have been resolved.
+fn emit_dynamic_match_call(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg(ctx.emitter, "x0");
+            abi::emit_push_reg(ctx.emitter, "x1");
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg(ctx.emitter, "rax");
+            abi::emit_push_reg(ctx.emitter, "rdx");
+        }
+    }
+    abi::emit_pop_reg(ctx.emitter, abi::int_arg_reg_name(ctx.emitter.target, 2));
+    abi::emit_pop_reg(ctx.emitter, abi::int_arg_reg_name(ctx.emitter.target, 1));
+    abi::emit_pop_reg(ctx.emitter, abi::int_arg_reg_name(ctx.emitter.target, 0));
+    abi::emit_call_label(ctx.emitter, "__rt_exception_matches");
+}
+
+/// Emits the runtime fatal for invalid dynamic `instanceof` targets.
+fn emit_invalid_dynamic_target_fatal(ctx: &mut FunctionContext<'_>) {
+    abi::emit_call_label(ctx.emitter, "__rt_instanceof_invalid_target");
 }
 
 /// Emits the metadata matcher call with object-or-mixed input already in argument 0.
