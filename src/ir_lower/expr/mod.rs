@@ -777,6 +777,46 @@ fn numeric_builtin_return_type(
                 PhpType::Int
             })
         }
+        "clamp" => {
+            let mut saw_float = false;
+            let mut all_int = operands.len() == 3;
+            let mut all_string = operands.len() == 3;
+            let mut all_numeric = operands.len() == 3;
+            for value in operands.iter().take(3) {
+                match ctx.builder.value_php_type(*value).codegen_repr() {
+                    PhpType::Int => {
+                        all_string = false;
+                    }
+                    PhpType::Float => {
+                        saw_float = true;
+                        all_int = false;
+                        all_string = false;
+                    }
+                    PhpType::Str => {
+                        all_int = false;
+                        all_numeric = false;
+                    }
+                    _ => {
+                        all_int = false;
+                        all_string = false;
+                        all_numeric = false;
+                    }
+                }
+            }
+            if all_string {
+                Some(PhpType::Str)
+            } else if all_int {
+                Some(PhpType::Int)
+            } else if all_numeric {
+                Some(if saw_float {
+                    PhpType::Float
+                } else {
+                    PhpType::Int
+                })
+            } else {
+                Some(PhpType::Mixed)
+            }
+        }
         _ => None,
     }
 }

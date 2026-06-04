@@ -37,6 +37,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "abs" => math::lower_abs(ctx, inst),
         "floor" => math::lower_floor(ctx, inst),
         "ceil" => math::lower_ceil(ctx, inst),
+        "clamp" => math::lower_clamp(ctx, inst),
         "round" => math::lower_round(ctx, inst),
         "sqrt" => math::lower_sqrt(ctx, inst),
         "intdiv" => math::lower_intdiv(ctx, inst),

@@ -247,6 +247,21 @@ fn ir_backend_handles_scalar_builtins() {
             "1.5:2.5",
         ),
         (
+            "clamp_ints",
+            "<?php echo clamp(5, 0, 10); echo ':'; echo clamp(15, 0, 10); echo ':'; echo clamp(-5, 0, 10); echo ':'; echo clamp(0, 0, 10); echo ':'; echo clamp(10, 0, 10);",
+            "5:10:0:0:10",
+        ),
+        (
+            "clamp_floats",
+            "<?php echo clamp(2.75, 1.5, 2.5); echo ':'; echo clamp(2, 1.5, 3.5);",
+            "2.5:2",
+        ),
+        (
+            "clamp_strings",
+            "<?php echo clamp('P', 'A', 'C') . ':' . clamp('P', 'X', 'Z');",
+            "C:X",
+        ),
+        (
             "rounding_math",
             "<?php echo floor(3.7); echo ':'; echo ceil(3.2); echo ':'; echo round(3.5); echo ':'; echo round(3.555, 2);",
             "3:4:4:3.56",

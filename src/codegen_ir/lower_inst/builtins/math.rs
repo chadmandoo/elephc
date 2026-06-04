@@ -29,6 +29,15 @@ pub(super) use libm::{
 };
 pub(super) use random::{lower_rand, lower_random_int};
 
+const CLAMP_MIN_NAN_MESSAGE: &str = "clamp(): Argument #2 ($min) must not be NAN";
+const CLAMP_MAX_NAN_MESSAGE: &str = "clamp(): Argument #3 ($max) must not be NAN";
+const CLAMP_BOUNDS_MESSAGE: &str =
+    "clamp(): Argument #2 ($min) must be smaller than or equal to argument #3 ($max)";
+const CLAMP_MAX_SLOT: usize = 0;
+const CLAMP_MIN_SLOT: usize = 16;
+const CLAMP_VALUE_SLOT: usize = 32;
+const CLAMP_STACK_BYTES: usize = 48;
+
 /// Lowers `abs()` for concrete integer-like and floating operands.
 pub(super) fn lower_abs(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "abs", 1)?;
@@ -57,6 +66,23 @@ pub(super) fn lower_floor(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 /// Lowers `ceil()` for concrete integer-like and floating operands.
 pub(super) fn lower_ceil(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_float_rounding_builtin(ctx, inst, "ceil", "frintp", 2)
+}
+
+/// Lowers numeric `clamp(value, min, max)` calls with PHP-compatible bound checks.
+pub(super) fn lower_clamp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "clamp", 3)?;
+    match inst.result_php_type.codegen_repr() {
+        PhpType::Int => lower_int_clamp(ctx, inst)?,
+        PhpType::Float => lower_float_clamp(ctx, inst)?,
+        PhpType::Str => lower_string_clamp(ctx, inst)?,
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "clamp for PHP type {:?}",
+                other
+            )))
+        }
+    }
+    store_if_result(ctx, inst)
 }
 
 /// Lowers `sqrt()` for concrete integer-like and floating operands.
@@ -207,6 +233,401 @@ fn emit_x86_64_is_finite(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.label(&not_finite_label);
     ctx.emitter.instruction("mov rax, 0");                                      // NaN and infinities return false for is_finite()
     ctx.emitter.label(&done_label);
+}
+
+/// Lowers integer `clamp()` by saving arguments and selecting max, min, or value.
+fn lower_int_clamp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    push_int_clamp_args(ctx, inst)?;
+    let throw_label = ctx.next_label("clamp_int_invalid_bounds");
+    let use_max_label = ctx.next_label("clamp_int_use_max");
+    let use_min_label = ctx.next_label("clamp_int_use_min");
+    let selected_label = ctx.next_label("clamp_int_selected");
+    let finish_label = ctx.next_label("clamp_int_finish");
+    let (message_label, message_len) = ctx.data.add_string(CLAMP_BOUNDS_MESSAGE.as_bytes());
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            emit_int_clamp_aarch64(ctx, &throw_label, &use_max_label, &use_min_label, &selected_label);
+        }
+        Arch::X86_64 => {
+            emit_int_clamp_x86_64(ctx, &throw_label, &use_max_label, &use_min_label, &selected_label);
+        }
+    }
+    ctx.emitter.label(&selected_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    abi::emit_jump(ctx.emitter, &finish_label);
+    ctx.emitter.label(&throw_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    emit_throw_value_error(ctx, &message_label, message_len);
+    ctx.emitter.label(&finish_label);
+    Ok(())
+}
+
+/// Lowers floating `clamp()` by normalizing operands and validating NaN/bound rules.
+fn lower_float_clamp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    push_float_clamp_args(ctx, inst)?;
+    let throw_min_nan_label = ctx.next_label("clamp_float_min_nan");
+    let throw_max_nan_label = ctx.next_label("clamp_float_max_nan");
+    let throw_bounds_label = ctx.next_label("clamp_float_invalid_bounds");
+    let use_max_label = ctx.next_label("clamp_float_use_max");
+    let use_min_label = ctx.next_label("clamp_float_use_min");
+    let in_range_label = ctx.next_label("clamp_float_in_range");
+    let selected_label = ctx.next_label("clamp_float_selected");
+    let finish_label = ctx.next_label("clamp_float_finish");
+    let (min_nan_label, min_nan_len) = ctx.data.add_string(CLAMP_MIN_NAN_MESSAGE.as_bytes());
+    let (max_nan_label, max_nan_len) = ctx.data.add_string(CLAMP_MAX_NAN_MESSAGE.as_bytes());
+    let (bounds_label, bounds_len) = ctx.data.add_string(CLAMP_BOUNDS_MESSAGE.as_bytes());
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_float_clamp_aarch64(
+            ctx,
+            &throw_min_nan_label,
+            &throw_max_nan_label,
+            &throw_bounds_label,
+            &use_max_label,
+            &use_min_label,
+            &in_range_label,
+            &selected_label,
+        ),
+        Arch::X86_64 => emit_float_clamp_x86_64(
+            ctx,
+            &throw_min_nan_label,
+            &throw_max_nan_label,
+            &throw_bounds_label,
+            &use_max_label,
+            &use_min_label,
+            &in_range_label,
+            &selected_label,
+        ),
+    }
+    ctx.emitter.label(&in_range_label);
+    abi::emit_jump(ctx.emitter, &selected_label);
+    ctx.emitter.label(&selected_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    abi::emit_jump(ctx.emitter, &finish_label);
+    ctx.emitter.label(&throw_min_nan_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    emit_throw_value_error(ctx, &min_nan_label, min_nan_len);
+    ctx.emitter.label(&throw_max_nan_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    emit_throw_value_error(ctx, &max_nan_label, max_nan_len);
+    ctx.emitter.label(&throw_bounds_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    emit_throw_value_error(ctx, &bounds_label, bounds_len);
+    ctx.emitter.label(&finish_label);
+    Ok(())
+}
+
+/// Lowers string `clamp()` with PHP lexicographic ordering and bound validation.
+fn lower_string_clamp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    push_string_clamp_args(ctx, inst)?;
+    let throw_label = ctx.next_label("clamp_string_invalid_bounds");
+    let use_max_label = ctx.next_label("clamp_string_use_max");
+    let use_min_label = ctx.next_label("clamp_string_use_min");
+    let selected_label = ctx.next_label("clamp_string_selected");
+    let finish_label = ctx.next_label("clamp_string_finish");
+    let (message_label, message_len) = ctx.data.add_string(CLAMP_BOUNDS_MESSAGE.as_bytes());
+    emit_compare_string_slots(ctx, CLAMP_MIN_SLOT, CLAMP_MAX_SLOT);
+    emit_branch_if_string_compare_gt(ctx, &throw_label);
+    emit_compare_string_slots(ctx, CLAMP_VALUE_SLOT, CLAMP_MAX_SLOT);
+    emit_branch_if_string_compare_gt(ctx, &use_max_label);
+    emit_compare_string_slots(ctx, CLAMP_VALUE_SLOT, CLAMP_MIN_SLOT);
+    emit_branch_if_string_compare_lt(ctx, &use_min_label);
+    emit_load_string_slot_to_result(ctx, CLAMP_VALUE_SLOT);
+    abi::emit_jump(ctx.emitter, &selected_label);
+    ctx.emitter.label(&use_max_label);
+    emit_load_string_slot_to_result(ctx, CLAMP_MAX_SLOT);
+    abi::emit_jump(ctx.emitter, &selected_label);
+    ctx.emitter.label(&use_min_label);
+    emit_load_string_slot_to_result(ctx, CLAMP_MIN_SLOT);
+    ctx.emitter.label(&selected_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    abi::emit_jump(ctx.emitter, &finish_label);
+    ctx.emitter.label(&throw_label);
+    abi::emit_release_temporary_stack(ctx.emitter, CLAMP_STACK_BYTES);
+    emit_throw_value_error(ctx, &message_label, message_len);
+    ctx.emitter.label(&finish_label);
+    Ok(())
+}
+
+/// Evaluates and saves integer clamp operands in value, min, max order.
+fn push_int_clamp_args(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    for index in 0..3 {
+        let value = expect_operand(inst, index)?;
+        require_int_like(ctx.load_value_to_result(value)?, "clamp")?;
+        abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    }
+    Ok(())
+}
+
+/// Evaluates and saves string clamp operands in value, min, max order.
+fn push_string_clamp_args(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    for index in 0..3 {
+        let value = expect_operand(inst, index)?;
+        match ctx.load_value_to_result(value)?.codegen_repr() {
+            PhpType::Str => {
+                let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+                abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+            }
+            other => {
+                return Err(CodegenIrError::unsupported(format!(
+                    "clamp string operand PHP type {:?}",
+                    other
+                )))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Evaluates and saves floating clamp operands in value, min, max order.
+fn push_float_clamp_args(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    for index in 0..3 {
+        let value = expect_operand(inst, index)?;
+        load_numeric_as_float(ctx, value, "clamp")?;
+        abi::emit_push_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+    }
+    Ok(())
+}
+
+/// Emits the AArch64 integer clamp selection and bound validation.
+fn emit_int_clamp_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    throw_label: &str,
+    use_max_label: &str,
+    use_min_label: &str,
+    selected_label: &str,
+) {
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x9", CLAMP_MIN_SLOT);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x10", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("cmp x9, x10");                                     // validate that clamp's lower integer bound does not exceed the upper bound
+    ctx.emitter.instruction(&format!("b.gt {}", throw_label));                  // throw ValueError when clamp min is greater than max
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x9", CLAMP_VALUE_SLOT);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x10", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("cmp x9, x10");                                     // compare the candidate integer against the upper bound first
+    ctx.emitter.instruction(&format!("b.gt {}", use_max_label));                // choose the upper bound when the candidate is too large
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x10", CLAMP_MIN_SLOT);
+    ctx.emitter.instruction("cmp x9, x10");                                     // compare the candidate integer against the lower bound second
+    ctx.emitter.instruction(&format!("b.lt {}", use_min_label));                // choose the lower bound when the candidate is too small
+    ctx.emitter.instruction("mov x0, x9");                                      // keep the original integer candidate when it is in range
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_max_label);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x0", CLAMP_MAX_SLOT);
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_min_label);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "x0", CLAMP_MIN_SLOT);
+}
+
+/// Emits the x86_64 integer clamp selection and bound validation.
+fn emit_int_clamp_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    throw_label: &str,
+    use_max_label: &str,
+    use_min_label: &str,
+    selected_label: &str,
+) {
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "r9", CLAMP_MIN_SLOT);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "r10", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("cmp r9, r10");                                     // validate that clamp's lower integer bound does not exceed the upper bound
+    ctx.emitter.instruction(&format!("jg {}", throw_label));                    // throw ValueError when clamp min is greater than max
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "r9", CLAMP_VALUE_SLOT);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "r10", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("cmp r9, r10");                                     // compare the candidate integer against the upper bound first
+    ctx.emitter.instruction(&format!("jg {}", use_max_label));                  // choose the upper bound when the candidate is too large
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "r10", CLAMP_MIN_SLOT);
+    ctx.emitter.instruction("cmp r9, r10");                                     // compare the candidate integer against the lower bound second
+    ctx.emitter.instruction(&format!("jl {}", use_min_label));                  // choose the lower bound when the candidate is too small
+    ctx.emitter.instruction("mov rax, r9");                                     // keep the original integer candidate when it is in range
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_max_label);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "rax", CLAMP_MAX_SLOT);
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_min_label);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "rax", CLAMP_MIN_SLOT);
+}
+
+/// Emits the AArch64 floating clamp selection and bound validation.
+fn emit_float_clamp_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    throw_min_nan_label: &str,
+    throw_max_nan_label: &str,
+    throw_bounds_label: &str,
+    use_max_label: &str,
+    use_min_label: &str,
+    in_range_label: &str,
+    selected_label: &str,
+) {
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "d1", CLAMP_MIN_SLOT);
+    ctx.emitter.instruction("fcmp d1, d1");                                     // detect NaN in clamp's lower floating bound before range comparisons
+    ctx.emitter.instruction(&format!("b.vs {}", throw_min_nan_label));          // throw ValueError for a NaN lower bound
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "d2", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("fcmp d2, d2");                                     // detect NaN in clamp's upper floating bound before range comparisons
+    ctx.emitter.instruction(&format!("b.vs {}", throw_max_nan_label));          // throw ValueError for a NaN upper bound
+    ctx.emitter.instruction("fcmp d1, d2");                                     // validate that the lower floating bound does not exceed the upper bound
+    ctx.emitter.instruction(&format!("b.gt {}", throw_bounds_label));           // throw ValueError when clamp min is greater than max
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "d0", CLAMP_VALUE_SLOT);
+    ctx.emitter.instruction("fcmp d0, d2");                                     // compare the candidate float against the upper bound first
+    ctx.emitter.instruction(&format!("b.vs {}", in_range_label));               // leave a NaN candidate unclamped because only bounds reject NaN
+    ctx.emitter.instruction(&format!("b.gt {}", use_max_label));                // choose the upper bound when the candidate is too large
+    ctx.emitter.instruction("fcmp d0, d1");                                     // compare the candidate float against the lower bound second
+    ctx.emitter.instruction(&format!("b.vs {}", in_range_label));               // leave a NaN candidate unclamped after the lower-bound comparison too
+    ctx.emitter.instruction(&format!("b.lt {}", use_min_label));                // choose the lower bound when the candidate is too small
+    abi::emit_jump(ctx.emitter, in_range_label);
+    ctx.emitter.label(use_max_label);
+    ctx.emitter.instruction("fmov d0, d2");                                     // return the upper floating bound when the candidate is too large
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_min_label);
+    ctx.emitter.instruction("fmov d0, d1");                                     // return the lower floating bound when the candidate is too small
+}
+
+/// Emits the x86_64 floating clamp selection and bound validation.
+fn emit_float_clamp_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    throw_min_nan_label: &str,
+    throw_max_nan_label: &str,
+    throw_bounds_label: &str,
+    use_max_label: &str,
+    use_min_label: &str,
+    in_range_label: &str,
+    selected_label: &str,
+) {
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "xmm1", CLAMP_MIN_SLOT);
+    ctx.emitter.instruction("ucomisd xmm1, xmm1");                              // detect NaN in clamp's lower floating bound before range comparisons
+    ctx.emitter.instruction(&format!("jp {}", throw_min_nan_label));            // throw ValueError for a NaN lower bound
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "xmm2", CLAMP_MAX_SLOT);
+    ctx.emitter.instruction("ucomisd xmm2, xmm2");                              // detect NaN in clamp's upper floating bound before range comparisons
+    ctx.emitter.instruction(&format!("jp {}", throw_max_nan_label));            // throw ValueError for a NaN upper bound
+    ctx.emitter.instruction("ucomisd xmm1, xmm2");                              // validate that the lower floating bound does not exceed the upper bound
+    ctx.emitter.instruction(&format!("ja {}", throw_bounds_label));             // throw ValueError when clamp min is greater than max
+    abi::emit_load_temporary_stack_slot(ctx.emitter, "xmm0", CLAMP_VALUE_SLOT);
+    ctx.emitter.instruction("ucomisd xmm0, xmm2");                              // compare the candidate float against the upper bound first
+    ctx.emitter.instruction(&format!("jp {}", in_range_label));                 // leave a NaN candidate unclamped because only bounds reject NaN
+    ctx.emitter.instruction(&format!("ja {}", use_max_label));                  // choose the upper bound when the candidate is too large
+    ctx.emitter.instruction("ucomisd xmm0, xmm1");                              // compare the candidate float against the lower bound second
+    ctx.emitter.instruction(&format!("jp {}", in_range_label));                 // leave a NaN candidate unclamped after the lower-bound comparison too
+    ctx.emitter.instruction(&format!("jb {}", use_min_label));                  // choose the lower bound when the candidate is too small
+    abi::emit_jump(ctx.emitter, in_range_label);
+    ctx.emitter.label(use_max_label);
+    ctx.emitter.instruction("movsd xmm0, xmm2");                                // return the upper floating bound when the candidate is too large
+    abi::emit_jump(ctx.emitter, selected_label);
+    ctx.emitter.label(use_min_label);
+    ctx.emitter.instruction("movsd xmm0, xmm1");                                // return the lower floating bound when the candidate is too small
+}
+
+/// Compares two saved string slots and leaves the runtime comparison integer active.
+fn emit_compare_string_slots(
+    ctx: &mut FunctionContext<'_>,
+    left_offset: usize,
+    right_offset: usize,
+) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", left_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x2", left_offset + 8);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x3", right_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x4", right_offset + 8);
+        }
+        Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdi", left_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rsi", left_offset + 8);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdx", right_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rcx", right_offset + 8);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_strcmp");
+}
+
+/// Branches to `label` when the latest string comparison result is greater than zero.
+fn emit_branch_if_string_compare_gt(ctx: &mut FunctionContext<'_>, label: &str) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // test whether the left clamp string sorts after the right string
+            ctx.emitter.instruction(&format!("b.gt {}", label));                // branch when the string comparison result is positive
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 0");                              // test whether the left clamp string sorts after the right string
+            ctx.emitter.instruction(&format!("jg {}", label));                  // branch when the string comparison result is positive
+        }
+    }
+}
+
+/// Branches to `label` when the latest string comparison result is less than zero.
+fn emit_branch_if_string_compare_lt(ctx: &mut FunctionContext<'_>, label: &str) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // test whether the left clamp string sorts before the right string
+            ctx.emitter.instruction(&format!("b.lt {}", label));                // branch when the string comparison result is negative
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 0");                              // test whether the left clamp string sorts before the right string
+            ctx.emitter.instruction(&format!("jl {}", label));                  // branch when the string comparison result is negative
+        }
+    }
+}
+
+/// Loads a saved string slot into the target string result registers.
+fn emit_load_string_slot_to_result(ctx: &mut FunctionContext<'_>, offset: usize) {
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, ptr_reg, offset);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, len_reg, offset + 8);
+}
+
+/// Emits a catchable `ValueError` using a static message string.
+fn emit_throw_value_error(
+    ctx: &mut FunctionContext<'_>,
+    message_symbol: &str,
+    message_len: usize,
+) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_throw_value_error_aarch64(ctx, message_symbol, message_len),
+        Arch::X86_64 => emit_throw_value_error_x86_64(ctx, message_symbol, message_len),
+    }
+}
+
+/// Emits the AArch64 allocation and unwinder handoff for a `ValueError`.
+fn emit_throw_value_error_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    message_symbol: &str,
+    message_len: usize,
+) {
+    ctx.emitter.instruction("mov x0, #32");                                     // request Throwable payload storage for the clamp ValueError
+    ctx.emitter.instruction("bl __rt_heap_alloc");                              // allocate the ValueError object payload
+    ctx.emitter.instruction("mov x9, #6");                                      // heap kind 6 marks an object instance allocation
+    ctx.emitter.instruction("str x9, [x0, #-8]");                               // stamp the allocation header as a runtime object
+    abi::emit_symbol_address(ctx.emitter, "x9", "_spl_value_error_class_id");
+    ctx.emitter.instruction("ldr x9, [x9]");                                    // load ValueError's runtime class id for this program
+    ctx.emitter.instruction("str x9, [x0]");                                    // store the ValueError class id in the Throwable header
+    abi::emit_symbol_address(ctx.emitter, "x9", message_symbol);
+    ctx.emitter.instruction("str x9, [x0, #8]");                                // store the static ValueError message pointer
+    ctx.emitter.instruction(&format!("mov x9, #{}", message_len));              // materialize the static ValueError message length
+    ctx.emitter.instruction("str x9, [x0, #16]");                               // store the exception message length
+    ctx.emitter.instruction("str xzr, [x0, #24]");                              // store the default zero exception code
+    abi::emit_symbol_address(ctx.emitter, "x9", "_exc_value");
+    ctx.emitter.instruction("str x0, [x9]");                                    // publish the active ValueError object
+    ctx.emitter.instruction("b __rt_throw_current");                            // enter the standard exception unwinder
+}
+
+/// Emits the x86_64 allocation and unwinder handoff for a `ValueError`.
+fn emit_throw_value_error_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    message_symbol: &str,
+    message_len: usize,
+) {
+    ctx.emitter.instruction("push rbp");                                        // preserve caller frame pointer for exception allocation
+    ctx.emitter.instruction("mov rbp, rsp");                                    // establish an aligned helper frame for heap allocation
+    ctx.emitter.instruction("sub rsp, 16");                                     // keep the nested heap allocation call 16-byte aligned
+    ctx.emitter.instruction("mov rax, 32");                                     // request Throwable payload storage for the clamp ValueError
+    ctx.emitter.instruction("call __rt_heap_alloc");                            // allocate the ValueError object payload
+    ctx.emitter.instruction("mov r10, 0x4548504c00000006");                     // materialize the x86_64 object heap-kind header
+    ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                    // stamp the allocation header as a runtime object
+    ctx.emitter.instruction("mov r10, QWORD PTR [rip + _spl_value_error_class_id]"); // load ValueError's runtime class id for this program
+    ctx.emitter.instruction("mov QWORD PTR [rax], r10");                        // store the ValueError class id in the Throwable header
+    ctx.emitter.instruction(&format!("lea r10, [rip + {}]", message_symbol));   // materialize the static ValueError message pointer
+    ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");                    // store the static ValueError message pointer
+    ctx.emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", message_len)); // store the exception message length
+    ctx.emitter.instruction("mov QWORD PTR [rax + 24], 0");                     // store the default zero exception code
+    ctx.emitter.instruction("mov QWORD PTR [rip + _exc_value], rax");           // publish the active ValueError object
+    ctx.emitter.instruction("mov rsp, rbp");                                    // release the helper frame before throwing
+    ctx.emitter.instruction("pop rbp");                                         // restore caller frame pointer before throwing
+    ctx.emitter.instruction("jmp __rt_throw_current");                          // enter the standard exception unwinder
 }
 
 /// Loads a floating-point literal into `reg` through the data section.
