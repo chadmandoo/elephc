@@ -548,6 +548,26 @@ echo getpid() > 0 ? "pid" : "bad";
     );
 }
 
+/// Verifies extern calls marshal PHP strings to and from C strings.
+#[test]
+fn ir_backend_handles_string_extern_calls() {
+    let source = r#"<?php
+extern function atoi(string $s): int;
+extern function strcmp(string $left, string $right): int;
+extern function getenv(string $name): string;
+echo atoi("99");
+echo ":";
+echo strcmp("aa", "ab") < 0 ? "lt" : "bad";
+echo ":";
+$path = getenv("PATH");
+echo strlen($path) > 0 ? "env" : "empty";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("string_extern_calls", source),
+        "99:lt:env"
+    );
+}
+
 /// Verifies selected type predicates inspect boxed Mixed payloads in the EIR backend.
 #[test]
 fn ir_backend_handles_mixed_type_predicates() {
