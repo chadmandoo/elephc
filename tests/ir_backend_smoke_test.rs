@@ -650,6 +650,35 @@ fn ir_backend_handles_indexed_array_aggregates() {
     }
 }
 
+/// Verifies `array_fill()` produces Mixed-boxed indexed arrays for scalar values.
+#[test]
+fn ir_backend_handles_indexed_array_fill() {
+    for (name, source, expected) in [
+        (
+            "array_fill_int",
+            "<?php $a = array_fill(0, 3, 7); echo count($a); echo ':'; echo $a[0]; echo $a[1]; echo $a[2];",
+            "3:777",
+        ),
+        (
+            "array_fill_float",
+            "<?php $a = array_fill(0, 2, 1.5); echo count($a); echo ':'; echo $a[0]; echo '|'; echo $a[1];",
+            "2:1.5|1.5",
+        ),
+        (
+            "array_fill_bool",
+            "<?php $a = array_fill(0, 2, true); echo count($a); echo ':'; echo $a[0]; echo $a[1];",
+            "2:11",
+        ),
+        (
+            "array_fill_null",
+            "<?php $a = array_fill(0, 1, null); echo count($a); echo ':'; echo $a[0]; echo 'done';",
+            "1:done",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies indexed-array reversal returns a reversed copy without mutating the source.
 #[test]
 fn ir_backend_handles_indexed_array_reverse() {

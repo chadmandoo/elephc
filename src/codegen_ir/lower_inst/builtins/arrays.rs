@@ -33,6 +33,21 @@ pub(super) fn lower_array_product(ctx: &mut FunctionContext<'_>, inst: &Instruct
     lower_indexed_array_aggregate(ctx, inst, "array_product", "__rt_array_product")
 }
 
+/// Lowers `array_fill()` for pointer-sized scalar and refcounted payloads.
+pub(super) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_fill", 3)?;
+    let start = expect_operand(inst, 0)?;
+    let count = expect_operand(inst, 1)?;
+    let value = expect_operand(inst, 2)?;
+    let value_ty = ctx.value_php_type(value)?.codegen_repr();
+    require_array_fill_value_type(&value_ty)?;
+    let result_elem_ty = result_array_element_type("array_fill", &inst.result_php_type.codegen_repr())?;
+    require_array_fill_result_type(&value_ty, &result_elem_ty)?;
+    lower_array_fill_call(ctx, start, count, value, &value_ty)?;
+    normalize_indexed_array_result(ctx, "array_fill", &value_ty, &result_elem_ty)?;
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_reverse()` for indexed arrays with 8-byte payload slots.
 pub(super) fn lower_array_reverse(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_reverse", 1)?;
@@ -94,10 +109,10 @@ pub(super) fn lower_array_slice(ctx: &mut FunctionContext<'_>, inst: &Instructio
         None
     };
     let source_elem_ty = array_slice_source_element_type(ctx.value_php_type(array)?)?;
-    let result_elem_ty = result_array_element_type(&inst.result_php_type.codegen_repr())?;
+    let result_elem_ty = result_array_element_type("array_slice", &inst.result_php_type.codegen_repr())?;
     require_array_slice_result_type(&source_elem_ty, &result_elem_ty)?;
     lower_array_slice_call(ctx, array, offset, length, &source_elem_ty)?;
-    normalize_array_slice_result(ctx, &source_elem_ty, &result_elem_ty)?;
+    normalize_indexed_array_result(ctx, "array_slice", &source_elem_ty, &result_elem_ty)?;
     store_if_result(ctx, inst)
 }
 
@@ -226,6 +241,72 @@ fn ensure_arg_count_between(inst: &Instruction, name: &str, min: usize, max: usi
     )))
 }
 
+/// Verifies that `array_fill()` can store the value through existing runtime helpers.
+fn require_array_fill_value_type(value_ty: &PhpType) -> Result<()> {
+    if matches!(
+        value_ty,
+        PhpType::Int
+            | PhpType::Bool
+            | PhpType::Float
+            | PhpType::Void
+            | PhpType::Mixed
+            | PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Object(_)
+    ) {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "array_fill value PHP type {:?}",
+        value_ty
+    )))
+}
+
+/// Verifies the destination element type matches the fill layout or is a Mixed widening.
+fn require_array_fill_result_type(value_ty: &PhpType, result_elem_ty: &PhpType) -> Result<()> {
+    if value_ty == result_elem_ty || result_elem_ty == &PhpType::Mixed {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "array_fill result element PHP type {:?} for value PHP type {:?}",
+        result_elem_ty,
+        value_ty
+    )))
+}
+
+/// Calls the legacy runtime helper after materializing `array_fill()` arguments.
+fn lower_array_fill_call(
+    ctx: &mut FunctionContext<'_>,
+    start: ValueId,
+    count: ValueId,
+    value: ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(start, "x0")?;
+            ctx.load_value_to_reg(count, "x1")?;
+            ctx.load_value_to_reg(value, "x2")?;
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(start, "rdi")?;
+            ctx.load_value_to_reg(count, "rsi")?;
+            ctx.load_value_to_reg(value, "rdx")?;
+        }
+    }
+    abi::emit_call_label(ctx.emitter, array_fill_runtime_helper(value_ty));
+    Ok(())
+}
+
+/// Returns the helper matching the fill value's ownership representation.
+fn array_fill_runtime_helper(value_ty: &PhpType) -> &'static str {
+    if value_ty.is_refcounted() {
+        "__rt_array_fill_refcounted"
+    } else {
+        "__rt_array_fill"
+    }
+}
+
 /// Returns the element type for indexed arrays supported by scalar 8-byte helpers.
 fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
     match ty.codegen_repr() {
@@ -268,12 +349,12 @@ fn array_slice_source_element_type(ty: PhpType) -> Result<PhpType> {
 }
 
 /// Returns the result element type declared by the lowered builtin instruction.
-fn result_array_element_type(ty: &PhpType) -> Result<PhpType> {
+fn result_array_element_type(name: &str, ty: &PhpType) -> Result<PhpType> {
     match ty {
         PhpType::Array(elem) => Ok(elem.codegen_repr()),
         other => Err(CodegenIrError::unsupported(format!(
-            "array_slice result PHP type {:?}",
-            other
+            "{} result PHP type {:?}",
+            name, other
         ))),
     }
 }
@@ -381,21 +462,22 @@ fn array_slice_runtime_helper(source_elem_ty: &PhpType) -> &'static str {
     }
 }
 
-/// Stamps the result array and widens copied slots when the EIR result expects Mixed.
-fn normalize_array_slice_result(
+/// Stamps the result array and widens typed slots when the EIR result expects Mixed.
+fn normalize_indexed_array_result(
     ctx: &mut FunctionContext<'_>,
+    name: &str,
     source_elem_ty: &PhpType,
     result_elem_ty: &PhpType,
 ) -> Result<()> {
     if result_elem_ty == &PhpType::Mixed && source_elem_ty != &PhpType::Mixed {
-        let source_tag = array_slice_runtime_value_tag(source_elem_ty)?;
+        let source_tag = runtime_value_tag(name, source_elem_ty)?;
         match ctx.emitter.target.arch {
             Arch::AArch64 => {
-                ctx.emitter.instruction(&format!("mov x1, #{}", source_tag));   // pass the source slot value_type tag to widen the slice result to Mixed
+                ctx.emitter.instruction(&format!("mov x1, #{}", source_tag));   // pass the source slot value_type tag to widen the indexed-array result to Mixed
             }
             Arch::X86_64 => {
-                ctx.emitter.instruction("mov rdi, rax");                        // pass the sliced indexed-array pointer to the Mixed-widening helper
-                ctx.emitter.instruction(&format!("mov rsi, {}", source_tag));   // pass the source slot value_type tag to widen the slice result to Mixed
+                ctx.emitter.instruction("mov rdi, rax");                        // pass the produced indexed-array pointer to the Mixed-widening helper
+                ctx.emitter.instruction(&format!("mov rsi, {}", source_tag));   // pass the source slot value_type tag to widen the indexed-array result to Mixed
             }
         }
         abi::emit_call_label(ctx.emitter, "__rt_array_to_mixed");
@@ -410,9 +492,10 @@ fn normalize_array_slice_result(
 }
 
 /// Returns the runtime value_type tag used by the array-to-Mixed widening helper.
-fn array_slice_runtime_value_tag(elem: &PhpType) -> Result<u8> {
+fn runtime_value_tag(name: &str, elem: &PhpType) -> Result<u8> {
     match elem {
         PhpType::Int => Ok(0),
+        PhpType::Str => Ok(1),
         PhpType::Float => Ok(2),
         PhpType::Bool => Ok(3),
         PhpType::Array(_) => Ok(4),
@@ -421,8 +504,8 @@ fn array_slice_runtime_value_tag(elem: &PhpType) -> Result<u8> {
         PhpType::Mixed => Ok(7),
         PhpType::Void => Ok(8),
         other => Err(CodegenIrError::unsupported(format!(
-            "array_slice Mixed widening for element PHP type {:?}",
-            other
+            "{} Mixed widening for element PHP type {:?}",
+            name, other
         ))),
     }
 }
