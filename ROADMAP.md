@@ -601,15 +601,17 @@ none are needed for typical stream usage.
 - [ ] **Misc lower-level gaps** — true non-blocking semantics (beyond the
   `O_NONBLOCK` fcntl), `realpath_cache_*`, and `lchown`/`lchgrp`.
 
-### Database access — PDO (SQLite)
+### Database access — PDO (SQLite, PostgreSQL, MySQL/MariaDB)
 
-PDO database access, backed by a statically-bundled SQLite via the
-`crates/elephc-sqlite` bridge staticlib (C ABI, no system database dependency).
-The `PDO` / `PDOStatement` / `PDOException` classes are implemented as an
-elephc-PHP prelude that calls the bridge through `extern "elephc_sqlite"`, so the
-feature compiles through the normal class/extern/exception pipeline with no
-bespoke intrinsics or hand-written assembly. The prelude is injected only when a
-program references PDO, so non-PDO binaries never link the bridge.
+PDO database access, backed by the driver-agnostic `crates/elephc-pdo` bridge
+staticlib (C ABI, no system database dependency): statically-bundled SQLite plus
+the pure-Rust `postgres` and `mysql` clients. The `PDO` / `PDOStatement` /
+`PDOException` classes are implemented as an elephc-PHP prelude that calls the
+bridge through `extern "elephc_pdo"`, so the feature compiles through the normal
+class/extern/exception pipeline with no bespoke intrinsics or hand-written
+assembly. The DSN prefix (`sqlite:` / `pgsql:` / `mysql:`) selects the driver at
+`open()`. The prelude is injected only when a program references PDO, so non-PDO
+binaries never link the bridge.
 
 - [x] `crates/elephc-sqlite` bridge staticlib over bundled SQLite (`libsqlite3-sys`), C-ABI handle tables for connections/statements, `-1` sentinels, unit-tested in-memory round-trips
 - [x] `PDO::__construct` (`sqlite:` / `sqlite::memory:` DSN, `PDOException` on failure), `exec`, `query`, `prepare`, `lastInsertId`, `beginTransaction` / `commit` / `rollBack`, `errorCode`, `errorInfo`
@@ -620,7 +622,7 @@ program references PDO, so non-PDO binaries never link the bridge.
 - [x] `PDO::quote()` (SQLite single-quote escaping) and `FETCH_COLUMN` mode (`fetch` / `fetchAll` / `foreach` yield one column as a scalar; column index via `setFetchMode(PDO::FETCH_COLUMN, $col)`)
 - [x] `getAttribute` / `setAttribute` (`ATTR_ERRMODE`, `ATTR_DRIVER_NAME`, constructor options array) and configurable error mode — `ERRMODE_EXCEPTION` (default, throws), `ERRMODE_SILENT` (`exec` → `false`, `query` / `prepare` → falsy), `ERRMODE_WARNING` (writes to `STDERR`, returns the same)
 - [x] PostgreSQL (`pdo_pgsql`) driver — the bridge crate (`crates/elephc-pdo`) is now driver-agnostic: each connection/statement handle is tagged with its driver and the DSN prefix (`sqlite:` / `pgsql:`) selects it at `open()`. PostgreSQL uses the pure-Rust `postgres` client (no system libpq), translates `?` / `:name` placeholders to `$1, $2, …`, prepares server-side for column metadata and materializes result sets, decodes int/float/bool/text/null plus the rich types as their text form (`numeric` scale-preserving, date/time/timestamp/timestamptz, `uuid`, `json`/`jsonb` — both read and bound), and supports `lastInsertId()` via `lastval()` / `currval($sequence)`. The same PDO prelude drives both drivers; PostgreSQL fixtures (which need a live server) are `#[ignore]`d in `tests/codegen/pdo_pgsql.rs`
-- [ ] MySQL (`pdo_mysql`) driver — an additional driver behind the same bridge/prelude
+- [x] MySQL / MariaDB (`pdo_mysql`) driver — a third driver behind the same driver-agnostic bridge/prelude, selected by the `mysql:` DSN prefix. Uses the synchronous pure-Rust `mysql` client with flate2's pure-Rust (miniz_oxide) backend, so the staticlib has no `libz`/system-client dependency. Rewrites `:name` placeholders to MySQL's positional `?`, prepares server-side for column metadata and materializes result sets, decodes int/float/bool/text/null plus the rich types as their text form (`DECIMAL` scale-preserving, `DATE`/`DATETIME`/`TIMESTAMP`/`TIME`), binds values as native `mysql::Value` (server coerces text), and supports `lastInsertId()` via `AUTO_INCREMENT`. `getAttribute(ATTR_DRIVER_NAME)` now reports the real driver (`sqlite`/`pgsql`/`mysql`) via a new bridge entry point. MySQL fixtures (which need a live server) are `#[ignore]`d in `tests/codegen/pdo_mysql.rs`
 - [ ] `FETCH_CLASS` / `FETCH_INTO`, statement-level error-mode propagation, and persistent connections
 - [ ] Dynamic property assignment so `FETCH_OBJ` materializes a stdClass directly instead of via a JSON round-trip
 - [ ] Binary/BLOB values with embedded NUL bytes (the text bridge path is NUL-terminated)

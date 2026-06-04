@@ -34,3 +34,10 @@ chrono = "0.4"
 serde_json = "1"
 uuid = "1"
 rust_decimal = { version = "1", features = ["db-postgres"] }
+# The synchronous, pure-Rust MySQL/MariaDB client. `default-features = false` with
+# `minimal-rust` drops the optional TLS backends and selects flate2's pure-Rust
+# (miniz_oxide) deflate backend instead of the C `zlib` one, so the staticlib has
+# no `libz` dependency and compiled PHP binaries stay fully standalone (no system
+# DB client, no `-lz`) while keeping the binary wire protocol and prepared
+# statements this driver needs.
+mysql = { version = "25", default-features = false, features = ["minimal-rust"] }

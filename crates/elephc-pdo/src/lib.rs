@@ -2,8 +2,8 @@
 //! Multi-driver database bridge for the elephc PDO implementation. Exposes a
 //! small, stable, driver-agnostic C ABI (`elephc_pdo_*`) that the elephc PDO
 //! prelude calls through `extern "elephc_pdo"` declarations; each call dispatches
-//! to the SQLite or PostgreSQL driver based on the handle's driver, selected from
-//! the DSN prefix at `open()`.
+//! to the SQLite, PostgreSQL, or MySQL/MariaDB driver based on the handle's
+//! driver, selected from the DSN prefix at `open()`.
 //!
 //! Called from:
 //! - Compiled PHP programs that use PDO, via the elephc-PHP prelude's `extern`
@@ -19,9 +19,10 @@
 //! - Fallible entry points collapse failure to a `-1`/`0` sentinel. String
 //!   results return `*const c_char` into a per-result static buffer that elephc
 //!   copies into an owned PHP string immediately on return.
-//! - The drivers are bundled (SQLite) / pure-Rust (PostgreSQL), so compiled PHP
-//!   binaries have no system database-client runtime dependency.
+//! - The drivers are bundled (SQLite) / pure-Rust (PostgreSQL, MySQL/MariaDB), so
+//!   compiled PHP binaries have no system database-client runtime dependency.
 
+mod my;
 mod pg;
 mod sqlite;
 
@@ -35,12 +36,14 @@ use std::sync::{Mutex, OnceLock};
 enum Conn {
     Sqlite(sqlite::SqliteConn),
     Postgres(pg::PgConn),
+    Mysql(my::MyConn),
 }
 
 /// A live prepared statement, tagged by its driver.
 enum Stmt {
     Sqlite(sqlite::SqliteStmt),
     Postgres(pg::PgStmt),
+    Mysql(my::MyStmt),
 }
 
 /// Global connection table, keyed by the `i64` IDs handed back to the caller.
@@ -86,6 +89,12 @@ fn coltext_cell() -> &'static Mutex<CString> {
     C.get_or_init(|| Mutex::new(CString::default()))
 }
 
+/// Static buffer for the most recent `elephc_pdo_driver_name` result.
+fn drivername_cell() -> &'static Mutex<CString> {
+    static C: OnceLock<Mutex<CString>> = OnceLock::new();
+    C.get_or_init(|| Mutex::new(CString::default()))
+}
+
 /// Stores `s` (NUL bytes stripped) into the per-result static `cell` and returns
 /// a pointer into it. Valid until the next call writing the same cell; elephc
 /// copies it into an owned PHP string on return.
@@ -113,7 +122,22 @@ unsafe fn cstr_arg<'a>(p: *const c_char) -> Option<&'a str> {
 /// Returns the bridge ABI version. Bumped when the C ABI shape changes.
 #[no_mangle]
 pub extern "C" fn elephc_pdo_version() -> i32 {
-    2
+    3
+}
+
+/// Returns a pointer to the lowercase PDO driver name for a connection
+/// (`"sqlite"`, `"pgsql"`, or `"mysql"`), or an empty string for an unknown
+/// handle. Backs `PDO::getAttribute(PDO::ATTR_DRIVER_NAME)`. Valid until the next
+/// `elephc_pdo_driver_name`.
+#[no_mangle]
+pub extern "C" fn elephc_pdo_driver_name(conn_id: i64) -> *const c_char {
+    let name = match conns().lock().unwrap().get(&conn_id) {
+        Some(Conn::Sqlite(_)) => "sqlite",
+        Some(Conn::Postgres(_)) => "pgsql",
+        Some(Conn::Mysql(_)) => "mysql",
+        None => "",
+    };
+    store_cstr(drivername_cell(), name)
 }
 
 /// Opens a database for a PDO DSN, dispatching on the driver prefix: `sqlite:`
@@ -133,8 +157,13 @@ pub unsafe extern "C" fn elephc_pdo_open(dsn: *const c_char) -> i64 {
         sqlite::SqliteConn::open(path).map(Conn::Sqlite)
     } else if dsn.starts_with("pgsql:") {
         pg::PgConn::open(dsn).map(Conn::Postgres)
+    } else if dsn.starts_with("mysql:") {
+        my::MyConn::open(dsn).map(Conn::Mysql)
     } else {
-        Err("could not find driver (only sqlite: and pgsql: DSNs are supported)".to_string())
+        Err(
+            "could not find driver (only sqlite:, pgsql:, and mysql: DSNs are supported)"
+                .to_string(),
+        )
     };
     match opened {
         Ok(conn) => {
@@ -168,8 +197,8 @@ pub extern "C" fn elephc_pdo_close(conn_id: i64) {
         _ => None,
     };
     // Finalize and drop the statements belonging to this connection so
-    // sqlite3_close does not fail with SQLITE_BUSY; PostgreSQL statements live
-    // server-side and are dropped with the client.
+    // sqlite3_close does not fail with SQLITE_BUSY; PostgreSQL/MySQL statements
+    // live server-side and are dropped with the client.
     let owned: Vec<i64> = stmts()
         .lock()
         .unwrap()
@@ -177,6 +206,7 @@ pub extern "C" fn elephc_pdo_close(conn_id: i64) {
         .filter_map(|(k, s)| match s {
             Stmt::Sqlite(st) if sqlite_db == Some(st.db) => Some(*k),
             Stmt::Postgres(p) if p.conn_id == conn_id => Some(*k),
+            Stmt::Mysql(m) if m.conn_id == conn_id => Some(*k),
             _ => None,
         })
         .collect();
@@ -209,6 +239,10 @@ pub unsafe extern "C" fn elephc_pdo_exec(conn_id: i64, sql: *const c_char) -> i6
             Some(s) => c.exec(s),
             None => -1,
         },
+        Some(Conn::Mysql(c)) => match cstr_arg(sql) {
+            Some(s) => c.exec(s),
+            None => -1,
+        },
         None => -1,
     }
 }
@@ -224,6 +258,7 @@ pub unsafe extern "C" fn elephc_pdo_last_insert_id(conn_id: i64, name: *const c_
     match guard.get_mut(&conn_id) {
         Some(Conn::Sqlite(c)) => c.last_insert_id(),
         Some(Conn::Postgres(c)) => c.last_insert_id(cstr_arg(name)),
+        Some(Conn::Mysql(c)) => c.last_insert_id(cstr_arg(name)),
         None => 0,
     }
 }
@@ -235,6 +270,7 @@ pub extern "C" fn elephc_pdo_changes(conn_id: i64) -> i64 {
     match guard.get(&conn_id) {
         Some(Conn::Sqlite(c)) => c.changes(),
         Some(Conn::Postgres(c)) => c.changes,
+        Some(Conn::Mysql(c)) => c.changes,
         None => 0,
     }
 }
@@ -246,6 +282,7 @@ pub extern "C" fn elephc_pdo_begin(conn_id: i64) -> i64 {
     match guard.get_mut(&conn_id) {
         Some(Conn::Sqlite(c)) => c.exec_simple(b"BEGIN"),
         Some(Conn::Postgres(c)) => c.exec_simple("BEGIN"),
+        Some(Conn::Mysql(c)) => c.exec_simple("BEGIN"),
         None => 0,
     }
 }
@@ -257,6 +294,7 @@ pub extern "C" fn elephc_pdo_commit(conn_id: i64) -> i64 {
     match guard.get_mut(&conn_id) {
         Some(Conn::Sqlite(c)) => c.exec_simple(b"COMMIT"),
         Some(Conn::Postgres(c)) => c.exec_simple("COMMIT"),
+        Some(Conn::Mysql(c)) => c.exec_simple("COMMIT"),
         None => 0,
     }
 }
@@ -268,6 +306,7 @@ pub extern "C" fn elephc_pdo_rollback(conn_id: i64) -> i64 {
     match guard.get_mut(&conn_id) {
         Some(Conn::Sqlite(c)) => c.exec_simple(b"ROLLBACK"),
         Some(Conn::Postgres(c)) => c.exec_simple("ROLLBACK"),
+        Some(Conn::Mysql(c)) => c.exec_simple("ROLLBACK"),
         None => 0,
     }
 }
@@ -279,6 +318,7 @@ pub extern "C" fn elephc_pdo_errcode(conn_id: i64) -> i64 {
     match guard.get(&conn_id) {
         Some(Conn::Sqlite(c)) => c.errcode(),
         Some(Conn::Postgres(c)) => c.errcode,
+        Some(Conn::Mysql(c)) => c.errcode,
         None => -1,
     }
 }
@@ -292,6 +332,7 @@ pub extern "C" fn elephc_pdo_errmsg(conn_id: i64) -> *const c_char {
         match guard.get(&conn_id) {
             Some(Conn::Sqlite(c)) => c.errmsg(),
             Some(Conn::Postgres(c)) => c.errmsg.clone(),
+            Some(Conn::Mysql(c)) => c.errmsg.clone(),
             None => String::new(),
         }
     };
@@ -314,6 +355,16 @@ pub unsafe extern "C" fn elephc_pdo_prepare(conn_id: i64, sql: *const c_char) ->
                     Ok(mut st) => {
                         st.conn_id = conn_id;
                         Ok(Stmt::Postgres(st))
+                    }
+                    Err(_) => Err(()),
+                },
+                None => Err(()),
+            },
+            Some(Conn::Mysql(c)) => match cstr_arg(sql) {
+                Some(s) => match c.prepare(s) {
+                    Ok(mut st) => {
+                        st.conn_id = conn_id;
+                        Ok(Stmt::Mysql(st))
                     }
                     Err(_) => Err(()),
                 },
@@ -348,6 +399,7 @@ pub unsafe extern "C" fn elephc_pdo_bind_parameter_index(
     match guard.get(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.bind_parameter_index(name),
         Some(Stmt::Postgres(s)) => s.bind_parameter_index(name),
+        Some(Stmt::Mysql(s)) => s.bind_parameter_index(name),
         None => 0,
     }
 }
@@ -359,6 +411,7 @@ pub extern "C" fn elephc_pdo_bind_int(stmt_id: i64, idx: i64, val: i64) -> i64 {
     match guard.get_mut(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.bind_int(idx, val),
         Some(Stmt::Postgres(s)) => s.bind(idx, pg::Bind::Int(val)),
+        Some(Stmt::Mysql(s)) => s.bind(idx, my::Bind::Int(val)),
         None => 0,
     }
 }
@@ -370,6 +423,7 @@ pub extern "C" fn elephc_pdo_bind_double(stmt_id: i64, idx: i64, val: f64) -> i6
     match guard.get_mut(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.bind_double(idx, val),
         Some(Stmt::Postgres(s)) => s.bind(idx, pg::Bind::Float(val)),
+        Some(Stmt::Mysql(s)) => s.bind(idx, my::Bind::Float(val)),
         None => 0,
     }
 }
@@ -391,6 +445,13 @@ pub unsafe extern "C" fn elephc_pdo_bind_text(stmt_id: i64, idx: i64, val: *cons
             };
             s.bind(idx, bind)
         }
+        Some(Stmt::Mysql(s)) => {
+            let bind = match cstr_arg(val) {
+                Some(t) => my::Bind::Text(t.to_string()),
+                None => my::Bind::Null,
+            };
+            s.bind(idx, bind)
+        }
         None => 0,
     }
 }
@@ -402,6 +463,7 @@ pub extern "C" fn elephc_pdo_bind_null(stmt_id: i64, idx: i64) -> i64 {
     match guard.get_mut(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.bind_null(idx),
         Some(Stmt::Postgres(s)) => s.bind(idx, pg::Bind::Null),
+        Some(Stmt::Mysql(s)) => s.bind(idx, my::Bind::Null),
         None => 0,
     }
 }
@@ -413,6 +475,7 @@ pub extern "C" fn elephc_pdo_reset(stmt_id: i64) -> i64 {
     match guard.get_mut(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.reset(),
         Some(Stmt::Postgres(s)) => s.reset(),
+        Some(Stmt::Mysql(s)) => s.reset(),
         None => 0,
     }
 }
@@ -424,6 +487,7 @@ pub extern "C" fn elephc_pdo_clear_bindings(stmt_id: i64) -> i64 {
     match guard.get_mut(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.clear_bindings(),
         Some(Stmt::Postgres(s)) => s.clear_bindings(),
+        Some(Stmt::Mysql(s)) => s.clear_bindings(),
         None => 0,
     }
 }
@@ -443,6 +507,14 @@ pub extern "C" fn elephc_pdo_step(stmt_id: i64) -> i64 {
                 _ => -1,
             }
         }
+        Some(Stmt::Mysql(s)) => {
+            let conn_id = s.conn_id;
+            let mut cguard = conns().lock().unwrap();
+            match cguard.get_mut(&conn_id) {
+                Some(Conn::Mysql(c)) => s.step(c),
+                _ => -1,
+            }
+        }
         None => -1,
     }
 }
@@ -454,6 +526,7 @@ pub extern "C" fn elephc_pdo_column_count(stmt_id: i64) -> i64 {
     match guard.get(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.column_count(),
         Some(Stmt::Postgres(s)) => s.column_count(),
+        Some(Stmt::Mysql(s)) => s.column_count(),
         None => 0,
     }
 }
@@ -466,6 +539,7 @@ pub extern "C" fn elephc_pdo_column_name(stmt_id: i64, i: i64) -> *const c_char 
         match guard.get(&stmt_id) {
             Some(Stmt::Sqlite(s)) => s.column_name(i),
             Some(Stmt::Postgres(s)) => s.column_name(i),
+            Some(Stmt::Mysql(s)) => s.column_name(i),
             None => String::new(),
         }
     };
@@ -480,6 +554,7 @@ pub extern "C" fn elephc_pdo_column_type(stmt_id: i64, i: i64) -> i64 {
     match guard.get(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.column_type(i),
         Some(Stmt::Postgres(s)) => s.column_type(i),
+        Some(Stmt::Mysql(s)) => s.column_type(i),
         None => 5,
     }
 }
@@ -491,6 +566,7 @@ pub extern "C" fn elephc_pdo_column_int(stmt_id: i64, i: i64) -> i64 {
     match guard.get(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.column_int(i),
         Some(Stmt::Postgres(s)) => s.column_int(i),
+        Some(Stmt::Mysql(s)) => s.column_int(i),
         None => 0,
     }
 }
@@ -502,6 +578,7 @@ pub extern "C" fn elephc_pdo_column_double(stmt_id: i64, i: i64) -> f64 {
     match guard.get(&stmt_id) {
         Some(Stmt::Sqlite(s)) => s.column_double(i),
         Some(Stmt::Postgres(s)) => s.column_double(i),
+        Some(Stmt::Mysql(s)) => s.column_double(i),
         None => 0.0,
     }
 }
@@ -514,6 +591,7 @@ pub extern "C" fn elephc_pdo_column_text(stmt_id: i64, i: i64) -> *const c_char 
         match guard.get(&stmt_id) {
             Some(Stmt::Sqlite(s)) => s.column_text(i),
             Some(Stmt::Postgres(s)) => s.column_text(i),
+            Some(Stmt::Mysql(s)) => s.column_text(i),
             None => String::new(),
         }
     };
@@ -530,6 +608,7 @@ pub extern "C" fn elephc_pdo_finalize(stmt_id: i64) -> i64 {
             1
         }
         Some(Stmt::Postgres(_)) => 1,
+        Some(Stmt::Mysql(_)) => 1,
         None => 0,
     }
 }
@@ -551,16 +630,16 @@ mod tests {
         CString::new(s).unwrap()
     }
 
-    /// The ABI version constant is the v2 (multi-driver) surface.
+    /// The ABI version constant is the v3 (sqlite + pgsql + mysql) surface.
     #[test]
-    fn version_is_v2() {
-        assert_eq!(elephc_pdo_version(), 2);
+    fn version_is_v3() {
+        assert_eq!(elephc_pdo_version(), 3);
     }
 
     /// A DSN for an unsupported driver is rejected with a driver error.
     #[test]
     fn open_rejects_unknown_driver_dsn() {
-        let dsn = cs("mysql:host=localhost");
+        let dsn = cs("oracle:host=localhost");
         let id = unsafe { elephc_pdo_open(dsn.as_ptr()) };
         assert_eq!(id, -1);
         let msg = unsafe { read(elephc_pdo_last_open_error()) };
@@ -651,6 +730,76 @@ mod tests {
         let ins = cs("INSERT INTO pdo_rt (name, score) VALUES (:n, :s)");
         let stmt = unsafe { elephc_pdo_prepare(conn, ins.as_ptr()) };
         assert!(stmt > 0, "pg prepare failed");
+        let n = cs(":n");
+        let ni = unsafe { elephc_pdo_bind_parameter_index(stmt, n.as_ptr()) };
+        let s = cs(":s");
+        let si = unsafe { elephc_pdo_bind_parameter_index(stmt, s.as_ptr()) };
+        let ada = cs("Ada");
+        unsafe { elephc_pdo_bind_text(stmt, ni, ada.as_ptr()) };
+        elephc_pdo_bind_double(stmt, si, 9.5);
+        assert_eq!(elephc_pdo_step(stmt), 0);
+        elephc_pdo_finalize(stmt);
+
+        let lid = unsafe { elephc_pdo_last_insert_id(conn, std::ptr::null()) };
+        assert_eq!(lid, 1);
+
+        let sel = cs("SELECT id, name, score FROM pdo_rt WHERE id = ?");
+        let q = unsafe { elephc_pdo_prepare(conn, sel.as_ptr()) };
+        elephc_pdo_bind_int(q, 1, 1);
+        assert_eq!(elephc_pdo_step(q), 1);
+        assert_eq!(elephc_pdo_column_int(q, 0), 1);
+        assert_eq!(unsafe { read(elephc_pdo_column_name(q, 1)) }, "name");
+        assert_eq!(unsafe { read(elephc_pdo_column_text(q, 1)) }, "Ada");
+        assert_eq!(elephc_pdo_column_double(q, 2), 9.5);
+        assert_eq!(elephc_pdo_step(q), 0);
+        elephc_pdo_finalize(q);
+
+        let cleanup = cs("DROP TABLE pdo_rt");
+        unsafe { elephc_pdo_exec(conn, cleanup.as_ptr()) };
+        elephc_pdo_close(conn);
+    }
+
+    /// MySQL placeholder translation: `?` and `:name` both become `?`, with the
+    /// per-`?` `order` reusing one slot for a repeated name and `'…'` literals and
+    /// `::` left untouched.
+    #[test]
+    fn my_translate_placeholders() {
+        let (sql, map, order) = my::translate_placeholders(
+            "SELECT * FROM t WHERE a = ? AND b = :b AND c = :b AND d = 'x?:y' AND e = id::text",
+        );
+        assert_eq!(
+            sql,
+            "SELECT * FROM t WHERE a = ? AND b = ? AND c = ? AND d = 'x?:y' AND e = id::text"
+        );
+        // `?`→slot 1, `:b`→slot 2 (reused for the second `:b`).
+        assert_eq!(order, vec![1, 2, 2]);
+        assert_eq!(map.get("b"), Some(&2));
+    }
+
+    /// Full MySQL/MariaDB round-trip against a live server. Ignored by default; run
+    /// with `ELEPHC_MY_TEST_DSN` set, e.g.
+    /// `ELEPHC_MY_TEST_DSN='mysql:host=localhost;port=33060;dbname=testdb;user=test;password=test'`.
+    #[test]
+    #[ignore]
+    fn my_round_trip() {
+        let Ok(dsn) = std::env::var("ELEPHC_MY_TEST_DSN") else {
+            return;
+        };
+        let dsn = cs(&dsn);
+        let conn = unsafe { elephc_pdo_open(dsn.as_ptr()) };
+        assert!(conn > 0, "mysql open failed");
+        assert_eq!(unsafe { read(elephc_pdo_driver_name(conn)) }, "mysql");
+
+        let drop = cs("DROP TABLE IF EXISTS pdo_rt");
+        unsafe { elephc_pdo_exec(conn, drop.as_ptr()) };
+        let ddl = cs(
+            "CREATE TABLE pdo_rt (id INTEGER PRIMARY KEY AUTO_INCREMENT, name TEXT, score DOUBLE)",
+        );
+        unsafe { elephc_pdo_exec(conn, ddl.as_ptr()) };
+
+        let ins = cs("INSERT INTO pdo_rt (name, score) VALUES (:n, :s)");
+        let stmt = unsafe { elephc_pdo_prepare(conn, ins.as_ptr()) };
+        assert!(stmt > 0, "mysql prepare failed");
         let n = cs(":n");
         let ni = unsafe { elephc_pdo_bind_parameter_index(stmt, n.as_ptr()) };
         let s = cs(":s");

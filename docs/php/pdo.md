@@ -1,20 +1,20 @@
 ---
 title: "PDO (Databases)"
-description: "PDO database access with the SQLite and PostgreSQL drivers: connections, prepared statements, fetch modes, and transactions."
+description: "PDO database access with the SQLite, PostgreSQL, and MySQL/MariaDB drivers: connections, prepared statements, fetch modes, and transactions."
 sidebar:
   order: 16
 ---
 
 elephc supports a practical subset of PHP's PDO database layer, with the
-**SQLite** and **PostgreSQL** drivers. `PDO`, `PDOStatement`, and `PDOException`
-behave like their PHP counterparts for everyday use: connect, execute,
-prepare/bind, fetch, and run transactions. The DSN prefix selects the driver, so
-the same code works against either database.
+**SQLite**, **PostgreSQL**, and **MySQL / MariaDB** drivers. `PDO`,
+`PDOStatement`, and `PDOException` behave like their PHP counterparts for everyday
+use: connect, execute, prepare/bind, fetch, and run transactions. The DSN prefix
+selects the driver, so the same code works against any of the databases.
 
-Both drivers are linked statically (SQLite is bundled; PostgreSQL uses a
-pure-Rust client), so a compiled PDO binary has **no system database-client
+Every driver is linked statically (SQLite is bundled; PostgreSQL and MySQL use
+pure-Rust clients), so a compiled PDO binary has **no system database-client
 dependency** — it runs anywhere the elephc binary runs. SQLite runs in-process;
-PostgreSQL connects to a running server over the network.
+PostgreSQL and MySQL connect to a running server over the network.
 
 ## Connecting
 
@@ -27,13 +27,18 @@ $mem = new PDO("sqlite::memory:");
 // PostgreSQL — credentials in the DSN or as constructor arguments.
 $pg = new PDO("pgsql:host=localhost;port=5432;dbname=app;user=me;password=secret");
 $pg = new PDO("pgsql:host=localhost;dbname=app", "me", "secret");
+
+// MySQL / MariaDB — credentials in the DSN or as constructor arguments.
+$my = new PDO("mysql:host=127.0.0.1;port=3306;dbname=app;user=me;password=secret");
+$my = new PDO("mysql:host=127.0.0.1;dbname=app", "me", "secret");
 ```
 
-The DSN must start with `sqlite:` or `pgsql:`. For SQLite, the `$username`,
-`$password`, and `$options` arguments are accepted for signature compatibility
-but ignored. For PostgreSQL, `$username` / `$password` are folded into the
-connection (other keys like `host`, `port`, `dbname`, `sslmode` come from the
-`key=value;…` DSN). A failed connection throws a `PDOException`.
+The DSN must start with `sqlite:`, `pgsql:`, or `mysql:`. For SQLite, the
+`$username`, `$password`, and `$options` arguments are accepted for signature
+compatibility but ignored. For PostgreSQL and MySQL, `$username` / `$password` are
+folded into the connection (other keys like `host`, `port`, `dbname`, and — for
+MySQL — `unix_socket` come from the `key=value;…` DSN). A failed connection throws
+a `PDOException`.
 
 ## Executing statements
 
@@ -149,6 +154,26 @@ points:
   text output, but the value is equivalent. Other types (arrays, `bytea`, network
   types) are best read with an explicit `::text` cast.
 
+## MySQL / MariaDB notes
+
+The MySQL driver behaves like the others, with a few database-specific points:
+
+- **Placeholders.** MySQL uses positional `?` natively; PDO `:name` placeholders
+  are rewritten to `?` at prepare time (a name reused in the statement binds the
+  same value to each position), so you write the same portable SQL for either
+  driver. As in PHP, a single statement uses either `?` or `:name`, not both.
+- **`lastInsertId()`.** Returns the last `AUTO_INCREMENT` value; the sequence-name
+  argument (a PostgreSQL/Oracle concept) is ignored.
+- **Transactions.** Wrap DML on transactional (InnoDB) tables. MySQL implicitly
+  commits around DDL (`CREATE`/`DROP TABLE`, …), so a `beginTransaction()` cannot
+  roll those back.
+- **Types.** `INT`/`BIGINT`/`BOOLEAN` (a `TINYINT(1)`, so `0`/`1`) → int,
+  `FLOAT`/`DOUBLE` → float, text types → string, `NULL` → null. The rich types are
+  returned as their text representation: `DECIMAL` (scale preserved), `DATE`,
+  `DATETIME` / `TIMESTAMP`, and `TIME`. The same values bind as parameters (text
+  is coerced to the column type by the server).
+- **Driver name.** `getAttribute(PDO::ATTR_DRIVER_NAME)` reports `"mysql"`.
+
 ## Transactions
 
 ```php
@@ -198,7 +223,8 @@ if ($db->exec("BAD SQL") === false) {
 
 The mode can also be seeded from the constructor's options array:
 `new PDO($dsn, null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_SILENT])`.
-`getAttribute()` reads it back; `ATTR_DRIVER_NAME` reports `"sqlite"`.
+`getAttribute()` reads it back; `ATTR_DRIVER_NAME` reports the active driver
+(`"sqlite"`, `"pgsql"`, or `"mysql"`).
 
 ## Supported surface
 
@@ -218,8 +244,12 @@ The mode can also be seeded from the constructor's options array:
 
 ## Limitations
 
-- **SQLite and PostgreSQL only.** The MySQL driver is not yet implemented (the
-  bridge is structured to add it as another driver behind the same prelude).
+- **SQLite, PostgreSQL, and MySQL / MariaDB.** Other PDO drivers (Oracle, SQL
+  Server, …) are not implemented; the bridge is structured to add more behind the
+  same prelude.
+- **`PDO::quote()`** applies standard SQL single-quote escaping; for MySQL it does
+  not escape backslashes, so prefer prepared statements (the recommended path for
+  every driver).
 - **`bindParam()`** binds the current value, not a deferred by-reference read.
 - **`FETCH_CLASS` / `FETCH_INTO`** are not implemented.
 - **`FETCH_OBJ`** materializes the stdClass via a JSON round-trip, so a result

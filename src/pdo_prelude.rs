@@ -1,11 +1,11 @@
 //! Purpose:
-//! The PDO standard-library surface (SQLite + PostgreSQL drivers), implemented in
-//! elephc-PHP. Declares the driver-agnostic `elephc_pdo` bridge externs and the
-//! `PDO`, `PDOStatement`, and `PDOException` classes, so the whole feature
-//! compiles through the normal pipeline (classes, methods, exceptions, mixed
-//! arrays, C-ABI extern calls) instead of bespoke intrinsics and assembly. The
-//! bridge dispatches to the right driver from the DSN prefix (`sqlite:` /
-//! `pgsql:`), so the same prelude serves both databases.
+//! The PDO standard-library surface (SQLite + PostgreSQL + MySQL/MariaDB drivers),
+//! implemented in elephc-PHP. Declares the driver-agnostic `elephc_pdo` bridge
+//! externs and the `PDO`, `PDOStatement`, and `PDOException` classes, so the whole
+//! feature compiles through the normal pipeline (classes, methods, exceptions,
+//! mixed arrays, C-ABI extern calls) instead of bespoke intrinsics and assembly.
+//! The bridge dispatches to the right driver from the DSN prefix (`sqlite:` /
+//! `pgsql:` / `mysql:`), so the same prelude serves every database.
 //!
 //! Called from:
 //! - `crate::pipeline::compile()` and the codegen test harness via `inject_if_used`,
@@ -27,7 +27,7 @@
 use crate::parser::ast::{Program, Stmt};
 
 /// The elephc-PHP source implementing PDO over the driver-agnostic `elephc_pdo`
-/// bridge (SQLite + PostgreSQL).
+/// bridge (SQLite + PostgreSQL + MySQL/MariaDB).
 ///
 /// Fetch-mode integers match PHP (`FETCH_ASSOC`=2, `FETCH_NUM`=3, `FETCH_BOTH`=4,
 /// `FETCH_OBJ`=5); the bridge reports SQLite-compatible column-type integers for
@@ -64,6 +64,7 @@ extern "elephc_pdo" {
     function elephc_pdo_column_double(int $stmt, int $i): float;
     function elephc_pdo_column_text(int $stmt, int $i): string;
     function elephc_pdo_finalize(int $stmt): int;
+    function elephc_pdo_driver_name(int $conn): string;
 }
 
 class PDOException extends RuntimeException {
@@ -92,12 +93,12 @@ class PDO {
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null) {
         $this->errMode = 2;
         $this->attributes = [];
-        // SQLite ignores credentials. For PostgreSQL, the user/password may be
-        // passed as the PDO constructor arguments (PHP-style); fold them into the
-        // DSN's `key=value` list, where the bridge parses them (a `user=` /
-        // `password=` already in the DSN is overridden by the explicit argument).
+        // SQLite ignores credentials. For PostgreSQL and MySQL, the user/password
+        // may be passed as the PDO constructor arguments (PHP-style); fold them
+        // into the DSN's `key=value` list, where the bridge parses them (a `user=`
+        // / `password=` already in the DSN is overridden by the explicit argument).
         $_dsn = $dsn;
-        if (str_starts_with($dsn, "pgsql:")) {
+        if (str_starts_with($dsn, "pgsql:") || str_starts_with($dsn, "mysql:")) {
             if ($username !== null) {
                 $_dsn = $_dsn . ";user=" . $username;
             }
@@ -143,7 +144,7 @@ class PDO {
             return $this->errMode;
         }
         if ($attribute == 16) {
-            return "sqlite";
+            return elephc_pdo_driver_name($this->conn);
         }
         if (isset($this->attributes[$attribute])) {
             return $this->attributes[$attribute];
