@@ -253,3 +253,25 @@ fn test_is_float_mixed_array_element_tests_runtime_tag() {
     );
     assert_eq!(out, "ififii");
 }
+
+/// Verifies `is_nan`/`is_finite`/`is_infinite` of a boxed Mixed value cast the payload to a
+/// double (via `__rt_mixed_cast_float`) before the IEEE check, instead of treating the cell
+/// pointer as a float. Iterates a heterogeneous float/int array so the elements are Mixed.
+#[test]
+fn test_is_nan_finite_infinite_mixed_array_element() {
+    let out = compile_and_run(
+        r#"<?php $a = [NAN, 7, INF, 2.5]; foreach ($a as $v) { echo (is_nan($v)?"N":"-"), (is_finite($v)?"F":"-"), (is_infinite($v)?"I":"-"), "|"; }"#,
+    );
+    assert_eq!(out, "N--|-F-|--I|-F-|");
+}
+
+/// Verifies `is_infinite(NAN)` is false. On x86_64 the `ucomisd`/`sete` infinity check set
+/// the zero flag for the unordered NaN comparison and wrongly reported NaN as infinite; the
+/// fix adds a NaN parity guard (the NaN comparison is unordered, never equal to ±Inf).
+#[test]
+fn test_is_infinite_nan_is_false() {
+    let out = compile_and_run(
+        r#"<?php echo (is_infinite(NAN)?"1":"0"), (is_infinite(INF)?"1":"0"), (is_infinite(-INF)?"1":"0"), (is_infinite(2.5)?"1":"0");"#,
+    );
+    assert_eq!(out, "0110");
+}
