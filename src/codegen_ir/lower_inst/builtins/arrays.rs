@@ -96,6 +96,20 @@ pub(super) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction
     store_if_result(ctx, inst)
 }
 
+/// Lowers `array_combine()` through the legacy hash-building runtime helpers.
+pub(super) fn lower_array_combine(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "array_combine", 2)?;
+    let keys = expect_operand(inst, 0)?;
+    let values = expect_operand(inst, 1)?;
+    let key_elem_ty = array_combine_key_element_type(ctx.value_php_type(keys)?)?;
+    let value_elem_ty = array_combine_value_element_type(ctx.value_php_type(values)?)?;
+    require_array_combine_key_layout(&key_elem_ty)?;
+    require_array_combine_value_layout(&value_elem_ty)?;
+    require_array_combine_result_type(&value_elem_ty, &inst.result_php_type.codegen_repr())?;
+    lower_array_combine_call(ctx, keys, values, &value_elem_ty)?;
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `array_reverse()` for indexed arrays with 8-byte payload slots.
 pub(super) fn lower_array_reverse(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_reverse", 1)?;
@@ -338,6 +352,74 @@ fn require_array_fill_value_type(value_ty: &PhpType) -> Result<()> {
     )))
 }
 
+/// Returns the key element type accepted by `array_combine()`.
+fn array_combine_key_element_type(ty: PhpType) -> Result<PhpType> {
+    match ty.codegen_repr() {
+        PhpType::Array(elem) => Ok(elem.codegen_repr()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_combine keys PHP type {:?}",
+            other
+        ))),
+    }
+}
+
+/// Returns the value element type accepted by `array_combine()`.
+fn array_combine_value_element_type(ty: PhpType) -> Result<PhpType> {
+    match ty.codegen_repr() {
+        PhpType::Array(elem) => Ok(elem.codegen_repr()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_combine values PHP type {:?}",
+            other
+        ))),
+    }
+}
+
+/// Verifies the key array uses the string-slot layout expected by the runtime helper.
+fn require_array_combine_key_layout(key_elem_ty: &PhpType) -> Result<()> {
+    if matches!(key_elem_ty, PhpType::Str | PhpType::Void | PhpType::Never) {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "array_combine key element PHP type {:?}",
+        key_elem_ty
+    )))
+}
+
+/// Verifies the values array uses a slot layout the runtime helper can copy.
+///
+/// String values are deliberately excluded because indexed string arrays store 16-byte
+/// inline slots, while the existing `array_combine` runtime helper reads 8-byte value slots.
+fn require_array_combine_value_layout(value_elem_ty: &PhpType) -> Result<()> {
+    if matches!(
+        value_elem_ty,
+        PhpType::Int
+            | PhpType::Bool
+            | PhpType::Float
+            | PhpType::Callable
+            | PhpType::Void
+            | PhpType::Never
+    ) || value_elem_ty.is_refcounted()
+    {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "array_combine value element PHP type {:?}",
+        value_elem_ty
+    )))
+}
+
+/// Verifies `array_combine()` produces a hash with the selected value element metadata.
+fn require_array_combine_result_type(value_elem_ty: &PhpType, result_ty: &PhpType) -> Result<()> {
+    match result_ty {
+        PhpType::AssocArray { value, .. } if value.codegen_repr() == *value_elem_ty => Ok(()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_combine result PHP type {:?} for value element PHP type {:?}",
+            other,
+            value_elem_ty
+        ))),
+    }
+}
+
 /// Verifies the destination element type matches the fill layout or is a Mixed widening.
 fn require_array_fill_result_type(value_ty: &PhpType, result_elem_ty: &PhpType) -> Result<()> {
     if value_ty == result_elem_ty || result_elem_ty == &PhpType::Mixed {
@@ -374,12 +456,45 @@ fn lower_array_fill_call(
     Ok(())
 }
 
+/// Calls the legacy runtime helper after materializing `array_combine()` arguments.
+fn lower_array_combine_call(
+    ctx: &mut FunctionContext<'_>,
+    keys: ValueId,
+    values: ValueId,
+    value_elem_ty: &PhpType,
+) -> Result<()> {
+    let value_tag = runtime_value_tag("array_combine", value_elem_ty)? as i64;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(keys, "x0")?;
+            ctx.load_value_to_reg(values, "x1")?;
+            abi::emit_load_int_immediate(ctx.emitter, "x2", value_tag);
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(keys, "rdi")?;
+            ctx.load_value_to_reg(values, "rsi")?;
+            abi::emit_load_int_immediate(ctx.emitter, "rdx", value_tag);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, array_combine_runtime_helper(value_elem_ty));
+    Ok(())
+}
+
 /// Returns the helper matching the fill value's ownership representation.
 fn array_fill_runtime_helper(value_ty: &PhpType) -> &'static str {
     if value_ty.is_refcounted() {
         "__rt_array_fill_refcounted"
     } else {
         "__rt_array_fill"
+    }
+}
+
+/// Returns the helper matching the combined value element ownership representation.
+fn array_combine_runtime_helper(value_elem_ty: &PhpType) -> &'static str {
+    if value_elem_ty.is_refcounted() {
+        "__rt_array_combine_refcounted"
+    } else {
+        "__rt_array_combine"
     }
 }
 

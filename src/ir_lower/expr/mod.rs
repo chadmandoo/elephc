@@ -20,7 +20,7 @@ use crate::parser::ast::{
     BinOp, CallableTarget, CastType, Expr, ExprKind, InstanceOfTarget, MagicConstant,
     StaticReceiver,
 };
-use crate::types::{checker::infer_expr_type_syntactic, PhpType};
+use crate::types::{array_key_type_from_value_type, checker::infer_expr_type_syntactic, PhpType};
 
 mod constants;
 
@@ -788,6 +788,7 @@ fn array_builtin_return_type(
     operands: &[crate::ir::ValueId],
 ) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "array_combine" => array_combine_builtin_return_type(ctx, operands),
         "array_merge" => array_merge_builtin_return_type(ctx, operands),
         "array_values" => {
             let array = operands.first()?;
@@ -813,6 +814,27 @@ fn array_builtin_return_type(
         }
         _ => None,
     }
+}
+
+/// Returns precise return metadata for `array_combine(keys, values)`.
+fn array_combine_builtin_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    operands: &[crate::ir::ValueId],
+) -> Option<PhpType> {
+    let keys = operands.first()?;
+    let values = operands.get(1)?;
+    let key_ty = match ctx.builder.value_php_type(*keys).codegen_repr() {
+        PhpType::Array(elem) => array_key_type_from_value_type(elem.codegen_repr()),
+        _ => return None,
+    };
+    let value_ty = match ctx.builder.value_php_type(*values).codegen_repr() {
+        PhpType::Array(elem) => elem.codegen_repr(),
+        _ => return None,
+    };
+    Some(PhpType::AssocArray {
+        key: Box::new(key_ty),
+        value: Box::new(value_ty),
+    })
 }
 
 /// Returns precise return metadata for `array_merge()`.

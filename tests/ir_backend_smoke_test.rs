@@ -843,6 +843,35 @@ fn ir_backend_handles_indexed_array_pad() {
     }
 }
 
+/// Verifies `array_combine()` builds associative arrays from string-key indexed arrays.
+#[test]
+fn ir_backend_handles_indexed_array_combine() {
+    for (name, source, expected) in [
+        (
+            "array_combine_int_lookup",
+            "<?php $keys = ['a', 'b']; $vals = [1, 2]; $m = array_combine($keys, $vals); echo count($m); echo ':'; echo $m['b'];",
+            "2:2",
+        ),
+        (
+            "array_combine_numeric_key_normalization",
+            "<?php $m = array_combine(['1', '02'], [7, 8]); echo $m[1]; echo ':'; echo $m['02'];",
+            "7:8",
+        ),
+        (
+            "array_combine_float_lookup",
+            "<?php $m = array_combine(['x'], [1.5]); echo $m['x'];",
+            "1.5",
+        ),
+        (
+            "array_combine_refcounted_array_values",
+            "<?php $m = array_combine(['row'], [[5]]); $v = array_values($m); echo count($m); echo ':'; echo count($v[0]); echo ':'; echo $v[0][0];",
+            "1:1:5",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies indexed-array reversal returns a reversed copy without mutating the source.
 #[test]
 fn ir_backend_handles_indexed_array_reverse() {
