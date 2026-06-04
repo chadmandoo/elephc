@@ -218,3 +218,15 @@ fn test_min_five_args() {
     let out = compile_and_run("<?php echo min(5, 4, 3, 2, 1);");
     assert_eq!(out, "1");
 }
+
+/// Verifies `abs()` of a boxed Mixed value (a heterogeneous-array element) applies the
+/// numeric absolute value per the runtime tag instead of operating on the boxed-cell
+/// pointer. Before the fix this printed garbage pointers; the int and float results must
+/// both be correct and keep PHP's int→int / float→float formatting.
+#[test]
+fn test_abs_mixed_array_element_preserves_int_and_float() {
+    let out = compile_and_run(
+        r#"<?php $a = [-5, -2.5, 7, -3.25]; foreach ($a as $v) { echo abs($v), ","; }"#,
+    );
+    assert_eq!(out, "5,2.5,7,3.25,");
+}

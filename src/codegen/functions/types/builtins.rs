@@ -196,7 +196,11 @@ pub(super) fn infer_function_call_type(
         "abs" => {
             if !args.is_empty() {
                 let t = infer_local_type(&args[0], sig, ctx);
-                if t == PhpType::Float {
+                if matches!(t, PhpType::Mixed | PhpType::Union(_)) {
+                    // A boxed Mixed operand keeps its int/float tag at runtime, so the
+                    // result type must stay Mixed to match the `__rt_abs_mixed` emitter.
+                    PhpType::Mixed
+                } else if t == PhpType::Float {
                     PhpType::Float
                 } else {
                     PhpType::Int
