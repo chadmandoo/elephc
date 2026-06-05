@@ -2114,6 +2114,28 @@ echo $a[1];
     );
 }
 
+/// Verifies heterogeneous indexed-array literals lower as Mixed-element arrays.
+#[test]
+fn ir_backend_handles_mixed_indexed_array_literals() {
+    let source = r#"<?php
+$a = [1, null, "ok"];
+$a[] = 2;
+echo count($a);
+echo ":";
+echo $a[0];
+echo ":";
+echo is_null($a[1]) ? "N" : "bad";
+echo ":";
+echo $a[2];
+echo ":";
+echo $a[3];
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("mixed_indexed_array_literal", source),
+        "4:1:N:ok:2"
+    );
+}
+
 /// Verifies PHP indexed-array `+` preserves left keys and appends missing right suffixes.
 #[test]
 fn ir_backend_handles_indexed_array_union() {
