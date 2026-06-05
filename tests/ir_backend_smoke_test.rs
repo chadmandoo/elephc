@@ -1598,6 +1598,25 @@ fn ir_backend_handles_empty_builtin() {
     );
 }
 
+/// Verifies `isset()` lowering for scalar values and already-evaluated array offsets.
+#[test]
+fn ir_backend_handles_isset_builtin() {
+    assert_eq!(
+        compile_and_run_ir_backend(
+            "isset_scalar_values",
+            "<?php $x = 42; $n = null; echo isset($x) ? 'Y' : 'N'; echo isset($n) ? 'Y' : 'N'; echo isset($x, $n) ? 'Y' : 'N';",
+        ),
+        "YNN"
+    );
+    assert_eq!(
+        compile_and_run_ir_backend(
+            "isset_present_array_offset",
+            "<?php $items = [1]; echo isset($items[0]) ? 'Y' : 'N';",
+        ),
+        "Y"
+    );
+}
+
 /// Verifies `intdiv()` division-by-zero follows the legacy fatal diagnostic.
 #[test]
 fn ir_backend_handles_intdiv_division_by_zero() {

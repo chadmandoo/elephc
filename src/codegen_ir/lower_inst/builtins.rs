@@ -9,7 +9,7 @@
 //! - Runtime conversions reuse existing target-aware helpers instead of duplicating parsing logic.
 //! - Selected Mixed predicates inspect the boxed runtime tag through shared predicate lowering.
 
-use crate::codegen::abi;
+use crate::codegen::{abi, emit_box_current_value_as_mixed};
 use crate::codegen::platform::Arch;
 use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
 use crate::names::{define_seen_symbol, ir_global_symbol, php_symbol_key};
@@ -117,6 +117,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
         "empty" => lower_empty(ctx, inst),
+        "isset" => lower_isset(ctx, inst),
         "gettype" => lower_gettype(ctx, inst),
         "define" => lower_define(ctx, inst),
         "defined" => lower_defined(ctx, inst),
@@ -272,6 +273,26 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "ctype_space" => ctype::lower_ctype_space(ctx, inst),
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
     }
+}
+
+/// Lowers `isset()` for values already evaluated by the EIR frontend.
+fn lower_isset(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_min_arg_count(inst, "isset", 1)?;
+    let false_label = ctx.next_label("isset_false");
+    let done_label = ctx.next_label("isset_done");
+    for value in inst.operands.iter().copied() {
+        predicates::emit_is_null_result(ctx, value)?;
+        abi::emit_branch_if_int_result_nonzero(ctx.emitter, &false_label);
+    }
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&false_label);
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+    ctx.emitter.label(&done_label);
+    if inst.result_php_type.codegen_repr() == PhpType::Mixed {
+        emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Bool);
+    }
+    store_if_result(ctx, inst)
 }
 
 /// Lowers `define("NAME", value)` with the legacy duplicate-name runtime guard.
@@ -823,6 +844,19 @@ fn ensure_arg_count(inst: &Instruction, name: &str, expected: usize) -> Result<(
     }
     Err(CodegenIrError::invalid_module(format!(
         "{} expected {} args, got {}",
+        name,
+        expected,
+        inst.operands.len()
+    )))
+}
+
+/// Verifies that the builtin call has at least the expected number of lowered operands.
+fn ensure_min_arg_count(inst: &Instruction, name: &str, expected: usize) -> Result<()> {
+    if inst.operands.len() >= expected {
+        return Ok(());
+    }
+    Err(CodegenIrError::invalid_module(format!(
+        "{} expected at least {} args, got {}",
         name,
         expected,
         inst.operands.len()
