@@ -225,6 +225,49 @@ echo Box::stat(5);
     );
 }
 
+/// Verifies positional variadic calls collect tail arguments into the variadic array parameter.
+#[test]
+fn ir_backend_handles_positional_variadic_parameters() {
+    let source = r#"<?php
+function num_args(...$args) {
+    return count($args);
+}
+function head_count($head, ...$rest) {
+    echo $head;
+    echo ":";
+    echo count($rest);
+}
+class Counter {
+    public function inst($head, ...$rest) {
+        echo $head;
+        echo ":";
+        echo count($rest);
+    }
+    public static function stat($head, ...$rest) {
+        echo $head;
+        echo ":";
+        echo count($rest);
+    }
+}
+echo num_args(10, 20, 30, 40);
+echo "|";
+echo num_args();
+echo "|";
+head_count(7, 8, 9);
+echo "|";
+head_count(7);
+echo "|";
+$counter = new Counter();
+$counter->inst(7, 8, 9);
+echo "|";
+Counter::stat(4, 5, 6, 7);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("positional_variadic_parameters", source),
+        "4|0|7:2|7:0|7:2|4:3"
+    );
+}
+
 /// Verifies pipe calls with static first-class callable targets lower to direct EIR calls.
 #[test]
 fn ir_backend_handles_static_pipe_calls() {

@@ -898,21 +898,38 @@ fn lower_args(ctx: &mut LoweringContext<'_, '_>, args: &[Expr]) -> Vec<crate::ir
     args.iter().map(|arg| lower_expr(ctx, arg).value).collect()
 }
 
-/// Returns positional call arguments with omitted optional defaults appended.
+/// Returns positional call arguments with omitted optional defaults and variadic tail materialized.
 fn positional_args_with_defaults(sig: &FunctionSig, args: &[Expr]) -> Vec<Expr> {
     if args.iter().any(is_named_or_spread_arg) {
         return args.to_vec();
     }
     let regular_param_count = crate::types::call_args::regular_param_count(sig);
-    if args.len() >= regular_param_count {
+    let fixed_arg_count = if sig.variadic.is_some() {
+        args.len().min(regular_param_count)
+    } else {
+        args.len()
+    };
+    if sig.variadic.is_none() && fixed_arg_count >= regular_param_count {
         return args.to_vec();
     }
-    let mut normalized = args.to_vec();
-    for idx in args.len()..regular_param_count {
+    let mut normalized = args[..fixed_arg_count].to_vec();
+    for idx in fixed_arg_count..regular_param_count {
         let Some(Some(default)) = sig.defaults.get(idx) else {
             break;
         };
         normalized.push(default.clone());
+    }
+    if sig.variadic.is_some() {
+        let tail = if args.len() > regular_param_count {
+            args[regular_param_count..].to_vec()
+        } else {
+            Vec::new()
+        };
+        let span = tail
+            .first()
+            .map(|arg| arg.span)
+            .unwrap_or_else(crate::span::Span::dummy);
+        normalized.push(Expr::new(ExprKind::ArrayLiteral(tail), span));
     }
     normalized
 }
