@@ -90,6 +90,26 @@ pub(super) fn lower_linkinfo(
     lower_unary_path_int(ctx, inst, "linkinfo", "__rt_linkinfo")
 }
 
+/// Lowers `symlink(target, link)` through the target-aware libc wrapper.
+pub(super) fn lower_symlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_binary_path_predicate(ctx, inst, "symlink", "__rt_symlink")
+}
+
+/// Lowers `link(oldpath, newpath)` through the target-aware libc wrapper.
+pub(super) fn lower_link(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_binary_path_predicate(ctx, inst, "link", "__rt_link")
+}
+
+/// Lowers `readlink(path)` and boxes the owned runtime string-or-false result.
+pub(super) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "readlink", 1)?;
+    let path = expect_operand(inst, 0)?;
+    load_string_to_result(ctx, path, "readlink")?;
+    abi::emit_call_label(ctx.emitter, "__rt_readlink");
+    box_owned_string_or_false_result(ctx, "readlink");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `fileatime(path)` and boxes the runtime integer-or-false result.
 pub(super) fn lower_fileatime(
     ctx: &mut FunctionContext<'_>,
@@ -245,6 +265,38 @@ fn lower_unary_path_int(
     super::ensure_arg_count(inst, name, 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, name)?;
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
+/// Loads two path strings into the runtime ABI, calls a boolean helper, and stores it.
+fn lower_binary_path_predicate(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 2)?;
+    let first = expect_operand(inst, 0)?;
+    let second = expect_operand(inst, 1)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_to_result(ctx, first, name)?;
+            abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+            load_string_to_result(ctx, second, name)?;
+            ctx.emitter.instruction("mov x3, x1");                              // pass the second path pointer in the runtime helper's secondary string slot
+            ctx.emitter.instruction("mov x4, x2");                              // pass the second path length in the runtime helper's secondary string slot
+            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+        }
+        Arch::X86_64 => {
+            load_string_to_result(ctx, first, name)?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            load_string_to_result(ctx, second, name)?;
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the second path pointer while the first path remains on the stack
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass the second path length while the first path remains on the stack
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+        }
+    }
     abi::emit_call_label(ctx.emitter, runtime_label);
     store_if_result(ctx, inst)
 }

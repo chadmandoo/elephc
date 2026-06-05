@@ -1675,8 +1675,8 @@ fn is_scalar_merge_element_type(ty: &PhpType) -> bool {
 fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "define" | "defined" | "empty" | "file_exists" | "function_exists" | "is_callable"
-        | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_numeric"
-        | "is_readable" | "is_writeable" | "is_writable" => Some(PhpType::Bool),
+        | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link"
+        | "is_readable" | "is_writeable" | "is_writable" | "symlink" => Some(PhpType::Bool),
         "date" => Some(PhpType::Str),
         "microtime" => Some(PhpType::Float),
         "clearstatcache" => Some(PhpType::Void),
@@ -1686,7 +1686,8 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         }
         "usleep" => Some(PhpType::Void),
         "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
-        | "fileowner" | "fileperms" | "filetype" | "realpath" | "strpos" | "strrpos" => {
+        | "fileowner" | "fileperms" | "filetype" | "readlink" | "realpath" | "strpos"
+        | "strrpos" => {
             Some(PhpType::Mixed)
         }
         "explode" | "str_split" | "sscanf" => Some(PhpType::Array(Box::new(PhpType::Str))),

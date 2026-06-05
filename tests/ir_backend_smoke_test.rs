@@ -3594,6 +3594,29 @@ echo realpath("/definitely/does/not/exist/eir-realpath") === false ? "false" : "
     );
 }
 
+/// Verifies symbolic and hard link builtins plus `readlink()` string/false boxing.
+#[test]
+fn ir_backend_handles_symlink_link_and_readlink() {
+    let source = r#"<?php
+file_put_contents("orig.txt", "hi");
+echo symlink("orig.txt", "soft.txt") ? "S" : "!";
+echo ":";
+echo readlink("soft.txt");
+echo ":";
+echo file_get_contents("soft.txt");
+echo ":";
+echo link("orig.txt", "hard.txt") ? "H" : "!";
+echo ":";
+echo file_get_contents("hard.txt");
+echo ":";
+echo readlink("missing.txt") === false ? "F" : "!";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("symlink_link_readlink", source),
+        "S:orig.txt:hi:H:hi:F"
+    );
+}
+
 /// Verifies global constant declarations, references, and `defined()` lowering.
 #[test]
 fn ir_backend_handles_global_constants_and_defined() {
