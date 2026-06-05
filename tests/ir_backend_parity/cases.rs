@@ -818,6 +818,41 @@ echo ($path instanceof EirInfo) ? "P" : "x";
     );
 }
 
+/// Verifies `SplFileInfo::openFile()` and `setFileClass()` match the legacy backend.
+#[test]
+fn parity_spl_file_info_open_file() {
+    assert_backend_parity(
+        "spl_file_info_open_file",
+        r#"<?php
+class EirFile extends SplFileObject {}
+
+file_put_contents("a.txt", "one\ntwo\n");
+
+$info = new SplFileInfo("a.txt");
+$file = $info->openFile();
+echo ($file instanceof SplFileObject) ? "F" : "x";
+echo ":";
+echo $file->fgets();
+echo ":";
+echo $file->key();
+
+$direct = new SplFileObject("a.txt");
+echo ":";
+echo $direct->fgets();
+
+$info->setFileClass(EirFile::class);
+$custom = $info->openFile("r");
+echo ":";
+echo ($custom instanceof EirFile) ? "C" : "x";
+echo ":";
+echo $custom->fgets();
+
+unlink("a.txt");
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);

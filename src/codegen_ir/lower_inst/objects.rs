@@ -1399,6 +1399,9 @@ fn ensure_property_value_supported(
     {
         return Ok(());
     }
+    if is_empty_array_for_array_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
     Err(CodegenIrError::unsupported(format!(
         "{} assigning PHP type {:?} to {}::${} with PHP type {:?}",
         inst.op.name(),
@@ -1407,6 +1410,15 @@ fn ensure_property_value_supported(
         slot.property,
         slot.php_type
     )))
+}
+
+/// Returns true when an empty array literal initializes a typed array property.
+fn is_empty_array_for_array_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    matches!(
+        (value_ty, slot_ty),
+        (PhpType::Array(elem_ty), PhpType::Array(_))
+            if matches!(elem_ty.as_ref(), PhpType::Never | PhpType::Void)
+    )
 }
 
 /// Returns true when a value can initialize a pointer-sized slot as null.

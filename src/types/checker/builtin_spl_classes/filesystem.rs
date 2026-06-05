@@ -334,7 +334,12 @@ fn spl_file_info_methods() -> Vec<ClassMethod> {
                 property_access(this_expr(), "fileClass"),
                 "SplFileObject",
                 "SplFileObject",
-                vec![file_path_arg_expr(), var_expr("mode")],
+                vec![
+                    file_path_arg_expr(),
+                    var_expr("mode"),
+                    var_expr("useIncludePath"),
+                    var_expr("context"),
+                ],
             )),
         ),
         method_with_body(

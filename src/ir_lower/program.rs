@@ -347,11 +347,24 @@ fn lower_referenced_builtin_spl_methods(
     check_result: &CheckResult,
     constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
 ) {
-    let mut methods = referenced_builtin_spl_methods(module);
-    methods.sort();
-    methods.dedup();
-    for (class_name, method_key) in methods {
-        lower_builtin_spl_method(&class_name, &method_key, module, check_result, constants);
+    loop {
+        let mut methods = referenced_builtin_spl_methods(module);
+        methods.sort();
+        methods.dedup();
+        methods.retain(|(class_name, method_key)| {
+            !class_method_already_lowered(module, class_name, method_key, false)
+        });
+        if methods.is_empty() {
+            break;
+        }
+
+        let before = module.class_methods.len();
+        for (class_name, method_key) in methods {
+            lower_builtin_spl_method(&class_name, &method_key, module, check_result, constants);
+        }
+        if module.class_methods.len() == before {
+            break;
+        }
     }
 }
 
@@ -371,9 +384,27 @@ fn referenced_builtin_spl_methods(module: &Module) -> Vec<(String, String)> {
         for inst in &function.instructions {
             match inst.op {
                 Op::ObjectNew => {
-                    if class_data_name(module, inst) == Some("SplFileInfo") {
-                        methods.push(("SplFileInfo".to_string(), php_method_key("__construct")));
-                        methods.push(("SplFileInfo".to_string(), php_method_key("__toString")));
+                    if let Some(class_name) = class_data_name(module, inst) {
+                        let construct_key = php_method_key("__construct");
+                        if is_supported_builtin_spl_method(class_name, &construct_key) {
+                            methods.push((class_name.to_string(), construct_key));
+                        }
+                        push_builtin_spl_metadata_methods(&mut methods, class_name);
+                    }
+                }
+                Op::DynamicObjectNew => {
+                    if let Some((fallback_class, required_parent)) =
+                        dynamic_object_new_metadata_names(module, inst)
+                    {
+                        let construct_key = php_method_key("__construct");
+                        if is_supported_builtin_spl_method(fallback_class, &construct_key) {
+                            methods.push((fallback_class.to_string(), construct_key.clone()));
+                        }
+                        if is_supported_builtin_spl_method(required_parent, &construct_key) {
+                            methods.push((required_parent.to_string(), construct_key));
+                        }
+                        push_builtin_spl_metadata_methods(&mut methods, fallback_class);
+                        push_builtin_spl_metadata_methods(&mut methods, required_parent);
                     }
                 }
                 Op::MethodCall | Op::NullsafeMethodCall => {
@@ -417,6 +448,14 @@ fn class_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Opt
         .map(String::as_str)
 }
 
+/// Parses dynamic object factory fallback and required-parent metadata.
+fn dynamic_object_new_metadata_names<'a>(
+    module: &'a Module,
+    inst: &crate::ir::Instruction,
+) -> Option<(&'a str, &'a str)> {
+    class_data_name(module, inst)?.split_once('|')
+}
+
 /// Returns the string immediate attached to an instruction.
 fn string_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
     let Some(Immediate::Data(data)) = inst.immediate else {
@@ -434,10 +473,38 @@ fn php_method_key(method_name: &str) -> String {
     crate::names::php_symbol_key(method_name)
 }
 
+/// Adds builtin SPL methods required by runtime class/interface metadata.
+fn push_builtin_spl_metadata_methods(methods: &mut Vec<(String, String)>, class_name: &str) {
+    for method_name in required_builtin_spl_metadata_methods(class_name) {
+        let method_key = php_method_key(method_name);
+        if is_supported_builtin_spl_method(class_name, &method_key) {
+            methods.push((class_name.to_string(), method_key));
+        }
+    }
+}
+
+/// Returns methods needed even when user code does not call them directly.
+fn required_builtin_spl_metadata_methods(class_name: &str) -> &'static [&'static str] {
+    match class_name {
+        "SplFileInfo" => &["__toString"],
+        "SplFileObject" => &[
+            "current",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+            "seek",
+            "hasChildren",
+            "getChildren",
+        ],
+        _ => &[],
+    }
+}
+
 /// Returns true for builtin SPL methods intentionally lowered into EIR today.
 fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
-    class_name == "SplFileInfo"
-        && matches!(
+    match class_name {
+        "SplFileInfo" => matches!(
             method_key,
             "__construct"
                 | "__tostring"
@@ -467,7 +534,24 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
                 | "getfileinfo"
                 | "getpathinfo"
                 | "setinfoclass"
-        )
+                | "openfile"
+                | "setfileclass"
+        ),
+        "SplFileObject" => matches!(
+            method_key,
+            "__construct"
+                | "current"
+                | "key"
+                | "next"
+                | "rewind"
+                | "valid"
+                | "seek"
+                | "haschildren"
+                | "getchildren"
+                | "fgets"
+        ),
+        _ => false,
+    }
 }
 
 /// Lowers one supported builtin SPL method body if it has not already been emitted.

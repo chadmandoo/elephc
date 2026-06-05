@@ -2436,6 +2436,41 @@ echo ($path instanceof EirInfo) ? "P" : "x";
     );
 }
 
+/// Verifies `SplFileInfo::openFile()` constructs readable `SplFileObject` instances.
+#[test]
+fn ir_backend_handles_spl_file_info_open_file() {
+    let source = r#"<?php
+class EirFile extends SplFileObject {}
+
+file_put_contents("a.txt", "one\ntwo\n");
+
+$info = new SplFileInfo("a.txt");
+$file = $info->openFile();
+echo ($file instanceof SplFileObject) ? "F" : "x";
+echo ":";
+echo $file->fgets();
+echo ":";
+echo $file->key();
+
+$direct = new SplFileObject("a.txt");
+echo ":";
+echo $direct->fgets();
+
+$info->setFileClass(EirFile::class);
+$custom = $info->openFile("r");
+echo ":";
+echo ($custom instanceof EirFile) ? "C" : "x";
+echo ":";
+echo $custom->fgets();
+
+unlink("a.txt");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_file_info_open_file", source),
+        "F:one\n:1:one\n:C:one\n"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {
