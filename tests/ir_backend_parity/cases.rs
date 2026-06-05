@@ -90,6 +90,28 @@ echo is_callable("EirCallableBox::hidden") ? "yes" : "no";
 "#,
         &[],
     );
+    assert_backend_parity(
+        "static_method_array_is_callable",
+        r#"<?php
+class EirCallableArrayBox {
+    public static function hit(): int { return 1; }
+    private static function hidden(): int { return 2; }
+    public function instance(): int { return 3; }
+}
+echo is_callable(["EirCallableArrayBox", "hit"]) ? "yes" : "no";
+echo ":";
+echo is_callable(["eircallablearraybox", "HIT"]) ? "yes" : "no";
+echo ":";
+echo is_callable(["EirCallableArrayBox", "missing"]) ? "yes" : "no";
+echo ":";
+echo is_callable(["MissingCallableArrayBox", "hit"]) ? "yes" : "no";
+echo ":";
+echo is_callable(["EirCallableArrayBox", "hidden"]) ? "yes" : "no";
+echo ":";
+echo is_callable(["EirCallableArrayBox", "instance"]) ? "yes" : "no";
+"#,
+        &[],
+    );
 }
 
 /// Verifies recent callable dispatch fixes preserve legacy backend behavior.

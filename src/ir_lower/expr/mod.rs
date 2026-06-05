@@ -19,7 +19,7 @@ use crate::ir_lower::effects_lookup;
 use crate::names::{php_symbol_key, Name};
 use crate::parser::ast::{
     BinOp, CallableTarget, CastType, Expr, ExprKind, InstanceOfTarget, MagicConstant,
-    StaticReceiver, TypeExpr,
+    StaticReceiver, TypeExpr, Visibility,
 };
 use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::{
@@ -901,6 +901,10 @@ fn lower_static_is_callable(
         ExprKind::FirstClassCallable(
             CallableTarget::Function(_) | CallableTarget::StaticMethod { .. },
         ) => Some(emit_bool_literal(ctx, true, Some(expr.span))),
+        ExprKind::ArrayLiteral(items) => {
+            let is_callable = static_array_callable_is_callable(ctx, items)?;
+            Some(emit_bool_literal(ctx, is_callable, Some(expr.span)))
+        }
         _ => None,
     }
 }
@@ -988,6 +992,43 @@ fn static_callable_class_name(
         ExprKind::ClassConstant { receiver } => static_receiver_class_name(ctx, receiver),
         _ => None,
     }
+}
+
+/// Returns the static `is_callable()` result for a literal static-method callback array.
+fn static_array_callable_is_callable(
+    ctx: &LoweringContext<'_, '_>,
+    items: &[Expr],
+) -> Option<bool> {
+    let [class_expr, method_expr] = items else {
+        return None;
+    };
+    let class_name = static_callable_class_name(ctx, class_expr)?;
+    let ExprKind::StringLiteral(method) = &method_expr.kind else {
+        return None;
+    };
+    Some(static_method_callback_is_callable(ctx, &class_name, method))
+}
+
+/// Returns true when a compile-time class/method pair names a public static method.
+fn static_method_callback_is_callable(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    method: &str,
+) -> bool {
+    let Some(class_name) = lookup_folded_name(ctx.classes.keys(), class_name.trim_start_matches('\\')) else {
+        return false;
+    };
+    let Some(class_info) = ctx.classes.get(&class_name) else {
+        return false;
+    };
+    let method_key = php_symbol_key(method);
+    if !class_info.static_methods.contains_key(&method_key) {
+        return false;
+    }
+    matches!(
+        class_info.static_method_visibilities.get(&method_key),
+        Some(Visibility::Public) | None
+    )
 }
 
 /// Converts a static `call_user_func_array()` argument array into call arguments.
