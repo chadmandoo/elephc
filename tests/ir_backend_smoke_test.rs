@@ -225,6 +225,30 @@ echo Box::stat(5);
     );
 }
 
+/// Verifies named arguments are evaluated in source order and materialized in parameter order.
+#[test]
+fn ir_backend_handles_named_arguments_for_user_calls() {
+    for (name, source, expected) in [
+        (
+            "named_reordered_user_call",
+            "<?php function pair($a, $b) { echo $a; echo ':'; echo $b; } pair(b: 2, a: 1);",
+            "1:2",
+        ),
+        (
+            "named_source_order_user_call",
+            "<?php function mark($v) { echo 'm'; echo $v; echo '|'; return $v; } function pair($a, $b) { echo $a; echo ':'; echo $b; } pair(b: mark(2), a: mark(1));",
+            "m2|m1|1:2",
+        ),
+        (
+            "named_methods_and_constructor",
+            "<?php class Box { public int $a; public int $b; public function __construct(int $a, int $b) { $this->a = $a; $this->b = $b; } public function show(int $left, int $right) { echo $left; echo ':'; echo $right; } public static function stat(int $first, int $second) { echo $first; echo ':'; echo $second; } } $box = new Box(b: 2, a: 1); echo $box->a; echo ':'; echo $box->b; echo '|'; $box->show(right: 4, left: 3); echo '|'; Box::stat(second: 6, first: 5);",
+            "1:2|3:4|5:6",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies positional variadic calls collect tail arguments into the variadic array parameter.
 #[test]
 fn ir_backend_handles_positional_variadic_parameters() {

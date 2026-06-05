@@ -903,8 +903,11 @@ fn lower_args_with_signature(
     let Some(sig) = sig else {
         return lower_args(ctx, args);
     };
-    if args.iter().any(is_named_or_spread_arg) {
+    if args.iter().any(is_spread_arg) {
         return lower_args(ctx, args);
+    }
+    if args.iter().any(is_named_arg) {
+        return lower_named_args_with_signature(ctx, sig, args);
     }
     let regular_param_count = crate::types::call_args::regular_param_count(sig);
     let fixed_arg_count = if sig.variadic.is_some() {
@@ -934,6 +937,101 @@ fn lower_args_with_signature(
         operands.push(lower_variadic_tail_array(ctx, sig, tail).value);
     }
     operands
+}
+
+/// Lowers named arguments in source order, then returns operands in signature order.
+fn lower_named_args_with_signature(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    args: &[Expr],
+) -> Vec<crate::ir::ValueId> {
+    let call_span = args
+        .first()
+        .map(|arg| arg.span)
+        .unwrap_or_else(crate::span::Span::dummy);
+    let Ok(plan) = crate::types::call_args::plan_call_args(
+        sig,
+        args,
+        call_span,
+        false,
+        true,
+    ) else {
+        return lower_args(ctx, args);
+    };
+    if plan.has_spread_args() {
+        return lower_args(ctx, args);
+    }
+    if plan.variadic_args.iter().any(|arg| arg.key.is_some()) {
+        return lower_args(ctx, args);
+    }
+
+    let mut source_values = Vec::with_capacity(plan.source_args.len());
+    for source_arg in &plan.source_args {
+        source_values.push(lower_call_source_arg(ctx, source_arg));
+    }
+
+    let mut operands = Vec::with_capacity(plan.regular_args.len() + usize::from(sig.variadic.is_some()));
+    for arg in &plan.regular_args {
+        match arg {
+            crate::types::call_args::PlannedRegularArg::Source { source_index, .. } => {
+                operands.push(source_values[*source_index]);
+            }
+            crate::types::call_args::PlannedRegularArg::Default(default) => {
+                operands.push(lower_expr(ctx, default).value);
+            }
+            crate::types::call_args::PlannedRegularArg::SpreadElement { .. } => {
+                return lower_args(ctx, args);
+            }
+        }
+    }
+    if sig.variadic.is_some() {
+        operands.push(lower_named_variadic_tail_array(ctx, sig, &plan.variadic_args).value);
+    }
+    operands
+}
+
+/// Lowers one source call argument, unwrapping named syntax while preserving source position.
+fn lower_call_source_arg(ctx: &mut LoweringContext<'_, '_>, arg: &Expr) -> crate::ir::ValueId {
+    match &arg.kind {
+        ExprKind::NamedArg { value, .. } => lower_expr(ctx, value).value,
+        _ => lower_expr(ctx, arg).value,
+    }
+}
+
+/// Builds the variadic tail array for a named-argument call plan.
+fn lower_named_variadic_tail_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    tail: &[crate::types::call_args::PlannedVariadicArg],
+) -> LoweredValue {
+    let span = tail
+        .first()
+        .map(|arg| arg.expr.span)
+        .unwrap_or_else(crate::span::Span::dummy);
+    let array_ty = variadic_array_type(sig);
+    let array = ctx.emit_value(
+        Op::ArrayNew,
+        Vec::new(),
+        Some(Immediate::Capacity(tail.len() as u32)),
+        array_ty.clone(),
+        Op::ArrayNew.default_effects(),
+        Some(span),
+    );
+    for item in tail {
+        if item.key.is_some() {
+            continue;
+        }
+        let value = lower_expr(ctx, &item.expr);
+        let value = coerce_variadic_tail_value(ctx, value, &array_ty, item.expr.span);
+        ctx.emit_void(
+            Op::ArrayPush,
+            vec![array.value, value.value],
+            None,
+            Op::ArrayPush.default_effects(),
+            Some(item.expr.span),
+        );
+    }
+    array
 }
 
 /// Lowers the synthetic variadic tail array using the variadic parameter's storage type.
@@ -1010,9 +1108,14 @@ fn coerce_variadic_tail_value(
     )
 }
 
-/// Returns true when a call argument needs full named/spread planning.
-fn is_named_or_spread_arg(arg: &Expr) -> bool {
-    matches!(arg.kind, ExprKind::NamedArg { .. } | ExprKind::Spread(_))
+/// Returns true when a call argument uses named-parameter syntax.
+fn is_named_arg(arg: &Expr) -> bool {
+    matches!(arg.kind, ExprKind::NamedArg { .. })
+}
+
+/// Returns true when a call argument uses unpacking syntax.
+fn is_spread_arg(arg: &Expr) -> bool {
+    matches!(arg.kind, ExprKind::Spread(_))
 }
 
 /// Returns the best available return type for a function-like call.
