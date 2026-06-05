@@ -843,6 +843,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_map(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_reduce(ctx, canonical, args, expr) {
+        return value;
+    }
     if php_symbol_key(canonical.trim_start_matches('\\')) == "unset" {
         if let Some(value) = lower_unset_locals(ctx, args, expr) {
             return value;
@@ -981,6 +984,56 @@ fn lower_static_array_map(
     Some(array)
 }
 
+/// Lowers `array_reduce()` for a static callback and immediate indexed-array literal.
+fn lower_static_array_reduce(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_reduce" || args.len() != 3 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let ExprKind::ArrayLiteral(items) = &args[0].kind else {
+        return None;
+    };
+    if !items.iter().all(static_callback_array_item_can_inline) {
+        return None;
+    }
+    let callback = static_call_user_func_callback(ctx, &args[1])?;
+    let result_type = fallback_expr_type(expr);
+    let temp_name = ctx.declare_hidden_temp(result_type.clone());
+    let initial = lower_expr(ctx, &args[2]);
+    store_value_into_temp(ctx, &temp_name, result_type.clone(), initial, expr.span);
+    for item in items {
+        let carry = ctx.load_local(&temp_name, Some(expr.span));
+        let item_value = lower_expr(ctx, item);
+        let reduced = lower_static_callable_value_call(
+            ctx,
+            callback.clone(),
+            vec![carry.value, item_value.value],
+            expr,
+        )?;
+        store_value_into_temp(ctx, &temp_name, result_type.clone(), reduced, expr.span);
+    }
+    Some(ctx.load_local(&temp_name, Some(expr.span)))
+}
+
+/// Returns whether a literal array element can be reordered around callback invocation safely.
+fn static_callback_array_item_can_inline(item: &Expr) -> bool {
+    matches!(
+        item.kind,
+        ExprKind::IntLiteral(_)
+            | ExprKind::FloatLiteral(_)
+            | ExprKind::BoolLiteral(_)
+            | ExprKind::StringLiteral(_)
+            | ExprKind::Null
+    )
+}
+
 /// Returns the best known element type for a static callback used by `array_map()`.
 fn static_callable_return_type(
     ctx: &LoweringContext<'_, '_>,
@@ -994,6 +1047,69 @@ fn static_callable_return_type(
             static_method_implementation_signature(ctx, receiver, method)
                 .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
                 .unwrap_or(PhpType::Mixed)
+        }
+    }
+}
+
+/// Lowers one resolved static callable target using already-evaluated positional operands.
+fn lower_static_callable_value_call(
+    ctx: &mut LoweringContext<'_, '_>,
+    target: StaticCallableBinding,
+    operands: Vec<crate::ir::ValueId>,
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    match target {
+        StaticCallableBinding::UserFunction(function_name) => {
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::Call,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                effects_lookup::user_call_effects(&function_name),
+                Some(expr.span),
+            ))
+        }
+        StaticCallableBinding::ExternFunction(function_name) => {
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::ExternCall,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                Op::ExternCall.default_effects(),
+                Some(expr.span),
+            ))
+        }
+        StaticCallableBinding::Builtin(function_name) => {
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::BuiltinCall,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                effects_lookup::builtin_effects(&function_name),
+                Some(expr.span),
+            ))
+        }
+        StaticCallableBinding::StaticMethod { receiver, method } => {
+            let sig = static_method_implementation_signature(ctx, &receiver, &method);
+            let result_type = sig
+                .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
+                .unwrap_or_else(|| fallback_expr_type(expr));
+            let name = format!("{}::{}", receiver_name(&receiver), method);
+            let data = ctx.intern_string(&name);
+            Some(ctx.emit_value(
+                Op::StaticMethodCall,
+                operands,
+                Some(Immediate::Data(data)),
+                result_type,
+                Op::StaticMethodCall.default_effects(),
+                Some(expr.span),
+            ))
         }
     }
 }

@@ -324,6 +324,32 @@ echo $stat[0]; echo ":"; echo $stat[1];
     );
 }
 
+/// Verifies static `array_reduce()` callback forms over immediate indexed literals match legacy output.
+#[test]
+fn parity_static_array_reduce_callbacks() {
+    assert_backend_parity(
+        "static_array_reduce_callbacks",
+        r#"<?php
+function eir_reduce_add(int $carry, int $item): int {
+    return $carry + $item;
+}
+class EirReduceStatic {
+    public static function mul(int $carry, int $item): int {
+        return $carry * $item;
+    }
+}
+echo array_reduce([1, 2, 3], "eir_reduce_add", 0);
+echo "|";
+$fn = eir_reduce_add(...);
+echo array_reduce([4, 5], $fn, 1);
+echo "|";
+$stat = EirReduceStatic::mul(...);
+echo array_reduce([2, 3, 4], $stat, 1);
+"#,
+        &[],
+    );
+}
+
 /// Verifies reflection attribute owner metadata matches the legacy backend.
 #[test]
 fn parity_reflection_owner_attributes() {
