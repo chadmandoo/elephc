@@ -12,7 +12,7 @@
 use crate::ir::{BlockId, Immediate, IrType, LocalKind, Op, Ownership, SwitchCase, Terminator};
 use crate::ir_lower::context::{LoopFrame, LoweredValue, LoweringContext};
 use crate::ir_lower::effects_lookup;
-use crate::ir_lower::expr::lower_expr;
+use crate::ir_lower::expr::{lower_expr, static_callable_binding_for_expr};
 use crate::parser::ast::{Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
 use crate::span::Span;
 use crate::types::PhpType;
@@ -172,9 +172,13 @@ fn lower_echo(ctx: &mut LoweringContext<'_, '_>, expr: &Expr, span: Span) {
 
 /// Lowers a plain PHP local assignment.
 fn lower_assign(ctx: &mut LoweringContext<'_, '_>, name: &str, value: &Expr, span: Span) {
+    let static_callable = static_callable_binding_for_expr(ctx, value);
     let lowered = lower_expr(ctx, value);
     let php_type = ctx.builder.value_php_type(lowered.value);
     ctx.store_local(name, lowered, php_type, Some(span));
+    if let Some(target) = static_callable {
+        ctx.bind_static_callable_local(name, target);
+    }
 }
 
 /// Lowers a by-reference assignment as a conservative local rebinding.
@@ -200,6 +204,7 @@ fn lower_if(
     if !merge_reachable {
         ctx.builder.terminate(Terminator::Unreachable);
     }
+    ctx.clear_static_callable_locals();
 }
 
 /// Recursively emits one condition node in an `if` chain and reports whether the merge is reachable.
@@ -232,6 +237,7 @@ fn lower_if_chain(
         branch_to(ctx, merge);
     }
 
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(else_block);
     if let Some(((next_condition, next_body), rest)) = elseif_clauses.split_first() {
         merge_reachable |=
@@ -265,6 +271,7 @@ fn lower_ifdef(
     } else if let Some(else_body) = else_body {
         lower_block(ctx, else_body);
     }
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers a `while` loop.
@@ -285,12 +292,14 @@ fn lower_while(ctx: &mut LoweringContext<'_, '_>, condition: &Expr, body: &[Stmt
         else_args: Vec::new(),
     });
 
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(body_block);
     ctx.loop_stack.push(LoopFrame { break_block: exit, continue_block: header });
     lower_block(ctx, body);
     ctx.loop_stack.pop();
     branch_to(ctx, header);
     ctx.builder.position_at_end(exit);
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers a `do while` loop.
@@ -316,7 +325,9 @@ fn lower_do_while(ctx: &mut LoweringContext<'_, '_>, body: &[Stmt], condition: &
         else_target: exit,
         else_args: Vec::new(),
     });
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(exit);
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers a `for` loop.
@@ -355,6 +366,7 @@ fn lower_for(
         else_args: Vec::new(),
     });
 
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(body_block);
     ctx.loop_stack.push(LoopFrame { break_block: exit, continue_block: update_block });
     lower_block(ctx, body);
@@ -367,6 +379,7 @@ fn lower_for(
     }
     branch_to(ctx, header);
     ctx.builder.position_at_end(exit);
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers an indexed array assignment.
@@ -440,9 +453,13 @@ fn lower_typed_assign(
     span: Span,
 ) {
     let php_type = ctx.type_expr_to_php_type_for_value(type_expr);
+    let static_callable = static_callable_binding_for_expr(ctx, value);
     let lowered = lower_expr(ctx, value);
     ctx.declare_local(name, php_type.clone());
     ctx.store_local(name, lowered, php_type, Some(span));
+    if let Some(target) = static_callable {
+        ctx.bind_static_callable_local(name, target);
+    }
 }
 
 /// Lowers a `foreach` loop using high-level iterator opcodes.
@@ -485,6 +502,7 @@ fn lower_foreach(
         else_args: Vec::new(),
     });
 
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(body_block);
     if let Some(key_var) = key_var {
         let key = ctx.emit_value(
@@ -511,6 +529,7 @@ fn lower_foreach(
     ctx.loop_stack.pop();
     branch_to(ctx, header);
     ctx.builder.position_at_end(exit);
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers a `switch` and terminates the shared exit block when every arm exits earlier.
@@ -542,6 +561,7 @@ fn lower_switch(
         default_args: Vec::new(),
     });
 
+    ctx.clear_static_callable_locals();
     ctx.loop_stack.push(LoopFrame { break_block: exit, continue_block: exit });
     let mut exit_reachable = false;
     for ((_, body), block) in cases.iter().zip(blocks) {
@@ -551,6 +571,7 @@ fn lower_switch(
             exit_reachable = true;
             branch_to(ctx, exit);
         }
+        ctx.clear_static_callable_locals();
     }
     ctx.builder.position_at_end(default_block);
     if let Some(default) = default {
@@ -565,6 +586,7 @@ fn lower_switch(
     if !exit_reachable {
         ctx.builder.terminate(Terminator::Unreachable);
     }
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers include/require statements through a high-level runtime call.
@@ -579,6 +601,7 @@ fn lower_include(ctx: &mut LoweringContext<'_, '_>, path: &Expr, once: bool, req
         effects_lookup::runtime_effects(),
         Some(span),
     );
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers an include-once marker.
@@ -618,10 +641,12 @@ fn lower_include_once_guard(ctx: &mut LoweringContext<'_, '_>, label: &str, body
         else_target: after_block,
         else_args: Vec::new(),
     });
+    ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(body_block);
     lower_block(ctx, body);
     branch_to(ctx, after_block);
     ctx.builder.position_at_end(after_block);
+    ctx.clear_static_callable_locals();
 }
 
 /// Lowers a throwing statement into a terminator.
@@ -638,6 +663,7 @@ fn lower_try(
     finally_body: Option<&[Stmt]>,
     span: Span,
 ) {
+    ctx.clear_static_callable_locals();
     ctx.emit_void(Op::TryPushHandler, Vec::new(), None, Op::TryPushHandler.default_effects(), Some(span));
     lower_block(ctx, try_body);
     if ctx.builder.insertion_block_is_terminated() {

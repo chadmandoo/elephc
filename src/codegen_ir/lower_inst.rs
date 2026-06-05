@@ -9,7 +9,7 @@
 //! - Results are written to fixed value-placement slots immediately after definition.
 //! - Unsupported opcodes fail explicitly instead of falling back to legacy AST codegen.
 
-use crate::codegen::{abi, emit_box_current_value_as_mixed};
+use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed};
 use crate::codegen::platform::Arch;
 use crate::ir::{CmpPredicate, Immediate, InstId, Instruction, LocalSlotId, Op, ValueId};
 use crate::names::{
@@ -139,6 +139,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StaticMethodCall => lower_static_method_call(ctx, &inst),
         Op::ExternCall => externs::lower_extern_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
+        Op::FirstClassCallableNew => lower_first_class_callable_new(ctx, &inst),
         Op::Acquire => ownership::lower_acquire(ctx, &inst),
         Op::Release => ownership::lower_release(ctx, &inst),
         Op::Move | Op::Borrow => ownership::lower_forward(ctx, &inst),
@@ -213,6 +214,106 @@ fn include_once_label(ctx: &FunctionContext<'_>, inst: &Instruction) -> Result<S
 fn lower_runtime_void_call(ctx: &mut FunctionContext<'_>, label: &str) -> Result<()> {
     abi::emit_call_label(ctx.emitter, label);
     Ok(())
+}
+
+/// Materializes a first-class callable value as a static descriptor pointer when possible.
+fn lower_first_class_callable_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let target = callable_target_data(ctx, inst)?.to_string();
+    if let Some((entry_label, kind, invocation)) = first_class_callable_descriptor(ctx, &target) {
+        callable_descriptor::emit_load_descriptor_address_with_meta(
+            ctx.emitter,
+            ctx.data,
+            abi::int_result_reg(ctx.emitter),
+            &entry_label,
+            Some(&target),
+            kind,
+            None,
+            &[],
+            &[],
+            invocation,
+        );
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Returns static descriptor metadata for compile-time callable targets supported by EIR.
+fn first_class_callable_descriptor(
+    ctx: &FunctionContext<'_>,
+    target: &str,
+) -> Option<(String, u64, callable_descriptor::CallableDescriptorInvocation)> {
+    if let Some((receiver_label, method_name)) = target.rsplit_once("::") {
+        return first_class_static_method_descriptor(ctx, receiver_label, method_name);
+    }
+    if let Some(callee) = ctx.callable_function_by_name(target) {
+        return Some((
+            function_symbol(&callee.name),
+            callable_descriptor::CALLABLE_DESC_KIND_FUNCTION,
+            callable_descriptor::CallableDescriptorInvocation::named(
+                callable_descriptor::CallableDescriptorShape::Function,
+                callee.name.clone(),
+            ),
+        ));
+    }
+    if ctx.has_extern_function(target) {
+        return Some((
+            ctx.emitter.target.extern_symbol(target),
+            callable_descriptor::CALLABLE_DESC_KIND_EXTERN,
+            callable_descriptor::CallableDescriptorInvocation::named(
+                callable_descriptor::CallableDescriptorShape::Extern,
+                target.to_string(),
+            ),
+        ));
+    }
+    None
+}
+
+/// Returns descriptor metadata for static methods with compile-time class receivers.
+fn first_class_static_method_descriptor(
+    ctx: &FunctionContext<'_>,
+    receiver_label: &str,
+    method_name: &str,
+) -> Option<(String, u64, callable_descriptor::CallableDescriptorInvocation)> {
+    if matches!(receiver_label.trim_start_matches('\\'), "static" | "object") {
+        return None;
+    }
+    let receiver = resolve_static_method_receiver(ctx, receiver_label).ok()?;
+    let method_key = php_symbol_key(method_name);
+    let receiver_info = ctx.module.class_infos.get(receiver.as_str())?;
+    let impl_class = receiver_info
+        .static_method_impl_classes
+        .get(&method_key)
+        .map(String::as_str)
+        .unwrap_or(receiver.as_str());
+    ctx.module
+        .class_infos
+        .get(impl_class)?
+        .static_methods
+        .get(&method_key)?;
+    Some((
+        static_method_symbol(impl_class, &method_key),
+        callable_descriptor::CALLABLE_DESC_KIND_STATIC_METHOD,
+        callable_descriptor::CallableDescriptorInvocation::method(
+            callable_descriptor::CallableDescriptorShape::StaticMethod,
+            Some(receiver),
+            method_key,
+        ),
+    ))
+}
+
+/// Returns the callable-target string attached to `first_class_callable_new`.
+fn callable_target_data<'a>(
+    ctx: &'a FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<&'a str> {
+    let data = expect_data(inst)?;
+    ctx.module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .map(String::as_str)
+        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
 }
 
 /// Lowers high-level runtime fallback casts that Phase 04 can identify by type.

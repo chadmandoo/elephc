@@ -17,7 +17,7 @@ use crate::ir::{
     BlockId, Builder, DataId, DataPool, Effects, Immediate, IrType, LocalKind, LocalSlotId, Op,
     Ownership, ValueId,
 };
-use crate::parser::ast::{ExprKind, TypeExpr};
+use crate::parser::ast::{ExprKind, StaticReceiver, TypeExpr};
 use crate::span::Span;
 use crate::types::{
     ClassInfo, EnumInfo, ExternFunctionSig, FunctionSig, InterfaceInfo, PackedClassInfo, PhpType,
@@ -38,6 +38,18 @@ pub(crate) struct LoopFrame {
     pub continue_block: BlockId,
 }
 
+/// Compile-time callable target tracked for straight-line local FCC calls.
+#[derive(Debug, Clone)]
+pub(crate) enum StaticCallableBinding {
+    UserFunction(String),
+    ExternFunction(String),
+    Builtin(String),
+    StaticMethod {
+        receiver: StaticReceiver,
+        method: String,
+    },
+}
+
 /// Mutable state for one function body while it is lowered.
 pub(crate) struct LoweringContext<'m, 'f> {
     pub builder: Builder<'f>,
@@ -56,6 +68,7 @@ pub(crate) struct LoweringContext<'m, 'f> {
     pub top_level_env: TypeEnv,
     pub current_class: Option<String>,
     pub loop_stack: Vec<LoopFrame>,
+    static_callable_locals: HashMap<String, StaticCallableBinding>,
     pub return_type: IrType,
     pub return_php_type: PhpType,
     pub in_main: bool,
@@ -100,6 +113,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             top_level_env,
             current_class,
             loop_stack: Vec::new(),
+            static_callable_locals: HashMap::new(),
             return_type,
             return_php_type,
             in_main,
@@ -317,6 +331,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 
     /// Emits a store to a PHP local slot and updates the local type fact.
     pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) {
+        self.clear_static_callable_local(name);
         let previous_slot = self.local_slots.get(name).copied();
         let previous_type = self.local_type(name);
         let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
@@ -346,6 +361,38 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         };
         self.store_slot_with_op(slot, value, op, span);
         self.set_local_type(name, php_type);
+    }
+
+    /// Returns true when straight-line callable binding metadata is safe for a local.
+    pub(crate) fn can_track_static_callable_local(&self, name: &str) -> bool {
+        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        !self.uses_global_storage(name, kind) && kind == LocalKind::PhpLocal
+    }
+
+    /// Records that a PHP local currently holds a compile-time-known callable.
+    pub(crate) fn bind_static_callable_local(
+        &mut self,
+        name: &str,
+        target: StaticCallableBinding,
+    ) {
+        if self.can_track_static_callable_local(name) {
+            self.static_callable_locals.insert(name.to_string(), target);
+        }
+    }
+
+    /// Returns the compile-time callable currently associated with a local, if any.
+    pub(crate) fn static_callable_local(&self, name: &str) -> Option<StaticCallableBinding> {
+        self.static_callable_locals.get(name).cloned()
+    }
+
+    /// Clears the compile-time callable association for one local.
+    pub(crate) fn clear_static_callable_local(&mut self, name: &str) {
+        self.static_callable_locals.remove(name);
+    }
+
+    /// Clears all compile-time callable associations after a control-flow join.
+    pub(crate) fn clear_static_callable_locals(&mut self) {
+        self.static_callable_locals.clear();
     }
 
     /// Returns whether the named PHP variable should use program-global storage.

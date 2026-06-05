@@ -14,7 +14,9 @@ use crate::ir::{
     BlockId, CmpPredicate, Effects, Immediate, IrHeapKind, IrType, MixedNumericOp, Op,
     Ownership, Terminator, ValueId,
 };
-use crate::ir_lower::context::{value_ir_type, LoweredValue, LoweringContext};
+use crate::ir_lower::context::{
+    value_ir_type, LoweredValue, LoweringContext, StaticCallableBinding,
+};
 use crate::ir_lower::effects_lookup;
 use crate::names::{php_symbol_key, Name};
 use crate::parser::ast::{
@@ -798,8 +800,12 @@ fn lower_assignment_expr(
     }
     let lowered = lower_expr(ctx, value);
     if let ExprKind::Variable(name) = &target.kind {
+        let static_callable = static_callable_binding_for_expr(ctx, value);
         let php_type = ctx.builder.value_php_type(lowered.value);
         ctx.store_local(name, lowered, php_type, Some(expr.span));
+        if let Some(target) = static_callable {
+            ctx.bind_static_callable_local(name, target);
+        }
     }
     if let Some(result_target) = result_target {
         return lower_expr(ctx, result_target);
@@ -909,17 +915,6 @@ fn lower_static_is_callable(
     }
 }
 
-/// Resolved compile-time callback target for `call_user_func*`.
-enum StaticCallableTarget {
-    UserFunction(String),
-    ExternFunction(String),
-    Builtin(String),
-    StaticMethod {
-        receiver: StaticReceiver,
-        method: String,
-    },
-}
-
 /// Lowers static-string `call_user_func*` forms to direct call opcodes when possible.
 fn lower_static_call_user_func(
     ctx: &mut LoweringContext<'_, '_>,
@@ -948,7 +943,7 @@ fn lower_static_call_user_func(
 fn static_call_user_func_callback(
     ctx: &LoweringContext<'_, '_>,
     callback: &Expr,
-) -> Option<StaticCallableTarget> {
+) -> Option<StaticCallableBinding> {
     match &callback.kind {
         ExprKind::StringLiteral(name) => resolve_static_string_callable(ctx, name),
         ExprKind::FirstClassCallable(CallableTarget::Function(name)) => {
@@ -962,11 +957,27 @@ fn static_call_user_func_callback(
     }
 }
 
+/// Resolves a literal first-class callable expression to a static local binding.
+pub(crate) fn static_callable_binding_for_expr(
+    ctx: &LoweringContext<'_, '_>,
+    expr: &Expr,
+) -> Option<StaticCallableBinding> {
+    match &expr.kind {
+        ExprKind::FirstClassCallable(CallableTarget::Function(name)) => {
+            resolve_static_string_callable(ctx, name.as_str())
+        }
+        ExprKind::FirstClassCallable(CallableTarget::StaticMethod { receiver, method }) => {
+            resolve_static_method_callable(ctx, receiver.clone(), method.clone())
+        }
+        _ => None,
+    }
+}
+
 /// Resolves a static `[class, method]` callback array literal.
 fn static_array_callable_target(
     ctx: &LoweringContext<'_, '_>,
     items: &[Expr],
-) -> Option<StaticCallableTarget> {
+) -> Option<StaticCallableBinding> {
     let [class_expr, method_expr] = items else {
         return None;
     };
@@ -1064,12 +1075,12 @@ fn static_call_user_func_array_assoc_args(pairs: &[(Expr, Expr)]) -> Option<Vec<
 /// Lowers one resolved static callable target to the corresponding EIR call opcode.
 fn lower_static_callable_call(
     ctx: &mut LoweringContext<'_, '_>,
-    target: StaticCallableTarget,
+    target: StaticCallableBinding,
     callback_args: &[Expr],
     expr: &Expr,
 ) -> Option<LoweredValue> {
     match target {
-        StaticCallableTarget::UserFunction(function_name) => {
+        StaticCallableBinding::UserFunction(function_name) => {
             let sig = ctx.functions.get(&function_name).cloned();
             let operands = lower_args_with_signature(ctx, sig.as_ref(), callback_args);
             let php_type = call_return_type(ctx, &function_name, &operands);
@@ -1083,7 +1094,7 @@ fn lower_static_callable_call(
                 Some(expr.span),
             ))
         }
-        StaticCallableTarget::ExternFunction(function_name) => {
+        StaticCallableBinding::ExternFunction(function_name) => {
             let operands = lower_args(ctx, callback_args);
             let php_type = call_return_type(ctx, &function_name, &operands);
             let data = ctx.intern_function_name(&function_name);
@@ -1096,7 +1107,7 @@ fn lower_static_callable_call(
                 Some(expr.span),
             ))
         }
-        StaticCallableTarget::Builtin(function_name) => {
+        StaticCallableBinding::Builtin(function_name) => {
             let sig = call_signature(ctx, &function_name, callback_args);
             let operands = lower_builtin_call_args(ctx, &function_name, sig.as_ref(), callback_args);
             let php_type = call_return_type(ctx, &function_name, &operands);
@@ -1110,7 +1121,7 @@ fn lower_static_callable_call(
                 Some(expr.span),
             ))
         }
-        StaticCallableTarget::StaticMethod { receiver, method } => {
+        StaticCallableBinding::StaticMethod { receiver, method } => {
             Some(lower_static_method_call(ctx, &receiver, &method, callback_args, expr))
         }
     }
@@ -1120,7 +1131,7 @@ fn lower_static_callable_call(
 fn resolve_static_string_callable(
     ctx: &LoweringContext<'_, '_>,
     callback: &str,
-) -> Option<StaticCallableTarget> {
+) -> Option<StaticCallableBinding> {
     let callback = callback.trim_start_matches('\\');
     if let Some((class_name, method)) = callback.rsplit_once("::") {
         let class_name = lookup_folded_name(ctx.classes.keys(), class_name.trim_start_matches('\\'))?;
@@ -1131,12 +1142,12 @@ fn resolve_static_string_callable(
         );
     }
     if let Some(function_name) = lookup_folded_name(ctx.extern_functions.keys(), callback) {
-        return Some(StaticCallableTarget::ExternFunction(function_name));
+        return Some(StaticCallableBinding::ExternFunction(function_name));
     }
     if let Some(function_name) = lookup_folded_name(ctx.functions.keys(), callback) {
-        return Some(StaticCallableTarget::UserFunction(function_name));
+        return Some(StaticCallableBinding::UserFunction(function_name));
     }
-    canonical_builtin_function_name(callback).map(StaticCallableTarget::Builtin)
+    canonical_builtin_function_name(callback).map(StaticCallableBinding::Builtin)
 }
 
 /// Resolves a static method callback when class and method are compile-time known.
@@ -1144,9 +1155,9 @@ fn resolve_static_method_callable(
     ctx: &LoweringContext<'_, '_>,
     receiver: StaticReceiver,
     method: String,
-) -> Option<StaticCallableTarget> {
+) -> Option<StaticCallableBinding> {
     static_method_implementation_signature(ctx, &receiver, &method)?;
-    Some(StaticCallableTarget::StaticMethod { receiver, method })
+    Some(StaticCallableBinding::StaticMethod { receiver, method })
 }
 
 /// Looks up a PHP function name case-insensitively and returns the canonical candidate.
@@ -2163,6 +2174,11 @@ fn lower_closure(ctx: &mut LoweringContext<'_, '_>, captures: &[String], expr: &
 
 /// Lowers a closure variable call.
 fn lower_closure_call(ctx: &mut LoweringContext<'_, '_>, var: &str, args: &[Expr], expr: &Expr) -> LoweredValue {
+    if let Some(target) = ctx.static_callable_local(var) {
+        if let Some(value) = lower_static_callable_call(ctx, target, args, expr) {
+            return value;
+        }
+    }
     let mut operands = vec![ctx.load_local(var, Some(expr.span)).value];
     operands.extend(lower_args(ctx, args));
     ctx.emit_value(Op::ClosureCall, operands, None, fallback_expr_type(expr), Op::ClosureCall.default_effects(), Some(expr.span))
@@ -2174,7 +2190,7 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
         return value;
     }
     if let ExprKind::ArrayLiteral(items) = &callee.kind {
-        if let Some(StaticCallableTarget::StaticMethod { receiver, method }) =
+        if let Some(StaticCallableBinding::StaticMethod { receiver, method }) =
             static_array_callable_target(ctx, items)
         {
             return lower_static_method_call(ctx, &receiver, &method, args, expr);

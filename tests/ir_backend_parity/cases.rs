@@ -161,6 +161,28 @@ echo (EirDirectFcc::hit(...))(3);
 "#,
         &[],
     );
+    assert_backend_parity(
+        "stored_first_class_callable_variable_call",
+        r#"<?php
+function eir_stored_fcc_add(int $value): int {
+    return $value + 1;
+}
+class EirStoredFcc {
+    public static function hit(int $value): int {
+        return $value + 2;
+    }
+}
+$fn = eir_stored_fcc_add(...);
+echo $fn(4);
+echo "|";
+$len = strlen(...);
+echo $len("abcd");
+echo "|";
+$stat = EirStoredFcc::hit(...);
+echo $stat(5);
+"#,
+        &[],
+    );
 }
 
 /// Verifies static method callback forms lower to the same direct calls as legacy codegen.
