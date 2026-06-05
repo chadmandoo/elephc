@@ -1694,11 +1694,11 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "empty" | "file_exists" | "fnmatch" | "function_exists" | "is_a" | "is_callable"
         | "fdatasync" | "fflush" | "flock" | "fsync" | "ftruncate" | "interface_exists" | "is_dir"
         | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link" | "mkdir" | "rename"
-        | "enum_exists" | "putenv" | "rmdir" | "is_readable" | "is_subclass_of" | "is_writeable" | "is_writable" | "symlink"
-        | "touch" | "unlink" => Some(PhpType::Bool),
+        | "enum_exists" | "putenv" | "rmdir" | "is_readable" | "is_subclass_of" | "is_writeable" | "is_writable" | "spl_autoload_register"
+        | "spl_autoload_unregister" | "symlink" | "touch" | "unlink" => Some(PhpType::Bool),
         "basename" | "date" | "dirname" | "exec" | "fgets" | "get_class" | "get_parent_class"
         | "getcwd" | "getenv" | "php_uname" | "readline" | "shell_exec" | "sys_get_temp_dir"
-        | "fread" | "system" | "tempnam" => Some(PhpType::Str),
+        | "fread" | "system" | "spl_autoload_extensions" | "tempnam" => Some(PhpType::Str),
         "microtime" => Some(PhpType::Float),
         "clearstatcache" | "passthru" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
@@ -1708,13 +1708,14 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
             Some(PhpType::Int)
         }
         "spl_object_hash" => Some(PhpType::Str),
-        "usleep" => Some(PhpType::Void),
+        "spl_autoload" | "spl_autoload_call" | "usleep" => Some(PhpType::Void),
         "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
         | "fgetc" | "fopen" | "fstat" | "stat" | "lstat" | "tmpfile" | "strpos" | "strrpos" => {
             Some(PhpType::Mixed)
         }
-        "explode" | "fgetcsv" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {
+        "spl_autoload_functions" => Some(PhpType::Array(Box::new(PhpType::Int))),
+        "explode" | "fgetcsv" | "file" | "glob" | "scandir" | "spl_classes" | "str_split" | "sscanf" => {
             Some(PhpType::Array(Box::new(PhpType::Str)))
         }
         _ => None,

@@ -3512,6 +3512,34 @@ echo (spl_object_hash($a) !== spl_object_hash($b)) ? "unique" : "same";
     );
 }
 
+/// Verifies SPL autoload stubs and registry helpers lower through the EIR backend.
+#[test]
+fn ir_backend_handles_spl_autoload_helpers() {
+    let source = r#"<?php
+echo spl_autoload_register() ? "reg" : "bad";
+echo ":";
+echo spl_autoload_unregister("missing") ? "unreg" : "bad";
+echo ":";
+spl_autoload_call("MissingClass");
+spl_autoload("OtherClass");
+echo "noop:";
+echo count(spl_autoload_functions());
+echo ":";
+echo spl_autoload_extensions();
+echo ":";
+$old = spl_autoload_extensions(".php,.inc");
+echo $old;
+echo ":";
+echo spl_autoload_extensions(null);
+echo ":";
+echo count(spl_classes()) > 10 ? "classes" : "empty";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_autoload_helpers", source),
+        "reg:unreg:noop:0:.inc,.php:.inc,.php:.php,.inc:classes"
+    );
+}
+
 /// Verifies filesystem stat predicates lower through the EIR backend runtime helpers.
 #[test]
 fn ir_backend_handles_filesystem_stat_predicates() {
