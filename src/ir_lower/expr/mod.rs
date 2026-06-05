@@ -1702,14 +1702,14 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         "clearstatcache" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
-        | "filesize" | "fseek" | "ftell" | "fwrite" | "linkinfo" | "mktime" | "sleep"
-        | "strtotime" | "time" | "umask" => {
+        | "filesize" | "fpassthru" | "fseek" | "ftell" | "fwrite" | "linkinfo"
+        | "mktime" | "sleep" | "strtotime" | "time" | "umask" => {
             Some(PhpType::Int)
         }
         "usleep" => Some(PhpType::Void),
         "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
-        | "fgetc" | "fopen" | "fstat" | "stat" | "lstat" | "strpos" | "strrpos" => {
+        | "fgetc" | "fopen" | "fstat" | "stat" | "lstat" | "tmpfile" | "strpos" | "strrpos" => {
             Some(PhpType::Mixed)
         }
         "explode" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {

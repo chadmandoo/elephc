@@ -3591,6 +3591,30 @@ fclose($f);
     );
 }
 
+/// Verifies `fpassthru()` streams remaining bytes and `tmpfile()` creates a stream.
+#[test]
+fn ir_backend_handles_stream_passthru_and_tmpfile() {
+    let source = r#"<?php
+file_put_contents("pt.txt", "abcdefghij");
+$h = fopen("pt.txt", "r");
+fread($h, 4);
+$bytes = fpassthru($h);
+echo "|" . $bytes . "|" . (feof($h) ? "E" : "N");
+fclose($h);
+echo ":";
+$tmp = tmpfile();
+echo gettype($tmp);
+fwrite($tmp, "scratch");
+fseek($tmp, 0);
+echo ":" . fread($tmp, 7);
+fclose($tmp);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stream_passthru_and_tmpfile", source),
+        "efghij|6|E:resource:scratch"
+    );
+}
+
 /// Verifies successful seeks clear EOF state tracked for stream descriptors.
 #[test]
 fn ir_backend_clears_stream_eof_after_seek() {

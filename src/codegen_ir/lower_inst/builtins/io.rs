@@ -100,7 +100,7 @@ pub(super) fn lower_fopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_fopen");
-    box_fopen_result(ctx);
+    box_stream_fd_or_false_result(ctx, "fopen");
     store_if_result(ctx, inst)
 }
 
@@ -204,6 +204,15 @@ pub(super) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
     }
     abi::emit_call_label(ctx.emitter, "__rt_fgetc");
     box_fgetc_result(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `fpassthru(stream)` through the remaining-bytes stream runtime helper.
+pub(super) fn lower_fpassthru(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "fpassthru", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "fpassthru")?;
+    abi::emit_call_label(ctx.emitter, "__rt_fpassthru");
     store_if_result(ctx, inst)
 }
 
@@ -922,6 +931,14 @@ pub(super) fn lower_sys_get_temp_dir(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `tmpfile()` and boxes the anonymous stream descriptor or PHP false.
+pub(super) fn lower_tmpfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "tmpfile", 0)?;
+    abi::emit_call_label(ctx.emitter, "__rt_tmpfile");
+    box_stream_fd_or_false_result(ctx, "tmpfile");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `filesize(path)` through the target-aware runtime stat helper.
 pub(super) fn lower_filesize(
     ctx: &mut FunctionContext<'_>,
@@ -1491,14 +1508,14 @@ fn box_fgetc_result(ctx: &mut FunctionContext<'_>) {
     }
 }
 
-/// Boxes an `fopen()` descriptor as a PHP resource or PHP false on failure.
-fn box_fopen_result(ctx: &mut FunctionContext<'_>) {
-    let false_label = ctx.next_label("fopen_false");
-    let done_label = ctx.next_label("fopen_done");
+/// Boxes a non-negative stream descriptor as a PHP resource or false on failure.
+fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &str) {
+    let false_label = ctx.next_label(&format!("{}_false", label_prefix));
+    let done_label = ctx.next_label(&format!("{}_done", label_prefix));
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("cmp x0, #0");                              // test whether fopen() returned a negative descriptor
-            ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false when opening the stream failed
+            ctx.emitter.instruction("cmp x0, #0");                              // test whether the stream helper returned a negative descriptor
+            ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false when stream creation failed
             ctx.emitter.instruction("mov x1, x0");                              // pass the native stream fd as the Mixed low payload word
             ctx.emitter.instruction("mov x2, #0");                              // resource Mixed payloads do not use a high word
             ctx.emitter.instruction("mov x0, #9");                              // select runtime tag 9 for a stream resource
@@ -1512,8 +1529,8 @@ fn box_fopen_result(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.label(&done_label);
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction("test rax, rax");                           // test whether fopen() returned a negative descriptor
-            ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false when opening the stream failed
+            ctx.emitter.instruction("test rax, rax");                           // test whether the stream helper returned a negative descriptor
+            ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false when stream creation failed
             ctx.emitter.instruction("mov rdi, rax");                            // pass the native stream fd as the Mixed low payload word
             ctx.emitter.instruction("xor esi, esi");                            // resource Mixed payloads do not use a high word
             ctx.emitter.instruction("mov eax, 9");                              // select runtime tag 9 for a stream resource
