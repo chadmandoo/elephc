@@ -415,6 +415,29 @@ fn ir_backend_handles_static_pipe_calls() {
     }
 }
 
+/// Verifies pipe calls through runtime-selected first-class function descriptors.
+#[test]
+fn ir_backend_handles_runtime_function_pipe_calls() {
+    let source = r#"<?php
+function eir_pipe_runtime_left(int $value): int {
+    return $value + 1;
+}
+function eir_pipe_runtime_right(int $value): int {
+    return $value + 2;
+}
+$cb = $argc === 1 ? eir_pipe_runtime_left(...) : eir_pipe_runtime_right(...);
+echo 4 |> $cb;
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("runtime_function_pipe_first", source),
+        "5"
+    );
+    assert_eq!(
+        compile_and_run_ir_backend_with_args("runtime_function_pipe_second", source, &["extra"]),
+        "6"
+    );
+}
+
 /// Verifies `global` aliases share storage with top-level variables in the EIR backend.
 #[test]
 fn ir_backend_handles_global_aliases() {
