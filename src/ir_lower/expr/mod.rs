@@ -840,6 +840,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_call_user_func(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_map(ctx, canonical, args, expr) {
+        return value;
+    }
     if php_symbol_key(canonical.trim_start_matches('\\')) == "unset" {
         if let Some(value) = lower_unset_locals(ctx, args, expr) {
             return value;
@@ -936,6 +939,62 @@ fn lower_static_call_user_func(
             lower_static_callable_call(ctx, callback, &callback_args, expr)
         }
         _ => None,
+    }
+}
+
+/// Lowers `array_map()` for a static callback and indexed array literal source.
+fn lower_static_array_map(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_map" || args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let callback = static_call_user_func_callback(ctx, &args[0])?;
+    let ExprKind::ArrayLiteral(items) = &args[1].kind else {
+        return None;
+    };
+    let elem_type = static_callable_return_type(ctx, &callback);
+    let array = ctx.emit_value(
+        Op::ArrayNew,
+        Vec::new(),
+        Some(Immediate::Capacity(items.len() as u32)),
+        PhpType::Array(Box::new(elem_type)),
+        Op::ArrayNew.default_effects(),
+        Some(expr.span),
+    );
+    for item in items {
+        let value = lower_static_callable_call(ctx, callback.clone(), std::slice::from_ref(item), expr)?;
+        ctx.emit_void(
+            Op::ArrayPush,
+            vec![array.value, value.value],
+            None,
+            Op::ArrayPush.default_effects(),
+            Some(item.span),
+        );
+    }
+    Some(array)
+}
+
+/// Returns the best known element type for a static callback used by `array_map()`.
+fn static_callable_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    target: &StaticCallableBinding,
+) -> PhpType {
+    match target {
+        StaticCallableBinding::UserFunction(name)
+        | StaticCallableBinding::ExternFunction(name)
+        | StaticCallableBinding::Builtin(name) => call_return_type(ctx, name, &[]),
+        StaticCallableBinding::StaticMethod { receiver, method } => {
+            static_method_implementation_signature(ctx, receiver, method)
+                .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
+                .unwrap_or(PhpType::Mixed)
+        }
     }
 }
 

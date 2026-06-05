@@ -256,6 +256,38 @@ echo ([EirArrayExprCallback::class, "join"])(left: "L", right: "R");
     );
 }
 
+/// Verifies static `array_map()` callback forms over indexed literals match legacy output.
+#[test]
+fn parity_static_array_map_callbacks() {
+    assert_backend_parity(
+        "static_array_map_callbacks",
+        r#"<?php
+function eir_map_inc(int $value): int {
+    return $value + 1;
+}
+class EirMapStatic {
+    public static function bump(int $value): int {
+        return $value + 2;
+    }
+}
+$ints = array_map(eir_map_inc(...), [1, 2]);
+echo $ints[0]; echo ":"; echo $ints[1];
+echo "|";
+$fn = eir_map_inc(...);
+$more = array_map($fn, [3, 4]);
+echo $more[0]; echo ":"; echo $more[1];
+echo "|";
+$len = strlen(...);
+$sizes = array_map($len, ["a", "abcd"]);
+echo $sizes[0]; echo ":"; echo $sizes[1];
+echo "|";
+$stat = array_map(EirMapStatic::bump(...), [5, 6]);
+echo $stat[0]; echo ":"; echo $stat[1];
+"#,
+        &[],
+    );
+}
+
 /// Verifies reflection attribute owner metadata matches the legacy backend.
 #[test]
 fn parity_reflection_owner_attributes() {
