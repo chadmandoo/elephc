@@ -1702,8 +1702,8 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         "clearstatcache" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
-        | "filesize" | "fpassthru" | "fseek" | "ftell" | "fwrite" | "linkinfo"
-        | "mktime" | "sleep" | "strtotime" | "time" | "umask" => {
+        | "filesize" | "fpassthru" | "fputcsv" | "fseek" | "ftell" | "fwrite"
+        | "linkinfo" | "mktime" | "sleep" | "strtotime" | "time" | "umask" => {
             Some(PhpType::Int)
         }
         "usleep" => Some(PhpType::Void),
@@ -1712,7 +1712,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "fgetc" | "fopen" | "fstat" | "stat" | "lstat" | "tmpfile" | "strpos" | "strrpos" => {
             Some(PhpType::Mixed)
         }
-        "explode" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {
+        "explode" | "fgetcsv" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {
             Some(PhpType::Array(Box::new(PhpType::Str)))
         }
         _ => None,

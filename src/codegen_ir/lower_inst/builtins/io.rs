@@ -207,6 +207,40 @@ pub(super) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
     store_if_result(ctx, inst)
 }
 
+/// Lowers `fgetcsv(stream, separator?, enclosure?)` through the CSV row runtime helper.
+pub(super) fn lower_fgetcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count_between(inst, "fgetcsv", 1, 3)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "fgetcsv")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the stream fd to the x86_64 fgetcsv runtime helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_fgetcsv");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `fputcsv(stream, fields, separator?, enclosure?)` for string arrays.
+pub(super) fn lower_fputcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count_between(inst, "fputcsv", 2, 4)?;
+    let stream = expect_operand(inst, 0)?;
+    let fields = expect_operand(inst, 1)?;
+    load_stream_fd_to_result(ctx, stream, "fputcsv")?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    require_string_array(ctx.load_value_to_result(fields)?.codegen_repr(), "fputcsv fields")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x1, x0");                              // pass the string-array pointer to the fputcsv runtime helper
+            abi::emit_pop_reg(ctx.emitter, "x0");
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rsi, rax");                            // pass the string-array pointer to the fputcsv runtime helper
+            abi::emit_pop_reg(ctx.emitter, "rdi");
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_fputcsv");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `fpassthru(stream)` through the remaining-bytes stream runtime helper.
 pub(super) fn lower_fpassthru(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fpassthru", 1)?;
@@ -1813,4 +1847,16 @@ fn require_int(ty: PhpType, name: &str) -> Result<()> {
         name,
         ty
     )))
+}
+
+/// Verifies that a CSV fields argument has the supported indexed string-array layout.
+fn require_string_array(ty: PhpType, name: &str) -> Result<()> {
+    match ty {
+        PhpType::Array(elem) if elem.codegen_repr() == PhpType::Str => Ok(()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} for PHP type {:?}",
+            name,
+            other
+        ))),
+    }
 }

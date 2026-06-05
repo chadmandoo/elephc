@@ -3615,6 +3615,25 @@ fclose($tmp);
     );
 }
 
+/// Verifies `fputcsv()` writes a string array and `fgetcsv()` reads it back.
+#[test]
+fn ir_backend_handles_stream_csv_round_trip() {
+    let source = r#"<?php
+$out = fopen("csv.txt", "w");
+echo fputcsv($out, ["hello", "world"]);
+fclose($out);
+echo ":";
+$in = fopen("csv.txt", "r");
+$row = fgetcsv($in);
+fclose($in);
+echo $row[0] . ":" . $row[1] . ":" . gettype($row);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stream_csv_round_trip", source),
+        "12:hello:world:array"
+    );
+}
+
 /// Verifies successful seeks clear EOF state tracked for stream descriptors.
 #[test]
 fn ir_backend_clears_stream_eof_after_seek() {

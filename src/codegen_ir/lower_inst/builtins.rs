@@ -133,6 +133,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "fwrite" => io::lower_fwrite(ctx, inst),
         "fgets" => io::lower_fgets(ctx, inst),
         "fgetc" => io::lower_fgetc(ctx, inst),
+        "fgetcsv" => io::lower_fgetcsv(ctx, inst),
+        "fputcsv" => io::lower_fputcsv(ctx, inst),
         "fpassthru" => io::lower_fpassthru(ctx, inst),
         "feof" => io::lower_feof(ctx, inst),
         "fseek" => io::lower_fseek(ctx, inst),
