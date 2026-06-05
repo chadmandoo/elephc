@@ -880,7 +880,7 @@ fn call_signature(
     if let Some(sig) = ctx.functions.get(name) {
         return Some(sig.clone());
     }
-    if args.iter().any(is_named_arg) {
+    if crate::types::call_args::has_named_args(args) {
         return builtin_call_signature(name);
     }
     None
@@ -928,11 +928,11 @@ fn lower_args_with_signature(
     let Some(sig) = sig else {
         return lower_args(ctx, args);
     };
+    if crate::types::call_args::has_named_args(args) {
+        return lower_named_args_with_signature(ctx, sig, args);
+    }
     if args.iter().any(is_spread_arg) {
         return lower_args(ctx, args);
-    }
-    if args.iter().any(is_named_arg) {
-        return lower_named_args_with_signature(ctx, sig, args);
     }
     let regular_param_count = crate::types::call_args::regular_param_count(sig);
     let fixed_arg_count = if sig.variadic.is_some() {
@@ -1131,11 +1131,6 @@ fn coerce_variadic_tail_value(
         Op::MixedBox.default_effects(),
         Some(span),
     )
-}
-
-/// Returns true when a call argument uses named-parameter syntax.
-fn is_named_arg(arg: &Expr) -> bool {
-    matches!(arg.kind, ExprKind::NamedArg { .. })
 }
 
 /// Returns true when a call argument uses unpacking syntax.

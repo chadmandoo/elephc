@@ -275,6 +275,32 @@ echo strcmp(right: "ab", left: "aa") < 0 ? "lt" : "bad";
     }
 }
 
+/// Verifies static associative spread calls are expanded through the shared argument planner.
+#[test]
+fn ir_backend_handles_static_assoc_spread_named_arguments() {
+    for (name, source, expected) in [
+        (
+            "static_assoc_spread_user_call",
+            r#"<?php
+function show($a, $b) {
+    echo $a . ":" . $b;
+}
+show(...["b" => 2, "a" => 1]);
+"#,
+            "1:2",
+        ),
+        (
+            "static_assoc_spread_builtin_call",
+            r#"<?php
+echo str_repeat(...["string" => "ha", "times" => 3]);
+"#,
+            "hahaha",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies positional variadic calls collect tail arguments into the variadic array parameter.
 #[test]
 fn ir_backend_handles_positional_variadic_parameters() {
