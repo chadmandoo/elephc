@@ -3726,6 +3726,28 @@ echo fnmatch("*.txt", "app.log") ? "Y" : "N";
     );
 }
 
+/// Verifies `pathinfo()` lowers array, component, and dynamic Mixed shapes.
+#[test]
+fn ir_backend_handles_pathinfo() {
+    let source = r#"<?php
+$info = pathinfo("/var/log/syslog.log");
+echo $info["dirname"] . "|" . $info["basename"] . "|" . $info["extension"] . "|" . $info["filename"];
+echo ":";
+echo pathinfo("archive.tar.gz", PATHINFO_EXTENSION);
+echo ":";
+$flag = PATHINFO_ALL;
+$dynamic = pathinfo("foo.txt", $flag);
+echo $dynamic["dirname"] . "|" . $dynamic["basename"] . "|" . $dynamic["extension"] . "|" . $dynamic["filename"];
+echo ":";
+$zero = 0;
+echo "[" . pathinfo("foo.txt", $zero) . "]";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("pathinfo", source),
+        "/var/log|syslog.log|log|syslog:gz:.|foo.txt|txt|foo:[]"
+    );
+}
+
 /// Verifies file modification builtins lower scalar arguments and optional timestamps.
 #[test]
 fn ir_backend_handles_file_modify_builtins() {

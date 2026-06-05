@@ -149,6 +149,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "basename" => io::lower_basename(ctx, inst),
         "dirname" => io::lower_dirname(ctx, inst),
         "fnmatch" => io::lower_fnmatch(ctx, inst),
+        "pathinfo" => io::lower_pathinfo(ctx, inst),
         "filesize" => io::lower_filesize(ctx, inst),
         "filemtime" => io::lower_filemtime(ctx, inst),
         "linkinfo" => io::lower_linkinfo(ctx, inst),

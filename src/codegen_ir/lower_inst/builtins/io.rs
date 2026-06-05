@@ -315,6 +315,40 @@ pub(super) fn lower_fnmatch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     store_if_result(ctx, inst)
 }
 
+/// Lowers `pathinfo(path, flags?)` through string, array, or boxed dynamic helpers.
+pub(super) fn lower_pathinfo(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count_between(inst, "pathinfo", 1, 2)?;
+    let path = expect_operand(inst, 0)?;
+    load_string_to_result(ctx, path, "pathinfo path")?;
+    let result_ty = inst.result_php_type.codegen_repr();
+    if inst.operands.len() == 1 {
+        abi::emit_call_label(ctx.emitter, "__rt_pathinfo_array");
+        if result_ty == PhpType::Mixed {
+            box_owned_pathinfo_array_as_mixed(ctx);
+        }
+        return store_if_result(ctx, inst);
+    }
+    let flag = expect_operand(inst, 1)?;
+    match result_ty {
+        PhpType::AssocArray { .. } => {
+            abi::emit_call_label(ctx.emitter, "__rt_pathinfo_array");
+        }
+        PhpType::Str => {
+            lower_pathinfo_string(ctx, flag)?;
+        }
+        PhpType::Mixed => {
+            lower_pathinfo_mixed(ctx, flag)?;
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "pathinfo result PHP type {:?}",
+                other
+            )));
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Selects which ownership field a filesystem principal builtin changes.
 #[derive(Clone, Copy)]
 enum PrincipalKind {
@@ -534,6 +568,69 @@ fn is_nullish_value(ctx: &FunctionContext<'_>, value: ValueId) -> Result<bool> {
         ctx.value_php_type(value)?.codegen_repr(),
         PhpType::Void
     ))
+}
+
+/// Calls the single-component `pathinfo()` helper after materializing an integer flag.
+fn lower_pathinfo_string(ctx: &mut FunctionContext<'_>, flag: ValueId) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+            require_int(ctx.load_value_to_result(flag)?.codegen_repr(), "pathinfo flags")?;
+            ctx.emitter.instruction("mov x3, x0");                              // pass the selected PATHINFO_* flag to the string helper
+            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            require_int(ctx.load_value_to_result(flag)?.codegen_repr(), "pathinfo flags")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the selected PATHINFO_* flag to the string helper
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_pathinfo_str");
+    Ok(())
+}
+
+/// Lowers dynamic `pathinfo(path, flag)` and boxes string or array results as Mixed.
+fn lower_pathinfo_mixed(ctx: &mut FunctionContext<'_>, flag: ValueId) -> Result<()> {
+    let array_label = ctx.next_label("pathinfo_dynamic_array");
+    let done_label = ctx.next_label("pathinfo_dynamic_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+            require_int(ctx.load_value_to_result(flag)?.codegen_repr(), "pathinfo flags")?;
+            ctx.emitter.instruction("mov x3, x0");                              // keep the evaluated flag in the string-helper flag register
+            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+            ctx.emitter.instruction("cmp x3, #15");                             // does the runtime flag request PATHINFO_ALL exactly?
+            ctx.emitter.instruction(&format!("b.eq {}", array_label));          // runtime PATHINFO_ALL must produce the array shape
+            abi::emit_call_label(ctx.emitter, "__rt_pathinfo_str");
+            ctx.emitter.instruction("mov x0, #1");                              // select runtime tag 1 for a string Mixed value
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip array boxing after building the string result
+            ctx.emitter.label(&array_label);
+            abi::emit_call_label(ctx.emitter, "__rt_pathinfo_array");
+            box_owned_pathinfo_array_as_mixed(ctx);
+            ctx.emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            require_int(ctx.load_value_to_result(flag)?.codegen_repr(), "pathinfo flags")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // keep the evaluated flag in the string-helper flag register
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+            ctx.emitter.instruction("cmp rdi, 15");                             // does the runtime flag request PATHINFO_ALL exactly?
+            ctx.emitter.instruction(&format!("je {}", array_label));            // runtime PATHINFO_ALL must produce the array shape
+            abi::emit_call_label(ctx.emitter, "__rt_pathinfo_str");
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the component string pointer as the Mixed low payload word
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass the component string length as the Mixed high payload word
+            ctx.emitter.instruction("mov eax, 1");                              // select runtime tag 1 for a string Mixed value
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip array boxing after building the string result
+            ctx.emitter.label(&array_label);
+            abi::emit_call_label(ctx.emitter, "__rt_pathinfo_array");
+            box_owned_pathinfo_array_as_mixed(ctx);
+            ctx.emitter.label(&done_label);
+        }
+    }
+    Ok(())
 }
 
 /// Lowers `getcwd()` through the target-aware runtime helper.
@@ -947,6 +1044,35 @@ fn box_readfile_result(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.instruction("mov eax, 3");                              // select runtime tag 3 for a boolean false Mixed value
             abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
             ctx.emitter.label(&done_label);
+        }
+    }
+}
+
+/// Boxes a freshly owned pathinfo hash as a PHP associative-array Mixed cell.
+fn box_owned_pathinfo_array_as_mixed(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg(ctx.emitter, "x0");
+            ctx.emitter.instruction("mov x0, #24");                             // request a mixed cell payload with tag and two value words
+            abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
+            ctx.emitter.instruction("mov x9, #5");                              // select heap kind 5 for a boxed Mixed cell
+            ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp the allocation header as a Mixed cell
+            ctx.emitter.instruction("mov x9, #5");                              // select runtime tag 5 for an associative-array Mixed payload
+            ctx.emitter.instruction("str x9, [x0]");                            // store the associative-array tag in the Mixed cell
+            abi::emit_pop_reg(ctx.emitter, "x10");
+            ctx.emitter.instruction("str x10, [x0, #8]");                       // store the owned pathinfo hash pointer in the Mixed cell
+            ctx.emitter.instruction("str xzr, [x0, #16]");                      // associative-array Mixed payloads do not use a high word
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg(ctx.emitter, "rax");
+            ctx.emitter.instruction("mov rax, 24");                             // request a mixed cell payload with tag and two value words
+            abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
+            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 5)); // materialize the x86_64 Mixed heap kind word
+            ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp the allocation header as a Mixed cell
+            ctx.emitter.instruction("mov QWORD PTR [rax], 5");                  // select runtime tag 5 for an associative-array Mixed payload
+            abi::emit_pop_reg(ctx.emitter, "r10");
+            ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");            // store the owned pathinfo hash pointer in the Mixed cell
+            ctx.emitter.instruction("mov QWORD PTR [rax + 16], 0");             // associative-array Mixed payloads do not use a high word
         }
     }
 }

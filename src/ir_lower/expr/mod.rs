@@ -1411,6 +1411,8 @@ fn call_return_type(
         php_type
     } else if let Some(php_type) = numeric_builtin_return_type(ctx, name, operands) {
         php_type
+    } else if let Some(php_type) = pathinfo_builtin_return_type(name, operands) {
+        php_type
     } else if let Some(php_type) = array_builtin_return_type(ctx, name, operands) {
         php_type
     } else if let Some(sig) = ctx.functions.get(name) {
@@ -1524,6 +1526,20 @@ fn numeric_builtin_return_type(
         }
         _ => None,
     }
+}
+
+/// Returns EIR result metadata for `pathinfo()` based on argument shape.
+fn pathinfo_builtin_return_type(name: &str, operands: &[crate::ir::ValueId]) -> Option<PhpType> {
+    if php_symbol_key(name.trim_start_matches('\\')).as_str() != "pathinfo" {
+        return None;
+    }
+    if operands.len() == 1 {
+        return Some(PhpType::AssocArray {
+            key: Box::new(PhpType::Str),
+            value: Box::new(PhpType::Str),
+        });
+    }
+    Some(PhpType::Mixed)
 }
 
 /// Returns precise return metadata for array builtins that preserve operand element type.
