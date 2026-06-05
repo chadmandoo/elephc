@@ -1023,6 +1023,7 @@ pub(crate) fn static_callable_binding_for_expr(
     expr: &Expr,
 ) -> Option<StaticCallableBinding> {
     match &expr.kind {
+        ExprKind::StringLiteral(name) => resolve_static_string_callable(ctx, name),
         ExprKind::FirstClassCallable(CallableTarget::Function(name)) => {
             resolve_static_string_callable(ctx, name.as_str())
         }

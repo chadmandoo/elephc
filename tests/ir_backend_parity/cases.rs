@@ -224,6 +224,31 @@ echo call_user_func($stat, 5);
 "#,
         &[],
     );
+    assert_backend_parity(
+        "stored_string_callable_dispatch",
+        r#"<?php
+function eir_string_callable_add(int $value): int {
+    return $value + 1;
+}
+function eir_string_callable_join(string $left, string $right): string {
+    return $left . ":" . $right;
+}
+function eir_string_callable_regex(array $matches): string {
+    return "C" . count($matches);
+}
+$fn = "eir_string_callable_add";
+echo $fn(4);
+echo "|";
+echo call_user_func($fn, 5);
+echo "|";
+$join = "eir_string_callable_join";
+echo call_user_func_array($join, ["right" => "R", "left" => "L"]);
+echo "|";
+$regex = "eir_string_callable_regex";
+echo preg_replace_callback("/[A-Z]/", $regex, "AB");
+"#,
+        &[],
+    );
 }
 
 /// Verifies static method callback forms lower to the same direct calls as legacy codegen.
