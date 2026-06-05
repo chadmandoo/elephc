@@ -877,6 +877,34 @@ echo ($child instanceof $childName) ? "T" : "F";
     );
 }
 
+/// Verifies enum case scoped constants load initialized singleton objects.
+#[test]
+fn ir_backend_handles_enum_case_singletons() {
+    let unit_source = r#"<?php
+enum Color {
+    case Red;
+    case Blue;
+}
+$case = Color::Red;
+echo ($case instanceof Color) ? "T" : "F";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("enum_case_singletons", unit_source),
+        "T"
+    );
+
+    let backed_source = r#"<?php
+enum Code: int {
+    case Ok = 7;
+}
+echo Code::Ok->value;
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("backed_enum_case_singletons", backed_source),
+        "7"
+    );
+}
+
 /// Verifies invalid dynamic `instanceof` targets use the runtime fatal path.
 #[test]
 fn ir_backend_fatals_on_invalid_dynamic_instanceof_target() {

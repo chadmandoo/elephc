@@ -142,6 +142,11 @@ fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
             names.insert(class_name);
         }
     }
+    for class_name in referenced_scoped_constant_class_names(module) {
+        if module.class_infos.contains_key(&class_name) {
+            names.insert(class_name);
+        }
+    }
     expand_class_dependencies(&mut names, &module.class_infos);
     names
 }
@@ -405,6 +410,38 @@ fn referenced_class_data_names(module: &Module) -> HashSet<String> {
             if let Some(name) = module.data.class_names.get(data.as_raw() as usize) {
                 names.insert(name.clone());
             }
+        }
+    }
+    names
+}
+
+/// Returns class-like receiver names encoded in scoped constant immediates.
+fn referenced_scoped_constant_class_names(module: &Module) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        for inst in &function.instructions {
+            if !matches!(inst.op, Op::ScopedConstantGet) {
+                continue;
+            }
+            let Some(Immediate::Data(data)) = inst.immediate else {
+                continue;
+            };
+            let Some(label) = module.data.strings.get(data.as_raw() as usize) else {
+                continue;
+            };
+            let Some((class_name, _)) = label.rsplit_once("::") else {
+                continue;
+            };
+            names.insert(class_name.trim_start_matches('\\').to_string());
         }
     }
     names

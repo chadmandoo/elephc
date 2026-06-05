@@ -19,7 +19,7 @@ use crate::ir::{
 };
 use crate::parser::ast::{ExprKind, TypeExpr};
 use crate::span::Span;
-use crate::types::{ClassInfo, ExternFunctionSig, FunctionSig, InterfaceInfo, PhpType, TypeEnv};
+use crate::types::{ClassInfo, EnumInfo, ExternFunctionSig, FunctionSig, InterfaceInfo, PhpType, TypeEnv};
 
 /// Value returned by expression lowering with its PHP metadata.
 #[derive(Debug, Clone, Copy)]
@@ -46,6 +46,7 @@ pub(crate) struct LoweringContext<'m, 'f> {
     pub functions: &'m HashMap<String, FunctionSig>,
     pub extern_functions: &'m HashMap<String, ExternFunctionSig>,
     pub classes: &'m HashMap<String, ClassInfo>,
+    pub enums: &'m HashMap<String, EnumInfo>,
     pub interfaces: &'m HashMap<String, InterfaceInfo>,
     pub constants: HashMap<String, (ExprKind, PhpType)>,
     pub loop_stack: Vec<LoopFrame>,
@@ -63,6 +64,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         functions: &'m HashMap<String, FunctionSig>,
         extern_functions: &'m HashMap<String, ExternFunctionSig>,
         classes: &'m HashMap<String, ClassInfo>,
+        enums: &'m HashMap<String, EnumInfo>,
         interfaces: &'m HashMap<String, InterfaceInfo>,
         constants: &'m HashMap<String, (ExprKind, PhpType)>,
         return_php_type: PhpType,
@@ -78,6 +80,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             functions,
             extern_functions,
             classes,
+            enums,
             interfaces,
             constants: constants.clone(),
             loop_stack: Vec::new(),

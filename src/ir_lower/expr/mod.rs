@@ -1586,6 +1586,23 @@ fn lower_class_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticRece
 /// Lowers a scoped constant read.
 fn lower_scoped_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticReceiver, name: &str, expr: &Expr) -> LoweredValue {
     let class_name = receiver_name(receiver);
+    let normalized_class_name = class_name.trim_start_matches('\\');
+    if ctx
+        .enums
+        .get(normalized_class_name)
+        .is_some_and(|enum_info| enum_info.cases.iter().any(|case| case.name == name))
+    {
+        let key = format!("{}::{}", normalized_class_name, name);
+        let data = ctx.intern_string(&key);
+        return ctx.emit_value(
+            Op::ScopedConstantGet,
+            Vec::new(),
+            Some(Immediate::Data(data)),
+            PhpType::Object(normalized_class_name.to_string()),
+            Op::ScopedConstantGet.default_effects(),
+            Some(expr.span),
+        );
+    }
     if let Some(value) = ctx.scoped_constant_value(&class_name, name) {
         return lower_expr(ctx, &value);
     }
