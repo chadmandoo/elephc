@@ -1253,6 +1253,50 @@ echo MathBox::add(2, 3);
     );
 }
 
+/// Verifies static method return metadata survives object property stores.
+#[test]
+fn ir_backend_uses_static_method_object_return_type() {
+    let source = r#"<?php
+class Box {
+    public int $value;
+
+    public function __construct(int $value) {
+        $this->value = $value;
+    }
+}
+
+class Factory {
+    public static function make(): Box {
+        return new Box(7);
+    }
+}
+
+class Holder {
+    public $box;
+
+    public function __construct() {
+        $this->box = 0;
+    }
+
+    public function load(): void {
+        $this->box = Factory::make();
+    }
+
+    public function value(): int {
+        return $this->box->value;
+    }
+}
+
+$holder = new Holder();
+$holder->load();
+echo $holder->value();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("static_method_object_return_type", source),
+        "7"
+    );
+}
+
 /// Verifies lexical `self::` and `parent::` static-method receivers lower in class methods.
 #[test]
 fn ir_backend_calls_lexical_static_method_receivers() {

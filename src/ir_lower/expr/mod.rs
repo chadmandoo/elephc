@@ -1610,14 +1610,34 @@ fn lower_static_method_call(
     let operands = lower_args(ctx, args);
     let name = format!("{}::{}", receiver_name(receiver), method);
     let data = ctx.intern_string(&name);
+    let result_type = static_method_call_result_type(ctx, receiver, method, expr);
     ctx.emit_value(
         Op::StaticMethodCall,
         operands,
         Some(Immediate::Data(data)),
-        fallback_expr_type(expr),
+        result_type,
         Op::StaticMethodCall.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Returns the checked return type for a static method call when metadata is available.
+fn static_method_call_result_type(
+    ctx: &LoweringContext<'_, '_>,
+    receiver: &StaticReceiver,
+    method: &str,
+    expr: &Expr,
+) -> PhpType {
+    let StaticReceiver::Named(name) = receiver else {
+        return fallback_expr_type(expr);
+    };
+    let normalized = name.as_str().trim_start_matches('\\');
+    let key = php_symbol_key(method);
+    ctx.classes
+        .get(normalized)
+        .and_then(|class_info| class_info.static_methods.get(&key))
+        .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
+        .unwrap_or_else(|| fallback_expr_type(expr))
 }
 
 /// Lowers first-class callable creation.
