@@ -1007,6 +1007,27 @@ unlink("csv.txt");
     );
 }
 
+/// Verifies `SplTempFileObject` memory-mode read/write methods match the legacy backend.
+#[test]
+fn parity_spl_temp_file_object_memory_stream() {
+    assert_backend_parity(
+        "spl_temp_file_object_memory_stream",
+        r#"<?php
+$tmp = new SplTempFileObject(-1);
+echo $tmp->getPathname();
+$tmp->fwrite("first\nsecond\n");
+$tmp->rewind();
+echo "|";
+echo $tmp->fgets();
+echo "|";
+echo $tmp->fgets();
+echo "|";
+echo $tmp->eof() ? "eof" : "more";
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);

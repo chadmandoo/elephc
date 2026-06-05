@@ -216,7 +216,7 @@ fn spl_file_object_properties() -> Vec<ClassProperty> {
     vec![
         protected_storage_property("backingPath", TypeExpr::Str),
         protected_storage_property("stream", mixed_type()),
-        protected_storage_property("lines", array_type()),
+        protected_storage_property("lines", string_array_type()),
         protected_storage_property("lineNumber", TypeExpr::Int),
         protected_storage_property("flags", TypeExpr::Int),
         protected_storage_property("delimiter", TypeExpr::Str),

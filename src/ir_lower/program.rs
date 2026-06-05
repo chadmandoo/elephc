@@ -425,15 +425,38 @@ fn referenced_builtin_spl_methods(module: &Module) -> Vec<(String, String)> {
                         continue;
                     };
                     let method_key = php_method_key(method_name);
-                    if is_supported_builtin_spl_method(normalized, &method_key) {
-                        methods.push((normalized.to_string(), method_key));
-                    }
+                    push_supported_builtin_spl_method_for_receiver(
+                        &mut methods,
+                        module,
+                        normalized,
+                        &method_key,
+                    );
                 }
                 _ => {}
             }
         }
     }
     methods
+}
+
+/// Adds the supported builtin SPL method owner for a receiver class or one of its parents.
+fn push_supported_builtin_spl_method_for_receiver(
+    methods: &mut Vec<(String, String)>,
+    module: &Module,
+    class_name: &str,
+    method_key: &str,
+) {
+    let mut current = Some(class_name);
+    while let Some(name) = current {
+        if is_supported_builtin_spl_method(name, method_key) {
+            methods.push((name.to_string(), method_key.to_string()));
+            return;
+        }
+        current = module
+            .class_infos
+            .get(name)
+            .and_then(|class_info| class_info.parent.as_deref());
+    }
 }
 
 /// Returns the class-name immediate attached to an instruction.
@@ -575,6 +598,15 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
                 | "setcsvcontrol"
                 | "fgetcsv"
                 | "fputcsv"
+        ),
+        "SplTempFileObject" => matches!(
+            method_key,
+            "__construct"
+                | "eof"
+                | "fgets"
+                | "fwrite"
+                | "rewind"
+                | "__elephcspilltofile"
         ),
         _ => false,
     }

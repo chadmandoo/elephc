@@ -2625,6 +2625,27 @@ unlink("csv.txt");
     );
 }
 
+/// Verifies `SplTempFileObject` memory-mode read/write methods lower through EIR.
+#[test]
+fn ir_backend_handles_spl_temp_file_object_memory_stream() {
+    let source = r#"<?php
+$tmp = new SplTempFileObject(-1);
+echo $tmp->getPathname();
+$tmp->fwrite("first\nsecond\n");
+$tmp->rewind();
+echo "|";
+echo $tmp->fgets();
+echo "|";
+echo $tmp->fgets();
+echo "|";
+echo $tmp->eof() ? "eof" : "more";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_temp_file_object_memory_stream", source),
+        "php://memory|first\n|second\n|eof"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {
