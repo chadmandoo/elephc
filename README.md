@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="elephc logo" width="400">
+</p>
+
 # elephc
 
 [![GitHub Stars](https://img.shields.io/github/stars/illegalstudio/elephc?style=flat-square&logo=github&label=stars)](https://github.com/illegalstudio/elephc/stargazers)
