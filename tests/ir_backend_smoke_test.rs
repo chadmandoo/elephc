@@ -249,6 +249,32 @@ fn ir_backend_handles_named_arguments_for_user_calls() {
     }
 }
 
+/// Verifies named builtin and extern calls are evaluated in source order but called in signature order.
+#[test]
+fn ir_backend_handles_named_arguments_for_builtin_and_extern_calls() {
+    for (name, source, expected) in [
+        (
+            "named_builtin_source_order",
+            r#"<?php
+function mark_s(string $label, string $value): string { echo $label; return $value; }
+function mark_i(string $label, int $value): int { echo $label; return $value; }
+echo str_repeat(times: mark_i("T", 2), string: mark_s("S", "ab"));
+"#,
+            "TSabab",
+        ),
+        (
+            "named_extern_reordered",
+            r#"<?php
+extern function strcmp(string $left, string $right): int;
+echo strcmp(right: "ab", left: "aa") < 0 ? "lt" : "bad";
+"#,
+            "lt",
+        ),
+    ] {
+        assert_eq!(compile_and_run_ir_backend(name, source), expected);
+    }
+}
+
 /// Verifies positional variadic calls collect tail arguments into the variadic array parameter.
 #[test]
 fn ir_backend_handles_positional_variadic_parameters() {

@@ -835,7 +835,7 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
             return value;
         }
     }
-    let sig = ctx.functions.get(canonical).cloned();
+    let sig = call_signature(ctx, canonical, args);
     let operands = lower_args_with_signature(ctx, sig.as_ref(), args);
     let php_type = call_return_type(ctx, canonical, &operands);
     if ctx.extern_functions.contains_key(canonical) {
@@ -869,6 +869,31 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         effects_lookup::builtin_effects(canonical),
         Some(expr.span),
     )
+}
+
+/// Returns the caller-visible signature used to normalize direct call operands.
+fn call_signature(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+) -> Option<FunctionSig> {
+    if let Some(sig) = ctx.functions.get(name) {
+        return Some(sig.clone());
+    }
+    if args.iter().any(is_named_arg) {
+        return builtin_call_signature(name);
+    }
+    None
+}
+
+/// Looks up a PHP builtin call signature using the normalized global builtin name.
+fn builtin_call_signature(name: &str) -> Option<FunctionSig> {
+    crate::types::builtin_call_sig(&php_symbol_key(name.trim_start_matches('\\')))
+}
+
+/// Looks up precise first-class builtin metadata using the normalized global builtin name.
+fn first_class_builtin_signature(name: &str) -> Option<FunctionSig> {
+    crate::types::first_class_callable_builtin_sig(&php_symbol_key(name.trim_start_matches('\\')))
 }
 
 /// Lowers `unset($local, ...)` by storing PHP null into each local slot.
@@ -1136,9 +1161,9 @@ fn call_return_type(
         sig.return_type.clone()
     } else if let Some(sig) = ctx.extern_functions.get(name) {
         sig.return_type.clone()
-    } else if let Some(sig) = crate::types::first_class_callable_builtin_sig(name) {
+    } else if let Some(sig) = first_class_builtin_signature(name) {
         sig.return_type
-    } else if let Some(sig) = crate::types::builtin_call_sig(name) {
+    } else if let Some(sig) = builtin_call_signature(name) {
         sig.return_type
     } else {
         PhpType::Mixed
