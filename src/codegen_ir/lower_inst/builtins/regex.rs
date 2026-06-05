@@ -7,13 +7,14 @@
 //!
 //! Key details:
 //! - `preg_match()` captures currently support direct local `$matches` variables.
-//! - `preg_replace_callback()` remains explicit future work.
+//! - `preg_replace_callback()` currently supports static string user callbacks.
 //! - `preg_split()` forces boxed Mixed element slots so dynamic flags cannot mismatch layout.
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen_ir::{CodegenIrError, Result};
 use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
+use crate::names::function_symbol;
 use crate::types::PhpType;
 
 use super::super::super::context::FunctionContext;
@@ -79,6 +80,43 @@ pub(super) fn lower_preg_replace(
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_preg_replace");
+    super::store_if_result(ctx, inst)
+}
+
+/// Lowers `preg_replace_callback(pattern, callback, subject)` for static string callbacks.
+pub(super) fn lower_preg_replace_callback(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "preg_replace_callback", 3)?;
+    let pattern = super::expect_operand(inst, 0)?;
+    let callback = super::expect_operand(inst, 1)?;
+    let subject = super::expect_operand(inst, 2)?;
+    let callback_name = const_string_operand(ctx, callback, "preg_replace_callback callback")?;
+    let function_name = ctx
+        .callable_function_by_name(&callback_name)
+        .map(|function| function.name.to_string())
+        .ok_or_else(|| {
+            CodegenIrError::unsupported(format!(
+                "preg_replace_callback static callback {}",
+                callback_name
+            ))
+        })?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_arg(ctx, pattern, "x1", "x2", "preg_replace_callback pattern")?;
+            abi::emit_symbol_address(ctx.emitter, "x3", &function_symbol(&function_name));
+            abi::emit_load_int_immediate(ctx.emitter, "x4", 0);
+            load_string_arg(ctx, subject, "x5", "x6", "preg_replace_callback subject")?;
+        }
+        Arch::X86_64 => {
+            load_string_arg(ctx, pattern, "rdi", "rsi", "preg_replace_callback pattern")?;
+            abi::emit_symbol_address(ctx.emitter, "rdx", &function_symbol(&function_name));
+            abi::emit_load_int_immediate(ctx.emitter, "rcx", 0);
+            load_string_arg(ctx, subject, "r8", "r9", "preg_replace_callback subject")?;
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_preg_replace_callback");
     super::store_if_result(ctx, inst)
 }
 
@@ -170,6 +208,46 @@ fn store_matches_array(ctx: &mut FunctionContext<'_>, slot: LocalSlotId) -> Resu
         }
     }
     Ok(())
+}
+
+/// Returns a string literal value defined by a `ConstStr` instruction operand.
+fn const_string_operand(
+    ctx: &FunctionContext<'_>,
+    value: ValueId,
+    context: &str,
+) -> Result<String> {
+    let value_ref = ctx
+        .function
+        .value(value)
+        .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))?;
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} with non-literal string",
+            context
+        )));
+    };
+    let inst_ref = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    if inst_ref.op != Op::ConstStr {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} with non-literal string",
+            context
+        )));
+    }
+    let Some(Immediate::Data(data)) = inst_ref.immediate else {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} string literal has no data id",
+            context
+        )));
+    };
+    ctx.module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .cloned()
+        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
 }
 
 /// Loads a string operand into an explicit pointer/length register pair.

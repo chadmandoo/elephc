@@ -860,6 +860,21 @@ echo count($matches);
     );
 }
 
+/// Verifies `preg_replace_callback()` can call static string user callbacks.
+#[test]
+fn ir_backend_handles_preg_replace_callback_static_string() {
+    let source = r#"<?php
+function eir_regex_replace(array $matches): string {
+    return "[" . $matches[0] . ":" . $matches[1] . "]";
+}
+echo preg_replace_callback("/([a-z])([a-z])/", "eir_regex_replace", "ab cd");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("preg_replace_callback_static_string", source),
+        "[ab:a] [cd:c]"
+    );
+}
+
 /// Verifies JSON validation builtins update and expose runtime JSON error state.
 #[test]
 fn ir_backend_handles_json_validation_builtins() {

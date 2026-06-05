@@ -220,6 +220,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "preg_match" => regex::lower_preg_match(ctx, inst),
         "preg_match_all" => regex::lower_preg_match_all(ctx, inst),
         "preg_replace" => regex::lower_preg_replace(ctx, inst),
+        "preg_replace_callback" => regex::lower_preg_replace_callback(ctx, inst),
         "preg_split" => regex::lower_preg_split(ctx, inst),
         "json_decode" => json::lower_json_decode(ctx, inst),
         "json_encode" => json::lower_json_encode(ctx, inst),
