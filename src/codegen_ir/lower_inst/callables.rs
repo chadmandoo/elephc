@@ -33,7 +33,7 @@ struct RuntimeStringFunctionTarget {
 pub(super) fn lower_closure_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let callable = expect_operand(inst, 0)?;
     match ctx.value_php_type(callable)?.codegen_repr() {
-        PhpType::Str => lower_runtime_string_closure_call(ctx, inst, callable),
+        PhpType::Str => lower_runtime_string_call(ctx, inst, callable, "closure_call"),
         other => Err(CodegenIrError::unsupported(format!(
             "closure_call for callable PHP type {:?}",
             other
@@ -41,29 +41,43 @@ pub(super) fn lower_closure_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
     }
 }
 
+/// Lowers expression-call forms like `($expr)(...)` when the callee is a runtime string.
+pub(super) fn lower_expr_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let callable = expect_operand(inst, 0)?;
+    match ctx.value_php_type(callable)?.codegen_repr() {
+        PhpType::Str => lower_runtime_string_call(ctx, inst, callable, "expr_call"),
+        other => Err(CodegenIrError::unsupported(format!(
+            "expr_call for callable PHP type {:?}",
+            other
+        ))),
+    }
+}
+
 /// Dispatches a runtime string callable across user functions with compatible ABI shape.
-fn lower_runtime_string_closure_call(
+fn lower_runtime_string_call(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     callable: ValueId,
+    op_name: &str,
 ) -> Result<()> {
     let args = inst.operands.iter().skip(1).copied().collect::<Vec<_>>();
     let targets = runtime_string_function_targets(ctx, args.len(), inst)?;
     if targets.is_empty() {
-        return Err(CodegenIrError::unsupported(
-            "closure_call with no compatible user-function targets",
-        ));
+        return Err(CodegenIrError::unsupported(format!(
+            "{} with no compatible user-function targets",
+            op_name
+        )));
     }
 
     let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
     ctx.load_string_value_to_regs(callable, ptr_reg, len_reg)?;
     abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
 
-    let done_label = ctx.next_label("closure_call_done");
-    let miss_label = ctx.next_label("closure_call_missing");
+    let done_label = ctx.next_label(&format!("{}_done", op_name));
+    let miss_label = ctx.next_label(&format!("{}_missing", op_name));
     let mut case_labels = Vec::with_capacity(targets.len());
     for target in &targets {
-        let label = ctx.next_label(&format!("closure_call_{}", label_fragment(&target.name)));
+        let label = ctx.next_label(&format!("{}_{}", op_name, label_fragment(&target.name)));
         emit_branch_if_runtime_callable_name_matches(ctx, &target.name, &label);
         case_labels.push(label);
     }

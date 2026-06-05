@@ -336,6 +336,32 @@ echo $fn(4);
 "#,
         &["extra"],
     );
+    assert_backend_parity(
+        "runtime_string_callable_expr_call_first",
+        r#"<?php
+function eir_runtime_expr_left(int $value): int {
+    return $value + 1;
+}
+function eir_runtime_expr_right(int $value): int {
+    return $value + 2;
+}
+echo ($argc === 1 ? "eir_runtime_expr_left" : "eir_runtime_expr_right")(4);
+"#,
+        &[],
+    );
+    assert_backend_parity(
+        "runtime_string_callable_expr_call_second",
+        r#"<?php
+function eir_runtime_expr_left(int $value): int {
+    return $value + 1;
+}
+function eir_runtime_expr_right(int $value): int {
+    return $value + 2;
+}
+echo ($argc === 1 ? "eir_runtime_expr_left" : "eir_runtime_expr_right")(4);
+"#,
+        &["extra"],
+    );
 }
 
 /// Verifies static method callback forms lower to the same direct calls as legacy codegen.

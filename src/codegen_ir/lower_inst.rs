@@ -136,6 +136,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StoreStaticProperty => static_properties::lower_store_static_property(ctx, &inst),
         Op::Call => lower_direct_call(ctx, &inst),
         Op::ClosureCall => callables::lower_closure_call(ctx, &inst),
+        Op::ExprCall => callables::lower_expr_call(ctx, &inst),
         Op::MethodCall => lower_method_call(ctx, &inst),
         Op::NullsafeMethodCall => lower_nullsafe_method_call(ctx, &inst),
         Op::StaticMethodCall => lower_static_method_call(ctx, &inst),
