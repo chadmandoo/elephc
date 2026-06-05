@@ -295,11 +295,28 @@ fn lower_builtin_reflection_attribute_methods(
     let Some(class_info) = check_result.classes.get("ReflectionAttribute") else {
         return;
     };
-    lower_methods_for_class_like(
-        "ReflectionAttribute",
-        &class_info.method_decls,
-        module,
-        check_result,
-        constants,
-    );
+    for method in &class_info.method_decls {
+        if !method.has_body {
+            continue;
+        }
+        let generated_body;
+        let body = if crate::names::php_symbol_key(&method.name) == "newinstance" {
+            generated_body =
+                crate::codegen::reflection::build_attribute_new_instance_body(&check_result.classes);
+            generated_body.as_slice()
+        } else {
+            &method.body
+        };
+        function::lower_class_method(
+            "ReflectionAttribute",
+            &method.name,
+            method.is_static,
+            &method.params,
+            method.return_type.as_ref(),
+            body,
+            module,
+            check_result,
+            constants,
+        );
+    }
 }

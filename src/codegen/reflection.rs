@@ -21,7 +21,8 @@ use crate::codegen::emit::Emitter;
 use crate::codegen::expr::arrays::emit_array_value_type_stamp;
 use crate::codegen::expr::objects::emit_new_object;
 use crate::codegen::platform::Arch;
-use crate::names::php_symbol_key;
+use crate::names::{php_symbol_key, Name};
+use crate::parser::ast::{BinOp, Expr, ExprKind, Stmt, StmtKind};
 use crate::types::{AttrArgValue, ClassInfo, PhpType};
 
 #[derive(Clone)]
@@ -102,6 +103,78 @@ pub(crate) fn attribute_factory_id(
         .find(|factory| factory.class_name == resolved_name && factory.args == attr_args)
         .map(|factory| factory.id)
         .unwrap_or(0)
+}
+
+/// Builds the synthetic dispatch body for `ReflectionAttribute::newInstance()`.
+pub(crate) fn build_attribute_new_instance_body(
+    classes: &HashMap<String, ClassInfo>,
+) -> Vec<Stmt> {
+    let span = crate::span::Span::dummy();
+    let factories = collect_attribute_factories(classes);
+    let mut body = Vec::new();
+    for factory in factories {
+        let condition = factory_condition(factory.id);
+        let then_body = vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::NewObject {
+                    class_name: name_from_canonical(&factory.class_name),
+                    args: factory.args.iter().map(attr_arg_expr).collect(),
+                },
+                span,
+            ))),
+            span,
+        )];
+        body.push(Stmt::new(
+            StmtKind::If {
+                condition,
+                then_body,
+                elseif_clauses: Vec::new(),
+                else_body: None,
+            },
+            span,
+        ));
+    }
+    body.push(Stmt::new(
+        StmtKind::Return(Some(Expr::new(ExprKind::Null, span))),
+        span,
+    ));
+    body
+}
+
+/// Creates `this->__factory === factory_id` for `newInstance()` dispatch routing.
+fn factory_condition(factory_id: i64) -> Expr {
+    let span = crate::span::Span::dummy();
+    Expr::new(
+        ExprKind::BinaryOp {
+            left: Box::new(Expr::new(
+                ExprKind::PropertyAccess {
+                    object: Box::new(Expr::new(ExprKind::This, span)),
+                    property: "__factory".to_string(),
+                },
+                span,
+            )),
+            op: BinOp::StrictEq,
+            right: Box::new(Expr::new(ExprKind::IntLiteral(factory_id), span)),
+        },
+        span,
+    )
+}
+
+/// Converts one captured literal attribute argument into a synthetic AST expression.
+fn attr_arg_expr(arg: &AttrArgValue) -> Expr {
+    let span = crate::span::Span::dummy();
+    let kind = match arg {
+        AttrArgValue::Null => ExprKind::Null,
+        AttrArgValue::Int(value) => ExprKind::IntLiteral(*value),
+        AttrArgValue::Bool(value) => ExprKind::BoolLiteral(*value),
+        AttrArgValue::Str(value) => ExprKind::StringLiteral(value.clone()),
+    };
+    Expr::new(kind, span)
+}
+
+/// Converts a canonical class string into the `Name` shape expected by `NewObject`.
+fn name_from_canonical(class_name: &str) -> Name {
+    Name::qualified(class_name.split('\\').map(str::to_string).collect())
 }
 
 /// Allocates and populates a PHP indexed array of `ReflectionAttribute`

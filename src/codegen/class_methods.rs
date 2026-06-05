@@ -13,11 +13,11 @@ use std::collections::{HashMap, HashSet};
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::functions;
-use crate::names::{method_symbol, php_symbol_key, static_method_symbol, Name};
-use crate::parser::ast::{BinOp, Expr, ExprKind, Stmt, StmtKind};
+use crate::names::{method_symbol, php_symbol_key, static_method_symbol};
+use crate::parser::ast::ExprKind;
 use crate::types::{
-    AttrArgValue, ClassInfo, EnumInfo, ExternClassInfo, ExternFunctionSig, FunctionSig,
-    InterfaceInfo, PackedClassInfo, PhpType,
+    ClassInfo, EnumInfo, ExternClassInfo, ExternFunctionSig, FunctionSig, InterfaceInfo,
+    PackedClassInfo, PhpType,
 };
 
 /// Emits all non-abstract method bodies for a class, interface, enum, or trait.
@@ -58,7 +58,7 @@ pub(super) fn emit_class_methods(
         };
         let epilogue_label = format!("{}_epilogue", label);
         let generated_body = if class_name == "ReflectionAttribute" && method_key == "newinstance" {
-            Some(build_reflection_attribute_new_instance_body(classes))
+            Some(crate::codegen::reflection::build_attribute_new_instance_body(classes))
         } else {
             None
         };
@@ -88,82 +88,6 @@ pub(super) fn emit_class_methods(
             extern_globals,
         );
     }
-}
-
-/// Builds a synthetic if-else-if body for `ReflectionAttribute::newInstance` that
-/// dispatches to the appropriate attribute factory constructor based on `this->__factory`.
-/// Each branch returns a `new FactoryClass(...)` expression; the final else returns null.
-fn build_reflection_attribute_new_instance_body(
-    classes: &HashMap<String, ClassInfo>,
-) -> Vec<Stmt> {
-    let span = crate::span::Span::dummy();
-    let factories = crate::codegen::reflection::collect_attribute_factories(classes);
-    let mut elseif_clauses = Vec::new();
-    for factory in factories {
-        let condition = factory_condition(factory.id);
-        let body = vec![Stmt::new(
-            StmtKind::Return(Some(Expr::new(
-                ExprKind::NewObject {
-                    class_name: name_from_canonical(&factory.class_name),
-                    args: factory.args.iter().map(attr_arg_expr).collect(),
-                },
-                span,
-            ))),
-            span,
-        )];
-        elseif_clauses.push((condition, body));
-    }
-
-    vec![Stmt::new(
-        StmtKind::If {
-            condition: Expr::new(ExprKind::BoolLiteral(false), span),
-            then_body: Vec::new(),
-            elseif_clauses,
-            else_body: Some(vec![Stmt::new(
-                StmtKind::Return(Some(Expr::new(ExprKind::Null, span))),
-                span,
-            )]),
-        },
-        span,
-    )]
-}
-
-/// Creates a condition expression `this->__factory === factory_id` for dispatch routing.
-fn factory_condition(factory_id: i64) -> Expr {
-    let span = crate::span::Span::dummy();
-    Expr::new(
-        ExprKind::BinaryOp {
-            left: Box::new(Expr::new(
-                ExprKind::PropertyAccess {
-                    object: Box::new(Expr::new(ExprKind::This, span)),
-                    property: "__factory".to_string(),
-                },
-                span,
-            )),
-            op: BinOp::StrictEq,
-            right: Box::new(Expr::new(ExprKind::IntLiteral(factory_id), span)),
-        },
-        span,
-    )
-}
-
-/// Converts an `AttrArgValue` (Null/Int/Bool/Str) into the corresponding `ExprKind`
-/// for use in synthesized attribute factory constructor calls.
-fn attr_arg_expr(arg: &AttrArgValue) -> Expr {
-    let span = crate::span::Span::dummy();
-    let kind = match arg {
-        AttrArgValue::Null => ExprKind::Null,
-        AttrArgValue::Int(value) => ExprKind::IntLiteral(*value),
-        AttrArgValue::Bool(value) => ExprKind::BoolLiteral(*value),
-        AttrArgValue::Str(value) => ExprKind::StringLiteral(value.clone()),
-    };
-    Expr::new(kind, span)
-}
-
-/// Converts a fully-qualified class name with `\` separators into a `Name` qualified
-/// vec suitable for use in synthesized `NewObject` expressions.
-fn name_from_canonical(class_name: &str) -> Name {
-    Name::qualified(class_name.split('\\').map(str::to_string).collect())
 }
 
 /// Builds the symbol label and `FunctionSig` for a static method.

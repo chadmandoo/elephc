@@ -3673,6 +3673,29 @@ echo "[" . $guardArgs[0] . "]";
     );
 }
 
+/// Verifies `ReflectionAttribute::newInstance()` dispatches through captured factory metadata.
+#[test]
+fn ir_backend_handles_reflection_attribute_new_instance() {
+    let source = r#"<?php
+class EirRoute {
+    public function __construct(string $path, int $code) {
+        echo "ctor:" . $path . ":" . $code . ":";
+    }
+}
+#[EirRoute("/lazy", -65537)]
+class EirController {}
+$attrs = class_get_attributes("EirController");
+echo $attrs[0]->getArguments()[1];
+echo ":";
+$instance = $attrs[0]->newInstance();
+echo ($instance instanceof EirRoute) ? "instance" : "bad";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("reflection_attribute_new_instance", source),
+        "-65537:ctor:/lazy:-65537:instance"
+    );
+}
+
 /// Verifies declared class/interface introspection arrays lower through the EIR backend.
 #[test]
 fn ir_backend_handles_declared_name_builtins() {
