@@ -604,7 +604,11 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
             "__construct"
                 | "eof"
                 | "fgets"
+                | "fread"
                 | "fwrite"
+                | "fstat"
+                | "ftell"
+                | "fseek"
                 | "rewind"
                 | "__elephcspilltofile"
         ),

@@ -2646,6 +2646,33 @@ echo $tmp->eof() ? "eof" : "more";
     );
 }
 
+/// Verifies `SplTempFileObject` memory cursor, overwrite, read, and stat helpers.
+#[test]
+fn ir_backend_handles_spl_temp_file_object_memory_cursor_and_stat() {
+    let source = r#"<?php
+$tmp = new SplTempFileObject(10);
+echo $tmp->getPathname();
+echo "|";
+echo $tmp->ftell();
+echo "|";
+echo $tmp->fwrite("abc");
+echo "|";
+echo $tmp->ftell();
+$tmp->fseek(1);
+$tmp->fwrite("Z");
+$tmp->rewind();
+echo "|";
+echo $tmp->fread(3);
+$stat = $tmp->fstat();
+echo "|";
+echo $stat["size"];
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_temp_file_object_memory_cursor_and_stat", source),
+        "php://temp/maxmemory:10|0|3|3|aZc|3"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {

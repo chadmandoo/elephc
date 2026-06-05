@@ -1028,6 +1028,33 @@ echo $tmp->eof() ? "eof" : "more";
     );
 }
 
+/// Verifies `SplTempFileObject` memory cursor/stat helpers match the legacy backend.
+#[test]
+fn parity_spl_temp_file_object_memory_cursor_and_stat() {
+    assert_backend_parity(
+        "spl_temp_file_object_memory_cursor_and_stat",
+        r#"<?php
+$tmp = new SplTempFileObject(10);
+echo $tmp->getPathname();
+echo "|";
+echo $tmp->ftell();
+echo "|";
+echo $tmp->fwrite("abc");
+echo "|";
+echo $tmp->ftell();
+$tmp->fseek(1);
+$tmp->fwrite("Z");
+$tmp->rewind();
+echo "|";
+echo $tmp->fread(3);
+$stat = $tmp->fstat();
+echo "|";
+echo $stat["size"];
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);
