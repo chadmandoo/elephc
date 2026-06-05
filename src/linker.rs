@@ -48,12 +48,15 @@ pub(crate) fn link(
 ) {
     let needs_elephc_tls = extra_link_libs.iter().any(|l| l == "elephc_tls");
     let elephc_tls_dir = needs_elephc_tls.then(elephc_tls_lib_dir).flatten();
-    // The PDO bridge staticlib (SQLite + PostgreSQL) is not a system library:
-    // locate libelephc_pdo.a so its directory can be added to the linker search
-    // path and, on Linux, link -ldl for the Rust staticlib's runtime symbols.
+    // The PDO bridge staticlib (SQLite + PostgreSQL + MySQL/MariaDB) is not a
+    // system library: locate libelephc_pdo.a so its directory can be added to
+    // the linker search path and, on Linux, link -ldl for the Rust staticlib's
+    // runtime symbols. Uses the same installed-layout search as TLS (sibling
+    // `lib/`) so `brew install` (which does `lib.install "libelephc_pdo.a"`)
+    // works out of the box.
     let needs_elephc_pdo = extra_link_libs.iter().any(|l| l == "elephc_pdo");
     let elephc_pdo_dir = if needs_elephc_pdo {
-        find_staticlib_dir("ELEPHC_PDO_LIB_DIR", "libelephc_pdo.a")
+        elephc_pdo_lib_dir()
     } else {
         None
     };
@@ -228,34 +231,75 @@ fn build_elephc_tls_staticlib(workspace: &Path) {
     let _ = cmd.current_dir(workspace).status();
 }
 
-/// Locates the directory holding a non-system bridge staticlib (e.g.
-/// `libelephc_pdo.a`) for programs that use it. Honours the given env var
-/// first (e.g. `ELEPHC_PDO_LIB_DIR`), then the directory of the running
-/// `elephc` binary and its parent (so `target/<profile>/deps/` test binaries
-/// resolve to `target/<profile>/`), then a cwd-relative `target/debug` and
-/// `target/release` fallback for `cargo test` / `cargo run`.
-fn find_staticlib_dir(env_var: &str, lib_filename: &str) -> Option<String> {
-    if let Ok(env_dir) = std::env::var(env_var) {
+/// Locates `libelephc_pdo.a` for programs that use PDO (`new PDO(...)`).
+///
+/// Searches explicit configuration (`ELEPHC_PDO_LIB_DIR`), installed layouts
+/// (`bin/elephc` plus sibling `lib/` — the layout produced by the Homebrew
+/// formula), CARGO_TARGET_DIR, and local `target/{debug,release}` fallbacks.
+/// In a source checkout, attempts to build the staticlib once when missing so
+/// `cargo run --` can compile PDO examples without a manual preparatory
+/// `cargo build -p elephc-pdo`.
+fn elephc_pdo_lib_dir() -> Option<String> {
+    if let Ok(env_dir) = std::env::var("ELEPHC_PDO_LIB_DIR") {
         if !env_dir.is_empty() {
             return Some(env_dir);
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        for cand_dir in [exe.parent(), exe.parent().and_then(|p| p.parent())]
-            .into_iter()
-            .flatten()
-        {
-            if cand_dir.join(lib_filename).exists() {
-                return Some(cand_dir.display().to_string());
-            }
+
+    if let Some(dir) = find_elephc_pdo_lib_dir() {
+        return Some(dir);
+    }
+
+    let workspace = find_elephc_pdo_workspace()?;
+    build_elephc_pdo_staticlib(&workspace);
+    find_elephc_pdo_lib_dir()
+}
+
+/// Returns the first candidate directory that currently contains `libelephc_pdo.a`.
+fn find_elephc_pdo_lib_dir() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let mut candidates = vec![
+        dir.to_path_buf(),
+        dir.parent().map(|parent| parent.join("lib")).unwrap_or_default(),
+    ];
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        if !target_dir.is_empty() {
+            candidates.push(PathBuf::from(&target_dir).join("debug"));
+            candidates.push(PathBuf::from(target_dir).join("release"));
         }
     }
-    for rel in ["target/debug", "target/release"] {
-        if Path::new(rel).join(lib_filename).exists() {
-            return Some(rel.to_string());
-        }
+    // Fallbacks for source-tree builds where the process cwd is the workspace
+    // root or a path below it.
+    candidates.push(PathBuf::from("target/debug"));
+    candidates.push(PathBuf::from("target/release"));
+
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.join("libelephc_pdo.a").exists())
+        .map(|candidate| candidate.display().to_string())
+}
+
+/// Finds the nearest ancestor that looks like an elephc workspace checkout.
+fn find_elephc_pdo_workspace() -> Option<PathBuf> {
+    let cwd = std::env::current_dir().ok()?;
+    cwd.ancestors()
+        .find(|dir| dir.join("crates/elephc-pdo/Cargo.toml").exists())
+        .map(Path::to_path_buf)
+}
+
+/// Builds the PDO staticlib in the current binary's debug/release profile.
+fn build_elephc_pdo_staticlib(workspace: &Path) {
+    let release = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+        .is_some_and(|dir| dir.file_name().is_some_and(|name| name == "release"));
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "-p", "elephc-pdo"]);
+    if release {
+        cmd.arg("--release");
     }
-    None
+    let _ = cmd.current_dir(workspace).status();
 }
 
 /// Returns the macOS SDK path by running `xcrun --show-sdk-path`.

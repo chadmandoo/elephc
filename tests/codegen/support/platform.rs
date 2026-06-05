@@ -86,17 +86,9 @@ pub(crate) fn default_link_paths() -> Vec<String> {
             }
         }
     }
-    // Cargo target dir holds the elephc-pdo bridge staticlib (PDO tests).
-    // Honour CARGO_TARGET_DIR (the Docker Linux runners set it to /cargo-target)
-    // before the default ./target, and add the dir only when the staticlib is
-    // present, so non-PDO test runs are unaffected.
-    let target_root = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
-    for profile in ["debug", "release"] {
-        let candidate = std::path::Path::new(&target_root).join(profile);
-        if candidate.join("libelephc_pdo.a").exists() {
-            paths.push(candidate.display().to_string());
-        }
-    }
+    // The elephc-tls / elephc-pdo bridge staticlib directory is added directly by
+    // `link_binary` (an absolute, manifest-anchored `-L` keyed on the program
+    // actually linking a bridge), so it does not need to be threaded through here.
     paths
 }
 

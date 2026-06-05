@@ -59,10 +59,12 @@ jobs:
           git commit -m "chore: bump version to ${VERSION}" || true
           git push origin HEAD:main
 
-      - name: Build TLS staticlib
-        # The codegen test runner links compiled TLS programs against
-        # libelephc_tls.a, which `cargo test` does not build on its own.
-        run: cargo build -p elephc-tls
+      - name: Build bridge staticlibs
+        # The codegen test runner links compiled programs against libelephc_tls.a
+        # (https:// / TLS) and libelephc_pdo.a (PDO), which `cargo test` does not
+        # build on its own (the crates are pulled in as rlib dev-dependencies, not
+        # the staticlibs the external linker needs). Build them explicitly first.
+        run: cargo build -p elephc-tls -p elephc-pdo
 
       - name: Run tests
         run: cargo test
@@ -70,8 +72,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release
 
-      - name: Build release TLS staticlib
-        run: cargo build --release -p elephc-tls
+      - name: Build release bridge staticlibs
+        run: cargo build --release -p elephc-tls -p elephc-pdo
 
       - name: Strip binary
         run: strip target/release/elephc
@@ -83,7 +85,7 @@ jobs:
       - name: Create tarball
         run: |
           cd target/release
-          tar czf elephc-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz elephc libelephc_tls.a
+          tar czf elephc-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz elephc libelephc_tls.a libelephc_pdo.a
           shasum -a 256 elephc-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz > elephc-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz.sha256
 
       - name: Create GitHub Release
@@ -124,6 +126,7 @@ jobs:
             def install
               bin.install "elephc"
               lib.install "libelephc_tls.a"
+              lib.install "libelephc_pdo.a"
             end
 
             test do
@@ -131,9 +134,17 @@ jobs:
               system bin/"elephc", "hello.php"
               assert_equal "hello", shell_output("#{testpath}/hello")
 
+              # Exercise the TLS bridge (https wrapper).
               (testpath/"https.php").write('<?php $h = fopen("https://example.com/", "r"); echo is_resource($h);')
               system bin/"elephc", "https.php"
               assert_predicate testpath/"https", :exist?
+
+              # Exercise the PDO bridge (SQLite driver is bundled; no external
+              # DB client or server required). This also validates that
+              # libelephc_pdo.a is discoverable in the Homebrew `lib/` layout.
+              (testpath/"pdo.php").write('<?php $db = new PDO("sqlite::memory:"); $db->exec("CREATE TABLE t(id INTEGER)"); echo "pdo-ok";')
+              system bin/"elephc", "pdo.php"
+              assert_equal "pdo-ok", shell_output("#{testpath}/pdo")
             end
           end
           EOF
