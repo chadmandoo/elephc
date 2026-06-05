@@ -3618,6 +3618,53 @@ fclose($f);
     );
 }
 
+/// Verifies stream modification and sync builtins return booleans and mutate files.
+#[test]
+fn ir_backend_handles_stream_modify_and_sync() {
+    let source = r#"<?php
+file_put_contents("mod.txt", "0123456789");
+$f = fopen("mod.txt", "r+");
+$truncated = ftruncate($f, 4);
+$flushed = fflush($f);
+$synced = fsync($f);
+$data_synced = fdatasync($f);
+fclose($f);
+echo ($truncated ? "T" : "!");
+echo ($flushed ? "F" : "!");
+echo ($synced ? "S" : "!");
+echo ($data_synced ? "D" : "!");
+echo ":";
+echo filesize("mod.txt");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stream_modify_and_sync", source),
+        "TFSD:4"
+    );
+}
+
+/// Verifies `ftruncate()` rejects boxed false handles before calling the runtime helper.
+#[test]
+fn ir_backend_rejects_false_ftruncate_handles() {
+    let run = compile_ir_backend_and_run(
+        "false_ftruncate_handle",
+        r#"<?php
+$h = @fopen("missing.txt", "r");
+ftruncate($h, 1);
+echo "unreachable";
+"#,
+        &[],
+    );
+    assert!(
+        !run.status.success(),
+        "false ftruncate handle unexpectedly succeeded"
+    );
+    let stderr = String::from_utf8(run.stderr).expect("ftruncate TypeError should be utf8");
+    assert!(
+        stderr.contains("TypeError: ftruncate()") && stderr.contains("resource"),
+        "expected ftruncate TypeError, got stderr={stderr}"
+    );
+}
+
 /// Verifies `filesize()` returns the current byte length for a written file.
 #[test]
 fn ir_backend_handles_filesize() {

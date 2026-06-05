@@ -278,6 +278,43 @@ pub(super) fn lower_rewind(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `ftruncate(stream, size)` through the shared fd truncate runtime helper.
+pub(super) fn lower_ftruncate(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "ftruncate", 2)?;
+    let stream = expect_operand(inst, 0)?;
+    let size = expect_operand(inst, 1)?;
+    load_stream_fd_to_result(ctx, stream, "ftruncate")?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    require_int(ctx.load_value_to_result(size)?.codegen_repr(), "ftruncate size")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x1, x0");                              // pass the target file size to the ftruncate runtime helper
+            abi::emit_pop_reg(ctx.emitter, "x0");
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rdx, rax");                            // pass the target file size to the ftruncate runtime helper
+            abi::emit_pop_reg(ctx.emitter, "rax");
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_ftruncate");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `fsync(stream)` through the shared fd sync runtime helper.
+pub(super) fn lower_fsync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_stream_bool_runtime(ctx, inst, "fsync", "__rt_fsync")
+}
+
+/// Lowers `fflush(stream)` through the shared fd flush runtime helper.
+pub(super) fn lower_fflush(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_stream_bool_runtime(ctx, inst, "fflush", "__rt_fflush")
+}
+
+/// Lowers `fdatasync(stream)` through the shared fd data-sync runtime helper.
+pub(super) fn lower_fdatasync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_stream_bool_runtime(ctx, inst, "fdatasync", "__rt_fdatasync")
+}
+
 /// Lowers `file(path)` through the target-aware runtime line-array helper.
 pub(super) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "file", "__rt_file")
@@ -1118,6 +1155,20 @@ fn lower_unary_path_array(
     super::ensure_arg_count(inst, name, 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, name)?;
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
+/// Loads a stream resource, calls a boolean fd runtime helper, and stores its result.
+fn lower_unary_stream_bool_runtime(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, name)?;
     abi::emit_call_label(ctx.emitter, runtime_label);
     store_if_result(ctx, inst)
 }

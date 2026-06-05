@@ -1692,9 +1692,10 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "chdir" | "chgrp" | "chmod" | "chown" | "copy" | "define" | "defined"
         | "empty" | "file_exists" | "fnmatch" | "function_exists" | "is_callable"
-        | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link"
-        | "mkdir" | "rename" | "rmdir" | "is_readable" | "is_writeable" | "is_writable"
-        | "symlink" | "touch" | "unlink" => Some(PhpType::Bool),
+        | "fdatasync" | "fflush" | "fsync" | "ftruncate" | "is_dir" | "is_executable"
+        | "is_file" | "is_link" | "is_numeric" | "link" | "mkdir" | "rename"
+        | "rmdir" | "is_readable" | "is_writeable" | "is_writable" | "symlink"
+        | "touch" | "unlink" => Some(PhpType::Bool),
         "basename" | "date" | "dirname" | "fgets" | "getcwd" | "readline" | "sys_get_temp_dir"
         | "fread" | "tempnam" => Some(PhpType::Str),
         "microtime" => Some(PhpType::Float),
