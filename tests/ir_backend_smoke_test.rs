@@ -3342,6 +3342,36 @@ fn ir_backend_handles_static_is_callable_checks() {
     );
 }
 
+/// Verifies static-string callback dispatch lowers to direct EIR calls.
+#[test]
+fn ir_backend_handles_static_string_call_user_func() {
+    let source = r#"<?php
+function FormatName(string $name): string {
+    return strtoupper($name);
+}
+function join_pair(string $left, string $right): string {
+    return $left . ":" . $right;
+}
+function add_ten(int $value = 10): int {
+    return $value + 10;
+}
+
+echo FUNCTION_EXISTS("formatname") ? "Y:" : "N:";
+echo IS_CALLABLE("FORMATNAME") ? "C:" : "N:";
+echo CALL_USER_FUNC("formatname", "ada") . ":";
+echo CALL_USER_FUNC_ARRAY("FORMATNAME", ["lovelace"]) . ":";
+echo CALL_USER_FUNC("strtoupper", "builtin") . ":";
+echo CALL_USER_FUNC_ARRAY("join_pair", ["right" => "R", "left" => "L"]) . ":";
+echo CALL_USER_FUNC("add_ten") . ":";
+echo CALL_USER_FUNC_ARRAY("add_ten", [5]) . ":";
+echo CALL_USER_FUNC_ARRAY("str_repeat", ["times" => 2, "string" => "ha"]);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("static_string_call_user_func", source),
+        "Y:C:ADA:LOVELACE:BUILTIN:L:R:20:15:haha"
+    );
+}
+
 /// Verifies is_callable() treats include-discovered string names as known callables.
 #[test]
 fn ir_backend_handles_is_callable_for_include_variants() {

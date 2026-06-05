@@ -21,6 +21,7 @@ use crate::parser::ast::{
     BinOp, CallableTarget, CastType, Expr, ExprKind, InstanceOfTarget, MagicConstant,
     StaticReceiver, TypeExpr,
 };
+use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::{
     array_key_type_from_value_type, checker::infer_expr_type_syntactic,
     merge_array_key_types, normalized_array_key_type, FunctionSig, PhpType,
@@ -830,6 +831,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         return value;
     }
     let canonical = name.as_str();
+    if let Some(value) = lower_static_call_user_func(ctx, canonical, args, expr) {
+        return value;
+    }
     if php_symbol_key(canonical.trim_start_matches('\\')) == "unset" {
         if let Some(value) = lower_unset_locals(ctx, args, expr) {
             return value;
@@ -869,6 +873,151 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         effects_lookup::builtin_effects(canonical),
         Some(expr.span),
     )
+}
+
+/// Resolved compile-time string callback target for `call_user_func*`.
+enum StaticStringCallableTarget {
+    UserFunction(String),
+    ExternFunction(String),
+    Builtin(String),
+}
+
+/// Lowers static-string `call_user_func*` forms to direct call opcodes when possible.
+fn lower_static_call_user_func(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "call_user_func" => {
+            let ExprKind::StringLiteral(callback) = &args.first()?.kind else {
+                return None;
+            };
+            lower_static_string_callable_call(ctx, callback, &args[1..], expr)
+        }
+        "call_user_func_array" => {
+            let [callback_arg, arg_array] = args else {
+                return None;
+            };
+            let ExprKind::StringLiteral(callback) = &callback_arg.kind else {
+                return None;
+            };
+            let callback_args = static_call_user_func_array_args(arg_array)?;
+            lower_static_string_callable_call(ctx, callback, &callback_args, expr)
+        }
+        _ => None,
+    }
+}
+
+/// Converts a static `call_user_func_array()` argument array into call arguments.
+fn static_call_user_func_array_args(arg_array: &Expr) -> Option<Vec<Expr>> {
+    match &arg_array.kind {
+        ExprKind::ArrayLiteral(items) => Some(items.clone()),
+        ExprKind::ArrayLiteralAssoc(pairs) => static_call_user_func_array_assoc_args(pairs),
+        _ => None,
+    }
+}
+
+/// Converts literal associative callback arrays into positional or named call args.
+fn static_call_user_func_array_assoc_args(pairs: &[(Expr, Expr)]) -> Option<Vec<Expr>> {
+    let mut args = Vec::with_capacity(pairs.len());
+    for (key, value) in pairs {
+        match &key.kind {
+            ExprKind::StringLiteral(name) => {
+                args.push(Expr::new(
+                    ExprKind::NamedArg {
+                        name: name.clone(),
+                        value: Box::new(value.clone()),
+                    },
+                    value.span,
+                ));
+            }
+            ExprKind::IntLiteral(_) => args.push(value.clone()),
+            _ => return None,
+        }
+    }
+    Some(args)
+}
+
+/// Lowers one resolved static-string callable target to the corresponding EIR call opcode.
+fn lower_static_string_callable_call(
+    ctx: &mut LoweringContext<'_, '_>,
+    callback: &str,
+    callback_args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    let target = resolve_static_string_callable(ctx, callback)?;
+    match target {
+        StaticStringCallableTarget::UserFunction(function_name) => {
+            let sig = ctx.functions.get(&function_name).cloned();
+            let operands = lower_args_with_signature(ctx, sig.as_ref(), callback_args);
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::Call,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                effects_lookup::user_call_effects(&function_name),
+                Some(expr.span),
+            ))
+        }
+        StaticStringCallableTarget::ExternFunction(function_name) => {
+            let operands = lower_args(ctx, callback_args);
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::ExternCall,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                Op::ExternCall.default_effects(),
+                Some(expr.span),
+            ))
+        }
+        StaticStringCallableTarget::Builtin(function_name) => {
+            let sig = call_signature(ctx, &function_name, callback_args);
+            let operands = lower_args_with_signature(ctx, sig.as_ref(), callback_args);
+            let php_type = call_return_type(ctx, &function_name, &operands);
+            let data = ctx.intern_function_name(&function_name);
+            Some(ctx.emit_value(
+                Op::BuiltinCall,
+                operands,
+                Some(Immediate::Data(data)),
+                php_type,
+                effects_lookup::builtin_effects(&function_name),
+                Some(expr.span),
+            ))
+        }
+    }
+}
+
+/// Resolves a PHP string callback using case-insensitive function lookup rules.
+fn resolve_static_string_callable(
+    ctx: &LoweringContext<'_, '_>,
+    callback: &str,
+) -> Option<StaticStringCallableTarget> {
+    let callback = callback.trim_start_matches('\\');
+    if let Some(function_name) = lookup_folded_name(ctx.extern_functions.keys(), callback) {
+        return Some(StaticStringCallableTarget::ExternFunction(function_name));
+    }
+    if let Some(function_name) = lookup_folded_name(ctx.functions.keys(), callback) {
+        return Some(StaticStringCallableTarget::UserFunction(function_name));
+    }
+    canonical_builtin_function_name(callback).map(StaticStringCallableTarget::Builtin)
+}
+
+/// Looks up a PHP function name case-insensitively and returns the canonical candidate.
+fn lookup_folded_name<'a, I>(names: I, requested: &str) -> Option<String>
+where
+    I: IntoIterator<Item = &'a String>,
+{
+    let requested = php_symbol_key(requested);
+    names
+        .into_iter()
+        .find(|candidate| php_symbol_key(candidate) == requested)
+        .cloned()
 }
 
 /// Returns the caller-visible signature used to normalize direct call operands.
