@@ -14,7 +14,7 @@ use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen_ir::{CodegenIrError, Result};
 use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
-use crate::names::function_symbol;
+use crate::names::{function_symbol, php_symbol_key, static_method_symbol};
 use crate::types::{array_key_type_from_value_type, PhpType};
 
 use super::super::super::context::FunctionContext;
@@ -165,7 +165,7 @@ pub(super) fn lower_array_unique(ctx: &mut FunctionContext<'_>, inst: &Instructi
     store_if_result(ctx, inst)
 }
 
-/// Lowers `array_filter()` for static string callbacks by reusing the legacy runtime helper.
+/// Lowers `array_filter()` for static callbacks by reusing the legacy runtime helper.
 pub(super) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "array_filter", 2, 3)?;
     let array = expect_operand(inst, 0)?;
@@ -173,7 +173,9 @@ pub(super) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instructi
     let mode = inst.operands.get(2).copied();
     let elem_ty = array_filter_source_element_type(ctx.value_php_type(array)?)?;
     require_array_filter_result_type(&elem_ty, &inst.result_php_type.codegen_repr())?;
-    let callback_label = static_user_function_callback_label(ctx, callback, "array_filter callback")?;
+    let callback_arg_types = array_filter_callback_arg_types(ctx, mode, &elem_ty)?;
+    let callback_label =
+        static_callback_entry_label(ctx, callback, "array_filter callback", callback_arg_types.as_deref())?;
     let runtime_label = if array_filter_uses_refcounted_runtime(&elem_ty) {
         "__rt_array_filter_refcounted"
     } else {
@@ -552,7 +554,7 @@ fn lower_indexed_array_sort(
     store_if_result(ctx, inst)
 }
 
-/// Calls the legacy user-sort helper with a static string comparator and a null environment.
+/// Calls the legacy user-sort helper with a static comparator and a null environment.
 fn lower_user_sort_static_callback(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -562,7 +564,8 @@ fn lower_user_sort_static_callback(
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
     require_indexed_int_sort_array(ctx.value_php_type(array)?, name)?;
-    let callback_label = static_user_function_callback_label(ctx, callback, &format!("{} callback", name))?;
+    let callback_label =
+        static_callback_entry_label(ctx, callback, &format!("{} callback", name), Some(&[PhpType::Int, PhpType::Int]))?;
     let source_local = source_load_local_slot(ctx, array)?;
     ensure_unique_sort_source(ctx, array)?;
     if let Some(slot) = source_local {
@@ -723,21 +726,65 @@ fn load_array_filter_mode(
     Ok(())
 }
 
-/// Returns the function label for a static string or first-class user-function callback.
-fn static_user_function_callback_label(
+/// Returns the visible callback argument types for `array_filter()` mode.
+fn array_filter_callback_arg_types(
     ctx: &FunctionContext<'_>,
+    mode: Option<ValueId>,
+    elem_ty: &PhpType,
+) -> Result<Option<Vec<PhpType>>> {
+    match static_array_filter_mode(ctx, mode)? {
+        Some(1) => Ok(Some(vec![elem_ty.codegen_repr(), PhpType::Int])),
+        Some(2) => Ok(Some(vec![PhpType::Int])),
+        Some(_) => Ok(Some(vec![elem_ty.codegen_repr()])),
+        None => Ok(None),
+    }
+}
+
+/// Returns a compile-time `array_filter()` mode when it is visible in EIR.
+fn static_array_filter_mode(ctx: &FunctionContext<'_>, mode: Option<ValueId>) -> Result<Option<i64>> {
+    let Some(mode) = mode else {
+        return Ok(Some(0));
+    };
+    let Some(value_ref) = ctx.function.value(mode) else {
+        return Err(CodegenIrError::missing_entry("value", mode.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(None);
+    };
+    let Some(inst_ref) = ctx.function.instruction(inst) else {
+        return Err(CodegenIrError::missing_entry("instruction", inst.as_raw()));
+    };
+    if !matches!(inst_ref.op, Op::ConstI64) {
+        return Ok(None);
+    }
+    let Some(Immediate::I64(value)) = inst_ref.immediate else {
+        return Err(CodegenIrError::invalid_module(
+            "array_filter mode const_i64 has no immediate",
+        ));
+    };
+    Ok(Some(value))
+}
+
+/// Returns the entry label for a static string or first-class callback.
+fn static_callback_entry_label(
+    ctx: &mut FunctionContext<'_>,
     value: ValueId,
     owner: &str,
+    visible_arg_types: Option<&[PhpType]>,
 ) -> Result<String> {
     let callback_name = static_callback_name_operand(ctx, value, owner)?;
-    let callee = ctx.callable_function_by_name(&callback_name).ok_or_else(|| {
-        CodegenIrError::unsupported(format!(
-            "{} '{}' is not a user function",
-            owner,
-            callback_name
-        ))
-    })?;
-    Ok(function_symbol(&callee.name))
+    if let Some(callee) = ctx.callable_function_by_name(&callback_name) {
+        return Ok(function_symbol(&callee.name));
+    }
+    if let Some(target) = static_method_callback_target(ctx, &callback_name, owner, visible_arg_types)? {
+        let visible_arg_types = visible_arg_types.expect("static method callback target requires known argument types");
+        return Ok(emit_static_method_callback_wrapper(ctx, &target, visible_arg_types));
+    }
+    Err(CodegenIrError::unsupported(format!(
+        "{} '{}' is not a user function or supported static method",
+        owner,
+        callback_name
+    )))
 }
 
 /// Returns a static callback name from a string literal or `foo(...)` descriptor instruction.
@@ -776,6 +823,194 @@ fn static_callback_name_operand(
         .get(data.as_raw() as usize)
         .cloned()
         .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
+}
+
+/// Resolved static-method callback metadata for a small runtime helper wrapper.
+struct StaticMethodCallbackTarget {
+    entry_label: String,
+    called_class_id: u64,
+}
+
+/// Resolves a static `Class::method` callback target and verifies its visible ABI shape.
+fn static_method_callback_target(
+    ctx: &FunctionContext<'_>,
+    callback_name: &str,
+    owner: &str,
+    visible_arg_types: Option<&[PhpType]>,
+) -> Result<Option<StaticMethodCallbackTarget>> {
+    let Some((receiver, method)) = callback_name.rsplit_once("::") else {
+        return Ok(None);
+    };
+    let receiver = receiver.trim_start_matches('\\');
+    if matches!(receiver, "self" | "parent" | "static" | "object") {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} with lexical or receiver-bound static method callback '{}'",
+            owner,
+            callback_name
+        )));
+    }
+    let visible_arg_types = visible_arg_types.ok_or_else(|| {
+        CodegenIrError::unsupported(format!(
+            "{} '{}' with dynamic callback argument shape",
+            owner,
+            callback_name
+        ))
+    })?;
+    require_static_method_callback_arg_types(owner, callback_name, visible_arg_types)?;
+    let receiver_info = ctx
+        .module
+        .class_infos
+        .get(receiver)
+        .ok_or_else(|| CodegenIrError::unsupported(format!(
+            "{} with unknown static method callback class '{}'",
+            owner,
+            receiver
+        )))?;
+    let method_key = php_symbol_key(method);
+    let impl_class = receiver_info
+        .static_method_impl_classes
+        .get(&method_key)
+        .map(String::as_str)
+        .unwrap_or(receiver);
+    let impl_info = ctx
+        .module
+        .class_infos
+        .get(impl_class)
+        .ok_or_else(|| CodegenIrError::unsupported(format!(
+            "{} with unknown static method implementation class '{}'",
+            owner,
+            impl_class
+        )))?;
+    let sig = impl_info.static_methods.get(&method_key).ok_or_else(|| {
+        CodegenIrError::unsupported(format!(
+            "{} with unknown static method callback '{}'",
+            owner,
+            callback_name
+        ))
+    })?;
+    if sig.params.len() != visible_arg_types.len() {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with {} visible args for {} params",
+            owner,
+            callback_name,
+            visible_arg_types.len(),
+            sig.params.len()
+        )));
+    }
+    require_static_method_callback_param_types(owner, callback_name, sig, visible_arg_types)?;
+    Ok(Some(StaticMethodCallbackTarget {
+        entry_label: static_method_symbol(impl_class, &method_key),
+        called_class_id: receiver_info.class_id,
+    }))
+}
+
+/// Verifies the wrapper can forward the callback argument ABI without boxing or shuffling pairs.
+fn require_static_method_callback_arg_types(
+    owner: &str,
+    callback_name: &str,
+    visible_arg_types: &[PhpType],
+) -> Result<()> {
+    if !(1..=2).contains(&visible_arg_types.len()) {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with {} visible callback args",
+            owner,
+            callback_name,
+            visible_arg_types.len()
+        )));
+    }
+    for ty in visible_arg_types {
+        if !matches!(ty.codegen_repr(), PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never) {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} '{}' with non-integer callback arg type {:?}",
+                owner,
+                callback_name,
+                ty.codegen_repr()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Verifies the target static method can consume the wrapper's unboxed integer ABI values.
+fn require_static_method_callback_param_types(
+    owner: &str,
+    callback_name: &str,
+    sig: &crate::types::FunctionSig,
+    visible_arg_types: &[PhpType],
+) -> Result<()> {
+    for ((_, param_ty), visible_ty) in sig.params.iter().zip(visible_arg_types.iter()) {
+        let param_ty = param_ty.codegen_repr();
+        let visible_ty = visible_ty.codegen_repr();
+        if matches!(visible_ty, PhpType::Void | PhpType::Never) {
+            continue;
+        }
+        if matches!((&param_ty, &visible_ty), (PhpType::Int | PhpType::Bool, PhpType::Int | PhpType::Bool)) {
+            continue;
+        }
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with callback param type {:?} for runtime arg type {:?}",
+            owner,
+            callback_name,
+            param_ty,
+            visible_ty
+        )));
+    }
+    Ok(())
+}
+
+/// Emits a local wrapper that prepends the hidden static called-class id.
+fn emit_static_method_callback_wrapper(
+    ctx: &mut FunctionContext<'_>,
+    target: &StaticMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) -> String {
+    let wrapper_label = ctx.next_label("static_method_callback_wrapper");
+    let done_label = ctx.next_label("static_method_callback_after_wrapper");
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&wrapper_label);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_static_method_callback_wrapper_aarch64(ctx, target, visible_arg_types),
+        Arch::X86_64 => emit_static_method_callback_wrapper_x86_64(ctx, target, visible_arg_types),
+    }
+    ctx.emitter.label(&done_label);
+    wrapper_label
+}
+
+/// Emits the AArch64 static-method callback ABI adapter.
+fn emit_static_method_callback_wrapper_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    target: &StaticMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) {
+    ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
+    ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the static method call
+    if visible_arg_types.len() == 2 {
+        ctx.emitter.instruction("mov x2, x1");                                  // shift the second callback argument after the hidden class id
+    }
+    ctx.emitter.instruction("mov x1, x0");                                      // shift the first callback argument after the hidden class id
+    abi::emit_load_int_immediate(ctx.emitter, "x0", target.called_class_id as i64);
+    abi::emit_call_label(ctx.emitter, &target.entry_label);
+    ctx.emitter.instruction("ldr x30, [sp, #8]");                               // restore the runtime helper return address after the static method call
+    ctx.emitter.instruction("add sp, sp, #16");                                 // release the wrapper spill space before returning to the runtime helper
+    ctx.emitter.instruction("ret");                                             // return the static method result to the runtime callback helper
+}
+
+/// Emits the x86_64 static-method callback ABI adapter.
+fn emit_static_method_callback_wrapper_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    target: &StaticMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) {
+    ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested static method call
+    ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
+    if visible_arg_types.len() == 2 {
+        ctx.emitter.instruction("mov rdx, rsi");                                // shift the second callback argument after the hidden class id
+    }
+    ctx.emitter.instruction("mov rsi, rdi");                                    // shift the first callback argument after the hidden class id
+    abi::emit_load_int_immediate(ctx.emitter, "rdi", target.called_class_id as i64);
+    abi::emit_call_label(ctx.emitter, &target.entry_label);
+    ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer before returning
+    ctx.emitter.instruction("ret");                                             // return the static method result to the runtime callback helper
 }
 
 /// Returns the element type accepted by indexed-array value set-operation helpers.

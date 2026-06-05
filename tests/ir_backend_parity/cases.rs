@@ -398,6 +398,11 @@ function eir_filter_key(int $key): bool {
 function eir_filter_both(int $value, int $key): bool {
     return $value > 2 && $key < 3;
 }
+class EirFilterStatic {
+    public static function odd(int $value): bool {
+        return ($value % 2) === 1;
+    }
+}
 $odd = array_filter([1, 2, 3, 4], "eir_filter_odd");
 echo count($odd); echo ":"; echo $odd[0]; echo ":"; echo $odd[1];
 echo "|";
@@ -413,6 +418,9 @@ echo count($dynamic); echo ":"; echo $dynamic[0];
 echo "|";
 $fcc = array_filter([1, 2, 3], eir_filter_odd(...));
 echo count($fcc); echo ":"; echo $fcc[0]; echo ":"; echo $fcc[1];
+echo "|";
+$static = array_filter([5, 6, 7], EirFilterStatic::odd(...));
+echo count($static); echo ":"; echo $static[0]; echo ":"; echo $static[1];
 "#,
         &[],
     );
@@ -515,9 +523,18 @@ foreach ($uasorted as $value) { echo $value . ":"; }
 function eir_sort_asc(int $left, int $right): int {
     return $left - $right;
 }
+class EirSortStatic {
+    public static function desc(int $left, int $right): int {
+        return $right - $left;
+    }
+}
 $usorted = [3, 1, 2];
 usort($usorted, eir_sort_asc(...));
 foreach ($usorted as $value) { echo $value; }
+echo "|";
+$static = [1, 3, 2];
+usort($static, EirSortStatic::desc(...));
+foreach ($static as $value) { echo $value; }
 "#,
         &[],
     );
