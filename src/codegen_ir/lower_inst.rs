@@ -686,6 +686,14 @@ fn coerce_loaded_local_to_result_type(
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
             Ok(())
         }
+        (PhpType::Mixed, PhpType::Void) => {
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                0x7fff_ffff_ffff_fffe,
+            );
+            Ok(())
+        }
         (_, PhpType::Mixed) => {
             emit_box_current_value_as_mixed(ctx.emitter, &source_ty);
             Ok(())
