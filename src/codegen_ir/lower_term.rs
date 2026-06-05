@@ -370,8 +370,8 @@ mod tests {
     fn cond_br_arguments_emit_edge_copy_stubs() {
         let asm = generate_cond_branch_arg_main_asm(Target::new(Platform::Linux, Arch::X86_64));
 
-        assert!(asm.contains("_eir_cond_then_args_0:"), "{asm}");
-        assert!(asm.contains("_eir_cond_else_args_1:"), "{asm}");
+        assert!(asm.contains("_eir_main_cond_then_args_0:"), "{asm}");
+        assert!(asm.contains("_eir_main_cond_else_args_1:"), "{asm}");
     }
 
     /// Verifies switch case and default arguments use per-edge copy stubs.
@@ -379,8 +379,8 @@ mod tests {
     fn switch_arguments_emit_edge_copy_stubs() {
         let asm = generate_switch_arg_main_asm(Target::new(Platform::Linux, Arch::AArch64));
 
-        assert!(asm.contains("_eir_switch_case_args_0:"), "{asm}");
-        assert!(asm.contains("_eir_switch_default_args_1:"), "{asm}");
+        assert!(asm.contains("_eir_main_switch_case_args_0:"), "{asm}");
+        assert!(asm.contains("_eir_main_switch_default_args_1:"), "{asm}");
     }
 
     /// Verifies throw terminators publish `_exc_value` and call the exception unwinder.
