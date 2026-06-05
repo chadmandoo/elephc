@@ -88,6 +88,46 @@ pub(super) fn lower_is_dir(
     lower_unary_path_predicate(ctx, inst, "is_dir", "__rt_is_dir")
 }
 
+/// Lowers `is_readable(path)` through the target-aware runtime access helper.
+pub(super) fn lower_is_readable(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    lower_unary_path_predicate(ctx, inst, "is_readable", "__rt_is_readable")
+}
+
+/// Lowers `is_writable(path)` through the target-aware runtime access helper.
+pub(super) fn lower_is_writable(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    lower_unary_path_predicate(ctx, inst, "is_writable", "__rt_is_writable")
+}
+
+/// Lowers `is_writeable(path)`, PHP's alias of `is_writable(path)`.
+pub(super) fn lower_is_writeable(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    lower_unary_path_predicate(ctx, inst, "is_writeable", "__rt_is_writable")
+}
+
+/// Lowers `is_executable(path)` through the target-aware runtime access helper.
+pub(super) fn lower_is_executable(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    lower_unary_path_predicate(ctx, inst, "is_executable", "__rt_is_executable")
+}
+
+/// Lowers `is_link(path)` through the target-aware runtime lstat helper.
+pub(super) fn lower_is_link(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    lower_unary_path_predicate(ctx, inst, "is_link", "__rt_is_link")
+}
+
 /// Loads a path string into runtime argument/result registers and stores the boolean result.
 fn lower_unary_path_predicate(
     ctx: &mut FunctionContext<'_>,

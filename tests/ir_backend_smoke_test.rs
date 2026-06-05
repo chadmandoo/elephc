@@ -3406,6 +3406,24 @@ echo is_file("subdir") ? "F" : "!";
     assert_eq!(out, "YNF!D!");
 }
 
+/// Verifies filesystem access predicates lower through the EIR backend runtime helpers.
+#[test]
+fn ir_backend_handles_filesystem_access_predicates() {
+    let source = r#"<?php
+file_put_contents("perm.txt", "x");
+echo is_readable("perm.txt") ? "R" : "!";
+echo is_writable("perm.txt") ? "W" : "!";
+echo is_writeable("perm.txt") ? "A" : "!";
+echo is_executable("perm.txt") ? "X" : "x";
+echo is_link("perm.txt") ? "L" : "l";
+echo is_executable("/bin/sh") ? "S" : "!";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("filesystem_access_predicates", source),
+        "RWAxlS"
+    );
+}
+
 /// Verifies `file_put_contents()` writes files and returns the written byte count.
 #[test]
 fn ir_backend_handles_file_put_contents() {
