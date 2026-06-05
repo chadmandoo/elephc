@@ -9,7 +9,7 @@
 //! - Results are written to fixed value-placement slots immediately after definition.
 //! - Unsupported opcodes fail explicitly instead of falling back to legacy AST codegen.
 
-use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed};
+use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed, runtime};
 use crate::codegen::platform::Arch;
 use crate::ir::{CmpPredicate, Immediate, InstId, Instruction, LocalSlotId, Op, ValueId};
 use crate::names::{
@@ -513,21 +513,105 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     store_call_result(ctx, inst, &target.return_ty)
 }
 
-/// Lowers no-argument `Fiber::start()` through the shared runtime helper.
+/// Lowers `Fiber::start(...)` by copying boxed start arguments into the Fiber object.
 fn lower_fiber_start(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     object: ValueId,
 ) -> Result<()> {
-    if !fiber_start_has_only_default_args(ctx, inst)? {
+    let args = fiber_start_visible_args(ctx, inst)?;
+    if args.len() > runtime::FIBER_START_ARGS_MAX as usize {
         return Err(CodegenIrError::unsupported(
-            "Fiber::start with EIR start arguments",
+            "Fiber::start with more than seven EIR arguments",
         ));
     }
+    let param_types = vec![PhpType::Mixed; args.len()];
+    let assignments =
+        abi::build_outgoing_arg_assignments_for_target(ctx.emitter.target, &param_types, 1);
+    for value in &args {
+        let source_ty = ctx.load_value_to_result(*value)?;
+        let push_ty = materialize_direct_call_arg_for_param(ctx, &source_ty, &PhpType::Mixed)?;
+        abi::emit_push_result_value(ctx.emitter, &push_ty);
+    }
+    let overflow_bytes = abi::materialize_outgoing_args(ctx.emitter, &assignments);
     let receiver_arg = abi::int_arg_reg_name(ctx.emitter.target, 0);
     ctx.load_value_to_reg(object, receiver_arg)?;
+    emit_store_fiber_start_args(ctx, &assignments, args.len())?;
     abi::emit_call_label(ctx.emitter, "__rt_fiber_start");
+    abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
     store_if_result(ctx, inst)
+}
+
+/// Copies materialized `Fiber::start` arguments into the runtime Fiber start-arg buffer.
+fn emit_store_fiber_start_args(
+    ctx: &mut FunctionContext<'_>,
+    assignments: &[abi::OutgoingArgAssignment],
+    supplied_arg_count: usize,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_store_fiber_start_args_aarch64(ctx, assignments, supplied_arg_count),
+        Arch::X86_64 => {
+            emit_store_fiber_start_args_x86_64(ctx, assignments, supplied_arg_count);
+            Ok(())
+        }
+    }
+}
+
+/// Copies register-passed ARM64 start arguments into `Fiber::start_args`.
+fn emit_store_fiber_start_args_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    assignments: &[abi::OutgoingArgAssignment],
+    supplied_arg_count: usize,
+) -> Result<()> {
+    let skip_label = ctx.next_label("fiber_start_args_done");
+    ctx.emitter.instruction(&format!("ldr x9, [x0, #{}]", runtime::FIBER_USER_ARG_MAX_OFFSET)); // x9 = writable Fiber start_args slot count
+    for (idx, assignment) in assignments.iter().take(supplied_arg_count).enumerate() {
+        if !assignment.in_register() {
+            return Err(CodegenIrError::unsupported(
+                "Fiber::start ARM64 stack-passed EIR arguments",
+            ));
+        }
+        let source_reg = abi::int_arg_reg_name(ctx.emitter.target, assignment.start_reg);
+        let offset = runtime::FIBER_START_ARGS_OFFSET + (idx as i32) * 8;
+        ctx.emitter.instruction(&format!("cmp x9, #{}", idx + 1));              // is this start() slot allowed for user arguments?
+        ctx.emitter.instruction(&format!("b.lt {}", skip_label));               // stop once wrapper-reserved slots would be overwritten
+        ctx.emitter.instruction(&format!("str {}, [x0, #{}]", source_reg, offset)); // store the boxed Mixed start() argument
+    }
+    ctx.emitter.label(&skip_label);
+    ctx.emitter.instruction(&format!("mov x9, #{}", supplied_arg_count));       // materialize the visible start() argument count
+    ctx.emitter.instruction(&format!("str x9, [x0, #{}]", runtime::FIBER_START_ARG_COUNT_OFFSET)); // publish start() arity for Fiber wrappers
+    Ok(())
+}
+
+/// Copies SysV x86_64 register and stack-passed start arguments into `Fiber::start_args`.
+fn emit_store_fiber_start_args_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    assignments: &[abi::OutgoingArgAssignment],
+    supplied_arg_count: usize,
+) {
+    let skip_label = ctx.next_label("fiber_start_args_done");
+    ctx.emitter.instruction(&format!("mov r11, QWORD PTR [rdi + {}]", runtime::FIBER_USER_ARG_MAX_OFFSET)); // r11 = writable Fiber start_args slot count
+    let mut overflow_slot = 0usize;
+    for (idx, assignment) in assignments.iter().take(supplied_arg_count).enumerate() {
+        let offset = runtime::FIBER_START_ARGS_OFFSET + (idx as i32) * 8;
+        ctx.emitter.instruction(&format!("cmp r11, {}", idx + 1));              // is this start() slot allowed for user arguments?
+        ctx.emitter.instruction(&format!("jl {}", skip_label));                 // stop once wrapper-reserved slots would be overwritten
+        if assignment.in_register() {
+            let source_reg = abi::int_arg_reg_name(ctx.emitter.target, assignment.start_reg);
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rdi + {}], {}", offset, source_reg)); // store the boxed Mixed register argument
+        } else {
+            let stack_offset = overflow_slot * 16;
+            if stack_offset == 0 {
+                ctx.emitter.instruction("mov r10, QWORD PTR [rsp]");            // load the first stack-passed boxed Mixed start() argument
+            } else {
+                ctx.emitter.instruction(&format!("mov r10, QWORD PTR [rsp + {}]", stack_offset)); // load this stack-passed boxed Mixed start() argument
+            }
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rdi + {}], r10", offset)); // store the boxed Mixed stack argument
+            overflow_slot += 1;
+        }
+    }
+    ctx.emitter.label(&skip_label);
+    ctx.emitter.instruction(&format!("mov QWORD PTR [rdi + {}], {}", runtime::FIBER_START_ARG_COUNT_OFFSET, supplied_arg_count)); // publish start() arity for Fiber wrappers
 }
 
 /// Lowers no-argument Fiber instance methods that delegate to one runtime helper.
@@ -549,17 +633,26 @@ fn lower_fiber_noarg_runtime_method(
     store_if_result(ctx, inst)
 }
 
-/// Returns true when `Fiber::start()` has no visible arguments after default padding.
-fn fiber_start_has_only_default_args(
+/// Returns the visible `Fiber::start(...)` operands before synthetic default padding.
+fn fiber_start_visible_args(
     ctx: &FunctionContext<'_>,
     inst: &Instruction,
-) -> Result<bool> {
+) -> Result<Vec<ValueId>> {
+    let mut args = Vec::new();
+    let mut saw_default_padding = false;
     for operand in inst.operands.iter().skip(1) {
-        if !is_synthetic_null_value(ctx, *operand)? {
-            return Ok(false);
+        if is_synthetic_null_value(ctx, *operand)? {
+            saw_default_padding = true;
+            continue;
         }
+        if saw_default_padding {
+            return Err(CodegenIrError::unsupported(
+                "Fiber::start with non-trailing EIR default arguments",
+            ));
+        }
+        args.push(*operand);
     }
-    Ok(true)
+    Ok(args)
 }
 
 /// Returns true when a value is an omitted optional-argument placeholder.

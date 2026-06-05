@@ -24,7 +24,7 @@ use crate::names::{
     static_property_symbol,
 };
 use crate::parser::ast::ExprKind;
-use crate::types::{EnumCaseInfo, EnumCaseValue, FunctionSig, PhpType};
+use crate::types::{EnumCaseInfo, EnumCaseValue, PhpType};
 
 use super::context::FunctionContext;
 use super::fibers;
@@ -64,40 +64,31 @@ pub(super) fn emit_module(
     emit_main_function(module, main, emitter, data)
 }
 
-/// Emits the static EIR Fiber wrapper needed for no-argument closure callbacks.
+/// Emits the static EIR Fiber wrappers needed for closure callbacks.
 fn emit_eir_fiber_wrappers(module: &Module, emitter: &mut Emitter) {
     for wrapper in required_eir_fiber_wrappers(module) {
         let wrapper = DeferredFiberWrapper {
-            label: wrapper.label.to_string(),
-            sig: FunctionSig {
-                params: Vec::new(),
-                defaults: Vec::new(),
-                return_type: wrapper.return_type,
-                declared_return: true,
-                ref_params: Vec::new(),
-                declared_params: Vec::new(),
-                variadic: None,
-                deprecation: None,
-            },
-            visible_param_count: 0,
-            hidden_arg_types: Vec::new(),
+            label: wrapper.label,
+            sig: wrapper.sig,
+            visible_param_count: wrapper.visible_param_count,
+            hidden_arg_types: wrapper.hidden_arg_types,
             use_descriptor_invoker: false,
         };
         emit_fiber_wrapper(emitter, &wrapper);
     }
 }
 
-/// Collects unique no-argument Fiber wrappers needed by this module.
-fn required_eir_fiber_wrappers(module: &Module) -> Vec<fibers::NoArgWrapper> {
+/// Collects unique Fiber wrappers needed by this module.
+fn required_eir_fiber_wrappers(module: &Module) -> Vec<fibers::FiberWrapper> {
     let mut wrappers = Vec::new();
     for function in all_module_functions(module) {
         for inst in &function.instructions {
-            let Some(wrapper) = fibers::noarg_wrapper_for_fiber_new(module, function, inst) else {
+            let Some(wrapper) = fibers::wrapper_for_fiber_new(module, function, inst) else {
                 continue;
             };
             if wrappers
                 .iter()
-                .any(|existing: &fibers::NoArgWrapper| existing.label == wrapper.label)
+                .any(|existing: &fibers::FiberWrapper| existing.label == wrapper.label)
             {
                 continue;
             }

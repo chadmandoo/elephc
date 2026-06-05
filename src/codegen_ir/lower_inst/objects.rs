@@ -186,8 +186,8 @@ fn lower_fiber_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<
         class_id as i64,
     );
     let wrapper_arg = abi::int_arg_reg_name(ctx.emitter.target, 2);
-    if let Some(wrapper) = fibers::noarg_wrapper_for_fiber_new(ctx.module, ctx.function, inst) {
-        abi::emit_symbol_address(ctx.emitter, wrapper_arg, wrapper.label);
+    if let Some(wrapper) = fibers::wrapper_for_fiber_new(ctx.module, ctx.function, inst) {
+        abi::emit_symbol_address(ctx.emitter, wrapper_arg, &wrapper.label);
     } else {
         abi::emit_load_int_immediate(ctx.emitter, wrapper_arg, 0);
     }

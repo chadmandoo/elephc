@@ -472,6 +472,34 @@ echo "|after";
     );
 }
 
+/// Verifies Fiber start arguments are boxed and adapted to callback parameter types.
+#[test]
+fn ir_backend_starts_fibers_with_arguments() {
+    let source = r#"<?php
+$mixed = new Fiber(function(mixed $a, mixed $b): void {
+    echo $a . "/" . $b;
+});
+$mixed->start("hello", "world");
+echo "|";
+
+$int = new Fiber(function(int $x): int {
+    return $x + 1;
+});
+$int->start(41);
+echo $int->getReturn();
+echo "|";
+
+$strings = new Fiber(function(string $a, string $b, string $c, string $d, string $e): void {
+    echo $a . $b . $c . $d . $e;
+});
+$strings->start("A", "B", "C", "D", "E");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("fiber_start_args", source),
+        "hello/world|42|ABCDE"
+    );
+}
+
 /// Verifies Fiber state predicates observe the transition after a no-arg start.
 #[test]
 fn ir_backend_reports_started_terminated_fiber_state() {
