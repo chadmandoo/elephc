@@ -2602,6 +2602,29 @@ unlink("meta.txt");
     );
 }
 
+/// Verifies `SplFileObject` CSV read/write methods lower through stream builtins.
+#[test]
+fn ir_backend_handles_spl_file_object_csv_methods() {
+    let source = r#"<?php
+$file = new SplFileObject("csv.txt", "w+");
+echo $file->fputcsv(["hello", "world"]);
+$file->rewind();
+$row = $file->fgetcsv();
+echo ":";
+echo $row[0];
+echo ":";
+echo $row[1];
+echo ":";
+echo $file->key();
+
+unlink("csv.txt");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_file_object_csv_methods", source),
+        "12:hello:world:1"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {

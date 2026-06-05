@@ -430,7 +430,7 @@ fn spl_file_object_methods() -> Vec<ClassMethod> {
         method_with_body(
             "fputcsv",
             vec![
-                param("fields", array_type()),
+                param("fields", string_array_type()),
                 param_default("separator", TypeExpr::Str, string_expr(",")),
                 param_default("enclosure", TypeExpr::Str, string_expr("\"")),
                 param_default("escape", TypeExpr::Str, string_expr("\\")),

@@ -31,6 +31,12 @@ pub(super) fn resolve_type_expr(
         TypeExpr::Void => TypeExpr::Void,
         TypeExpr::Never => TypeExpr::Never,
         TypeExpr::Iterable => TypeExpr::Iterable,
+        TypeExpr::Array(inner) => TypeExpr::Array(Box::new(resolve_type_expr(
+            inner,
+            current_namespace,
+            imports,
+            symbols,
+        ))),
         TypeExpr::Buffer(inner) => {
             TypeExpr::Buffer(Box::new(resolve_type_expr(
                 inner,

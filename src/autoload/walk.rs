@@ -397,6 +397,7 @@ fn collect_trait_use(trait_use: &TraitUse, out: &mut HashSet<String>) {
 fn collect_type_expr(ty: &TypeExpr, out: &mut HashSet<String>) {
     match ty {
         TypeExpr::Named(name) => push_name(name, out),
+        TypeExpr::Array(inner) => collect_type_expr(inner, out),
         TypeExpr::Nullable(inner) => collect_type_expr(inner, out),
         TypeExpr::Union(parts) => {
             for p in parts {

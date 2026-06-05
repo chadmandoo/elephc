@@ -984,6 +984,29 @@ unlink("meta.txt");
     );
 }
 
+/// Verifies `SplFileObject` CSV read/write methods match the legacy backend.
+#[test]
+fn parity_spl_file_object_csv_methods() {
+    assert_backend_parity(
+        "spl_file_object_csv_methods",
+        r#"<?php
+$file = new SplFileObject("csv.txt", "w+");
+echo $file->fputcsv(["hello", "world"]);
+$file->rewind();
+$row = $file->fgetcsv();
+echo ":";
+echo $row[0];
+echo ":";
+echo $row[1];
+echo ":";
+echo $file->key();
+
+unlink("csv.txt");
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);

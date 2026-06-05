@@ -141,7 +141,7 @@ impl Checker {
     fn type_expr_contains_never(type_expr: &TypeExpr) -> bool {
         match type_expr {
             TypeExpr::Never => true,
-            TypeExpr::Nullable(inner) | TypeExpr::Buffer(inner) => {
+            TypeExpr::Array(inner) | TypeExpr::Nullable(inner) | TypeExpr::Buffer(inner) => {
                 Self::type_expr_contains_never(inner)
             }
             TypeExpr::Union(members) => members.iter().any(Self::type_expr_contains_never),
