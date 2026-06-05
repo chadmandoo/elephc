@@ -1055,6 +1055,27 @@ echo $stat["size"];
     );
 }
 
+/// Verifies `SplTempFileObject` memory byte/truncate helpers match the legacy backend.
+#[test]
+fn parity_spl_temp_file_object_memory_byte_and_truncate() {
+    assert_backend_parity(
+        "spl_temp_file_object_memory_byte_and_truncate",
+        r#"<?php
+$tmp = new SplTempFileObject(-1);
+$tmp->fwrite("abcd");
+$tmp->fseek(1);
+echo $tmp->fgetc();
+echo "|";
+echo $tmp->fflush() ? "T" : "F";
+echo "|";
+$tmp->ftruncate(2);
+$tmp->rewind();
+echo $tmp->fread(10);
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);

@@ -2673,6 +2673,27 @@ echo $stat["size"];
     );
 }
 
+/// Verifies `SplTempFileObject` byte reads, flush, and truncate in memory mode.
+#[test]
+fn ir_backend_handles_spl_temp_file_object_memory_byte_and_truncate() {
+    let source = r#"<?php
+$tmp = new SplTempFileObject(-1);
+$tmp->fwrite("abcd");
+$tmp->fseek(1);
+echo $tmp->fgetc();
+echo "|";
+echo $tmp->fflush() ? "T" : "F";
+echo "|";
+$tmp->ftruncate(2);
+$tmp->rewind();
+echo $tmp->fread(10);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_temp_file_object_memory_byte_and_truncate", source),
+        "b|T|ab"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {
