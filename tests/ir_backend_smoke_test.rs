@@ -3735,6 +3735,32 @@ echo touch("both.txt", 1000000000, 900000000) ? "B" : "!";
     );
 }
 
+/// Verifies file and directory listing builtins return string arrays.
+#[test]
+fn ir_backend_handles_file_listing_builtins() {
+    let source = r#"<?php
+file_put_contents("lines.txt", "one\ntwo\nthree\n");
+$lines = file("lines.txt");
+echo count($lines);
+echo ":";
+mkdir("sd");
+file_put_contents("sd/a.txt", "a");
+file_put_contents("sd/b.txt", "b");
+$files = scandir("sd");
+echo count($files) == 4 && in_array(".", $files) && in_array("..", $files) && in_array("a.txt", $files) && in_array("b.txt", $files) ? "S" : "!";
+echo ":";
+mkdir("gd");
+file_put_contents("gd/g1.txt", "a");
+file_put_contents("gd/g2.txt", "b");
+$matches = glob("gd/*.txt");
+echo count($matches) == 2 && in_array("gd/g1.txt", $matches) && in_array("gd/g2.txt", $matches) ? "G" : "!";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("file_listing_builtins", source),
+        "3:S:G"
+    );
+}
+
 /// Verifies global constant declarations, references, and `defined()` lowering.
 #[test]
 fn ir_backend_handles_global_constants_and_defined() {

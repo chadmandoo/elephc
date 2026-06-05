@@ -36,6 +36,11 @@ pub(super) fn lower_file_get_contents(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `file(path)` through the target-aware runtime line-array helper.
+pub(super) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_path_array(ctx, inst, "file", "__rt_file")
+}
+
 /// Lowers `realpath(path)` and boxes the owned runtime string-or-false result.
 pub(super) fn lower_realpath(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "realpath", 1)?;
@@ -102,6 +107,16 @@ pub(super) fn lower_rename(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 /// Lowers `tempnam(directory, prefix)` through the target-aware runtime helper.
 pub(super) fn lower_tempnam(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "tempnam", "__rt_tempnam")
+}
+
+/// Lowers `scandir(path)` through the target-aware runtime directory listing helper.
+pub(super) fn lower_scandir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_path_array(ctx, inst, "scandir", "__rt_scandir")
+}
+
+/// Lowers `glob(pattern)` through the target-aware runtime glob expansion helper.
+pub(super) fn lower_glob(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_unary_path_array(ctx, inst, "glob", "__rt_glob")
 }
 
 /// Lowers `chmod(path, mode)` through the target-aware runtime helper.
@@ -722,6 +737,20 @@ fn lower_unary_path_predicate(
 
 /// Loads a path string into runtime argument/result registers and stores the integer result.
 fn lower_unary_path_int(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 1)?;
+    let path = expect_operand(inst, 0)?;
+    load_string_to_result(ctx, path, name)?;
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
+/// Loads a path string, calls an array-returning runtime helper, and stores the array.
+fn lower_unary_path_array(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,

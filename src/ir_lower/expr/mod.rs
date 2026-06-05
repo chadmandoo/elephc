@@ -1695,7 +1695,9 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "strrpos" => {
             Some(PhpType::Mixed)
         }
-        "explode" | "str_split" | "sscanf" => Some(PhpType::Array(Box::new(PhpType::Str))),
+        "explode" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {
+            Some(PhpType::Array(Box::new(PhpType::Str)))
+        }
         _ => None,
     }
 }
