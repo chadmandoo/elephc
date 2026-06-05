@@ -52,6 +52,16 @@ struct PropertyDefault {
     value: LiteralDefaultValue,
 }
 
+/// Concrete class that a dynamic factory can instantiate in this EIR module.
+struct DynamicNewCandidate {
+    class_name: String,
+    class_id: u64,
+    property_count: usize,
+    uninitialized_marker_offsets: Vec<usize>,
+    property_defaults: Vec<PropertyDefault>,
+    constructor_impl: Option<(String, Vec<PhpType>)>,
+}
+
 /// Lowers fixed-class object allocation and optional constructor invocation.
 pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let class_name = class_name_immediate(ctx, inst)?.to_string();
@@ -150,6 +160,335 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         )?;
     }
     Ok(())
+}
+
+/// Lowers constrained runtime class-string object construction.
+pub(super) fn lower_dynamic_object_new(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let (_fallback_class, required_parent) = dynamic_object_new_metadata(ctx, inst)?;
+    let class_name_value = expect_operand(inst, 0)?;
+    let constructor_args = inst
+        .operands
+        .get(1..)
+        .ok_or_else(|| CodegenIrError::invalid_module("dynamic_object_new missing class operand"))?;
+    let candidates = dynamic_new_candidates(ctx, &required_parent, constructor_args.len(), inst)?;
+    if candidates.is_empty() {
+        return Err(CodegenIrError::unsupported(format!(
+            "dynamic object construction for {} without EIR-lowered candidates",
+            required_parent
+        )));
+    }
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("dynamic_object_new missing result value"))?;
+    emit_dynamic_new_class_lookup(ctx, class_name_value, &required_parent)?;
+    let invalid_label = ctx.next_label("dynamic_new_invalid");
+    let unmatched_label = ctx.next_label("dynamic_new_unmatched");
+    let done_label = ctx.next_label("dynamic_new_done");
+    emit_branch_if_dynamic_new_lookup_invalid(ctx, &invalid_label);
+    emit_push_dynamic_new_class_id(ctx);
+    let case_labels = candidates
+        .iter()
+        .map(|candidate| {
+            let label = ctx.next_label("dynamic_new_case");
+            emit_compare_dynamic_new_class_id(ctx, candidate.class_id, &label);
+            label
+        })
+        .collect::<Vec<_>>();
+    abi::emit_jump(ctx.emitter, &unmatched_label);
+
+    ctx.emitter.label(&unmatched_label);
+    abi::emit_release_temporary_stack(ctx.emitter, 16);
+    emit_dynamic_new_fatal(ctx, &required_parent);
+
+    ctx.emitter.label(&invalid_label);
+    emit_dynamic_new_fatal(ctx, &required_parent);
+
+    for (candidate, label) in candidates.iter().zip(case_labels.iter()) {
+        ctx.emitter.label(label);
+        abi::emit_release_temporary_stack(ctx.emitter, 16);
+        emit_dynamic_new_candidate(ctx, candidate, constructor_args, result)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Parses the fallback and required-parent class names from the EIR data pool.
+fn dynamic_object_new_metadata(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<(String, String)> {
+    let data = expect_data(inst)?;
+    let value = ctx
+        .module
+        .data
+        .class_names
+        .get(data.as_raw() as usize)
+        .ok_or_else(|| CodegenIrError::missing_entry("class data", data.as_raw()))?;
+    let Some((fallback_class, required_parent)) = value.split_once('|') else {
+        return Err(CodegenIrError::invalid_module(format!(
+            "dynamic_object_new metadata '{}' missing fallback|required separator",
+            value
+        )));
+    };
+    Ok((
+        fallback_class.trim_start_matches('\\').to_string(),
+        required_parent.trim_start_matches('\\').to_string(),
+    ))
+}
+
+/// Collects runtime-instantiable classes for this dynamic factory.
+fn dynamic_new_candidates(
+    ctx: &FunctionContext<'_>,
+    required_parent: &str,
+    arg_count: usize,
+    inst: &Instruction,
+) -> Result<Vec<DynamicNewCandidate>> {
+    let mut candidates = Vec::new();
+    let mut sorted_classes = ctx.module.class_infos.iter().collect::<Vec<_>>();
+    sorted_classes.sort_by_key(|(_, class_info)| class_info.class_id);
+    for (class_name, class_info) in sorted_classes {
+        if !class_is_same_or_descends_from(ctx, class_name, required_parent) {
+            continue;
+        }
+        if let Some(candidate) =
+            dynamic_new_candidate(ctx, class_name, class_info, arg_count, inst)?
+        {
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
+}
+
+/// Returns true when `class_name` is the requested parent or one of its descendants.
+fn class_is_same_or_descends_from(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    required_parent: &str,
+) -> bool {
+    let mut current = Some(class_name);
+    while let Some(name) = current {
+        if php_symbol_key(name.trim_start_matches('\\'))
+            == php_symbol_key(required_parent.trim_start_matches('\\'))
+        {
+            return true;
+        }
+        current = ctx
+            .module
+            .class_infos
+            .get(name)
+            .and_then(|class_info| class_info.parent.as_deref());
+    }
+    false
+}
+
+/// Builds one dynamic factory candidate when its constructor path is emitted.
+fn dynamic_new_candidate(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    class_info: &ClassInfo,
+    arg_count: usize,
+    inst: &Instruction,
+) -> Result<Option<DynamicNewCandidate>> {
+    if class_info.allow_dynamic_properties
+        || class_interfaces_require_missing_method_symbols(ctx, class_name, class_info)
+    {
+        return Ok(None);
+    }
+    let constructor_key = php_symbol_key("__construct");
+    let constructor_impl = if let Some(constructor) = class_info.methods.get(&constructor_key) {
+        if constructor.params.len() != arg_count {
+            return Ok(None);
+        }
+        let impl_class = class_info
+            .method_impl_classes
+            .get(&constructor_key)
+            .cloned()
+            .unwrap_or_else(|| class_name.to_string());
+        if !class_method_already_emitted(ctx, &impl_class, &constructor_key, false) {
+            return Ok(None);
+        }
+        let param_types = constructor
+            .params
+            .iter()
+            .map(|(_, ty)| ty.codegen_repr())
+            .collect::<Vec<_>>();
+        Some((impl_class, param_types))
+    } else if arg_count == 0 {
+        None
+    } else {
+        return Ok(None);
+    };
+    let property_defaults = collect_property_defaults(class_info, inst)?;
+    Ok(Some(DynamicNewCandidate {
+        class_name: class_name.to_string(),
+        class_id: class_info.class_id,
+        property_count: class_info.properties.len(),
+        uninitialized_marker_offsets: uninitialized_property_marker_offsets(class_info),
+        property_defaults,
+        constructor_impl,
+    }))
+}
+
+/// Emits the class-string lookup input and calls the shared target-name resolver.
+fn emit_dynamic_new_class_lookup(
+    ctx: &mut FunctionContext<'_>,
+    class_name_value: ValueId,
+    required_parent: &str,
+) -> Result<()> {
+    let class_ty = ctx.value_php_type(class_name_value)?.codegen_repr();
+    match class_ty {
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            ctx.load_string_value_to_regs(class_name_value, ptr_reg, len_reg)?;
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(class_name_value, abi::int_result_reg(ctx.emitter))?;
+            emit_dynamic_new_mixed_class_string(ctx, required_parent);
+        }
+        _ => {
+            emit_dynamic_new_fatal(ctx, required_parent);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_instanceof_lookup");
+    Ok(())
+}
+
+/// Unboxes a mixed class-string or emits the dynamic-factory fatal.
+fn emit_dynamic_new_mixed_class_string(
+    ctx: &mut FunctionContext<'_>,
+    required_parent: &str,
+) {
+    let string_label = ctx.next_label("dynamic_new_class_string");
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #1");                              // runtime tag 1 means the dynamic factory argument is a string
+            ctx.emitter.instruction(&format!("b.eq {}", string_label));         // continue only when the boxed factory argument is a class-string
+            emit_dynamic_new_fatal(ctx, required_parent);
+            ctx.emitter.label(&string_label);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 1");                              // runtime tag 1 means the dynamic factory argument is a string
+            ctx.emitter.instruction(&format!("je {}", string_label));           // continue only when the boxed factory argument is a class-string
+            emit_dynamic_new_fatal(ctx, required_parent);
+            ctx.emitter.label(&string_label);
+            ctx.emitter.instruction("mov rax, rdi");                            // move the unboxed string pointer into the lookup input register
+        }
+    }
+}
+
+/// Branches when the dynamic factory lookup failed or named an interface.
+fn emit_branch_if_dynamic_new_lookup_invalid(
+    ctx: &mut FunctionContext<'_>,
+    invalid_label: &str,
+) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // did the dynamic factory class-string resolve to metadata?
+            ctx.emitter.instruction(&format!("b.eq {}", invalid_label));        // abort unresolved factory classes before construction
+            ctx.emitter.instruction("cmp x2, #0");                              // target kind 0 means a concrete class, not an interface
+            ctx.emitter.instruction(&format!("b.ne {}", invalid_label));        // abort interface targets because factories instantiate objects
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // did the dynamic factory class-string resolve to metadata?
+            ctx.emitter.instruction(&format!("je {}", invalid_label));          // abort unresolved factory classes before construction
+            ctx.emitter.instruction("test rdx, rdx");                           // target kind 0 means a concrete class, not an interface
+            ctx.emitter.instruction(&format!("jne {}", invalid_label));         // abort interface targets because factories instantiate objects
+        }
+    }
+}
+
+/// Preserves the resolved dynamic factory class id for candidate dispatch.
+fn emit_push_dynamic_new_class_id(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => abi::emit_push_reg(ctx.emitter, "x1"),
+        Arch::X86_64 => abi::emit_push_reg(ctx.emitter, "rdi"),
+    }
+}
+
+/// Branches to `matched_label` when the saved factory class id matches `class_id`.
+fn emit_compare_dynamic_new_class_id(
+    ctx: &mut FunctionContext<'_>,
+    class_id: u64,
+    matched_label: &str,
+) {
+    let scratch = abi::temp_int_reg(ctx.emitter.target);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, scratch, 0);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #{}", scratch, class_id)); // compare the requested factory class with this candidate class id
+            ctx.emitter.instruction(&format!("b.eq {}", matched_label));        // branch when the runtime class-string selected this constructor
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, {}", scratch, class_id)); // compare the requested factory class with this candidate class id
+            ctx.emitter.instruction(&format!("je {}", matched_label));          // branch when the runtime class-string selected this constructor
+        }
+    }
+}
+
+/// Allocates and initializes one selected dynamic factory candidate.
+fn emit_dynamic_new_candidate(
+    ctx: &mut FunctionContext<'_>,
+    candidate: &DynamicNewCandidate,
+    constructor_args: &[ValueId],
+    result: ValueId,
+) -> Result<()> {
+    emit_object_allocation(
+        ctx,
+        candidate.class_id,
+        candidate.property_count,
+        &candidate.uninitialized_marker_offsets,
+    )?;
+    ctx.store_result_value(result)?;
+    emit_property_defaults(ctx, result, &candidate.property_defaults)?;
+    if let Some((impl_class, param_types)) = &candidate.constructor_impl {
+        emit_constructor_call(
+            ctx,
+            result,
+            constructor_args,
+            &candidate.class_name,
+            impl_class,
+            &php_symbol_key("__construct"),
+            param_types,
+        )?;
+    }
+    Ok(())
+}
+
+/// Emits the runtime fatal diagnostic for invalid dynamic factory class names.
+fn emit_dynamic_new_fatal(ctx: &mut FunctionContext<'_>, required_parent: &str) {
+    let message = format!(
+        "Fatal error: Dynamic factory class must extend {}\n",
+        required_parent
+    );
+    emit_fatal_message(ctx, message.as_bytes());
+}
+
+/// Writes a fatal diagnostic to stderr and exits.
+fn emit_fatal_message(ctx: &mut FunctionContext<'_>, message: &[u8]) {
+    let (message_label, message_len) = ctx.data.add_string(message);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #2");                              // select stderr for the fatal diagnostic
+            ctx.emitter.adrp("x1", &message_label);
+            ctx.emitter.add_lo12("x1", "x1", &message_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the fatal diagnostic byte length to write()
+            ctx.emitter.syscall(4);
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", message_len));      // pass the fatal diagnostic byte length to write()
+            ctx.emitter.instruction("mov edi, 2");                              // select stderr for the fatal diagnostic
+            ctx.emitter.instruction("mov eax, 1");                              // select Linux write syscall
+            ctx.emitter.instruction("syscall");                                 // write the fatal diagnostic bytes
+        }
+    }
+    abi::emit_exit(ctx.emitter, 1);
 }
 
 /// Collects literal defaults that can be copied directly into object property slots.

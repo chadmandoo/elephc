@@ -160,6 +160,11 @@ fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
             names.insert(class_name);
         }
     }
+    for class_name in referenced_dynamic_object_new_class_names(module) {
+        if module.class_infos.contains_key(&class_name) {
+            names.insert(class_name);
+        }
+    }
     for class_name in referenced_class_name_lookup_builtin_names(module) {
         if module.class_infos.contains_key(&class_name) {
             names.insert(class_name);
@@ -489,6 +494,61 @@ fn referenced_class_data_names(module: &Module) -> HashSet<String> {
         }
     }
     names
+}
+
+/// Returns class metadata needed by dynamic object factories.
+fn referenced_dynamic_object_new_class_names(module: &Module) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        for inst in &function.instructions {
+            if !matches!(inst.op, Op::DynamicObjectNew) {
+                continue;
+            }
+            let Some((fallback_class, required_parent)) =
+                dynamic_object_new_metadata_names(module, inst)
+            else {
+                continue;
+            };
+            names.insert(fallback_class.to_string());
+            names.insert(required_parent.to_string());
+            for class_name in module.class_infos.keys() {
+                if is_same_or_descendant(module, class_name, required_parent) {
+                    names.insert(class_name.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// Parses the fallback and required-parent names from a dynamic object factory immediate.
+fn dynamic_object_new_metadata_names<'a>(
+    module: &'a Module,
+    inst: &crate::ir::Instruction,
+) -> Option<(&'a str, &'a str)> {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    module
+        .data
+        .class_names
+        .get(data.as_raw() as usize)?
+        .split_once('|')
+        .map(|(fallback_class, required_parent)| {
+            (
+                fallback_class.trim_start_matches('\\'),
+                required_parent.trim_start_matches('\\'),
+            )
+        })
 }
 
 /// Returns static class names that can feed `get_class()`/`get_parent_class()` lookups.

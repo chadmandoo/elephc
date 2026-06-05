@@ -656,7 +656,7 @@ fn lower_null_coalesce(
         Op::IsNull.default_effects(),
         Some(expr.span),
     );
-    let result_type = fallback_expr_type(expr);
+    let result_type = null_coalesce_result_type(ctx, value.value, default);
     let temp_name = ctx.declare_hidden_temp(result_type.clone());
     let default_block = ctx.builder.create_named_block("coalesce.default", Vec::new());
     let value_block = ctx.builder.create_named_block("coalesce.value", Vec::new());
@@ -679,6 +679,59 @@ fn lower_null_coalesce(
 
     ctx.builder.position_at_end(merge);
     ctx.load_local(&temp_name, Some(expr.span))
+}
+
+/// Returns the materialized result type for a null-coalesce merge.
+fn null_coalesce_result_type(
+    ctx: &LoweringContext<'_, '_>,
+    value: ValueId,
+    default: &Expr,
+) -> PhpType {
+    let value_ty = strip_void_from_union(ctx.builder.value_php_type(value)).codegen_repr();
+    let default_ty = fallback_expr_type(default).codegen_repr();
+    wider_type_for_merge(&value_ty, &default_ty)
+}
+
+/// Chooses the wider materialized type for branch-local merge storage.
+fn wider_type_for_merge(left: &PhpType, right: &PhpType) -> PhpType {
+    let left = left.codegen_repr();
+    let right = right.codegen_repr();
+    if left == right {
+        return left;
+    }
+    if matches!(left, PhpType::Void | PhpType::Never) {
+        return right;
+    }
+    if matches!(right, PhpType::Void | PhpType::Never) {
+        return left;
+    }
+    match (&left, &right) {
+        (PhpType::Array(_), PhpType::Array(_)) => right.clone(),
+        (PhpType::AssocArray { .. }, PhpType::AssocArray { .. }) => right.clone(),
+        (
+            PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never,
+            PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never,
+        ) => right.clone(),
+        _ => PhpType::Mixed,
+    }
+}
+
+/// Removes the null sentinel type from nullable unions after a successful `??` value branch.
+fn strip_void_from_union(php_type: PhpType) -> PhpType {
+    let PhpType::Union(members) = php_type else {
+        return php_type;
+    };
+    let mut non_void = members
+        .into_iter()
+        .filter(|member| !matches!(member, PhpType::Void))
+        .collect::<Vec<_>>();
+    if non_void.is_empty() {
+        PhpType::Void
+    } else if non_void.len() == 1 {
+        non_void.remove(0)
+    } else {
+        PhpType::Union(non_void)
+    }
 }
 
 /// Lowers `expr ?: default`, preserving single evaluation of the first expression.

@@ -689,6 +689,40 @@ echo ($info instanceof Stringable) ? "I" : "x";
     );
 }
 
+/// Verifies dynamic `SplFileInfo` factories match the legacy backend.
+#[test]
+fn parity_spl_file_info_dynamic_factories() {
+    assert_backend_parity(
+        "spl_file_info_dynamic_factories",
+        r#"<?php
+class EirInfo extends SplFileInfo {}
+
+$info = new SplFileInfo(".");
+$file = $info->getFileInfo();
+$path = $info->getPathInfo();
+$customFile = $info->getFileInfo("EirInfo");
+$customPath = $info->getPathInfo("EirInfo");
+
+echo ($file instanceof SplFileInfo) ? "F" : "x";
+echo ":";
+echo $file->getPathname();
+echo ":";
+echo ($path instanceof SplFileInfo) ? "P" : "x";
+echo ":";
+echo $path->getPathname();
+echo ":";
+echo ($customFile instanceof EirInfo) ? "E" : "x";
+echo ":";
+echo $customFile->getPathname();
+echo ":";
+echo ($customPath instanceof EirInfo) ? "Q" : "x";
+echo ":";
+echo $customPath->getPathname();
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);

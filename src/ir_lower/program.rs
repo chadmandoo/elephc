@@ -437,7 +437,10 @@ fn php_method_key(method_name: &str) -> String {
 /// Returns true for builtin SPL methods intentionally lowered into EIR today.
 fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
     class_name == "SplFileInfo"
-        && matches!(method_key, "__construct" | "__tostring" | "getpathname")
+        && matches!(
+            method_key,
+            "__construct" | "__tostring" | "getpathname" | "getfileinfo" | "getpathinfo"
+        )
 }
 
 /// Lowers one supported builtin SPL method body if it has not already been emitted.

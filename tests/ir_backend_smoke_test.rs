@@ -2307,6 +2307,40 @@ echo ($info instanceof Stringable) ? "I" : "x";
     );
 }
 
+/// Verifies dynamic `SplFileInfo` factories lower class-string construction through EIR.
+#[test]
+fn ir_backend_handles_spl_file_info_dynamic_factories() {
+    let source = r#"<?php
+class EirInfo extends SplFileInfo {}
+
+$info = new SplFileInfo(".");
+$file = $info->getFileInfo();
+$path = $info->getPathInfo();
+$customFile = $info->getFileInfo("EirInfo");
+$customPath = $info->getPathInfo("EirInfo");
+
+echo ($file instanceof SplFileInfo) ? "F" : "x";
+echo ":";
+echo $file->getPathname();
+echo ":";
+echo ($path instanceof SplFileInfo) ? "P" : "x";
+echo ":";
+echo $path->getPathname();
+echo ":";
+echo ($customFile instanceof EirInfo) ? "E" : "x";
+echo ":";
+echo $customFile->getPathname();
+echo ":";
+echo ($customPath instanceof EirInfo) ? "Q" : "x";
+echo ":";
+echo $customPath->getPathname();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_file_info_dynamic_factories", source),
+        "F:.:P:.:E:.:Q:."
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {
