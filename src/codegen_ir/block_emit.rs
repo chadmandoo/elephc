@@ -18,7 +18,7 @@ use crate::codegen::emit_fiber_wrapper;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
-use crate::ir::{BasicBlock, Function, Immediate, Module, Op};
+use crate::ir::{BasicBlock, Function, Module};
 use crate::names::{
     enum_case_symbol, function_epilogue_symbol, method_symbol, php_symbol_key, static_method_symbol,
     static_property_symbol,
@@ -27,6 +27,7 @@ use crate::parser::ast::ExprKind;
 use crate::types::{EnumCaseInfo, EnumCaseValue, FunctionSig, PhpType};
 
 use super::context::FunctionContext;
+use super::fibers;
 use super::frame;
 use super::function_variants;
 use super::literal_defaults::{
@@ -65,31 +66,45 @@ pub(super) fn emit_module(
 
 /// Emits the static EIR Fiber wrapper needed for no-argument closure callbacks.
 fn emit_eir_fiber_wrappers(module: &Module, emitter: &mut Emitter) {
-    if !module_constructs_fibers(module) {
-        return;
+    for wrapper in required_eir_fiber_wrappers(module) {
+        let wrapper = DeferredFiberWrapper {
+            label: wrapper.label.to_string(),
+            sig: FunctionSig {
+                params: Vec::new(),
+                defaults: Vec::new(),
+                return_type: wrapper.return_type,
+                declared_return: true,
+                ref_params: Vec::new(),
+                declared_params: Vec::new(),
+                variadic: None,
+                deprecation: None,
+            },
+            visible_param_count: 0,
+            hidden_arg_types: Vec::new(),
+            use_descriptor_invoker: false,
+        };
+        emit_fiber_wrapper(emitter, &wrapper);
     }
-    let wrapper = DeferredFiberWrapper {
-        label: super::FIBER_NOARG_VOID_WRAPPER_LABEL.to_string(),
-        sig: FunctionSig {
-            params: Vec::new(),
-            defaults: Vec::new(),
-            return_type: PhpType::Void,
-            declared_return: true,
-            ref_params: Vec::new(),
-            declared_params: Vec::new(),
-            variadic: None,
-            deprecation: None,
-        },
-        visible_param_count: 0,
-        hidden_arg_types: Vec::new(),
-        use_descriptor_invoker: false,
-    };
-    emit_fiber_wrapper(emitter, &wrapper);
 }
 
-/// Returns true when any EIR function constructs PHP's built-in `Fiber` object.
-fn module_constructs_fibers(module: &Module) -> bool {
-    all_module_functions(module).any(|function| function_constructs_fiber(module, function))
+/// Collects unique no-argument Fiber wrappers needed by this module.
+fn required_eir_fiber_wrappers(module: &Module) -> Vec<fibers::NoArgWrapper> {
+    let mut wrappers = Vec::new();
+    for function in all_module_functions(module) {
+        for inst in &function.instructions {
+            let Some(wrapper) = fibers::noarg_wrapper_for_fiber_new(module, function, inst) else {
+                continue;
+            };
+            if wrappers
+                .iter()
+                .any(|existing: &fibers::NoArgWrapper| existing.label == wrapper.label)
+            {
+                continue;
+            }
+            wrappers.push(wrapper);
+        }
+    }
+    wrappers
 }
 
 /// Iterates every function-like body owned by the EIR module.
@@ -103,23 +118,6 @@ fn all_module_functions(module: &Module) -> impl Iterator<Item = &Function> {
         .chain(module.callback_wrappers.iter())
         .chain(module.extern_callback_trampolines.iter())
         .chain(module.runtime_callable_invokers.iter())
-}
-
-/// Returns true when a function body contains `new Fiber(...)`.
-fn function_constructs_fiber(module: &Module, function: &Function) -> bool {
-    function.instructions.iter().any(|inst| {
-        if !matches!(inst.op, Op::ObjectNew) {
-            return false;
-        }
-        let Some(Immediate::Data(data)) = inst.immediate else {
-            return false;
-        };
-        module
-            .data
-            .class_names
-            .get(data.as_raw() as usize)
-            .is_some_and(|class_name| php_symbol_key(class_name.trim_start_matches('\\')) == "fiber")
-    })
 }
 
 /// Emits a non-main EIR function as a direct-call target.

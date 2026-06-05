@@ -589,10 +589,20 @@ pub(crate) fn type_expr_to_php_type(type_expr: &TypeExpr) -> PhpType {
         TypeExpr::Array(inner) => PhpType::Array(Box::new(type_expr_to_php_type(inner))),
         TypeExpr::Ptr(name) => PhpType::Pointer(name.as_ref().map(|name| name.as_str().to_string())),
         TypeExpr::Buffer(inner) => PhpType::Buffer(Box::new(type_expr_to_php_type(inner))),
-        TypeExpr::Named(name) => PhpType::Object(name.as_str().to_string()),
+        TypeExpr::Named(name) => named_type_expr_to_php_type(name.as_str()),
         TypeExpr::Nullable(inner) => PhpType::Union(vec![PhpType::Void, type_expr_to_php_type(inner)]),
         TypeExpr::Union(members) => {
             PhpType::Union(members.iter().map(type_expr_to_php_type).collect())
         }
+    }
+}
+
+/// Converts parser-owned named type hints that represent PHP built-ins before falling back to objects.
+fn named_type_expr_to_php_type(name: &str) -> PhpType {
+    match name.trim_start_matches('\\').to_ascii_lowercase().as_str() {
+        "array" => PhpType::Array(Box::new(PhpType::Mixed)),
+        "callable" => PhpType::Callable,
+        "mixed" => PhpType::Mixed,
+        _ => PhpType::Object(name.to_string()),
     }
 }

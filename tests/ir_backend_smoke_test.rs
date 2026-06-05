@@ -503,6 +503,40 @@ echo is_null($f->getReturn()) ? "null" : "not-null";
     );
 }
 
+/// Verifies no-argument Fiber wrappers box scalar and mixed terminal return values.
+#[test]
+fn ir_backend_gets_typed_fiber_return_values() {
+    let source = r#"<?php
+$int = new Fiber(function(): int { return 42; });
+$int->start();
+echo $int->getReturn();
+echo "|";
+
+$string = new Fiber(function(): string { return "ret"; });
+$string->start();
+echo $string->getReturn();
+echo "|";
+
+$bool = new Fiber(function(): bool { return true; });
+$bool->start();
+echo $bool->getReturn();
+echo "|";
+
+$float = new Fiber(function(): float { return 1.5; });
+$float->start();
+echo $float->getReturn();
+echo "|";
+
+$mixed = new Fiber(function(): mixed { return "mix"; });
+$mixed->start();
+echo $mixed->getReturn();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("fiber_get_return_typed", source),
+        "42|ret|1|1.5|mix"
+    );
+}
+
 /// Verifies static Fiber getCurrent returns null outside a running fiber.
 #[test]
 fn ir_backend_gets_current_fiber_outside_fiber() {
