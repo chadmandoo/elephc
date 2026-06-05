@@ -16,11 +16,13 @@
 //!   compilation, so the `match`es are exhaustive (no wildcard arm). Adding an AST
 //!   node forces this file to be updated. False positives (e.g. a class literally
 //!   named `PDOThing`) only over-link the bridge harmlessly.
-//! - Only positions where a `Name` denotes a *class* are matched (new, static
+//! - Positions where a `Name` denotes a *class* are matched (new, static
 //!   receivers, `instanceof`, `catch`, `extends`/`implements`, type hints, trait
-//!   uses). Function/constant/use-import name positions are not class references,
-//!   and any real use of an imported PDO name reappears at one of the matched
-//!   positions, so skipping them cannot cause a false negative.
+//!   uses). `use` imports are matched too: `use PDO as Db;` references the PDO
+//!   name only in the import, and the later `new Db()` carries the alias, which
+//!   the walk cannot otherwise connect back to PDO — so skipping imports would be
+//!   a false negative. Function/constant name positions are not class references
+//!   and are skipped.
 
 use crate::names::Name;
 use crate::parser::ast::{
@@ -290,13 +292,16 @@ fn stmt_refs_pdo(stmt: &Stmt) -> bool {
         | StmtKind::Break(_)
         | StmtKind::Continue(_)
         | StmtKind::NamespaceDecl { .. }
-        | StmtKind::UseDecl { .. }
         | StmtKind::FunctionVariantGroup { .. }
         | StmtKind::FunctionVariantMark { .. }
         | StmtKind::Global { .. }
         | StmtKind::ExternFunctionDecl { .. }
         | StmtKind::ExternClassDecl { .. }
         | StmtKind::ExternGlobalDecl { .. } => false,
+
+        // An aliased import (`use PDO as Db;`) names PDO only here; the later
+        // `new Db()` carries the alias, so the import must be inspected too.
+        StmtKind::UseDecl { imports } => imports.iter().any(|item| name_is_pdo(&item.name)),
 
         StmtKind::Echo(expr) | StmtKind::Throw(expr) | StmtKind::ExprStmt(expr) => {
             expr_refs_pdo(expr)
@@ -581,6 +586,16 @@ mod tests {
     fn detects_case_insensitive() {
         assert!(program_uses_pdo(&parse(
             r#"<?php $db = new pdo("sqlite::memory:");"#
+        )));
+    }
+
+    /// An aliased import (`use PDO as Db;`) is detected through the import name:
+    /// the later `new Db()` carries only the alias, so without inspecting the
+    /// import the program would be a false negative (no prelude injected).
+    #[test]
+    fn detects_aliased_use_import() {
+        assert!(program_uses_pdo(&parse(
+            r#"<?php use PDO as Db; $db = new Db("sqlite::memory:");"#
         )));
     }
 

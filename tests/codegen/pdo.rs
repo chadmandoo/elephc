@@ -515,3 +515,21 @@ echo $upd->rowCount() . ":" . $del->rowCount();
     );
     assert_eq!(out, "3:0");
 }
+
+/// An aliased import (`use PDO as Db;`) still injects the prelude and resolves to
+/// PDO. The program references PDO only through the alias, so prelude detection
+/// must inspect the import name — `new Db()` carries the alias, not "PDO".
+#[test]
+fn test_pdo_aliased_import() {
+    let out = compile_and_run(
+        r#"<?php
+use PDO as Db;
+$db = new Db("sqlite::memory:");
+$db->exec("CREATE TABLE t (id INTEGER)");
+$db->exec("INSERT INTO t (id) VALUES (7)");
+$row = $db->query("SELECT id FROM t")->fetch();
+echo $row["id"];
+"#,
+    );
+    assert_eq!(out, "7");
+}
