@@ -3556,6 +3556,68 @@ echo "unreachable";
     );
 }
 
+/// Verifies line, character, and position stream builtins share one stream state.
+#[test]
+fn ir_backend_handles_stream_line_position_and_chars() {
+    let source = r#"<?php
+file_put_contents("pos.txt", "ab\ncd");
+$f = fopen("pos.txt", "r");
+$line = fgets($f);
+echo trim($line);
+echo ":";
+echo feof($f) ? "E" : "N";
+echo ":";
+echo ftell($f);
+echo ":";
+echo fgetc($f);
+echo ":";
+echo ftell($f);
+fseek($f, 0);
+echo ":";
+echo ftell($f);
+echo ":";
+echo fread($f, 2);
+rewind($f);
+echo ":";
+echo fread($f, 2);
+fseek($f, 1, 1);
+echo ":";
+echo ftell($f);
+fclose($f);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stream_line_position_and_chars", source),
+        "ab:N:3:c:4:0:ab:ab:3"
+    );
+}
+
+/// Verifies successful seeks clear EOF state tracked for stream descriptors.
+#[test]
+fn ir_backend_clears_stream_eof_after_seek() {
+    let source = r#"<?php
+file_put_contents("eof.txt", "x");
+$f = fopen("eof.txt", "r");
+fread($f, 1);
+fread($f, 1);
+echo feof($f) ? "E" : "N";
+fseek($f, 0);
+echo ":";
+echo feof($f) ? "E" : "N";
+fread($f, 1);
+fread($f, 1);
+echo ":";
+echo feof($f) ? "E" : "N";
+rewind($f);
+echo ":";
+echo feof($f) ? "E" : "N";
+fclose($f);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stream_eof_after_seek", source),
+        "E:N:E:N"
+    );
+}
+
 /// Verifies `filesize()` returns the current byte length for a written file.
 #[test]
 fn ir_backend_handles_filesize() {

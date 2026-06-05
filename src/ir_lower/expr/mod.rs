@@ -1695,20 +1695,20 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link"
         | "mkdir" | "rename" | "rmdir" | "is_readable" | "is_writeable" | "is_writable"
         | "symlink" | "touch" | "unlink" => Some(PhpType::Bool),
-        "basename" | "date" | "dirname" | "getcwd" | "readline" | "sys_get_temp_dir"
+        "basename" | "date" | "dirname" | "fgets" | "getcwd" | "readline" | "sys_get_temp_dir"
         | "fread" | "tempnam" => Some(PhpType::Str),
         "microtime" => Some(PhpType::Float),
         "clearstatcache" => Some(PhpType::Void),
-        "fclose" => Some(PhpType::Bool),
+        "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
-        | "filesize" | "fwrite" | "linkinfo" | "mktime" | "sleep" | "strtotime" | "time"
-        | "umask" => {
+        | "filesize" | "fseek" | "ftell" | "fwrite" | "linkinfo" | "mktime" | "sleep"
+        | "strtotime" | "time" | "umask" => {
             Some(PhpType::Int)
         }
         "usleep" => Some(PhpType::Void),
         "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
-        | "fopen" | "stat" | "lstat" | "strpos" | "strrpos" => {
+        | "fgetc" | "fopen" | "stat" | "lstat" | "strpos" | "strrpos" => {
             Some(PhpType::Mixed)
         }
         "explode" | "file" | "glob" | "scandir" | "str_split" | "sscanf" => {

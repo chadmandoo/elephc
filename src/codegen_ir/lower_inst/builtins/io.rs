@@ -182,6 +182,102 @@ pub(super) fn lower_fwrite(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `fgets(stream)` through the shared line-read runtime helper.
+pub(super) fn lower_fgets(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "fgets", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "fgets")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the stream fd to the x86_64 fgets runtime helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_fgets");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `fgetc(stream)` and boxes the one-byte string or PHP false result.
+pub(super) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "fgetc", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "fgetc")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the stream fd to the x86_64 fgetc runtime helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_fgetc");
+    box_fgetc_result(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `feof(stream)` through the runtime EOF-flag table helper.
+pub(super) fn lower_feof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "feof", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "feof")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the stream fd to the x86_64 feof runtime helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_feof");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `ftell(stream)` as `lseek(fd, 0, SEEK_CUR)`.
+pub(super) fn lower_ftell(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "ftell", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "ftell")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x1, #0");                              // use offset 0 for the ftell lseek probe
+            ctx.emitter.instruction("mov x2, #1");                              // use SEEK_CUR for the ftell lseek probe
+            ctx.emitter.syscall(199);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the stream fd to libc lseek()
+            ctx.emitter.instruction("xor esi, esi");                            // use offset 0 for the ftell lseek probe
+            ctx.emitter.instruction("mov edx, 1");                              // use SEEK_CUR for the ftell lseek probe
+            ctx.emitter.instruction("call lseek");                              // query the current stream position
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `fseek(stream, offset, whence?)` and clears EOF state on success.
+pub(super) fn lower_fseek(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count_between(inst, "fseek", 2, 3)?;
+    let stream = expect_operand(inst, 0)?;
+    let offset = expect_operand(inst, 1)?;
+    load_stream_fd_to_result(ctx, stream, "fseek")?;
+    let success_label = ctx.next_label("fseek_success");
+    let done_label = ctx.next_label("fseek_done");
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    require_int(ctx.load_value_to_result(offset)?.codegen_repr(), "fseek offset")?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    if inst.operands.len() == 3 {
+        let whence = expect_operand(inst, 2)?;
+        require_int(ctx.load_value_to_result(whence)?.codegen_repr(), "fseek whence")?;
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_fseek_aarch64(ctx, &success_label, &done_label),
+        Arch::X86_64 => lower_fseek_x86_64(ctx, &success_label, &done_label),
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `rewind(stream)` as `lseek(fd, 0, SEEK_SET)` and clears EOF state on success.
+pub(super) fn lower_rewind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "rewind", 1)?;
+    let stream = expect_operand(inst, 0)?;
+    load_stream_fd_to_result(ctx, stream, "rewind")?;
+    let success_label = ctx.next_label("rewind_success");
+    let done_label = ctx.next_label("rewind_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_rewind_aarch64(ctx, &success_label, &done_label),
+        Arch::X86_64 => lower_rewind_x86_64(ctx, &success_label, &done_label),
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `file(path)` through the target-aware runtime line-array helper.
 pub(super) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "file", "__rt_file")
@@ -1167,6 +1263,105 @@ fn emit_stream_type_error_and_exit(ctx: &mut FunctionContext<'_>, function_name:
     }
 }
 
+/// Emits the ARM64 `fseek()` syscall path after fd, offset, and whence are staged.
+fn lower_fseek_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    success_label: &str,
+    done_label: &str,
+) {
+    ctx.emitter.instruction("mov x2, x0");                                      // move whence into the third lseek syscall argument
+    abi::emit_pop_reg(ctx.emitter, "x1");
+    abi::emit_pop_reg(ctx.emitter, "x0");
+    abi::emit_push_reg(ctx.emitter, "x0");
+    ctx.emitter.syscall(199);
+    if ctx.emitter.platform.needs_cmp_before_error_branch() {
+        ctx.emitter.instruction("cmp x0, #0");                                  // Linux reports lseek failure as a negative result
+    }
+    ctx.emitter.instruction(&ctx.emitter.platform.branch_on_syscall_success(success_label)); // continue only when lseek succeeds
+    abi::emit_pop_reg(ctx.emitter, "x9");
+    ctx.emitter.instruction("mov x0, #-1");                                     // fseek returns -1 when lseek fails
+    ctx.emitter.instruction(&format!("b {}", done_label));                      // skip EOF reset after a failed seek
+    ctx.emitter.label(success_label);
+    abi::emit_pop_reg(ctx.emitter, "x9");
+    abi::emit_symbol_address(ctx.emitter, "x10", "_eof_flags");
+    ctx.emitter.instruction("strb wzr, [x10, x9]");                             // clear EOF state for the successfully repositioned stream
+    ctx.emitter.instruction("mov x0, #0");                                      // fseek returns 0 after a successful seek
+    ctx.emitter.label(done_label);
+}
+
+/// Emits the Linux x86_64 `fseek()` libc path after fd, offset, and whence are staged.
+fn lower_fseek_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    success_label: &str,
+    done_label: &str,
+) {
+    ctx.emitter.instruction("mov rdx, rax");                                    // move whence into the third lseek argument
+    abi::emit_pop_reg(ctx.emitter, "rsi");
+    abi::emit_pop_reg(ctx.emitter, "rdi");
+    abi::emit_push_reg(ctx.emitter, "rdi");
+    ctx.emitter.instruction("call lseek");                                      // reposition the stream through libc lseek()
+    ctx.emitter.instruction("cmp rax, 0");                                      // test whether lseek returned a non-negative offset
+    ctx.emitter.instruction(&format!("jge {}", success_label));                 // continue only when lseek succeeds
+    abi::emit_pop_reg(ctx.emitter, "r10");
+    ctx.emitter.instruction("mov rax, -1");                                     // fseek returns -1 when lseek fails
+    ctx.emitter.instruction(&format!("jmp {}", done_label));                    // skip EOF reset after a failed seek
+    ctx.emitter.label(success_label);
+    abi::emit_pop_reg(ctx.emitter, "r10");
+    ctx.emitter.instruction("lea r11, [rip + _eof_flags]");                     // materialize the EOF-flag table base
+    ctx.emitter.instruction("mov BYTE PTR [r11 + r10], 0");                     // clear EOF state for the successfully repositioned stream
+    ctx.emitter.instruction("xor eax, eax");                                    // fseek returns 0 after a successful seek
+    ctx.emitter.label(done_label);
+}
+
+/// Emits the ARM64 `rewind()` syscall path and boolean result.
+fn lower_rewind_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    success_label: &str,
+    done_label: &str,
+) {
+    abi::emit_push_reg(ctx.emitter, "x0");
+    ctx.emitter.instruction("mov x1, #0");                                      // use offset 0 for rewind
+    ctx.emitter.instruction("mov x2, #0");                                      // use SEEK_SET for rewind
+    ctx.emitter.syscall(199);
+    if ctx.emitter.platform.needs_cmp_before_error_branch() {
+        ctx.emitter.instruction("cmp x0, #0");                                  // Linux reports lseek failure as a negative result
+    }
+    ctx.emitter.instruction(&ctx.emitter.platform.branch_on_syscall_success(success_label)); // continue only when rewind succeeds
+    abi::emit_pop_reg(ctx.emitter, "x9");
+    ctx.emitter.instruction("mov x0, #0");                                      // rewind returns false when lseek fails
+    ctx.emitter.instruction(&format!("b {}", done_label));                      // skip EOF reset after a failed rewind
+    ctx.emitter.label(success_label);
+    abi::emit_pop_reg(ctx.emitter, "x9");
+    abi::emit_symbol_address(ctx.emitter, "x10", "_eof_flags");
+    ctx.emitter.instruction("strb wzr, [x10, x9]");                             // clear EOF state after rewinding the stream
+    ctx.emitter.instruction("mov x0, #1");                                      // rewind returns true after a successful seek
+    ctx.emitter.label(done_label);
+}
+
+/// Emits the Linux x86_64 `rewind()` libc path and boolean result.
+fn lower_rewind_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    success_label: &str,
+    done_label: &str,
+) {
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the stream fd to libc lseek()
+    abi::emit_push_reg(ctx.emitter, "rdi");
+    ctx.emitter.instruction("xor esi, esi");                                    // use offset 0 for rewind
+    ctx.emitter.instruction("xor edx, edx");                                    // use SEEK_SET for rewind
+    ctx.emitter.instruction("call lseek");                                      // rewind the stream through libc lseek()
+    ctx.emitter.instruction("cmp rax, 0");                                      // test whether lseek returned a non-negative offset
+    ctx.emitter.instruction(&format!("jge {}", success_label));                 // continue only when rewind succeeds
+    abi::emit_pop_reg(ctx.emitter, "r10");
+    ctx.emitter.instruction("xor eax, eax");                                    // rewind returns false when lseek fails
+    ctx.emitter.instruction(&format!("jmp {}", done_label));                    // skip EOF reset after a failed rewind
+    ctx.emitter.label(success_label);
+    abi::emit_pop_reg(ctx.emitter, "r10");
+    ctx.emitter.instruction("lea r11, [rip + _eof_flags]");                     // materialize the EOF-flag table base
+    ctx.emitter.instruction("mov BYTE PTR [r11 + r10], 0");                     // clear EOF state after rewinding the stream
+    ctx.emitter.instruction("mov rax, 1");                                      // rewind returns true after a successful seek
+    ctx.emitter.label(done_label);
+}
+
 /// Materializes `file_put_contents` arguments for the ARM64 runtime ABI.
 fn lower_file_put_contents_arm64(
     ctx: &mut FunctionContext<'_>,
@@ -1197,6 +1392,42 @@ fn lower_file_put_contents_x86_64(
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
     abi::emit_call_label(ctx.emitter, "__rt_file_put_contents");
     Ok(())
+}
+
+/// Boxes a raw `fgetc()` one-byte string or EOF result into Mixed form.
+fn box_fgetc_result(ctx: &mut FunctionContext<'_>) {
+    let false_label = ctx.next_label("fgetc_false");
+    let done_label = ctx.next_label("fgetc_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x2, #0");                              // test whether fgetc read a byte
+            ctx.emitter.instruction(&format!("b.le {}", false_label));          // box false when fgetc hit EOF or read failure
+            ctx.emitter.instruction("mov x0, #1");                              // select runtime tag 1 for the one-byte string
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip false boxing after building the string result
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("mov x1, #0");                              // use zero as the false payload for fgetc EOF
+            ctx.emitter.instruction("mov x2, #0");                              // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov x0, #3");                              // select runtime tag 3 for boolean false
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rdx, 0");                              // test whether fgetc read a byte
+            ctx.emitter.instruction(&format!("jle {}", false_label));           // box false when fgetc hit EOF or read failure
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the one-byte string pointer as the Mixed low payload word
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass the one-byte string length as the Mixed high payload word
+            ctx.emitter.instruction("mov eax, 1");                              // select runtime tag 1 for the one-byte string
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip false boxing after building the string result
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("xor edi, edi");                            // use zero as the false payload for fgetc EOF
+            ctx.emitter.instruction("xor esi, esi");                            // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov eax, 3");                              // select runtime tag 3 for boolean false
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
+    }
 }
 
 /// Boxes an `fopen()` descriptor as a PHP resource or PHP false on failure.
