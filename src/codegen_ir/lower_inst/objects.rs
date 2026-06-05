@@ -10,8 +10,8 @@
 //!   heap kind word before payload, class id at payload offset 0, then 16 bytes
 //!   per declared property slot.
 //! - This slice intentionally rejects dynamic properties, references, interface
-//!   method metadata, and non-literal default property expressions until their
-//!   runtime paths land.
+//!   method entries that need missing EIR symbols, and non-literal default
+//!   property expressions until their runtime paths land.
 
 use std::collections::HashSet;
 
@@ -20,7 +20,7 @@ use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
 use crate::names::{method_symbol, php_symbol_key};
-use crate::types::PhpType;
+use crate::types::{ClassInfo, InterfaceInfo, PhpType};
 
 use super::super::context::FunctionContext;
 use super::{
@@ -71,11 +71,15 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             .class_infos
             .get(&class_name)
             .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
-        if class_info.allow_dynamic_properties
-            || class_interfaces_require_method_metadata(ctx, class_info)
-        {
+        if class_info.allow_dynamic_properties {
             return Err(CodegenIrError::unsupported(format!(
-                "object allocation requiring dynamic or interface method metadata for {}",
+                "object allocation requiring dynamic properties for {}",
+                class_name
+            )));
+        }
+        if class_interfaces_require_missing_method_symbols(ctx, &class_name, class_info) {
+            return Err(CodegenIrError::unsupported(format!(
+                "object allocation requiring interface method symbols not emitted by EIR for {}",
                 class_name
             )));
         }
@@ -94,6 +98,12 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
                 .get(&constructor_key)
                 .cloned()
                 .unwrap_or_else(|| class_name.clone());
+            if !class_method_already_emitted(ctx, &impl_class, &constructor_key, false) {
+                return Err(CodegenIrError::unsupported(format!(
+                    "constructor call to {}::__construct without an emitted EIR method body",
+                    impl_class
+                )));
+            }
             let param_types = constructor
                 .params
                 .iter()
@@ -144,7 +154,7 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
 
 /// Collects literal defaults that can be copied directly into object property slots.
 fn collect_property_defaults(
-    class_info: &crate::types::ClassInfo,
+    class_info: &ClassInfo,
     inst: &Instruction,
 ) -> Result<Vec<PropertyDefault>> {
     let mut defaults = Vec::new();
@@ -685,10 +695,12 @@ fn emit_object_allocation(
 }
 
 /// Returns true when implemented interfaces require method-wrapper metadata not emitted here.
-fn class_interfaces_require_method_metadata(
+fn class_interfaces_require_missing_method_symbols(
     ctx: &FunctionContext<'_>,
-    class_info: &crate::types::ClassInfo,
+    class_name: &str,
+    class_info: &ClassInfo,
 ) -> bool {
+    let emitted_methods = emitted_instance_method_keys(ctx);
     let mut seen = HashSet::new();
     let mut stack = class_info.interfaces.iter().map(String::as_str).collect::<Vec<_>>();
     while let Some(interface_name) = stack.pop() {
@@ -698,7 +710,13 @@ fn class_interfaces_require_method_metadata(
         let Some(interface_info) = ctx.module.interface_infos.get(interface_name) else {
             return true;
         };
-        if !interface_info.method_order.is_empty() {
+        if interface_requires_missing_method_symbol(
+            ctx,
+            class_name,
+            class_info,
+            interface_info,
+            &emitted_methods,
+        ) {
             return true;
         }
         stack.extend(interface_info.parents.iter().map(String::as_str));
@@ -706,8 +724,86 @@ fn class_interfaces_require_method_metadata(
     false
 }
 
+/// Returns true when one interface table entry would point at an unavailable symbol.
+fn interface_requires_missing_method_symbol(
+    ctx: &FunctionContext<'_>,
+    fallback_class: &str,
+    class_info: &ClassInfo,
+    interface_info: &InterfaceInfo,
+    emitted_methods: &HashSet<(String, String)>,
+) -> bool {
+    for method_name in &interface_info.method_order {
+        let impl_class = class_info
+            .method_impl_classes
+            .get(method_name)
+            .map(String::as_str)
+            .unwrap_or(fallback_class);
+        if interface_method_needs_return_wrapper(ctx, interface_info, method_name, impl_class) {
+            return true;
+        }
+        if !emitted_methods.contains(&(impl_class.to_string(), method_name.clone())) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Returns true when an interface entry would need a return boxing wrapper.
+fn interface_method_needs_return_wrapper(
+    ctx: &FunctionContext<'_>,
+    interface_info: &InterfaceInfo,
+    method_name: &str,
+    impl_class: &str,
+) -> bool {
+    let Some(interface_sig) = interface_info.methods.get(method_name) else {
+        return false;
+    };
+    let Some(actual_sig) = ctx
+        .module
+        .class_infos
+        .get(impl_class)
+        .and_then(|class_info| class_info.methods.get(method_name))
+    else {
+        return true;
+    };
+    matches!(interface_sig.return_type.codegen_repr(), PhpType::Mixed)
+        && !matches!(actual_sig.return_type.codegen_repr(), PhpType::Mixed)
+}
+
+/// Returns instance-method keys emitted by the EIR backend.
+fn emitted_instance_method_keys(ctx: &FunctionContext<'_>) -> HashSet<(String, String)> {
+    ctx.module
+        .class_methods
+        .iter()
+        .filter(|function| !function.flags.is_static)
+        .filter_map(|function| {
+            let (class_name, method_name) = function.name.rsplit_once("::")?;
+            Some((class_name.to_string(), php_symbol_key(method_name)))
+        })
+        .collect()
+}
+
+/// Returns true when the current EIR module includes a class method body.
+fn class_method_already_emitted(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    method_key: &str,
+    is_static: bool,
+) -> bool {
+    ctx.module.class_methods.iter().any(|function| {
+        function.flags.is_static == is_static
+            && function
+                .name
+                .rsplit_once("::")
+                .is_some_and(|(candidate_class, candidate_method)| {
+                    candidate_class == class_name
+                        && php_symbol_key(candidate_method) == method_key
+                })
+    })
+}
+
 /// Collects property high-word offsets that should start with the typed-property sentinel.
-fn uninitialized_property_marker_offsets(class_info: &crate::types::ClassInfo) -> Vec<usize> {
+fn uninitialized_property_marker_offsets(class_info: &ClassInfo) -> Vec<usize> {
     class_info
         .properties
         .iter()
@@ -1364,17 +1460,9 @@ fn classify_named_target(
 fn reject_interface_method_metadata_target(ctx: &FunctionContext<'_>, class_name: &str) -> Result<()> {
     let normalized = class_name.trim_start_matches('\\');
     if let Some(class_info) = ctx.module.class_infos.get(normalized) {
-        if class_interfaces_require_method_metadata(ctx, class_info) {
+        if class_interfaces_require_missing_method_symbols(ctx, normalized, class_info) {
             return Err(CodegenIrError::unsupported(format!(
-                "instanceof target with interface method metadata {}",
-                normalized
-            )));
-        }
-    }
-    if let Some(interface_info) = ctx.module.interface_infos.get(normalized) {
-        if !interface_info.method_order.is_empty() {
-            return Err(CodegenIrError::unsupported(format!(
-                "instanceof interface target with method metadata {}",
+                "instanceof target with interface method symbols not emitted by EIR {}",
                 normalized
             )));
         }

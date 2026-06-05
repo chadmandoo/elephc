@@ -11,7 +11,7 @@
 
 use crate::codegen::platform::Target;
 use crate::ir::{
-    validate_module, ExternDecl, ExternParamDecl, IrType, Module,
+    validate_module, ExternDecl, ExternParamDecl, Immediate, IrType, Module, Op,
 };
 use crate::ir_lower::{function, LoweringError};
 use crate::parser::ast::{ClassMethod, ExprKind, Program, Stmt, StmtKind};
@@ -30,6 +30,7 @@ pub(crate) fn lower(
     lower_class_like_methods(program, &mut module, check_result, &constants);
     lower_builtin_reflection_methods(&mut module, check_result, &constants);
     function::lower_main(program, &mut module, check_result, &constants);
+    lower_referenced_builtin_spl_methods(&mut module, check_result, &constants);
     validate_module(&module)?;
     Ok(module)
 }
@@ -338,4 +339,157 @@ fn lower_builtin_reflection_class_methods(
             constants,
         );
     }
+}
+
+/// Lowers the small builtin SPL method slice currently consumed by the EIR backend.
+fn lower_referenced_builtin_spl_methods(
+    module: &mut Module,
+    check_result: &CheckResult,
+    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
+) {
+    let mut methods = referenced_builtin_spl_methods(module);
+    methods.sort();
+    methods.dedup();
+    for (class_name, method_key) in methods {
+        lower_builtin_spl_method(&class_name, &method_key, module, check_result, constants);
+    }
+}
+
+/// Finds builtin SPL methods whose symbols are required by already-lowered EIR.
+fn referenced_builtin_spl_methods(module: &Module) -> Vec<(String, String)> {
+    let mut methods = Vec::new();
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        for inst in &function.instructions {
+            match inst.op {
+                Op::ObjectNew => {
+                    if class_data_name(module, inst) == Some("SplFileInfo") {
+                        methods.push(("SplFileInfo".to_string(), php_method_key("__construct")));
+                        methods.push(("SplFileInfo".to_string(), php_method_key("__toString")));
+                    }
+                }
+                Op::MethodCall | Op::NullsafeMethodCall => {
+                    let Some(receiver) = inst.operands.first().copied() else {
+                        continue;
+                    };
+                    let Some(receiver_ty) = function
+                        .value(receiver)
+                        .map(|value| value.php_type.codegen_repr())
+                    else {
+                        continue;
+                    };
+                    let PhpType::Object(class_name) = receiver_ty else {
+                        continue;
+                    };
+                    let normalized = class_name.trim_start_matches('\\');
+                    let Some(method_name) = string_data_name(module, inst) else {
+                        continue;
+                    };
+                    let method_key = php_method_key(method_name);
+                    if is_supported_builtin_spl_method(normalized, &method_key) {
+                        methods.push((normalized.to_string(), method_key));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    methods
+}
+
+/// Returns the class-name immediate attached to an instruction.
+fn class_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    module
+        .data
+        .class_names
+        .get(data.as_raw() as usize)
+        .map(String::as_str)
+}
+
+/// Returns the string immediate attached to an instruction.
+fn string_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .map(String::as_str)
+}
+
+/// Normalizes a PHP method name for metadata lookups.
+fn php_method_key(method_name: &str) -> String {
+    crate::names::php_symbol_key(method_name)
+}
+
+/// Returns true for builtin SPL methods intentionally lowered into EIR today.
+fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
+    class_name == "SplFileInfo"
+        && matches!(method_key, "__construct" | "__tostring" | "getpathname")
+}
+
+/// Lowers one supported builtin SPL method body if it has not already been emitted.
+fn lower_builtin_spl_method(
+    class_name: &str,
+    method_key: &str,
+    module: &mut Module,
+    check_result: &CheckResult,
+    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
+) {
+    if class_method_already_lowered(module, class_name, method_key, false)
+        || !is_supported_builtin_spl_method(class_name, method_key)
+    {
+        return;
+    }
+    let Some(class_info) = check_result.classes.get(class_name) else {
+        return;
+    };
+    let Some(method) = class_info
+        .method_decls
+        .iter()
+        .find(|method| php_method_key(&method.name) == method_key && method.has_body)
+    else {
+        return;
+    };
+    function::lower_class_method(
+        class_name,
+        &method.name,
+        method.is_static,
+        &method.params,
+        method.return_type.as_ref(),
+        &method.body,
+        module,
+        check_result,
+        constants,
+    );
+}
+
+/// Returns true when `module.class_methods` already contains a class-method body.
+fn class_method_already_lowered(
+    module: &Module,
+    class_name: &str,
+    method_key: &str,
+    is_static: bool,
+) -> bool {
+    module.class_methods.iter().any(|function| {
+        function.flags.is_static == is_static
+            && function
+                .name
+                .rsplit_once("::")
+                .is_some_and(|(candidate_class, candidate_method)| {
+                    candidate_class == class_name && php_method_key(candidate_method) == method_key
+                })
+    })
 }

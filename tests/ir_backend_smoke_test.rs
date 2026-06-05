@@ -2289,6 +2289,24 @@ echo $box->i;
     );
 }
 
+/// Verifies the EIR backend lowers the currently supported `SplFileInfo` method slice.
+#[test]
+fn ir_backend_handles_spl_file_info_basics() {
+    let source = r#"<?php
+$info = new SplFileInfo(".");
+echo $info->getPathname();
+echo ":";
+echo $info->__toString();
+echo ":";
+echo ($info instanceof SplFileInfo) ? "C" : "x";
+echo ($info instanceof Stringable) ? "I" : "x";
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("spl_file_info_basics", source),
+        ".:.:CI"
+    );
+}
+
 /// Verifies typed declared properties still fatal when read before initialization.
 #[test]
 fn ir_backend_fatals_on_uninitialized_typed_object_property() {

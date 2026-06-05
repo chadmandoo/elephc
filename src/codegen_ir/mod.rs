@@ -105,13 +105,14 @@ fn finalize_user_asm(module: &Module, emitter: Emitter, data: DataSection) -> St
     let empty_variant_groups = HashSet::<String>::new();
     let allowed_class_names = runtime_referenced_class_names(module);
     let runtime_interfaces = runtime_referenced_interfaces(module, &allowed_class_names);
+    let runtime_classes = runtime_class_infos(module);
     let user_data = runtime::emit_runtime_data_user(
         &empty_globals,
         &empty_static_vars,
         &empty_functions,
         &empty_variant_groups,
         &runtime_interfaces,
-        &module.class_infos,
+        &runtime_classes,
         &module.enum_infos,
         Some(&allowed_class_names),
     );
@@ -124,6 +125,23 @@ fn finalize_user_asm(module: &Module, emitter: Emitter, data: DataSection) -> St
     user_asm.push('\n');
     user_asm.push_str(&user_data);
     user_asm
+}
+
+/// Returns class metadata trimmed to method symbols emitted by the EIR backend.
+fn runtime_class_infos(module: &Module) -> HashMap<String, ClassInfo> {
+    let emitted_methods = emitted_class_method_keys(module);
+    let mut classes = module.class_infos.clone();
+    for class_info in classes.values_mut() {
+        class_info.method_impl_classes.retain(|method_name, impl_class| {
+            emitted_methods.contains(&(impl_class.clone(), method_name.clone(), false))
+        });
+        class_info
+            .static_method_impl_classes
+            .retain(|method_name, impl_class| {
+                emitted_methods.contains(&(impl_class.clone(), method_name.clone(), true))
+            });
+    }
+    classes
 }
 
 /// Returns classes that EIR object allocation or named `instanceof` can reference at runtime.

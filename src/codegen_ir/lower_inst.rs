@@ -543,6 +543,12 @@ fn resolve_method_call_target(
         .get(&method_key)
         .cloned()
         .unwrap_or_else(|| normalized.to_string());
+    if !class_method_already_emitted(ctx, &impl_class, &method_key, false) {
+        return Err(CodegenIrError::unsupported(format!(
+            "method call to {}::{} without an emitted EIR method body",
+            impl_class, method_name
+        )));
+    }
     Ok(MethodCallTarget {
         impl_class,
         method_key,
@@ -552,6 +558,25 @@ fn resolve_method_call_target(
             .map(|(_, ty)| ty.codegen_repr())
             .collect(),
         return_ty: callee_sig.return_type.clone(),
+    })
+}
+
+/// Returns true when the current EIR module includes the target class method body.
+fn class_method_already_emitted(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    method_key: &str,
+    is_static: bool,
+) -> bool {
+    ctx.module.class_methods.iter().any(|function| {
+        function.flags.is_static == is_static
+            && function
+                .name
+                .rsplit_once("::")
+                .is_some_and(|(candidate_class, candidate_method)| {
+                    candidate_class == class_name
+                        && php_symbol_key(candidate_method) == method_key
+                })
     })
 }
 

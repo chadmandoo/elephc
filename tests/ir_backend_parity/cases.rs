@@ -671,6 +671,24 @@ $propertyAttrs[0]->newInstance();
     );
 }
 
+/// Verifies the supported `SplFileInfo` EIR slice matches the legacy backend.
+#[test]
+fn parity_spl_file_info_basics() {
+    assert_backend_parity(
+        "spl_file_info_basics",
+        r#"<?php
+$info = new SplFileInfo(".");
+echo $info->getPathname();
+echo ":";
+echo $info->__toString();
+echo ":";
+echo ($info instanceof SplFileInfo) ? "C" : "x";
+echo ($info instanceof Stringable) ? "I" : "x";
+"#,
+        &[],
+    );
+}
+
 /// Compiles and runs a PHP snippet through both backends and compares stdout.
 fn assert_backend_parity(name: &str, source: &str, args: &[&str]) {
     let legacy = compile_and_run_backend(name, source, args, Backend::Legacy);
