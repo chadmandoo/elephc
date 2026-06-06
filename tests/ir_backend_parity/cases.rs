@@ -72,6 +72,25 @@ foreach ($c as $value) { echo $value; }
     );
 }
 
+/// Verifies generator construction, iterator protocol calls, and shadowed receiver foreach match the legacy backend.
+#[test]
+fn parity_generator_foreach_protocol() {
+    assert_backend_parity(
+        "generator_foreach_protocol",
+        r#"<?php
+function gen() {
+    yield 10;
+    yield 20;
+}
+$g = gen();
+foreach ($g as $g) {
+    echo $g . ",";
+}
+"#,
+        &[],
+    );
+}
+
 /// Verifies recent static callable fixes match the legacy backend behavior.
 #[test]
 fn parity_static_callable_checks() {

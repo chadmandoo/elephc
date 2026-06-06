@@ -15,6 +15,7 @@ use crate::codegen::context::{
     TRY_HANDLER_JMP_BUF_OFFSET,
 };
 use crate::codegen::platform::Arch;
+use crate::intrinsics::{IntrinsicCall, IntrinsicCallKind};
 use crate::ir::{
     BlockId, CmpPredicate, Immediate, InstId, Instruction, LocalSlotId, Op, Ownership, ValueDef,
     ValueId,
@@ -1121,6 +1122,9 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     if let Some(state) = fiber_state_predicate(&class_name, &method_name) {
         return lower_fiber_state_predicate(ctx, inst, object, state);
     }
+    if let Some(intrinsic) = generator_intrinsic(&class_name, &method_name) {
+        return lower_generator_intrinsic(ctx, inst, intrinsic);
+    }
     if is_fiber_start_call(&class_name, &method_name) {
         return lower_fiber_start(ctx, inst, object);
     }
@@ -1152,6 +1156,61 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
     store_call_result(ctx, inst, &target.return_ty)?;
     emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
+}
+
+/// Returns the direct runtime intrinsic for built-in `Generator` instance methods.
+fn generator_intrinsic(class_name: &str, method_name: &str) -> Option<IntrinsicCall> {
+    if class_name.trim_start_matches('\\') != "Generator" {
+        return None;
+    }
+    IntrinsicCall::instance_method("Generator", method_name)
+}
+
+/// Lowers built-in `Generator` methods to their runtime helpers.
+fn lower_generator_intrinsic(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    intrinsic: IntrinsicCall,
+) -> Result<()> {
+    let param_types = generator_intrinsic_param_types(intrinsic);
+    let ref_params = vec![false; param_types.len()];
+    let call_args =
+        materialize_direct_call_args_with_refs(ctx, &inst.operands, &param_types, &ref_params)?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
+    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    let helper = intrinsic.runtime_helper().ok_or_else(|| {
+        CodegenIrError::invalid_module(format!(
+            "Generator intrinsic {:?} has no runtime helper",
+            intrinsic.kind()
+        ))
+    })?;
+    abi::emit_call_label(ctx.emitter, helper);
+    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    store_call_result(ctx, inst, &generator_intrinsic_return_type(intrinsic))?;
+    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
+}
+
+/// Returns ABI-visible parameter types for a `Generator` intrinsic call.
+fn generator_intrinsic_param_types(intrinsic: IntrinsicCall) -> Vec<PhpType> {
+    let mut params = vec![PhpType::Object("Generator".to_string())];
+    match intrinsic.kind() {
+        IntrinsicCallKind::GeneratorSend => params.push(PhpType::Mixed),
+        IntrinsicCallKind::GeneratorThrow => {
+            params.push(PhpType::Object("Throwable".to_string()));
+        }
+        _ => {}
+    }
+    params
+}
+
+/// Returns the PHP result type produced by a `Generator` runtime helper.
+fn generator_intrinsic_return_type(intrinsic: IntrinsicCall) -> PhpType {
+    match intrinsic.kind() {
+        IntrinsicCallKind::GeneratorValid => PhpType::Bool,
+        IntrinsicCallKind::GeneratorNext | IntrinsicCallKind::GeneratorRewind => PhpType::Void,
+        _ => PhpType::Mixed,
+    }
 }
 
 /// Returns true when a direct method call can read PHP's compact Throwable payload.
@@ -2575,6 +2634,11 @@ fn coerce_loaded_local_to_result_type(
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
             Ok(())
         }
+        (PhpType::Mixed, PhpType::Object(_)) => {
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
+            Ok(())
+        }
         (PhpType::Mixed, PhpType::Void) => {
             abi::emit_load_int_immediate(
                 ctx.emitter,
@@ -2607,7 +2671,6 @@ fn local_load_types_share_storage(source_ty: &PhpType, result_ty: &PhpType) -> b
             PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never
         ) | (PhpType::Array(_), PhpType::Array(_))
             | (PhpType::AssocArray { .. }, PhpType::AssocArray { .. })
-            | (PhpType::Mixed, PhpType::Object(_))
     )
 }
 

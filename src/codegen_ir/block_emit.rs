@@ -20,11 +20,11 @@ use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::ir::{BasicBlock, Function, Module};
 use crate::names::{
-    enum_case_symbol, function_epilogue_symbol, method_symbol, php_symbol_key, static_method_symbol,
-    static_property_symbol,
+    enum_case_symbol, function_epilogue_symbol, function_symbol, method_symbol, php_symbol_key,
+    static_method_symbol, static_property_symbol,
 };
 use crate::parser::ast::ExprKind;
-use crate::types::{EnumCaseInfo, EnumCaseValue, PhpType};
+use crate::types::{EnumCaseInfo, EnumCaseValue, FunctionSig, PhpType};
 
 use super::context::FunctionContext;
 use super::fibers;
@@ -120,6 +120,10 @@ fn emit_user_function(
     emitter: &mut Emitter,
     data: &mut DataSection,
 ) -> Result<()> {
+    if function.flags.is_generator {
+        let entry_label = function_symbol(&function.name);
+        return emit_generator_function(module, function, &entry_label, emitter, data);
+    }
     let layout = frame::layout_for_function(function);
     let epilogue_label = function_epilogue_symbol(&function.name);
     let mut ctx = FunctionContext::new(
@@ -146,8 +150,11 @@ fn emit_class_method(
     emitter: &mut Emitter,
     data: &mut DataSection,
 ) -> Result<()> {
-    let layout = frame::layout_for_function(function);
     let entry_label = class_method_entry_symbol(function)?;
+    if function.flags.is_generator {
+        return emit_generator_function(module, function, &entry_label, emitter, data);
+    }
+    let layout = frame::layout_for_function(function);
     let epilogue_label = format!("{}_epilogue", entry_label);
     let mut ctx = FunctionContext::new(
         module,
@@ -164,6 +171,86 @@ fn emit_class_method(
     emit_blocks(&mut ctx)?;
     frame::emit_function_epilogue(&mut ctx);
     Ok(())
+}
+
+/// Emits a generator wrapper/resume pair from source metadata carried by the EIR function.
+fn emit_generator_function(
+    module: &Module,
+    function: &Function,
+    entry_label: &str,
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+) -> Result<()> {
+    let source = function.generator_source.as_ref().ok_or_else(|| {
+        CodegenIrError::invalid_module(format!(
+            "generator function '{}' is missing retained source metadata",
+            function.name
+        ))
+    })?;
+    let signature = generator_signature(function, source.visible_param_count);
+    let hidden_params = generator_hidden_params(function, source.visible_param_count);
+    crate::codegen::emit_generator_with_label(
+        emitter,
+        data,
+        entry_label,
+        &signature,
+        &hidden_params,
+        &source.body,
+        Some(&module.class_infos),
+    );
+    Ok(())
+}
+
+/// Rebuilds the visible generator signature from EIR parameter metadata.
+fn generator_signature(function: &Function, visible_param_count: usize) -> FunctionSig {
+    FunctionSig {
+        params: function
+            .params
+            .iter()
+            .take(visible_param_count)
+            .map(|param| (param.name.clone(), param.php_type.clone()))
+            .collect(),
+        defaults: function
+            .params
+            .iter()
+            .take(visible_param_count)
+            .map(|_| None)
+            .collect(),
+        return_type: function.return_php_type.clone(),
+        declared_return: !matches!(function.return_php_type, PhpType::Mixed),
+        ref_params: function
+            .params
+            .iter()
+            .take(visible_param_count)
+            .map(|param| param.by_ref)
+            .collect(),
+        declared_params: function
+            .params
+            .iter()
+            .take(visible_param_count)
+            .map(|param| !matches!(param.php_type, PhpType::Mixed))
+            .collect(),
+        variadic: function
+            .params
+            .iter()
+            .take(visible_param_count)
+            .find(|param| param.variadic)
+            .map(|param| param.name.clone()),
+        deprecation: None,
+    }
+}
+
+/// Returns hidden generator parameters such as closure captures.
+fn generator_hidden_params(
+    function: &Function,
+    visible_param_count: usize,
+) -> Vec<(String, PhpType, bool)> {
+    function
+        .params
+        .iter()
+        .skip(visible_param_count)
+        .map(|param| (param.name.clone(), param.php_type.clone(), param.by_ref))
+        .collect()
 }
 
 /// Returns the runtime metadata entry label for an EIR class-method function.

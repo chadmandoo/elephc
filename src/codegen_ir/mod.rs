@@ -141,6 +141,9 @@ fn runtime_class_infos(module: &Module) -> HashMap<String, ClassInfo> {
 /// Returns classes that EIR object allocation or named `instanceof` can reference at runtime.
 fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
     let mut names = HashSet::new();
+    if module_contains_generator(module) {
+        names.insert("Generator".to_string());
+    }
     if module_uses_dynamic_instanceof(module) {
         names.extend(dynamic_instanceof_class_names(module));
     }
@@ -176,6 +179,20 @@ fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
     }
     expand_class_dependencies(&mut names, &module.class_infos);
     names
+}
+
+/// Returns true when any EIR function is emitted through the generator bridge.
+fn module_contains_generator(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+        .any(|function| function.flags.is_generator)
 }
 
 /// Returns interface metadata needed by named `instanceof` and emitted class metadata.

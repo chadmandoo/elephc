@@ -30,13 +30,16 @@ const ITER_VALUE_TAG_OFFSET_DELTA: usize = 48;
 enum IteratorSourceKind {
     Indexed { elem: PhpType },
     Hash,
-    Object { class_name: String },
+    Object {
+        class_name: String,
+        aggregate_class_name: Option<String>,
+    },
 }
 
 /// Lowers iterator initialization by storing the source pointer and initial cursor.
 pub(super) fn lower_iter_start(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let source = expect_operand(inst, 0)?;
-    let source_kind = iterator_source_kind_from_type(&ctx.value_php_type(source)?, inst)?;
+    let source_kind = iterator_source_kind_from_type(ctx, &ctx.value_php_type(source)?, inst)?;
     let result = inst.result.ok_or_else(|| {
         CodegenIrError::invalid_module("iter_start missing result value".to_string())
     })?;
@@ -44,14 +47,29 @@ pub(super) fn lower_iter_start(ctx: &mut FunctionContext<'_>, inst: &Instruction
     let result_reg = abi::int_result_reg(ctx.emitter);
     ctx.load_value_to_reg(source, result_reg)?;
     abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_SOURCE_OFFSET_DELTA);
+    if let IteratorSourceKind::Object {
+        class_name,
+        aggregate_class_name: None,
+    } = &source_kind
+    {
+        abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Object(class_name.clone()));
+    }
     let initial_cursor = match &source_kind {
         IteratorSourceKind::Indexed { .. } => -1,
         IteratorSourceKind::Hash => 0,
         IteratorSourceKind::Object { .. } => 0,
     };
+    if let IteratorSourceKind::Object {
+        aggregate_class_name: Some(aggregate_class_name),
+        ..
+    } = &source_kind
+    {
+        emit_object_iterator_method_call(ctx, offset, aggregate_class_name, "getIterator")?;
+        abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_SOURCE_OFFSET_DELTA);
+    }
     abi::emit_load_int_immediate(ctx.emitter, result_reg, initial_cursor);
     abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_CURSOR_OFFSET_DELTA);
-    if let IteratorSourceKind::Object { class_name } = source_kind {
+    if let IteratorSourceKind::Object { class_name, .. } = source_kind {
         emit_object_iterator_method_call(ctx, offset, &class_name, "rewind")?;
     }
     Ok(())
@@ -70,7 +88,7 @@ pub(super) fn lower_iter_next(ctx: &mut FunctionContext<'_>, inst: &Instruction)
             Arch::AArch64 => lower_hash_iter_next_aarch64(ctx, offset),
             Arch::X86_64 => lower_hash_iter_next_x86_64(ctx, offset),
         },
-        IteratorSourceKind::Object { class_name } => {
+        IteratorSourceKind::Object { class_name, .. } => {
             lower_object_iter_next(ctx, offset, &class_name)?;
         }
     }
@@ -94,7 +112,7 @@ pub(super) fn lower_iter_current_key(
             Arch::AArch64 => load_current_hash_key_as_mixed_aarch64(ctx, offset),
             Arch::X86_64 => load_current_hash_key_as_mixed_x86_64(ctx, offset),
         },
-        IteratorSourceKind::Object { class_name } => {
+        IteratorSourceKind::Object { class_name, .. } => {
             emit_object_iterator_method_call(ctx, offset, &class_name, "key")?;
         }
     }
@@ -120,7 +138,7 @@ pub(super) fn lower_iter_current_value(
             Arch::AArch64 => load_current_hash_value_as_mixed_aarch64(ctx, offset),
             Arch::X86_64 => load_current_hash_value_as_mixed_x86_64(ctx, offset),
         },
-        IteratorSourceKind::Object { class_name } => {
+        IteratorSourceKind::Object { class_name, .. } => {
             emit_object_iterator_method_call(ctx, offset, &class_name, "current")?;
         }
     }
@@ -164,6 +182,10 @@ fn emit_object_iterator_method_call(
     method_name: &str,
 ) -> Result<()> {
     let method_key = php_symbol_key(method_name);
+    if let Some(helper) = generator_iterator_runtime_helper(class_name, &method_key) {
+        emit_generator_iterator_runtime_call(ctx, offset, helper);
+        return Ok(());
+    }
     let target = object_iterator_method_target(ctx, class_name, &method_key)?;
     let assignments = abi::build_outgoing_arg_assignments_for_target(
         ctx.emitter.target,
@@ -180,6 +202,32 @@ fn emit_object_iterator_method_call(
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
     Ok(())
+}
+
+/// Returns the runtime helper for `Generator` methods used by object iterator lowering.
+fn generator_iterator_runtime_helper(class_name: &str, method_key: &str) -> Option<&'static str> {
+    if class_name.trim_start_matches('\\') != "Generator" {
+        return None;
+    }
+    match method_key {
+        "rewind" => Some("__rt_gen_rewind"),
+        "current" => Some("__rt_gen_current"),
+        "key" => Some("__rt_gen_key"),
+        "next" => Some("__rt_gen_next"),
+        "valid" => Some("__rt_gen_valid"),
+        _ => None,
+    }
+}
+
+/// Emits a direct `Generator` runtime call for foreach iterator protocol methods.
+fn emit_generator_iterator_runtime_call(
+    ctx: &mut FunctionContext<'_>,
+    offset: usize,
+    helper: &str,
+) {
+    let receiver_arg = abi::int_arg_reg_name(ctx.emitter.target, 0);
+    abi::load_at_offset(ctx.emitter, receiver_arg, offset - ITER_SOURCE_OFFSET_DELTA);
+    abi::emit_call_label(ctx.emitter, helper);
 }
 
 /// Resolves the concrete implementation class for an object iterator method.
@@ -464,7 +512,7 @@ fn iterator_source_kind(
     iterator: ValueId,
     inst: &Instruction,
 ) -> Result<IteratorSourceKind> {
-    iterator_source_kind_from_type(&iterator_source_type(ctx, iterator, inst)?, inst)
+    iterator_source_kind_from_type(ctx, &iterator_source_type(ctx, iterator, inst)?, inst)
 }
 
 /// Returns the source PHP type referenced by an `IterStart` result value.
@@ -512,15 +560,98 @@ fn iterator_source_value(
 }
 
 /// Classifies iterator sources whose storage layouts are handled here.
-fn iterator_source_kind_from_type(ty: &PhpType, inst: &Instruction) -> Result<IteratorSourceKind> {
+fn iterator_source_kind_from_type(
+    ctx: &FunctionContext<'_>,
+    ty: &PhpType,
+    inst: &Instruction,
+) -> Result<IteratorSourceKind> {
     match ty.codegen_repr() {
         PhpType::Array(elem) => Ok(IteratorSourceKind::Indexed { elem: elem.codegen_repr() }),
         PhpType::AssocArray { .. } => Ok(IteratorSourceKind::Hash),
-        PhpType::Object(class_name) => Ok(IteratorSourceKind::Object { class_name }),
+        PhpType::Object(class_name) => {
+            let (class_name, aggregate_class_name) =
+                object_iterator_source_class(ctx, class_name.trim_start_matches('\\'));
+            Ok(IteratorSourceKind::Object {
+                class_name,
+                aggregate_class_name,
+            })
+        }
         other => Err(CodegenIrError::unsupported(format!(
             "{} over PHP type {:?}",
             inst.op.name(),
             other
         ))),
     }
+}
+
+/// Returns the concrete iterator class for an object source and the aggregate class to normalize, if any.
+fn object_iterator_source_class(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+) -> (String, Option<String>) {
+    if class_implements_interface(ctx, class_name, "Iterator") {
+        return (class_name.to_string(), None);
+    }
+    if !class_implements_interface(ctx, class_name, "IteratorAggregate") {
+        return (class_name.to_string(), None);
+    }
+    match iterator_method_return_type(ctx, class_name, "getIterator") {
+        PhpType::Object(iterator_class) => {
+            (iterator_class.trim_start_matches('\\').to_string(), Some(class_name.to_string()))
+        }
+        _ => (class_name.to_string(), None),
+    }
+}
+
+/// Returns the declared return type for a no-arg iterator protocol method.
+fn iterator_method_return_type(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    method_name: &str,
+) -> PhpType {
+    let method_key = php_symbol_key(method_name);
+    ctx.module
+        .class_infos
+        .get(class_name)
+        .and_then(|class_info| class_info.methods.get(&method_key))
+        .map(|sig| sig.return_type.clone())
+        .unwrap_or(PhpType::Mixed)
+}
+
+/// Returns true when a class implements or inherits an implementation of an interface.
+fn class_implements_interface(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    interface_name: &str,
+) -> bool {
+    let Some(class_info) = ctx.module.class_infos.get(class_name) else {
+        return false;
+    };
+    class_info.interfaces.iter().any(|implemented| {
+        normalized_type_name(implemented) == interface_name
+            || interface_extends_interface(ctx, normalized_type_name(implemented), interface_name)
+    })
+}
+
+/// Returns true when an interface extends the requested ancestor interface.
+fn interface_extends_interface(
+    ctx: &FunctionContext<'_>,
+    interface_name: &str,
+    ancestor_name: &str,
+) -> bool {
+    if interface_name == ancestor_name {
+        return true;
+    }
+    let Some(interface_info) = ctx.module.interface_infos.get(interface_name) else {
+        return false;
+    };
+    interface_info.parents.iter().any(|parent| {
+        normalized_type_name(parent) == ancestor_name
+            || interface_extends_interface(ctx, normalized_type_name(parent), ancestor_name)
+    })
+}
+
+/// Returns a class-like name without PHP's optional leading namespace separator.
+fn normalized_type_name(name: &str) -> &str {
+    name.trim_start_matches('\\')
 }

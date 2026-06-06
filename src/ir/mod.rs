@@ -27,7 +27,8 @@ pub use block::{BasicBlock, BlockId, SwitchCase, Terminator};
 pub use builder::Builder;
 pub use effects::Effects;
 pub use function::{
-    Function, FunctionFlags, FunctionId, FunctionParam, LocalKind, LocalSlot, LocalSlotId,
+    Function, FunctionFlags, FunctionId, FunctionParam, GeneratorSource, LocalKind, LocalSlot,
+    LocalSlotId,
 };
 pub use instr::{
     BuiltinId, CmpPredicate, Immediate, InstId, Instruction, MixedNumericOp, Op, RuntimeId,

@@ -13,6 +13,7 @@ use crate::ir::block::{BasicBlock, BlockId};
 use crate::ir::instr::{InstId, Instruction};
 use crate::ir::types::IrType;
 use crate::ir::value::{Value, ValueId};
+use crate::parser::ast::Stmt;
 use crate::types::PhpType;
 
 /// Module-local identifier for an EIR function.
@@ -61,6 +62,7 @@ pub struct Function {
     pub instructions: Vec<Instruction>,
     pub entry: BlockId,
     pub source_signature: Option<String>,
+    pub generator_source: Option<GeneratorSource>,
     pub flags: FunctionFlags,
 }
 
@@ -79,6 +81,7 @@ impl Function {
             instructions: Vec::new(),
             entry: BlockId::from_raw(0),
             source_signature: None,
+            generator_source: None,
             flags: FunctionFlags::default(),
         }
     }
@@ -120,6 +123,13 @@ impl Function {
     pub fn set_id(&mut self, id: FunctionId) {
         self.id = id;
     }
+}
+
+/// Source metadata retained for generator functions during the Phase 04 EIR backend bridge.
+#[derive(Debug, Clone)]
+pub struct GeneratorSource {
+    pub body: Vec<Stmt>,
+    pub visible_param_count: usize,
 }
 
 /// Caller-visible function parameter metadata.

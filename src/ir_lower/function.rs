@@ -10,8 +10,8 @@
 //! - Every lowered function leaves all blocks terminated before validation.
 
 use crate::ir::{
-    Builder, Function, FunctionFlags, FunctionParam, Immediate, IrType, Module, Op, Ownership,
-    Terminator,
+    Builder, Function, FunctionFlags, FunctionParam, GeneratorSource, Immediate, IrType, Module,
+    Op, Ownership, Terminator,
 };
 use crate::ir_lower::context::{
     return_ir_type, type_expr_to_php_type, value_ir_type, ClosureCapture, LoweringContext,
@@ -185,6 +185,7 @@ pub(crate) fn lower_user_function(
     );
     function.params = function_params(signature);
     function.source_signature = Some(source_signature(name, signature));
+    attach_generator_source_if_needed(&mut function, body, signature.params.len());
     let closures = lower_body_into_function(
         &mut function,
         &mut module.data,
@@ -266,6 +267,7 @@ pub(crate) fn lower_class_method(
         body_params.insert(0, ("this".to_string(), this_type));
     }
     function.params.extend(function_params(signature));
+    attach_generator_source_if_needed(&mut function, body, body_params.len());
     let closures = lower_body_into_function(
         &mut function,
         &mut module.data,
@@ -366,6 +368,7 @@ fn lower_closure_function_with_signature(
     function.params = function_params(&signature);
     function.params.extend(closure_capture_params(captures));
     function.source_signature = Some(source_signature(name, &signature));
+    attach_generator_source_if_needed(&mut function, body, signature.params.len());
     let env = env_with_closure_captures(&signature, captures);
     let lowered_params = params_with_closure_captures(&signature, captures);
     let recursive_binding =
@@ -491,6 +494,29 @@ fn add_closures(module: &mut Module, closures: Vec<Function>) {
     for closure in closures {
         module.add_closure(closure);
     }
+}
+
+/// Retains generator source metadata until the EIR backend has native generator-state lowering.
+fn attach_generator_source_if_needed(
+    function: &mut Function,
+    body: &[Stmt],
+    visible_param_count: usize,
+) {
+    if !crate::types::checker::yield_validation::body_contains_yield(body)
+        && !is_generator_return_type(&function.return_php_type)
+    {
+        return;
+    }
+    function.flags.is_generator = true;
+    function.generator_source = Some(GeneratorSource {
+        body: body.to_vec(),
+        visible_param_count,
+    });
+}
+
+/// Returns true when checked function metadata already identifies a generator return.
+fn is_generator_return_type(ty: &PhpType) -> bool {
+    matches!(ty, PhpType::Object(name) if name.trim_start_matches('\\') == "Generator")
 }
 
 /// Adds a default function terminator when the current block can still fall through.
@@ -649,6 +675,10 @@ fn closure_signature_from_ast(
     body: &[Stmt],
 ) -> FunctionSig {
     let mut signature = signature_from_ast_with_variadic(params, return_type, variadic);
+    if crate::types::checker::yield_validation::body_contains_yield(body) {
+        signature.return_type = PhpType::Object("Generator".to_string());
+        return signature;
+    }
     if return_type.is_none()
         && !crate::types::checker::yield_validation::body_contains_yield(body)
         && !body_contains_value_return(body)
