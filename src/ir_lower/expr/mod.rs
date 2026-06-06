@@ -3099,6 +3099,19 @@ fn lower_match(
 /// Lowers array, hash, string, or ArrayAccess indexing.
 fn lower_array_access(ctx: &mut LoweringContext<'_, '_>, array: &Expr, index: &Expr, expr: &Expr) -> LoweredValue {
     let array_value = lower_expr(ctx, array);
+    if value_is_nullable(ctx, array_value.value) {
+        return lower_nullable_array_access(ctx, array_value, index, expr);
+    }
+    lower_array_access_from_value(ctx, array_value, index, expr)
+}
+
+/// Lowers array access once the receiver is already evaluated.
+fn lower_array_access_from_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    index: &Expr,
+    expr: &Expr,
+) -> LoweredValue {
     let mut index_value = lower_expr(ctx, index);
     let op = match array_value.ir_type {
         IrType::Heap(IrHeapKind::Array) => Op::ArrayGet,
@@ -3119,6 +3132,48 @@ fn lower_array_access(ctx: &mut LoweringContext<'_, '_>, array: &Expr, index: &E
         op.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Lowers nullable receiver indexing without evaluating the index on a null receiver.
+fn lower_nullable_array_access(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    index: &Expr,
+    expr: &Expr,
+) -> LoweredValue {
+    let is_null = ctx.emit_value(
+        Op::IsNull,
+        vec![array_value.value],
+        None,
+        PhpType::Bool,
+        Op::IsNull.default_effects(),
+        Some(expr.span),
+    );
+    let result_type = PhpType::Mixed;
+    let temp_name = ctx.declare_hidden_temp(result_type.clone());
+    let null_block = ctx.builder.create_named_block("nullable.index.null", Vec::new());
+    let read_block = ctx.builder.create_named_block("nullable.index.read", Vec::new());
+    let merge = ctx.builder.create_named_block("nullable.index.merge", Vec::new());
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: is_null.value,
+        then_target: null_block,
+        then_args: Vec::new(),
+        else_target: read_block,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(null_block);
+    let null_value = lower_boxed_null(ctx, expr);
+    store_value_into_temp(ctx, &temp_name, result_type.clone(), null_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(read_block);
+    let read_value = lower_array_access_from_value(ctx, array_value, index, expr);
+    store_value_into_temp(ctx, &temp_name, result_type, read_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(merge);
+    ctx.load_local(&temp_name, Some(expr.span))
 }
 
 /// Returns the best PHP result type for a lowered array/string/hash access.
@@ -3501,12 +3556,21 @@ fn value_is_definitely_null(ctx: &LoweringContext<'_, '_>, value: crate::ir::Val
     matches!(ctx.builder.value_php_type(value), PhpType::Void | PhpType::Never)
 }
 
+/// Returns true when value metadata permits PHP null at runtime.
+fn value_is_nullable(ctx: &LoweringContext<'_, '_>, value: crate::ir::ValueId) -> bool {
+    match ctx.builder.value_php_type(value) {
+        PhpType::Void | PhpType::Never => true,
+        PhpType::Union(members) => members.iter().any(|member| matches!(member, PhpType::Void)),
+        _ => false,
+    }
+}
+
 /// Returns precise PHP metadata for a named property read when class metadata is available.
 fn property_get_result_type(
     ctx: &LoweringContext<'_, '_>,
     object: crate::ir::ValueId,
     property: &str,
-    op: Op,
+    _op: Op,
     expr: &Expr,
 ) -> PhpType {
     let object_ty = ctx.builder.value_php_type(object);
@@ -3534,7 +3598,7 @@ fn property_get_result_type(
         return fallback_expr_type(expr);
     };
     let property_ty = normalize_value_php_type(property_ty.clone());
-    if op == Op::NullsafePropGet && nullable {
+    if nullable {
         nullable_result_type(property_ty)
     } else {
         property_ty
