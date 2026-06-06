@@ -14,7 +14,7 @@ use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen_ir::{CodegenIrError, Result};
 use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
-use crate::names::{function_symbol, php_symbol_key, static_method_symbol};
+use crate::names::{function_symbol, method_symbol, php_symbol_key, static_method_symbol};
 use crate::types::{array_key_type_from_value_type, PhpType};
 
 use super::super::super::context::FunctionContext;
@@ -815,6 +815,15 @@ fn static_sort_callback_binding(
         });
     }
     if callback.kind == StaticCallbackOperandKind::FirstClassCallable {
+        if let Some(target) = instance_method_sort_callback_target(ctx, &callback, owner, visible_arg_types)? {
+            let visible_arg_types =
+                visible_arg_types.expect("instance sort callback target requires known argument types");
+            let label = emit_instance_method_callback_wrapper(ctx, &target, visible_arg_types);
+            return Ok(StaticSortCallbackBinding {
+                label,
+                env_source: Some(StaticCallbackEnvSource::Value(target.receiver)),
+            });
+        }
         if let Some(target) = static_method_sort_callback_target(ctx, &callback.name, owner, visible_arg_types)? {
             let visible_arg_types =
                 visible_arg_types.expect("static sort callback target requires known argument types");
@@ -836,6 +845,7 @@ fn static_sort_callback_binding(
 struct StaticCallbackName {
     name: String,
     kind: StaticCallbackOperandKind,
+    receiver: Option<ValueId>,
 }
 
 /// Classifies whether a static callback came from a PHP string or `foo(...)` syntax.
@@ -863,6 +873,7 @@ fn static_callback_name_operand(
     let Some(inst_ref) = ctx.function.instruction(inst) else {
         return Err(CodegenIrError::missing_entry("instruction", inst.as_raw()));
     };
+    let receiver = inst_ref.operands.first().copied();
     let kind = match inst_ref.op {
         Op::ConstStr => StaticCallbackOperandKind::StringLiteral,
         Op::FirstClassCallableNew => StaticCallbackOperandKind::FirstClassCallable,
@@ -886,7 +897,7 @@ fn static_callback_name_operand(
         .get(data.as_raw() as usize)
         .cloned()
         .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))?;
-    Ok(StaticCallbackName { name, kind })
+    Ok(StaticCallbackName { name, kind, receiver })
 }
 
 /// Resolved static-method callback metadata for a small runtime helper wrapper.
@@ -895,6 +906,12 @@ struct StaticMethodCallbackTarget {
     called_class: StaticCallbackCalledClass,
     dynamic_slot: Option<usize>,
     env_source: Option<StaticCallbackEnvSource>,
+}
+
+/// Resolved instance-method callback metadata for sort runtime wrappers.
+struct InstanceMethodCallbackTarget {
+    entry_label: String,
+    receiver: ValueId,
 }
 
 /// Source used by a callback wrapper to materialize the hidden called-class id.
@@ -908,6 +925,7 @@ enum StaticCallbackCalledClass {
 enum StaticCallbackEnvSource {
     Local(LocalSlotId),
     ThisObject(LocalSlotId),
+    Value(ValueId),
 }
 
 /// Resolves a static `Class::method` callback target and verifies its visible ABI shape.
@@ -1101,6 +1119,100 @@ fn static_callback_env_source(ctx: &FunctionContext<'_>) -> Result<StaticCallbac
     )))
 }
 
+/// Resolves an `object::method(...)` callback target and its captured receiver for sort helpers.
+fn instance_method_sort_callback_target(
+    ctx: &FunctionContext<'_>,
+    callback: &StaticCallbackName,
+    owner: &str,
+    visible_arg_types: Option<&[PhpType]>,
+) -> Result<Option<InstanceMethodCallbackTarget>> {
+    let Some((receiver_label, method)) = callback.name.rsplit_once("::") else {
+        return Ok(None);
+    };
+    if receiver_label.trim_start_matches('\\') != "object" {
+        return Ok(None);
+    }
+    let Some(receiver) = callback.receiver else {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' without captured receiver operand",
+            owner,
+            callback.name
+        )));
+    };
+    let visible_arg_types = visible_arg_types.ok_or_else(|| {
+        CodegenIrError::unsupported(format!(
+            "{} '{}' with dynamic callback argument shape",
+            owner,
+            callback.name
+        ))
+    })?;
+    require_static_method_callback_arg_types(owner, &callback.name, visible_arg_types)?;
+    let receiver_ty = ctx.value_php_type(receiver)?.codegen_repr();
+    let PhpType::Object(class_name) = receiver_ty else {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with receiver PHP type {:?}",
+            owner,
+            callback.name,
+            receiver_ty
+        )));
+    };
+    let normalized = class_name.trim_start_matches('\\');
+    let class_info = ctx
+        .module
+        .class_infos
+        .get(normalized)
+        .ok_or_else(|| CodegenIrError::unsupported(format!(
+            "{} with unknown instance callback class '{}'",
+            owner,
+            normalized
+        )))?;
+    let method_key = php_symbol_key(method);
+    let sig = class_info.methods.get(&method_key).ok_or_else(|| {
+        CodegenIrError::unsupported(format!(
+            "{} with unknown instance method callback '{}'",
+            owner,
+            callback.name
+        ))
+    })?;
+    if sig.params.len() != visible_arg_types.len() {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with {} visible args for {} params",
+            owner,
+            callback.name,
+            visible_arg_types.len(),
+            sig.params.len()
+        )));
+    }
+    require_static_method_callback_param_types(owner, &callback.name, sig, visible_arg_types)?;
+    let impl_class = class_info
+        .method_impl_classes
+        .get(&method_key)
+        .map(String::as_str)
+        .unwrap_or(normalized);
+    if !instance_method_already_emitted(ctx, impl_class, &method_key) {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' without emitted EIR method body",
+            owner,
+            callback.name
+        )));
+    }
+    Ok(Some(InstanceMethodCallbackTarget {
+        entry_label: method_symbol(impl_class, &method_key),
+        receiver,
+    }))
+}
+
+/// Returns true when the instance callback target has a generated EIR method body.
+fn instance_method_already_emitted(ctx: &FunctionContext<'_>, class_name: &str, method_key: &str) -> bool {
+    ctx.module.class_methods.iter().any(|function| {
+        !function.flags.is_static
+            && function
+                .name
+                .rsplit_once("::")
+                .is_some_and(|(class, method)| class == class_name && php_symbol_key(method) == method_key)
+    })
+}
+
 /// Verifies the wrapper can forward the callback argument ABI without boxing or shuffling pairs.
 fn require_static_method_callback_arg_types(
     owner: &str,
@@ -1228,6 +1340,65 @@ fn emit_static_method_callback_wrapper_x86_64(
     ctx.emitter.instruction("ret");                                             // return the static method result to the runtime callback helper
 }
 
+/// Emits a local wrapper that prepends the captured object receiver.
+fn emit_instance_method_callback_wrapper(
+    ctx: &mut FunctionContext<'_>,
+    target: &InstanceMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) -> String {
+    let wrapper_label = ctx.next_label("instance_method_callback_wrapper");
+    let done_label = ctx.next_label("instance_method_callback_after_wrapper");
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&wrapper_label);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_instance_method_callback_wrapper_aarch64(ctx, target, visible_arg_types),
+        Arch::X86_64 => emit_instance_method_callback_wrapper_x86_64(ctx, target, visible_arg_types),
+    }
+    ctx.emitter.label(&done_label);
+    wrapper_label
+}
+
+/// Emits the AArch64 instance-method callback ABI adapter.
+fn emit_instance_method_callback_wrapper_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    target: &InstanceMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) {
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
+    ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the instance method call
+    ctx.emitter.instruction(&format!("ldr x3, [{}]", env_reg));                 // load the captured object receiver from the callback environment
+    if visible_arg_types.len() == 2 {
+        ctx.emitter.instruction("mov x2, x1");                                  // shift the second callback argument after the receiver
+    }
+    ctx.emitter.instruction("mov x1, x0");                                      // shift the first callback argument after the receiver
+    ctx.emitter.instruction("mov x0, x3");                                      // pass the captured object receiver as the method receiver
+    abi::emit_call_label(ctx.emitter, &target.entry_label);
+    ctx.emitter.instruction("ldr x30, [sp, #8]");                               // restore the runtime helper return address after the instance method call
+    ctx.emitter.instruction("add sp, sp, #16");                                 // release the wrapper spill space before returning to the runtime helper
+    ctx.emitter.instruction("ret");                                             // return the instance method result to the runtime callback helper
+}
+
+/// Emits the x86_64 instance-method callback ABI adapter.
+fn emit_instance_method_callback_wrapper_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    target: &InstanceMethodCallbackTarget,
+    visible_arg_types: &[PhpType],
+) {
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested instance method call
+    ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
+    ctx.emitter.instruction(&format!("mov rcx, QWORD PTR [{}]", env_reg));      // load the captured object receiver from the callback environment
+    if visible_arg_types.len() == 2 {
+        ctx.emitter.instruction("mov rdx, rsi");                                // shift the second callback argument after the receiver
+    }
+    ctx.emitter.instruction("mov rsi, rdi");                                    // shift the first callback argument after the receiver
+    ctx.emitter.instruction("mov rdi, rcx");                                    // pass the captured object receiver as the method receiver
+    abi::emit_call_label(ctx.emitter, &target.entry_label);
+    ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer before returning
+    ctx.emitter.instruction("ret");                                             // return the instance method result to the runtime callback helper
+}
+
 /// Emits either a direct static-method callback call or a late-static vtable call.
 fn emit_static_callback_dispatch(ctx: &mut FunctionContext<'_>, target: &StaticMethodCallbackTarget) {
     if let Some(slot) = target.dynamic_slot {
@@ -1290,13 +1461,22 @@ fn reserve_static_callback_env(
                 0,
             );
         }
+        StaticCallbackEnvSource::Value(value) => {
+            let source_ty = ctx.load_value_to_result(value)?;
+            if !matches!(source_ty.codegen_repr(), PhpType::Object(_)) {
+                return Err(CodegenIrError::invalid_module(format!(
+                    "callback environment value has PHP type {:?}",
+                    source_ty
+                )));
+            }
+        }
     }
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("str x0, [sp]");                            // store the late-static called-class id in the callback environment
+            ctx.emitter.instruction("str x0, [sp]");                            // store the callback environment payload for the runtime helper
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction("mov QWORD PTR [rsp], rax");                // store the late-static called-class id in the callback environment
+            ctx.emitter.instruction("mov QWORD PTR [rsp], rax");                // store the callback environment payload for the runtime helper
         }
     }
     Ok(16)

@@ -2905,6 +2905,42 @@ ChildCallbacks::run();
     );
 }
 
+/// Verifies first-class instance-method callbacks preserve receivers in sort runtimes.
+#[test]
+fn ir_backend_handles_instance_method_sort_callbacks() {
+    let source = r#"<?php
+class Sorter {
+    public function desc(int $left, int $right): int {
+        return $right - $left;
+    }
+
+    public function asc(int $left, int $right): int {
+        return $left - $right;
+    }
+}
+
+$sorter = new Sorter();
+
+$usorted = [1, 3, 2];
+usort($usorted, $sorter->desc(...));
+foreach ($usorted as $value) { echo $value; }
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sorter->desc(...));
+foreach ($uksorted as $value) { echo $value; }
+echo ":";
+
+$uasorted = [3, 1, 2];
+uasort($uasorted, $sorter->asc(...));
+foreach ($uasorted as $value) { echo $value; }
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("instance_method_sort_callbacks", source),
+        "321:321:123"
+    );
+}
+
 /// Verifies fixed-class object construction calls `__construct` through the EIR method ABI.
 #[test]
 fn ir_backend_calls_simple_constructor() {

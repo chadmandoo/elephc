@@ -338,12 +338,13 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
     match inst.op {
         ConstI64 | ConstBool | ConstNull => check_count(inst_id, inst, 0, "0"),
         ConstF64 | ConstStr | ConstClassName | ConstEnumCase | DataAddr | ArrayNew | HashNew
-        | ClosureNew | FirstClassCallableNew | CallableArrayNew | GeneratorNew
+        | ClosureNew | CallableArrayNew | GeneratorNew
         | ErrorSuppressBegin | ErrorSuppressEnd | TryPushHandler | TryPopHandler
         | CatchCurrent | CatchBind | FinallyEnter | FinallyExit | IncludeOnceMark
         | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | Nop => {
             check_count(inst_id, inst, 0, "0")
         }
+        FirstClassCallableNew => check_count_at_most(inst_id, inst, 1, "0 or 1"),
         ObjectNew => Ok(()),
         IAdd | ISub | IMul | IDiv | ISDiv | ISMod | IPow | IBitAnd | IBitOr | IBitXor
         | IShl | IShrA => check_binary(function, inst_id, inst, IrType::I64, "I64"),
@@ -411,6 +412,19 @@ fn check_count(inst_id: InstId, inst: &Instruction, expected: usize, expected_la
 /// Validates a minimum operand count.
 fn check_count_at_least(inst_id: InstId, inst: &Instruction, min: usize, expected_label: &'static str) -> Result<(), ValidationError> {
     if inst.operands.len() >= min {
+        Ok(())
+    } else {
+        Err(ValidationError::OperandCountMismatch {
+            inst: inst_id,
+            expected: expected_label,
+            actual: inst.operands.len(),
+        })
+    }
+}
+
+/// Validates a maximum operand count.
+fn check_count_at_most(inst_id: InstId, inst: &Instruction, max: usize, expected_label: &'static str) -> Result<(), ValidationError> {
+    if inst.operands.len() <= max {
         Ok(())
     } else {
         Err(ValidationError::OperandCountMismatch {

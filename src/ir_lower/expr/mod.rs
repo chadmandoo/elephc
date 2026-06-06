@@ -3034,13 +3034,15 @@ fn static_receiver_class_name(
 
 /// Lowers first-class callable creation.
 fn lower_first_class_callable(ctx: &mut LoweringContext<'_, '_>, target: &CallableTarget, expr: &Expr) -> LoweredValue {
-    if let CallableTarget::Method { object, .. } = target {
-        lower_expr(ctx, object);
-    }
+    let operands = if let CallableTarget::Method { object, .. } = target {
+        vec![lower_expr(ctx, object).value]
+    } else {
+        Vec::new()
+    };
     let data = ctx.intern_string(&callable_target_name(target));
     ctx.emit_value(
         Op::FirstClassCallableNew,
-        Vec::new(),
+        operands,
         Some(Immediate::Data(data)),
         PhpType::Callable,
         Op::FirstClassCallableNew.default_effects(),

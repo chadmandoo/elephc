@@ -739,6 +739,42 @@ ChildCallbacks::run();
     );
 }
 
+/// Verifies first-class instance-method sort callbacks match legacy receiver dispatch.
+#[test]
+fn parity_instance_method_sort_callbacks() {
+    assert_backend_parity(
+        "instance_method_sort_callbacks",
+        r#"<?php
+class Sorter {
+    public function desc(int $left, int $right): int {
+        return $right - $left;
+    }
+
+    public function asc(int $left, int $right): int {
+        return $left - $right;
+    }
+}
+
+$sorter = new Sorter();
+
+$usorted = [1, 3, 2];
+usort($usorted, $sorter->desc(...));
+foreach ($usorted as $value) { echo $value; }
+echo ":";
+
+$uksorted = [1, 3, 2];
+uksort($uksorted, $sorter->desc(...));
+foreach ($uksorted as $value) { echo $value; }
+echo ":";
+
+$uasorted = [3, 1, 2];
+uasort($uasorted, $sorter->asc(...));
+foreach ($uasorted as $value) { echo $value; }
+"#,
+        &[],
+    );
+}
+
 /// Verifies reflection attribute owner metadata matches the legacy backend.
 #[test]
 fn parity_reflection_owner_attributes() {

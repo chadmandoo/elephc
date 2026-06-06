@@ -581,7 +581,7 @@ closure bodies lower as normal `Function` values.
 | `ClosureNew` | captures | `I64` callable descriptor | `alloc_heap`, `refcount_op` |
 | `ClosureCall` | descriptor/local callable, args | return type | target effect summary or conservative |
 | `ExprCall` | runtime callee expression, args | return type | conservative dynamic callable effects |
-| `FirstClassCallableNew` | target metadata | `I64` callable descriptor | `alloc_heap`, `refcount_op` |
+| `FirstClassCallableNew` | target metadata, optional object receiver | `I64` callable descriptor | `alloc_heap`, `refcount_op` |
 | `CallableArrayNew` | receiver/class/function parts | callable descriptor or array | `alloc_heap`, `refcount_op` |
 | `CallableDescriptorInvoke` | descriptor, normalized mixed args | `Heap(Mixed)` or typed value | descriptor effect summary |
 | `PipeCall` | value, callable | callable return | evaluates value before callable invocation |
@@ -930,7 +930,7 @@ instructions, but they must be represented in metadata or consumed by lowering.
 | `MethodCall` | Lower receiver and args; emit method dispatch/vtable/descriptor path. |
 | `NullsafeMethodCall` | Null-check receiver; null path returns null, object path emits method call. |
 | `StaticMethodCall` | Resolve receiver metadata or late-static dispatch; emit static method call. |
-| `FirstClassCallable` | Emit descriptor/wrapper metadata for function, static method, or method target. |
+| `FirstClassCallable` | Emit descriptor/wrapper metadata for function, static method, or method target; object-method targets carry the evaluated receiver as the `FirstClassCallableNew` operand. |
 | `This` | Load current object receiver. |
 | `PtrCast` | Lower expression; preserve pointer bits and change `php_type` metadata. |
 | `BufferNew` | Lower length and emit `BufferNew`. |
