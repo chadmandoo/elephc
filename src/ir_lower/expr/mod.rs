@@ -2916,6 +2916,11 @@ fn method_signature<'a>(
     ctx.classes
         .get(normalized)
         .and_then(|class_info| class_info.methods.get(&key))
+        .or_else(|| {
+            ctx.interfaces
+                .get(normalized)
+                .and_then(|interface_info| interface_info.methods.get(&key))
+        })
 }
 
 /// Returns the checked return type for an instance method call when metadata is available.
@@ -2927,15 +2932,10 @@ fn method_call_result_type(
     expr: &Expr,
 ) -> PhpType {
     let object_ty = ctx.builder.value_php_type(object);
-    let Some((class_name, nullable)) = singular_object_class(&object_ty) else {
+    let Some((_, nullable)) = singular_object_class(&object_ty) else {
         return fallback_expr_type(expr);
     };
-    let normalized = class_name.trim_start_matches('\\');
-    let key = php_symbol_key(method);
-    let Some(return_ty) = ctx
-        .classes
-        .get(normalized)
-        .and_then(|class_info| class_info.methods.get(&key))
+    let Some(return_ty) = method_signature(ctx, object, method)
         .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
     else {
         return fallback_expr_type(expr);

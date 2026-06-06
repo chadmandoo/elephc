@@ -548,6 +548,30 @@ try {
     );
 }
 
+/// Verifies explicitly constructed builtin exceptions use the compact Throwable payload.
+#[test]
+fn ir_backend_constructs_and_catches_builtin_exceptions() {
+    let source = r#"<?php
+try {
+    throw new Exception("caught", 7);
+} catch (Exception $e) {
+    echo $e->getMessage();
+    echo ":";
+    echo $e->getCode();
+}
+echo "|";
+try {
+    throw new RuntimeException("runtime");
+} catch (Throwable $e) {
+    echo $e->getMessage();
+}
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("constructed_exceptions", source),
+        "caught:7|runtime"
+    );
+}
+
 /// Verifies Fiber::throw delivers exceptions into suspended EIR fibers.
 #[test]
 fn ir_backend_throws_into_suspended_fibers() {

@@ -571,6 +571,9 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     if is_fiber_get_return_call(&class_name, &method_name) {
         return lower_fiber_noarg_runtime_method(ctx, inst, object, "__rt_fiber_get_return");
     }
+    if is_throwable_payload_getter_call(ctx, &class_name, &method_name) {
+        return lower_throwable_payload_getter(ctx, inst, object, &method_name);
+    }
     let target = resolve_method_call_target(ctx, &class_name, &method_name, inst.operands.len())?;
     let mut param_types = Vec::with_capacity(target.params.len() + 1);
     param_types.push(PhpType::Object(class_name));
@@ -582,6 +585,83 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
     store_call_result(ctx, inst, &target.return_ty)
+}
+
+/// Returns true when a direct method call can read PHP's compact Throwable payload.
+fn is_throwable_payload_getter_call(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    method_name: &str,
+) -> bool {
+    matches!(php_symbol_key(method_name).as_str(), "getmessage" | "getcode")
+        && is_throwable_like_class(ctx, class_name)
+}
+
+/// Returns true when class metadata says the receiver is Throwable-compatible.
+fn is_throwable_like_class(ctx: &FunctionContext<'_>, class_name: &str) -> bool {
+    let class_name = class_name.trim_start_matches('\\');
+    if matches!(class_name, "Throwable") {
+        return true;
+    }
+    let mut current = Some(class_name);
+    while let Some(name) = current {
+        let Some(class_info) = ctx.module.class_infos.get(name) else {
+            return false;
+        };
+        if class_info.interfaces.iter().any(|interface| interface == "Throwable") {
+            return true;
+        }
+        current = class_info.parent.as_deref();
+    }
+    false
+}
+
+/// Lowers compact Throwable getters without requiring synthetic EIR method bodies.
+fn lower_throwable_payload_getter(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    method_name: &str,
+) -> Result<()> {
+    if inst.operands.len() != 1 {
+        return Err(CodegenIrError::unsupported(format!(
+            "Throwable::{} with {} EIR operands",
+            method_name,
+            inst.operands.len()
+        )));
+    }
+    let object_reg = abi::symbol_scratch_reg(ctx.emitter);
+    ctx.load_value_to_reg(object, object_reg)?;
+    let return_ty = match php_symbol_key(method_name).as_str() {
+        "getmessage" => lower_throwable_get_message(ctx, object_reg),
+        "getcode" => lower_throwable_get_code(ctx, object_reg),
+        _ => Err(CodegenIrError::unsupported(format!(
+            "Throwable intrinsic method {}",
+            method_name
+        ))),
+    }?;
+    if inst.result.is_some()
+        && matches!(inst.result_php_type.codegen_repr(), PhpType::Mixed)
+        && !matches!(return_ty.codegen_repr(), PhpType::Mixed)
+    {
+        emit_box_current_value_as_mixed(ctx.emitter, &return_ty.codegen_repr());
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Loads `Throwable::getMessage()` from payload offsets 8/16 into string result registers.
+fn lower_throwable_get_message(ctx: &mut FunctionContext<'_>, object_reg: &str) -> Result<PhpType> {
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, ptr_reg, object_reg, 8);
+    abi::emit_load_from_address(ctx.emitter, len_reg, object_reg, 16);
+    Ok(PhpType::Str)
+}
+
+/// Loads `Throwable::getCode()` from payload offset 24 into the integer result register.
+fn lower_throwable_get_code(ctx: &mut FunctionContext<'_>, object_reg: &str) -> Result<PhpType> {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, result_reg, object_reg, 24);
+    Ok(PhpType::Int)
 }
 
 /// Lowers `Fiber::start(...)` by copying boxed start arguments into the Fiber object.
@@ -1553,6 +1633,7 @@ fn local_load_types_share_storage(source_ty: &PhpType, result_ty: &PhpType) -> b
             PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never
         ) | (PhpType::Array(_), PhpType::Array(_))
             | (PhpType::AssocArray { .. }, PhpType::AssocArray { .. })
+            | (PhpType::Mixed, PhpType::Object(_))
     )
 }
 

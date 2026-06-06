@@ -72,6 +72,15 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
     if reflection::is_reflection_owner_class(&class_name) {
         return reflection::lower_reflection_owner_new(ctx, inst, &class_name);
     }
+    if is_builtin_throwable_payload_class(&class_name) {
+        let class_id = ctx
+            .module
+            .class_infos
+            .get(&class_name)
+            .map(|class| class.class_id)
+            .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
+        return lower_builtin_throwable_new(ctx, inst, &class_name, class_id);
+    }
     let constructor_key = php_symbol_key("__construct");
     let (
         class_id,
@@ -163,6 +172,177 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             &param_types,
         )?;
     }
+    Ok(())
+}
+
+/// Lowers builtin Throwable allocation using the compact runtime payload layout.
+fn lower_builtin_throwable_new(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    class_name: &str,
+    class_id: u64,
+) -> Result<()> {
+    if inst.operands.len() > 2 {
+        return Err(CodegenIrError::unsupported(format!(
+            "{}::__construct with {} EIR operands",
+            class_name,
+            inst.operands.len()
+        )));
+    }
+    emit_throwable_allocation(ctx, class_id);
+    preserve_throwable_for_init(ctx);
+    emit_throwable_message_fields(ctx, inst.operands.first().copied())?;
+    emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
+    restore_throwable_after_init(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Returns true for builtin classes that share PHP's compact Throwable payload.
+fn is_builtin_throwable_payload_class(class_name: &str) -> bool {
+    matches!(
+        class_name,
+        "Error"
+            | "TypeError"
+            | "ValueError"
+            | "Exception"
+            | "RuntimeException"
+            | "JsonException"
+            | "FiberError"
+            | "LogicException"
+            | "BadFunctionCallException"
+            | "BadMethodCallException"
+            | "DomainException"
+            | "InvalidArgumentException"
+            | "LengthException"
+            | "OutOfRangeException"
+            | "OutOfBoundsException"
+            | "OverflowException"
+            | "RangeException"
+            | "UnderflowException"
+            | "UnexpectedValueException"
+    )
+}
+
+/// Allocates a 32-byte Throwable payload and stamps its heap kind and class id.
+fn emit_throwable_allocation(ctx: &mut FunctionContext<'_>, class_id: u64) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #32");                             // request compact Throwable payload storage
+            abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
+            ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 marks runtime object payloads
+            ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp the heap header before the Throwable payload
+            ctx.emitter.instruction(&format!("mov x9, #{}", class_id));         // materialize the Throwable runtime class id
+            ctx.emitter.instruction("str x9, [x0]");                            // store class id at payload offset zero
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rax, 32");                             // request compact Throwable payload storage
+            abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
+            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 6)); // materialize the x86_64 Throwable heap kind word
+            ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp the heap header before the Throwable payload
+            ctx.emitter.instruction(&format!("mov r10, {}", class_id));         // materialize the Throwable runtime class id
+            ctx.emitter.instruction("mov QWORD PTR [rax], r10");                // store class id at payload offset zero
+        }
+    }
+}
+
+/// Saves the newly allocated Throwable object while constructor operands are loaded.
+fn preserve_throwable_for_init(ctx: &mut FunctionContext<'_>) {
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+}
+
+/// Restores the initialized Throwable object to the canonical object result register.
+fn restore_throwable_after_init(ctx: &mut FunctionContext<'_>) {
+    abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+}
+
+/// Writes the message pointer and length into the compact Throwable payload.
+fn emit_throwable_message_fields(
+    ctx: &mut FunctionContext<'_>,
+    message: Option<ValueId>,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_throwable_message_fields_aarch64(ctx, message),
+        Arch::X86_64 => emit_throwable_message_fields_x86_64(ctx, message),
+    }
+}
+
+/// Writes AArch64 Throwable message fields from a string operand or an empty default.
+fn emit_throwable_message_fields_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    message: Option<ValueId>,
+) -> Result<()> {
+    if let Some(message) = message {
+        ctx.load_string_value_to_regs(message, "x1", "x2")?;
+    } else {
+        emit_empty_string_to_regs(ctx, "x1", "x2");
+    }
+    ctx.emitter.instruction("ldr x9, [sp]");                                    // reload the saved Throwable object for message initialization
+    ctx.emitter.instruction("str x1, [x9, #8]");                                // store Throwable message pointer
+    ctx.emitter.instruction("str x2, [x9, #16]");                               // store Throwable message length
+    Ok(())
+}
+
+/// Writes x86_64 Throwable message fields from a string operand or an empty default.
+fn emit_throwable_message_fields_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    message: Option<ValueId>,
+) -> Result<()> {
+    if let Some(message) = message {
+        ctx.load_string_value_to_regs(message, "rax", "rdx")?;
+    } else {
+        emit_empty_string_to_regs(ctx, "rax", "rdx");
+    }
+    ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                        // reload the saved Throwable object for message initialization
+    ctx.emitter.instruction("mov QWORD PTR [r11 + 8], rax");                    // store Throwable message pointer
+    ctx.emitter.instruction("mov QWORD PTR [r11 + 16], rdx");                   // store Throwable message length
+    Ok(())
+}
+
+/// Materializes the shared empty string constant into a string register pair.
+fn emit_empty_string_to_regs(ctx: &mut FunctionContext<'_>, ptr_reg: &str, len_reg: &str) {
+    let (label, len) = ctx.data.add_string(b"");
+    abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
+    abi::emit_load_int_immediate(ctx.emitter, len_reg, len as i64);
+}
+
+/// Writes the integer exception code into the compact Throwable payload.
+fn emit_throwable_code_field(
+    ctx: &mut FunctionContext<'_>,
+    code: Option<ValueId>,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_throwable_code_field_aarch64(ctx, code),
+        Arch::X86_64 => emit_throwable_code_field_x86_64(ctx, code),
+    }
+}
+
+/// Writes the AArch64 Throwable code field from an integer operand or zero default.
+fn emit_throwable_code_field_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    code: Option<ValueId>,
+) -> Result<()> {
+    if let Some(code) = code {
+        ctx.load_value_to_reg(code, "x1")?;
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, "x1", 0);
+    }
+    ctx.emitter.instruction("ldr x9, [sp]");                                    // reload the saved Throwable object for code initialization
+    ctx.emitter.instruction("str x1, [x9, #24]");                               // store Throwable code
+    Ok(())
+}
+
+/// Writes the x86_64 Throwable code field from an integer operand or zero default.
+fn emit_throwable_code_field_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    code: Option<ValueId>,
+) -> Result<()> {
+    if let Some(code) = code {
+        ctx.load_value_to_reg(code, "rax")?;
+    } else {
+        abi::emit_load_int_immediate(ctx.emitter, "rax", 0);
+    }
+    ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                        // reload the saved Throwable object for code initialization
+    ctx.emitter.instruction("mov QWORD PTR [r11 + 24], rax");                   // store Throwable code
     Ok(())
 }
 
