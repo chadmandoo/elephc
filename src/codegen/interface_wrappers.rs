@@ -26,7 +26,7 @@ use super::{abi, platform};
 /// * `interfaces` - Map of interface name → metadata including method order and signatures
 /// * `classes` - Map of class name → metadata including implemented interfaces and method signatures
 /// * `emitted_class_names` - Optional filter; only classes in this set receive wrappers
-pub(super) fn emit_interface_return_wrappers(
+pub(crate) fn emit_interface_return_wrappers(
     emitter: &mut Emitter,
     interfaces: &HashMap<String, InterfaceInfo>,
     classes: &HashMap<String, ClassInfo>,

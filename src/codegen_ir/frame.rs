@@ -12,7 +12,10 @@
 use std::collections::HashMap;
 
 use crate::codegen::abi;
-use crate::codegen::{emit_write_current_string_stderr, emit_write_literal_stderr};
+use crate::codegen::{
+    emit_box_current_value_as_mixed, emit_write_current_string_stderr,
+    emit_write_literal_stderr,
+};
 use crate::codegen::context::TRY_HANDLER_SLOT_SIZE;
 use crate::codegen::platform::Arch;
 use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op};
@@ -124,6 +127,15 @@ pub(super) fn emit_function_prologue_with_label(
             param.by_ref,
             &mut incoming_args,
         );
+        let local_ty = ctx.local_php_type(slot)?;
+        if !param.by_ref
+            && local_ty.codegen_repr() == PhpType::Mixed
+            && param.php_type.codegen_repr() != PhpType::Mixed
+        {
+            abi::emit_load(ctx.emitter, &param.php_type.codegen_repr(), offset);
+            emit_box_current_value_as_mixed(ctx.emitter, &param.php_type.codegen_repr());
+            abi::emit_store(ctx.emitter, &PhpType::Mixed, offset);
+        }
     }
     Ok(())
 }

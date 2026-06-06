@@ -491,6 +491,8 @@ fn lower_foreach(
     body: &[Stmt],
 ) {
     let source = lower_expr(ctx, array);
+    let key_needs_null_init = key_var.is_some_and(|name| !ctx.local_slots.contains_key(name));
+    let value_needs_null_init = !ctx.local_slots.contains_key(value_var);
     let iterator = ctx.emit_value(
         Op::IterStart,
         vec![source.value],
@@ -499,6 +501,10 @@ fn lower_foreach(
         Op::IterStart.default_effects(),
         Some(array.span),
     );
+    if let Some(key_var) = key_var {
+        initialize_foreach_mixed_local_if_needed(ctx, key_var, key_needs_null_init, array.span);
+    }
+    initialize_foreach_mixed_local_if_needed(ctx, value_var, value_needs_null_init, array.span);
     let header = ctx.builder.create_named_block("foreach.next", Vec::new());
     let body_block = ctx.builder.create_named_block("foreach.body", Vec::new());
     let exit = ctx.builder.create_named_block("foreach.exit", Vec::new());
@@ -549,6 +555,28 @@ fn lower_foreach(
     branch_to(ctx, header);
     ctx.builder.position_at_end(exit);
     ctx.clear_static_callable_locals();
+}
+
+/// Initializes a fresh foreach loop variable to boxed null before the first iteration.
+fn initialize_foreach_mixed_local_if_needed(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    needs_init: bool,
+    span: Span,
+) {
+    if !needs_init {
+        return;
+    }
+    let null = emit_null_value(ctx, Some(span));
+    let boxed = ctx.emit_value(
+        Op::MixedBox,
+        vec![null.value],
+        None,
+        PhpType::Mixed,
+        Op::MixedBox.default_effects(),
+        Some(span),
+    );
+    ctx.store_local(name, boxed, PhpType::Mixed, Some(span));
 }
 
 /// Lowers a `switch` and terminates the shared exit block when every arm exits earlier.

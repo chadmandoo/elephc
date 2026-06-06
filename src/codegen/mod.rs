@@ -25,7 +25,7 @@ mod ffi;
 mod fiber_sigs;
 mod function_variants;
 mod functions;
-mod interface_wrappers;
+pub(crate) mod interface_wrappers;
 mod main_emission;
 /// Platform module.
 pub mod platform;

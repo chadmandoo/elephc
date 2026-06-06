@@ -11,6 +11,7 @@
 
 use crate::codegen::platform::Arch;
 use crate::codegen::{abi, emit_box_current_value_as_mixed, emit_box_runtime_payload_as_mixed};
+use crate::intrinsics::IntrinsicCall;
 use crate::ir::{Instruction, Op, ValueDef, ValueId};
 use crate::names::{method_symbol, php_symbol_key};
 use crate::types::PhpType;
@@ -34,6 +35,10 @@ enum IteratorSourceKind {
         class_name: String,
         aggregate_class_name: Option<String>,
     },
+    Interface {
+        interface_name: String,
+        aggregate_class_name: Option<String>,
+    },
 }
 
 /// Lowers iterator initialization by storing the source pointer and initial cursor.
@@ -54,23 +59,43 @@ pub(super) fn lower_iter_start(ctx: &mut FunctionContext<'_>, inst: &Instruction
     {
         abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Object(class_name.clone()));
     }
+    if let IteratorSourceKind::Interface {
+        interface_name,
+        aggregate_class_name: None,
+    } = &source_kind
+    {
+        abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Object(interface_name.clone()));
+    }
     let initial_cursor = match &source_kind {
         IteratorSourceKind::Indexed { .. } => -1,
         IteratorSourceKind::Hash => 0,
         IteratorSourceKind::Object { .. } => 0,
+        IteratorSourceKind::Interface { .. } => 0,
     };
-    if let IteratorSourceKind::Object {
-        aggregate_class_name: Some(aggregate_class_name),
-        ..
-    } = &source_kind
-    {
-        emit_object_iterator_method_call(ctx, offset, aggregate_class_name, "getIterator")?;
-        abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_SOURCE_OFFSET_DELTA);
+    match &source_kind {
+        IteratorSourceKind::Object {
+            aggregate_class_name: Some(aggregate_class_name),
+            ..
+        }
+        | IteratorSourceKind::Interface {
+            aggregate_class_name: Some(aggregate_class_name),
+            ..
+        } => {
+            emit_object_iterator_method_call(ctx, offset, aggregate_class_name, "getIterator")?;
+            abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_SOURCE_OFFSET_DELTA);
+        }
+        _ => {}
     }
     abi::emit_load_int_immediate(ctx.emitter, result_reg, initial_cursor);
     abi::store_at_offset(ctx.emitter, result_reg, offset - ITER_CURSOR_OFFSET_DELTA);
-    if let IteratorSourceKind::Object { class_name, .. } = source_kind {
-        emit_object_iterator_method_call(ctx, offset, &class_name, "rewind")?;
+    match source_kind {
+        IteratorSourceKind::Object { class_name, .. } => {
+            emit_object_iterator_method_call(ctx, offset, &class_name, "rewind")?;
+        }
+        IteratorSourceKind::Interface { interface_name, .. } => {
+            emit_interface_iterator_method_call(ctx, offset, &interface_name, "rewind")?;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -90,6 +115,9 @@ pub(super) fn lower_iter_next(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         },
         IteratorSourceKind::Object { class_name, .. } => {
             lower_object_iter_next(ctx, offset, &class_name)?;
+        }
+        IteratorSourceKind::Interface { interface_name, .. } => {
+            lower_interface_iter_next(ctx, offset, &interface_name)?;
         }
     }
     store_if_result(ctx, inst)
@@ -113,7 +141,12 @@ pub(super) fn lower_iter_current_key(
             Arch::X86_64 => load_current_hash_key_as_mixed_x86_64(ctx, offset),
         },
         IteratorSourceKind::Object { class_name, .. } => {
-            emit_object_iterator_method_call(ctx, offset, &class_name, "key")?;
+            let return_ty = emit_object_iterator_method_call(ctx, offset, &class_name, "key")?;
+            box_iterator_method_result_if_needed(ctx, inst, &return_ty)?;
+        }
+        IteratorSourceKind::Interface { interface_name, .. } => {
+            let return_ty = emit_interface_iterator_method_call(ctx, offset, &interface_name, "key")?;
+            box_iterator_method_result_if_needed(ctx, inst, &return_ty)?;
         }
     }
     store_if_result(ctx, inst)
@@ -139,10 +172,31 @@ pub(super) fn lower_iter_current_value(
             Arch::X86_64 => load_current_hash_value_as_mixed_x86_64(ctx, offset),
         },
         IteratorSourceKind::Object { class_name, .. } => {
-            emit_object_iterator_method_call(ctx, offset, &class_name, "current")?;
+            let return_ty = emit_object_iterator_method_call(ctx, offset, &class_name, "current")?;
+            box_iterator_method_result_if_needed(ctx, inst, &return_ty)?;
+        }
+        IteratorSourceKind::Interface { interface_name, .. } => {
+            let return_ty = emit_interface_iterator_method_call(ctx, offset, &interface_name, "current")?;
+            box_iterator_method_result_if_needed(ctx, inst, &return_ty)?;
         }
     }
     store_if_result(ctx, inst)
+}
+
+/// Boxes a concrete iterator method result when the EIR result slot expects `Mixed`.
+fn box_iterator_method_result_if_needed(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    return_ty: &PhpType,
+) -> Result<()> {
+    let Some(result) = inst.result else {
+        return Ok(());
+    };
+    let result_ty = ctx.value_php_type(result)?;
+    if result_ty == PhpType::Mixed && return_ty.codegen_repr() != PhpType::Mixed {
+        emit_box_current_value_as_mixed(ctx.emitter, &return_ty.codegen_repr());
+    }
+    Ok(())
 }
 
 /// Lowers object iterator advancement using PHP's Iterator method protocol.
@@ -171,7 +225,38 @@ fn lower_object_iter_next(
     abi::emit_load_int_immediate(ctx.emitter, started_reg, 1);
     abi::store_at_offset(ctx.emitter, started_reg, offset - ITER_CURSOR_OFFSET_DELTA);
     ctx.emitter.label(&valid_label);
-    emit_object_iterator_method_call(ctx, offset, class_name, "valid")
+    emit_object_iterator_method_call(ctx, offset, class_name, "valid")?;
+    Ok(())
+}
+
+/// Lowers iterator advancement through an `Iterator`-typed interface receiver.
+fn lower_interface_iter_next(
+    ctx: &mut FunctionContext<'_>,
+    offset: usize,
+    interface_name: &str,
+) -> Result<()> {
+    let first_label = ctx.next_label("interface_iter_first");
+    let valid_label = ctx.next_label("interface_iter_valid");
+    let started_reg = abi::int_result_reg(ctx.emitter);
+    abi::load_at_offset(ctx.emitter, started_reg, offset - ITER_CURSOR_OFFSET_DELTA);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", started_reg));       // check whether this interface iterator has already yielded once
+            ctx.emitter.instruction(&format!("b.eq {}", first_label));          // skip next() before the first valid() probe
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("test {}, {}", started_reg, started_reg)); // check whether this interface iterator has already yielded once
+            ctx.emitter.instruction(&format!("je {}", first_label));            // skip next() before the first valid() probe
+        }
+    }
+    emit_interface_iterator_method_call(ctx, offset, interface_name, "next")?;
+    abi::emit_jump(ctx.emitter, &valid_label);
+    ctx.emitter.label(&first_label);
+    abi::emit_load_int_immediate(ctx.emitter, started_reg, 1);
+    abi::store_at_offset(ctx.emitter, started_reg, offset - ITER_CURSOR_OFFSET_DELTA);
+    ctx.emitter.label(&valid_label);
+    emit_interface_iterator_method_call(ctx, offset, interface_name, "valid")?;
+    Ok(())
 }
 
 /// Emits a zero-argument Iterator method call against the object stored in iterator state.
@@ -180,11 +265,11 @@ fn emit_object_iterator_method_call(
     offset: usize,
     class_name: &str,
     method_name: &str,
-) -> Result<()> {
+) -> Result<PhpType> {
     let method_key = php_symbol_key(method_name);
     if let Some(helper) = generator_iterator_runtime_helper(class_name, &method_key) {
         emit_generator_iterator_runtime_call(ctx, offset, helper);
-        return Ok(());
+        return Ok(generator_iterator_return_type(&method_key));
     }
     let target = object_iterator_method_target(ctx, class_name, &method_key)?;
     let assignments = abi::build_outgoing_arg_assignments_for_target(
@@ -201,7 +286,161 @@ fn emit_object_iterator_method_call(
     abi::emit_call_label(ctx.emitter, &method_symbol(&target.impl_class, &method_key));
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
-    Ok(())
+    Ok(target.return_type)
+}
+
+/// Emits a zero-argument Iterator method call through runtime interface metadata.
+fn emit_interface_iterator_method_call(
+    ctx: &mut FunctionContext<'_>,
+    offset: usize,
+    interface_name: &str,
+    method_name: &str,
+) -> Result<PhpType> {
+    let receiver_arg = abi::int_arg_reg_name(ctx.emitter.target, 0);
+    abi::load_at_offset(ctx.emitter, receiver_arg, offset - ITER_SOURCE_OFFSET_DELTA);
+    let method_key = php_symbol_key(method_name);
+    let done = if interface_name.trim_start_matches('\\') == "Iterator" {
+        IntrinsicCall::instance_method("Generator", &method_key)
+            .and_then(|intrinsic| intrinsic.runtime_helper())
+            .map(|helper| emit_generator_interface_fast_path(ctx, helper))
+    } else {
+        None
+    };
+    let return_ty = emit_interface_dispatch_call(ctx, interface_name, &method_key, done.as_deref())?;
+    if let Some(done) = done {
+        ctx.emitter.label(&done);
+    }
+    Ok(return_ty)
+}
+
+/// Emits a fast path for Generator objects before generic `Iterator` interface dispatch.
+fn emit_generator_interface_fast_path(
+    ctx: &mut FunctionContext<'_>,
+    helper: &str,
+) -> String {
+    let done = ctx.next_label("interface_dispatch_done");
+    let not_generator = ctx.next_label("interface_dispatch_not_generator");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("ldr x10, [x0]");                           // load receiver class id before checking for the built-in Generator
+            abi::emit_load_symbol_to_reg(ctx.emitter, "x11", "_generator_class_id", 0);
+            ctx.emitter.instruction("cmp x10, x11");                            // compare receiver class id with Generator
+            ctx.emitter.instruction(&format!("b.ne {}", not_generator));        // fall back to interface dispatch for non-Generator iterators
+            abi::emit_call_label(ctx.emitter, helper);
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip generic interface dispatch after the fast path
+            ctx.emitter.label(&not_generator);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r10, QWORD PTR [rdi]");                // load receiver class id before checking for the built-in Generator
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r11", "_generator_class_id", 0);
+            ctx.emitter.instruction("cmp r10, r11");                            // compare receiver class id with Generator
+            ctx.emitter.instruction(&format!("jne {}", not_generator));         // fall back to interface dispatch for non-Generator iterators
+            abi::emit_call_label(ctx.emitter, helper);
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip generic interface dispatch after the fast path
+            ctx.emitter.label(&not_generator);
+        }
+    }
+    done
+}
+
+/// Emits the interface table scan and calls the resolved method slot.
+fn emit_interface_dispatch_call(
+    ctx: &mut FunctionContext<'_>,
+    interface_name: &str,
+    method_key: &str,
+    external_done: Option<&str>,
+) -> Result<PhpType> {
+    let normalized = interface_name.trim_start_matches('\\');
+    let interface_info = ctx
+        .module
+        .interface_infos
+        .get(normalized)
+        .ok_or_else(|| CodegenIrError::unsupported(format!("iterator interface {}", normalized)))?;
+    let interface_id = interface_info.interface_id as i64;
+    let slot = interface_info.method_slots.get(method_key).copied().ok_or_else(|| {
+        CodegenIrError::unsupported(format!("iterator interface method {}::{}", normalized, method_key))
+    })?;
+    let return_ty = interface_info
+        .methods
+        .get(method_key)
+        .map(|sig| sig.return_type.clone())
+        .unwrap_or(PhpType::Mixed);
+    let scan_loop = ctx.next_label("interface_dispatch_scan");
+    let found = ctx.next_label("interface_dispatch_found");
+    let missing = ctx.next_label("interface_dispatch_missing");
+    let local_done = external_done
+        .map(str::to_string)
+        .unwrap_or_else(|| ctx.next_label("interface_dispatch_done"));
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("ldr x10, [x0]");                           // load receiver class id for interface metadata lookup
+            abi::emit_symbol_address(ctx.emitter, "x11", "_class_interface_ptrs");
+            ctx.emitter.instruction("ldr x11, [x11, x10, lsl #3]");             // select this class's interface metadata block
+            ctx.emitter.instruction("ldr x10, [x11]");                          // load implemented interface count
+            ctx.emitter.instruction("add x11, x11, #8");                        // move to first [interface id, table] pair
+            abi::emit_load_int_immediate(ctx.emitter, "x13", interface_id);
+            ctx.emitter.label(&scan_loop);
+            ctx.emitter.instruction(&format!("cbz x10, {}", missing));          // stop when no implemented interface matched
+            ctx.emitter.instruction("ldr x12, [x11]");                          // load current implemented interface id
+            ctx.emitter.instruction("cmp x12, x13");                            // compare with target interface id
+            ctx.emitter.instruction(&format!("b.eq {}", found));                // dispatch through this table when matched
+            ctx.emitter.instruction("add x11, x11, #16");                       // advance to next interface metadata entry
+            ctx.emitter.instruction("sub x10, x10, #1");                        // consume one interface entry
+            ctx.emitter.instruction(&format!("b {}", scan_loop));               // continue scanning implemented interfaces
+            ctx.emitter.label(&found);
+            ctx.emitter.instruction("ldr x11, [x11, #8]");                      // load implementation table pointer
+            if slot == 0 {
+                ctx.emitter.instruction("ldr x11, [x11]");                      // load first interface method implementation pointer
+            } else {
+                ctx.emitter.instruction(&format!("ldr x11, [x11, #{}]", slot * 8)); // load selected interface method implementation pointer
+            }
+            ctx.emitter.instruction("blr x11");                                 // call resolved interface method implementation
+            ctx.emitter.instruction(&format!("b {}", local_done));              // skip defensive missing-interface fallback
+            ctx.emitter.label(&missing);
+            ctx.emitter.instruction("mov x0, #0");                              // defensive fallback for invalid interface metadata
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r10, QWORD PTR [rdi]");                // load receiver class id for interface metadata lookup
+            abi::emit_symbol_address(ctx.emitter, "r11", "_class_interface_ptrs");
+            ctx.emitter.instruction("mov r11, QWORD PTR [r11 + r10 * 8]");      // select this class's interface metadata block
+            ctx.emitter.instruction("mov r10, QWORD PTR [r11]");                // load implemented interface count
+            ctx.emitter.instruction("add r11, 8");                              // move to first [interface id, table] pair
+            abi::emit_load_int_immediate(ctx.emitter, "r9", interface_id);
+            ctx.emitter.label(&scan_loop);
+            ctx.emitter.instruction("test r10, r10");                           // check whether implemented interfaces remain
+            ctx.emitter.instruction(&format!("je {}", missing));                // stop when no implemented interface matched
+            ctx.emitter.instruction("mov r8, QWORD PTR [r11]");                 // load current implemented interface id
+            ctx.emitter.instruction("cmp r8, r9");                              // compare with target interface id
+            ctx.emitter.instruction(&format!("je {}", found));                  // dispatch through this table when matched
+            ctx.emitter.instruction("add r11, 16");                             // advance to next interface metadata entry
+            ctx.emitter.instruction("sub r10, 1");                              // consume one interface entry
+            ctx.emitter.instruction(&format!("jmp {}", scan_loop));             // continue scanning implemented interfaces
+            ctx.emitter.label(&found);
+            ctx.emitter.instruction("mov r11, QWORD PTR [r11 + 8]");            // load implementation table pointer
+            if slot == 0 {
+                ctx.emitter.instruction("mov r11, QWORD PTR [r11]");            // load first interface method implementation pointer
+            } else {
+                ctx.emitter.instruction(&format!("mov r11, QWORD PTR [r11 + {}]", slot * 8)); // load selected interface method implementation pointer
+            }
+            ctx.emitter.instruction("call r11");                                // call resolved interface method implementation
+            ctx.emitter.instruction(&format!("jmp {}", local_done));            // skip defensive missing-interface fallback
+            ctx.emitter.label(&missing);
+            ctx.emitter.instruction("xor eax, eax");                            // defensive fallback for invalid interface metadata
+        }
+    }
+    if external_done.is_none() {
+        ctx.emitter.label(&local_done);
+    }
+    Ok(return_ty)
+}
+
+/// Returns the PHP type produced by a `Generator` iterator runtime helper.
+fn generator_iterator_return_type(method_key: &str) -> PhpType {
+    match method_key {
+        "valid" => PhpType::Bool,
+        "rewind" | "next" => PhpType::Void,
+        _ => PhpType::Mixed,
+    }
 }
 
 /// Returns the runtime helper for `Generator` methods used by object iterator lowering.
@@ -275,12 +514,16 @@ fn object_iterator_method_target(
             impl_class, method_key
         )));
     }
-    Ok(ObjectIteratorMethodTarget { impl_class })
+    Ok(ObjectIteratorMethodTarget {
+        impl_class,
+        return_type: callee_sig.return_type.clone(),
+    })
 }
 
 /// Resolved method implementation for an object iterator method call.
 struct ObjectIteratorMethodTarget {
     impl_class: String,
+    return_type: PhpType,
 }
 
 /// Lowers iterator cleanup; Phase 04 array iterator state is stack-resident.
@@ -569,12 +812,8 @@ fn iterator_source_kind_from_type(
         PhpType::Array(elem) => Ok(IteratorSourceKind::Indexed { elem: elem.codegen_repr() }),
         PhpType::AssocArray { .. } => Ok(IteratorSourceKind::Hash),
         PhpType::Object(class_name) => {
-            let (class_name, aggregate_class_name) =
-                object_iterator_source_class(ctx, class_name.trim_start_matches('\\'));
-            Ok(IteratorSourceKind::Object {
-                class_name,
-                aggregate_class_name,
-            })
+            let source = object_iterator_source(ctx, class_name.trim_start_matches('\\'));
+            Ok(source)
         }
         other => Err(CodegenIrError::unsupported(format!(
             "{} over PHP type {:?}",
@@ -584,22 +823,48 @@ fn iterator_source_kind_from_type(
     }
 }
 
-/// Returns the concrete iterator class for an object source and the aggregate class to normalize, if any.
-fn object_iterator_source_class(
+/// Returns the effective iterator dispatch target for an object source.
+fn object_iterator_source(
     ctx: &FunctionContext<'_>,
     class_name: &str,
-) -> (String, Option<String>) {
+) -> IteratorSourceKind {
+    if ctx.module.interface_infos.contains_key(class_name) {
+        return IteratorSourceKind::Interface {
+            interface_name: class_name.to_string(),
+            aggregate_class_name: None,
+        };
+    }
     if class_implements_interface(ctx, class_name, "Iterator") {
-        return (class_name.to_string(), None);
+        return IteratorSourceKind::Object {
+            class_name: class_name.to_string(),
+            aggregate_class_name: None,
+        };
     }
     if !class_implements_interface(ctx, class_name, "IteratorAggregate") {
-        return (class_name.to_string(), None);
+        return IteratorSourceKind::Object {
+            class_name: class_name.to_string(),
+            aggregate_class_name: None,
+        };
     }
     match iterator_method_return_type(ctx, class_name, "getIterator") {
         PhpType::Object(iterator_class) => {
-            (iterator_class.trim_start_matches('\\').to_string(), Some(class_name.to_string()))
+            let iterator_class = iterator_class.trim_start_matches('\\').to_string();
+            if ctx.module.interface_infos.contains_key(&iterator_class) {
+                IteratorSourceKind::Interface {
+                    interface_name: iterator_class,
+                    aggregate_class_name: Some(class_name.to_string()),
+                }
+            } else {
+                IteratorSourceKind::Object {
+                    class_name: iterator_class,
+                    aggregate_class_name: Some(class_name.to_string()),
+                }
+            }
         }
-        _ => (class_name.to_string(), None),
+        _ => IteratorSourceKind::Object {
+            class_name: class_name.to_string(),
+            aggregate_class_name: None,
+        },
     }
 }
 

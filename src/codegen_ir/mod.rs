@@ -91,7 +91,7 @@ pub fn generate_user_asm_from_ir(
 }
 
 /// Appends literal data and the minimal user-runtime metadata needed by linked helpers.
-fn finalize_user_asm(module: &Module, emitter: Emitter, data: DataSection) -> String {
+fn finalize_user_asm(module: &Module, mut emitter: Emitter, data: DataSection) -> String {
     let data_output = data.emit();
     let empty_globals = HashSet::<String>::new();
     let empty_static_vars = HashMap::<(String, String), PhpType>::new();
@@ -100,6 +100,12 @@ fn finalize_user_asm(module: &Module, emitter: Emitter, data: DataSection) -> St
     let allowed_class_names = runtime_referenced_class_names(module);
     let runtime_interfaces = runtime_referenced_interfaces(module, &allowed_class_names);
     let runtime_classes = runtime_class_infos(module);
+    crate::codegen::interface_wrappers::emit_interface_return_wrappers(
+        &mut emitter,
+        &runtime_interfaces,
+        &runtime_classes,
+        Some(&allowed_class_names),
+    );
     let user_data = runtime::emit_runtime_data_user(
         &empty_globals,
         &empty_static_vars,

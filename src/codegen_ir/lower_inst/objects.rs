@@ -1262,7 +1262,6 @@ fn class_interfaces_require_missing_method_symbols(
             return true;
         };
         if interface_requires_missing_method_symbol(
-            ctx,
             class_name,
             class_info,
             interface_info,
@@ -1277,7 +1276,6 @@ fn class_interfaces_require_missing_method_symbols(
 
 /// Returns true when one interface table entry would point at an unavailable symbol.
 fn interface_requires_missing_method_symbol(
-    ctx: &FunctionContext<'_>,
     fallback_class: &str,
     class_info: &ClassInfo,
     interface_info: &InterfaceInfo,
@@ -1289,36 +1287,11 @@ fn interface_requires_missing_method_symbol(
             .get(method_name)
             .map(String::as_str)
             .unwrap_or(fallback_class);
-        if interface_method_needs_return_wrapper(ctx, interface_info, method_name, impl_class) {
-            return true;
-        }
         if !emitted_methods.contains(&(impl_class.to_string(), method_name.clone())) {
             return true;
         }
     }
     false
-}
-
-/// Returns true when an interface entry would need a return boxing wrapper.
-fn interface_method_needs_return_wrapper(
-    ctx: &FunctionContext<'_>,
-    interface_info: &InterfaceInfo,
-    method_name: &str,
-    impl_class: &str,
-) -> bool {
-    let Some(interface_sig) = interface_info.methods.get(method_name) else {
-        return false;
-    };
-    let Some(actual_sig) = ctx
-        .module
-        .class_infos
-        .get(impl_class)
-        .and_then(|class_info| class_info.methods.get(method_name))
-    else {
-        return true;
-    };
-    matches!(interface_sig.return_type.codegen_repr(), PhpType::Mixed)
-        && !matches!(actual_sig.return_type.codegen_repr(), PhpType::Mixed)
 }
 
 /// Returns instance-method keys emitted by the EIR backend.
