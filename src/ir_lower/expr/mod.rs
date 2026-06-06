@@ -1812,6 +1812,9 @@ fn lower_args_with_signature(
     let Some(sig) = sig else {
         return lower_args(ctx, args);
     };
+    if let Some(operands) = lower_assoc_spread_only_args(ctx, sig, args) {
+        return operands;
+    }
     if crate::types::call_args::has_named_args(args) {
         return lower_named_args_with_signature(ctx, sig, args);
     }
@@ -1864,17 +1867,22 @@ fn lower_named_args_with_signature(
         .first()
         .map(|arg| arg.span)
         .unwrap_or_else(crate::span::Span::dummy);
-    let Ok(plan) = crate::types::call_args::plan_call_args(
+    let assoc_spread_sources = assoc_spread_sources(ctx, args);
+    let regular_param_count = crate::types::call_args::regular_param_count(sig);
+    let Ok(plan) = crate::types::call_args::plan_call_args_with_regular_param_count_and_assoc_spreads(
         sig,
         args,
         call_span,
+        regular_param_count,
         false,
         true,
+        &assoc_spread_sources,
     ) else {
         return lower_args(ctx, args);
     };
     if plan.has_spread_args() {
-        return lower_args(ctx, args);
+        let normalized = plan.normalized_args();
+        return lower_args(ctx, &normalized);
     }
     if plan.variadic_args.iter().any(|arg| arg.key.is_some()) {
         return lower_args(ctx, args);
@@ -1903,6 +1911,89 @@ fn lower_named_args_with_signature(
         operands.push(lower_named_variadic_tail_array(ctx, sig, &plan.variadic_args).value);
     }
     operands
+}
+
+/// Lowers a single associative spread as named parameter reads by key.
+fn lower_assoc_spread_only_args(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    args: &[Expr],
+) -> Option<Vec<crate::ir::ValueId>> {
+    let [arg] = args else {
+        return None;
+    };
+    let ExprKind::Spread(inner) = &arg.kind else {
+        return None;
+    };
+    if !is_assoc_spread_source(ctx, inner) || sig.variadic.is_some() {
+        return None;
+    }
+    let spread = lower_expr(ctx, inner);
+    let spread_type = ctx.builder.value_php_type(spread.value);
+    let temp_name = ctx.declare_hidden_temp(spread_type.clone());
+    store_value_into_temp(ctx, &temp_name, spread_type, spread, arg.span);
+    let spread_expr = Expr::new(ExprKind::Variable(temp_name), inner.span);
+    let mut operands = Vec::with_capacity(sig.params.len());
+    for (idx, (param_name, _)) in sig.params.iter().enumerate() {
+        let default = sig.defaults.get(idx).and_then(|default| default.as_ref());
+        let param_expr = assoc_spread_param_expr(&spread_expr, param_name, default, arg.span);
+        operands.push(lower_expr(ctx, &param_expr).value);
+    }
+    Some(operands)
+}
+
+/// Builds an expression that reads one named parameter from an associative spread.
+fn assoc_spread_param_expr(
+    spread_expr: &Expr,
+    param_name: &str,
+    default: Option<&Expr>,
+    span: crate::span::Span,
+) -> Expr {
+    let key = Expr::new(ExprKind::StringLiteral(param_name.to_string()), span);
+    let access = Expr::new(
+        ExprKind::ArrayAccess {
+            array: Box::new(spread_expr.clone()),
+            index: Box::new(key.clone()),
+        },
+        span,
+    );
+    let Some(default) = default else {
+        return access;
+    };
+    Expr::new(
+        ExprKind::Ternary {
+            condition: Box::new(Expr::new(
+                ExprKind::FunctionCall {
+                    name: Name::unqualified("array_key_exists"),
+                    args: vec![key, spread_expr.clone()],
+                },
+                span,
+            )),
+            then_expr: Box::new(access),
+            else_expr: Box::new(default.clone()),
+        },
+        span,
+    )
+}
+
+/// Marks spread arguments whose source is known to be an associative array.
+fn assoc_spread_sources(ctx: &LoweringContext<'_, '_>, args: &[Expr]) -> Vec<bool> {
+    crate::types::call_args::expand_static_assoc_spread_args(args)
+        .iter()
+        .map(|arg| match &arg.kind {
+            ExprKind::Spread(inner) => is_assoc_spread_source(ctx, inner),
+            _ => false,
+        })
+        .collect()
+}
+
+/// Returns true when a spread expression should feed named parameters by key.
+fn is_assoc_spread_source(ctx: &LoweringContext<'_, '_>, expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Variable(name) => matches!(ctx.local_types.get(name), Some(PhpType::AssocArray { .. })),
+        ExprKind::ArrayLiteralAssoc(_) => true,
+        _ => matches!(infer_expr_type_syntactic(expr), PhpType::AssocArray { .. }),
+    }
 }
 
 /// Lowers one source call argument, unwrapping named syntax while preserving source position.
