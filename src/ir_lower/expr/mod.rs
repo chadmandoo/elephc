@@ -2264,6 +2264,9 @@ fn lower_named_args_with_signature(
         return lower_args(ctx, args);
     };
     if plan.has_spread_args() {
+        if let Some(operands) = lower_named_args_with_spread_plan(ctx, sig, &plan) {
+            return operands;
+        }
         let normalized = plan.normalized_args();
         return lower_args(ctx, &normalized);
     }
@@ -2294,6 +2297,100 @@ fn lower_named_args_with_signature(
         operands.push(lower_named_variadic_tail_array(ctx, sig, &plan.variadic_args).value);
     }
     operands
+}
+
+/// Lowers named/spread argument plans without re-evaluating dynamic spread expressions.
+fn lower_named_args_with_spread_plan(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    plan: &crate::types::call_args::CallArgPlan,
+) -> Option<Vec<crate::ir::ValueId>> {
+    if sig.variadic.is_some() {
+        return None;
+    }
+    let mut source_values = vec![None; plan.source_args.len()];
+    let mut spread_temps = Vec::new();
+    for (source_index, source_arg) in plan.source_args.iter().enumerate() {
+        match &source_arg.kind {
+            ExprKind::Spread(inner) => {
+                let spread = lower_expr(ctx, inner);
+                let spread_type = ctx.builder.value_php_type(spread.value);
+                let temp_name = ctx.declare_hidden_temp(spread_type.clone());
+                store_value_into_temp(ctx, &temp_name, spread_type, spread, source_arg.span);
+                spread_temps.push((
+                    source_arg.span,
+                    Expr::new(ExprKind::Variable(temp_name), inner.span),
+                ));
+            }
+            _ => {
+                source_values[source_index] = Some(lower_call_source_arg(ctx, source_arg));
+            }
+        }
+    }
+
+    let mut operands = Vec::with_capacity(plan.regular_args.len());
+    for arg in &plan.regular_args {
+        match arg {
+            crate::types::call_args::PlannedRegularArg::Source { source_index, .. } => {
+                operands.push(source_values.get(*source_index).copied().flatten()?);
+            }
+            crate::types::call_args::PlannedRegularArg::Default(default) => {
+                operands.push(lower_expr(ctx, default).value);
+            }
+            crate::types::call_args::PlannedRegularArg::SpreadElement {
+                spread_span,
+                element_idx,
+                param_name,
+                prefer_named_key,
+                default,
+                guaranteed_present,
+                ..
+            } => {
+                let spread = spread_temp_for_span(&spread_temps, *spread_span)?;
+                let expr = if let Some(default) = default {
+                    if *guaranteed_present {
+                        spread_element_expr_for_ir(
+                            spread,
+                            *element_idx,
+                            param_name.as_deref(),
+                            *prefer_named_key,
+                            *spread_span,
+                        )
+                    } else {
+                        spread_element_or_default_expr_for_ir(
+                            spread,
+                            *element_idx,
+                            param_name.as_deref(),
+                            *prefer_named_key,
+                            default.clone(),
+                            *spread_span,
+                        )
+                    }
+                } else {
+                    spread_element_expr_for_ir(
+                        spread,
+                        *element_idx,
+                        param_name.as_deref(),
+                        *prefer_named_key,
+                        *spread_span,
+                    )
+                };
+                operands.push(lower_expr(ctx, &expr).value);
+            }
+        }
+    }
+    Some(operands)
+}
+
+/// Finds the hidden temporary that owns a previously evaluated spread expression.
+fn spread_temp_for_span(
+    temps: &[(crate::span::Span, Expr)],
+    span: crate::span::Span,
+) -> Option<&Expr> {
+    temps
+        .iter()
+        .find(|(candidate, _)| candidate.line == span.line && candidate.col == span.col)
+        .map(|(_, expr)| expr)
 }
 
 /// Lowers a single associative spread as named parameter reads by key.
@@ -2354,6 +2451,95 @@ fn assoc_spread_param_expr(
             )),
             then_expr: Box::new(access),
             else_expr: Box::new(default.clone()),
+        },
+        span,
+    )
+}
+
+/// Builds an expression that reads one materialized spread element from a hidden temp.
+fn spread_element_expr_for_ir(
+    spread_expr: &Expr,
+    element_idx: usize,
+    param_name: Option<&str>,
+    prefer_named_key: bool,
+    span: crate::span::Span,
+) -> Expr {
+    let index = if prefer_named_key {
+        param_name
+            .map(|name| Expr::new(ExprKind::StringLiteral(name.to_string()), span))
+            .unwrap_or_else(|| Expr::new(ExprKind::IntLiteral(element_idx as i64), span))
+    } else {
+        Expr::new(ExprKind::IntLiteral(element_idx as i64), span)
+    };
+    Expr::new(
+        ExprKind::ArrayAccess {
+            array: Box::new(spread_expr.clone()),
+            index: Box::new(index),
+        },
+        span,
+    )
+}
+
+/// Builds an expression that falls back to a default when a spread element is absent.
+fn spread_element_or_default_expr_for_ir(
+    spread_expr: &Expr,
+    element_idx: usize,
+    param_name: Option<&str>,
+    prefer_named_key: bool,
+    default_expr: Expr,
+    span: crate::span::Span,
+) -> Expr {
+    let condition = if prefer_named_key {
+        if let Some(param_name) = param_name {
+            Expr::new(
+                ExprKind::FunctionCall {
+                    name: Name::unqualified("array_key_exists"),
+                    args: vec![
+                        Expr::new(ExprKind::StringLiteral(param_name.to_string()), span),
+                        spread_expr.clone(),
+                    ],
+                },
+                span,
+            )
+        } else {
+            spread_len_gt_expr_for_ir(spread_expr, element_idx, span)
+        }
+    } else {
+        spread_len_gt_expr_for_ir(spread_expr, element_idx, span)
+    };
+    Expr::new(
+        ExprKind::Ternary {
+            condition: Box::new(condition),
+            then_expr: Box::new(spread_element_expr_for_ir(
+                spread_expr,
+                element_idx,
+                param_name,
+                prefer_named_key,
+                span,
+            )),
+            else_expr: Box::new(default_expr),
+        },
+        span,
+    )
+}
+
+/// Builds `count($spread) > element_idx` for optional spread-slot defaults.
+fn spread_len_gt_expr_for_ir(
+    spread_expr: &Expr,
+    element_idx: usize,
+    span: crate::span::Span,
+) -> Expr {
+    Expr::new(
+        ExprKind::BinaryOp {
+            left: Box::new(Expr::new(
+                ExprKind::FunctionCall {
+                    name: Name::unqualified("count"),
+                    args: vec![spread_expr.clone()],
+                },
+                span,
+            )),
+            op: BinOp::Gt,
+            right: Box::new(Expr::new(ExprKind::IntLiteral(element_idx as i64), span)),
         },
         span,
     )
