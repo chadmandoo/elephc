@@ -3734,7 +3734,14 @@ fn store_value_into_temp(
     span: crate::span::Span,
 ) {
     let value = coerce_value_for_temp(ctx, value, &temp_type, span);
-    ctx.store_local(temp_name, value, temp_type, Some(span));
+    let source = value;
+    let stored = crate::ir_lower::ownership::acquire_if_refcounted(ctx, value, Some(span));
+    ctx.store_local(temp_name, stored, temp_type, Some(span));
+    if stored.value != source.value
+        && crate::ir_lower::ownership::may_require_release(ctx.builder.value_ownership(source.value))
+    {
+        crate::ir_lower::ownership::release_if_owned(ctx, source, Some(span));
+    }
 }
 
 /// Chooses a merge temp type from contextual branch materialization and fallback metadata.

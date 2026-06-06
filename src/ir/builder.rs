@@ -111,6 +111,11 @@ impl<'f> Builder<'f> {
         self.func.values[value.as_raw() as usize].php_type.clone()
     }
 
+    /// Returns the ownership state for a value already emitted in this function.
+    pub fn value_ownership(&self, value: ValueId) -> Ownership {
+        self.func.values[value.as_raw() as usize].ownership
+    }
+
     /// Returns the opcode that produced an instruction-defined value, if available.
     pub fn value_defining_op(&self, value: ValueId) -> Option<Op> {
         let value = self.func.values.get(value.as_raw() as usize)?;
