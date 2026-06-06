@@ -2625,7 +2625,7 @@ fn lower_assoc_array_literal(ctx: &mut LoweringContext<'_, '_>, pairs: &[(Expr, 
         Op::HashNew,
         Vec::new(),
         Some(Immediate::Capacity(pairs.len() as u32)),
-        assoc_array_literal_type_for_ir(pairs, expr),
+        assoc_array_literal_type_for_ir(ctx, pairs, expr),
         Op::HashNew.default_effects(),
         Some(expr.span),
     );
@@ -2638,7 +2638,11 @@ fn lower_assoc_array_literal(ctx: &mut LoweringContext<'_, '_>, pairs: &[(Expr, 
 }
 
 /// Returns the associative-array type that the EIR backend can faithfully materialize.
-fn assoc_array_literal_type_for_ir(pairs: &[(Expr, Expr)], expr: &Expr) -> PhpType {
+fn assoc_array_literal_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    pairs: &[(Expr, Expr)],
+    expr: &Expr,
+) -> PhpType {
     if pairs.is_empty() {
         return fallback_expr_type(expr);
     }
@@ -2646,7 +2650,7 @@ fn assoc_array_literal_type_for_ir(pairs: &[(Expr, Expr)], expr: &Expr) -> PhpTy
         &pairs[0].0,
         infer_expr_type_syntactic(&pairs[0].0),
     );
-    let mut value_ty = infer_expr_type_syntactic(&pairs[0].1).codegen_repr();
+    let mut value_ty = assoc_array_literal_value_type_for_ir(ctx, &pairs[0].1);
     for (key, value) in pairs.iter().skip(1) {
         key_ty = merge_array_key_types(
             key_ty,
@@ -2654,12 +2658,38 @@ fn assoc_array_literal_type_for_ir(pairs: &[(Expr, Expr)], expr: &Expr) -> PhpTy
         );
         value_ty = merge_ir_assoc_value_type(
             value_ty,
-            infer_expr_type_syntactic(value).codegen_repr(),
+            assoc_array_literal_value_type_for_ir(ctx, value),
         );
     }
     PhpType::AssocArray {
         key: Box::new(key_ty),
         value: Box::new(value_ty),
+    }
+}
+
+/// Returns the best EIR storage value type for one associative-array literal value.
+fn assoc_array_literal_value_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    value: &Expr,
+) -> PhpType {
+    match &value.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| infer_expr_type_syntactic(value))
+            .codegen_repr(),
+        ExprKind::FunctionCall { name, .. } => {
+            let canonical = name.as_str();
+            if let Some(sig) = ctx.functions.get(canonical) {
+                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+            }
+            if let Some(sig) = ctx.extern_functions.get(canonical) {
+                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+            }
+            infer_expr_type_syntactic(value).codegen_repr()
+        }
+        _ => infer_expr_type_syntactic(value).codegen_repr(),
     }
 }
 

@@ -209,7 +209,7 @@ fn materialize_hash_value_aarch64(
     value_ty: &PhpType,
     storage_value_ty: &PhpType,
 ) -> Result<()> {
-    if storage_value_ty == &PhpType::Mixed {
+    if matches!(storage_value_ty, PhpType::Mixed | PhpType::Iterable) {
         return materialize_hash_mixed_value_aarch64(ctx, value, value_ty);
     }
     match value_ty {
@@ -240,7 +240,7 @@ fn materialize_hash_value_x86_64(
     value_ty: &PhpType,
     storage_value_ty: &PhpType,
 ) -> Result<()> {
-    if storage_value_ty == &PhpType::Mixed {
+    if matches!(storage_value_ty, PhpType::Mixed | PhpType::Iterable) {
         return materialize_hash_mixed_value_x86_64(ctx, value, value_ty);
     }
     match value_ty {
@@ -449,7 +449,7 @@ fn require_supported_hash_value(
     inst: &Instruction,
 ) -> Result<PhpType> {
     let value_ty = value_ty.codegen_repr();
-    if storage_value_ty == &PhpType::Mixed
+    if matches!(storage_value_ty, PhpType::Mixed | PhpType::Iterable)
         && (matches!(
             value_ty,
             PhpType::Int
@@ -461,6 +461,7 @@ fn require_supported_hash_value(
                 | PhpType::Mixed
                 | PhpType::Array(_)
                 | PhpType::AssocArray { .. }
+                | PhpType::Iterable
                 | PhpType::Object(_)
         ))
     {
