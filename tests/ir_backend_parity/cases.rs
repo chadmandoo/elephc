@@ -823,6 +823,28 @@ echo $mapped[1];
     );
 }
 
+/// Verifies instance-method `array_map()` callbacks over string arrays match legacy output.
+#[test]
+fn parity_instance_method_array_map_string_callbacks() {
+    assert_backend_parity(
+        "instance_method_array_map_string_callbacks",
+        r#"<?php
+class StringMapperBox {
+    public function bracket(string $item): string {
+        return "[" . $item . "]";
+    }
+}
+
+$box = new StringMapperBox();
+$mapped = array_map($box->bracket(...), ["a", "b"]);
+echo $mapped[0];
+echo ":";
+echo $mapped[1];
+"#,
+        &[],
+    );
+}
+
 /// Verifies stored instance-method `array_map()` callbacks keep legacy receiver capture.
 #[test]
 fn parity_stored_instance_method_array_map_callbacks() {

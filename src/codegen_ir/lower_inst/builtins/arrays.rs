@@ -203,12 +203,12 @@ pub(super) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instructi
     store_if_result(ctx, inst)
 }
 
-/// Lowers `array_map()` through the scalar callback runtime helper.
+/// Lowers `array_map()` through the callback runtime helper matching the callback result type.
 pub(super) fn lower_array_map(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_map", 2)?;
     let callback = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
-    let elem_ty = eight_byte_callback_array_element_type(ctx.value_php_type(array)?, "array_map")?;
+    let elem_ty = array_map_callback_array_element_type(ctx.value_php_type(array)?)?;
     let callback_binding =
         static_sort_callback_binding(ctx, callback, "array_map callback", Some(&[elem_ty]))?;
     let callback_elem_ty = array_map_callback_result_element_type(&callback_binding.return_ty)?;
@@ -220,7 +220,16 @@ pub(super) fn lower_array_map(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     abi::emit_symbol_address(ctx.emitter, callback_arg_reg, &callback_binding.label);
     ctx.load_value_to_reg(array, array_arg_reg)?;
     load_static_callback_env_arg(ctx, env_arg_reg, env_bytes);
-    abi::emit_call_label(ctx.emitter, "__rt_array_map");
+    let runtime_label = if callback_elem_ty == PhpType::Str {
+        if env_bytes == 0 {
+            "__rt_array_map_str"
+        } else {
+            "__rt_array_map_str_owned"
+        }
+    } else {
+        "__rt_array_map"
+    };
+    abi::emit_call_label(ctx.emitter, runtime_label);
     if env_bytes != 0 {
         abi::emit_release_temporary_stack(ctx.emitter, env_bytes);
     }
@@ -919,6 +928,26 @@ fn eight_byte_callback_array_element_type(ty: PhpType, name: &str) -> Result<Php
     }
 }
 
+/// Returns the indexed-array element type accepted by `array_map()` callback runtimes.
+fn array_map_callback_array_element_type(ty: PhpType) -> Result<PhpType> {
+    match ty.codegen_repr() {
+        PhpType::Array(elem) => {
+            let elem = elem.codegen_repr();
+            if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never) {
+                return Ok(elem);
+            }
+            Err(CodegenIrError::unsupported(format!(
+                "array_map indexed-array element PHP type {:?}",
+                elem
+            )))
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "array_map for PHP type {:?}",
+            other
+        ))),
+    }
+}
+
 /// Returns a scalar callback value type that fits in one integer ABI register.
 fn eight_byte_callback_value_type(ty: PhpType, name: &str) -> Result<PhpType> {
     let ty = ty.codegen_repr();
@@ -963,10 +992,10 @@ fn store_void_builtin_result(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
     store_if_result(ctx, inst)
 }
 
-/// Returns the scalar slot type produced by the current `array_map()` runtime helper.
+/// Returns the indexed-array slot type produced by the selected `array_map()` runtime helper.
 fn array_map_callback_result_element_type(return_ty: &PhpType) -> Result<PhpType> {
     let return_ty = return_ty.codegen_repr();
-    if matches!(return_ty, PhpType::Int | PhpType::Bool) {
+    if matches!(return_ty, PhpType::Int | PhpType::Bool | PhpType::Str) {
         Ok(return_ty)
     } else {
         Err(CodegenIrError::unsupported(format!(
@@ -1521,10 +1550,25 @@ fn require_static_method_callback_arg_types(
             visible_arg_types.len()
         )));
     }
+    if visible_arg_types
+        .iter()
+        .any(|ty| matches!(ty.codegen_repr(), PhpType::Str))
+        && !(visible_arg_types.len() == 1
+            && matches!(visible_arg_types[0].codegen_repr(), PhpType::Str))
+    {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} '{}' with string callback args outside the one-argument ABI",
+            owner,
+            callback_name
+        )));
+    }
     for ty in visible_arg_types {
-        if !matches!(ty.codegen_repr(), PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never) {
+        if !matches!(
+            ty.codegen_repr(),
+            PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never
+        ) {
             return Err(CodegenIrError::unsupported(format!(
-                "{} '{}' with non-integer callback arg type {:?}",
+                "{} '{}' with unsupported callback arg type {:?}",
                 owner,
                 callback_name,
                 ty.codegen_repr()
@@ -1550,6 +1594,9 @@ fn require_static_method_callback_param_types(
         if matches!((&param_ty, &visible_ty), (PhpType::Int | PhpType::Bool, PhpType::Int | PhpType::Bool)) {
             continue;
         }
+        if matches!((&param_ty, &visible_ty), (PhpType::Str, PhpType::Str)) {
+            continue;
+        }
         return Err(CodegenIrError::unsupported(format!(
             "{} '{}' with callback param type {:?} for runtime arg type {:?}",
             owner,
@@ -1559,6 +1606,62 @@ fn require_static_method_callback_param_types(
         )));
     }
     Ok(())
+}
+
+/// Counts integer ABI registers consumed by the visible callback argument list.
+fn callback_arg_abi_slots(visible_arg_types: &[PhpType]) -> usize {
+    visible_arg_types
+        .iter()
+        .map(|ty| {
+            if matches!(ty.codegen_repr(), PhpType::Str) {
+                2
+            } else {
+                1
+            }
+        })
+        .sum()
+}
+
+/// Shifts AArch64 callback arguments right by one slot for a hidden receiver/class id.
+fn shift_callback_args_after_hidden_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    visible_arg_types: &[PhpType],
+) {
+    match visible_arg_types {
+        [ty] if matches!(ty.codegen_repr(), PhpType::Str) => {
+            ctx.emitter.instruction("mov x2, x1");                              // shift the callback string length after the hidden receiver/class id
+            ctx.emitter.instruction("mov x1, x0");                              // shift the callback string pointer after the hidden receiver/class id
+        }
+        [_] => {
+            ctx.emitter.instruction("mov x1, x0");                              // shift the scalar callback argument after the hidden receiver/class id
+        }
+        [_, _] => {
+            ctx.emitter.instruction("mov x2, x1");                              // shift the second scalar callback argument after the hidden receiver/class id
+            ctx.emitter.instruction("mov x1, x0");                              // shift the first scalar callback argument after the hidden receiver/class id
+        }
+        _ => {}
+    }
+}
+
+/// Shifts x86_64 callback arguments right by one slot for a hidden receiver/class id.
+fn shift_callback_args_after_hidden_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    visible_arg_types: &[PhpType],
+) {
+    match visible_arg_types {
+        [ty] if matches!(ty.codegen_repr(), PhpType::Str) => {
+            ctx.emitter.instruction("mov rdx, rsi");                            // shift the callback string length after the hidden receiver/class id
+            ctx.emitter.instruction("mov rsi, rdi");                            // shift the callback string pointer after the hidden receiver/class id
+        }
+        [_] => {
+            ctx.emitter.instruction("mov rsi, rdi");                            // shift the scalar callback argument after the hidden receiver/class id
+        }
+        [_, _] => {
+            ctx.emitter.instruction("mov rdx, rsi");                            // shift the second scalar callback argument after the hidden receiver/class id
+            ctx.emitter.instruction("mov rsi, rdi");                            // shift the first scalar callback argument after the hidden receiver/class id
+        }
+        _ => {}
+    }
 }
 
 /// Emits a local wrapper that prepends the hidden static called-class id.
@@ -1585,7 +1688,7 @@ fn emit_static_method_callback_wrapper_aarch64(
     target: &StaticMethodCallbackTarget,
     visible_arg_types: &[PhpType],
 ) {
-    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, callback_arg_abi_slots(visible_arg_types));
     ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
     ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the static method call
     match target.called_class {
@@ -1596,10 +1699,7 @@ fn emit_static_method_callback_wrapper_aarch64(
             ctx.emitter.instruction(&format!("ldr x3, [{}]", env_reg));         // load the late-static called-class id from the callback environment
         }
     }
-    if visible_arg_types.len() == 2 {
-        ctx.emitter.instruction("mov x2, x1");                                  // shift the second callback argument after the hidden class id
-    }
-    ctx.emitter.instruction("mov x1, x0");                                      // shift the first callback argument after the hidden class id
+    shift_callback_args_after_hidden_aarch64(ctx, visible_arg_types);
     ctx.emitter.instruction("mov x0, x3");                                      // pass the called-class id as the hidden static method argument
     emit_static_callback_dispatch(ctx, target);
     ctx.emitter.instruction("ldr x30, [sp, #8]");                               // restore the runtime helper return address after the static method call
@@ -1613,7 +1713,7 @@ fn emit_static_method_callback_wrapper_x86_64(
     target: &StaticMethodCallbackTarget,
     visible_arg_types: &[PhpType],
 ) {
-    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, callback_arg_abi_slots(visible_arg_types));
     ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested static method call
     ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
     match target.called_class {
@@ -1624,10 +1724,7 @@ fn emit_static_method_callback_wrapper_x86_64(
             ctx.emitter.instruction(&format!("mov rcx, QWORD PTR [{}]", env_reg)); // load the late-static called-class id from the callback environment
         }
     }
-    if visible_arg_types.len() == 2 {
-        ctx.emitter.instruction("mov rdx, rsi");                                // shift the second callback argument after the hidden class id
-    }
-    ctx.emitter.instruction("mov rsi, rdi");                                    // shift the first callback argument after the hidden class id
+    shift_callback_args_after_hidden_x86_64(ctx, visible_arg_types);
     ctx.emitter.instruction("mov rdi, rcx");                                    // pass the called-class id as the hidden static method argument
     emit_static_callback_dispatch(ctx, target);
     ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer before returning
@@ -1658,14 +1755,11 @@ fn emit_instance_method_callback_wrapper_aarch64(
     target: &InstanceMethodCallbackTarget,
     visible_arg_types: &[PhpType],
 ) {
-    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, callback_arg_abi_slots(visible_arg_types));
     ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
     ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the instance method call
     ctx.emitter.instruction(&format!("ldr x3, [{}]", env_reg));                 // load the captured object receiver from the callback environment
-    if visible_arg_types.len() == 2 {
-        ctx.emitter.instruction("mov x2, x1");                                  // shift the second callback argument after the receiver
-    }
-    ctx.emitter.instruction("mov x1, x0");                                      // shift the first callback argument after the receiver
+    shift_callback_args_after_hidden_aarch64(ctx, visible_arg_types);
     ctx.emitter.instruction("mov x0, x3");                                      // pass the captured object receiver as the method receiver
     abi::emit_call_label(ctx.emitter, &target.entry_label);
     ctx.emitter.instruction("ldr x30, [sp, #8]");                               // restore the runtime helper return address after the instance method call
@@ -1679,14 +1773,11 @@ fn emit_instance_method_callback_wrapper_x86_64(
     target: &InstanceMethodCallbackTarget,
     visible_arg_types: &[PhpType],
 ) {
-    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, visible_arg_types.len());
+    let env_reg = abi::int_arg_reg_name(ctx.emitter.target, callback_arg_abi_slots(visible_arg_types));
     ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested instance method call
     ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
     ctx.emitter.instruction(&format!("mov rcx, QWORD PTR [{}]", env_reg));      // load the captured object receiver from the callback environment
-    if visible_arg_types.len() == 2 {
-        ctx.emitter.instruction("mov rdx, rsi");                                // shift the second callback argument after the receiver
-    }
-    ctx.emitter.instruction("mov rsi, rdi");                                    // shift the first callback argument after the receiver
+    shift_callback_args_after_hidden_x86_64(ctx, visible_arg_types);
     ctx.emitter.instruction("mov rdi, rcx");                                    // pass the captured object receiver as the method receiver
     abi::emit_call_label(ctx.emitter, &target.entry_label);
     ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer before returning

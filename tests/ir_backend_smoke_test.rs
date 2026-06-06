@@ -2989,6 +2989,28 @@ echo $mapped[1];
     );
 }
 
+/// Verifies instance-method `array_map()` callbacks can receive and return strings.
+#[test]
+fn ir_backend_handles_instance_method_array_map_string_callbacks() {
+    let source = r#"<?php
+class StringMapperBox {
+    public function bracket(string $item): string {
+        return "[" . $item . "]";
+    }
+}
+
+$box = new StringMapperBox();
+$mapped = array_map($box->bracket(...), ["a", "b"]);
+echo $mapped[0];
+echo ":";
+echo $mapped[1];
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("instance_method_array_map_string_callbacks", source),
+        "[a]:[b]"
+    );
+}
+
 /// Verifies stored instance-method callbacks keep their captured receiver in `array_map()`.
 #[test]
 fn ir_backend_handles_stored_instance_method_array_map_callbacks() {
