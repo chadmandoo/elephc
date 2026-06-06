@@ -927,6 +927,29 @@ echo $fn();
     );
 }
 
+/// Verifies stored instance-method named args/defaults match legacy output.
+#[test]
+fn parity_stored_instance_method_named_args() {
+    assert_backend_parity(
+        "stored_instance_method_named_args",
+        r#"<?php
+class StoredNamedArgBox {
+    public function __construct(private string $prefix) {}
+
+    public function format(string $value, string $suffix = "!"): string {
+        return $this->prefix . $value . $suffix;
+    }
+}
+
+$box = new StoredNamedArgBox("old:");
+$fn = $box->format(...);
+$box = new StoredNamedArgBox("new:");
+echo $fn(value: "Ada");
+"#,
+        &[],
+    );
+}
+
 /// Verifies instance-method first-class callable `call_user_func*` output matches legacy.
 #[test]
 fn parity_instance_method_call_user_func_callbacks() {

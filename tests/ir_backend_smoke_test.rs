@@ -3098,6 +3098,29 @@ echo $fn();
     );
 }
 
+/// Verifies stored instance-method descriptor calls use named args and defaults.
+#[test]
+fn ir_backend_handles_stored_instance_method_named_args() {
+    let source = r#"<?php
+class StoredNamedArgBox {
+    public function __construct(private string $prefix) {}
+
+    public function format(string $value, string $suffix = "!"): string {
+        return $this->prefix . $value . $suffix;
+    }
+}
+
+$box = new StoredNamedArgBox("old:");
+$fn = $box->format(...);
+$box = new StoredNamedArgBox("new:");
+echo $fn(value: "Ada");
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stored_instance_method_named_args", source),
+        "old:Ada!"
+    );
+}
+
 /// Verifies instance-method first-class callables work with `call_user_func*`.
 #[test]
 fn ir_backend_handles_instance_method_call_user_func_callbacks() {

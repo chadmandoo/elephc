@@ -1051,8 +1051,9 @@ fn lower_instance_callable_call_user_func(
     expr: &Expr,
 ) -> Option<LoweredValue> {
     let result_type = static_callable_return_type(ctx, &callback);
+    let signature = instance_callable_signature(&callback).cloned();
     let mut operands = vec![lower_expr(ctx, callback_expr).value];
-    operands.extend(lower_args(ctx, callback_args));
+    operands.extend(lower_args_with_signature(ctx, signature.as_ref(), callback_args));
     Some(ctx.emit_value(
         Op::ExprCall,
         operands,
@@ -1321,6 +1322,14 @@ fn instance_call_user_func_callback(
         Some(target)
     } else {
         None
+    }
+}
+
+/// Returns signature metadata for receiver-bound callables that still need descriptor state.
+fn instance_callable_signature(target: &StaticCallableBinding) -> Option<&FunctionSig> {
+    match target {
+        StaticCallableBinding::InstanceMethod { signature } => Some(signature),
+        _ => None,
     }
 }
 
@@ -2676,14 +2685,16 @@ fn lower_closure(
 /// Lowers a closure variable call.
 fn lower_closure_call(ctx: &mut LoweringContext<'_, '_>, var: &str, args: &[Expr], expr: &Expr) -> LoweredValue {
     let mut result_type = None;
+    let mut instance_signature = None;
     if let Some(target) = ctx.static_callable_local(var) {
         result_type = Some(static_callable_return_type(ctx, &target));
+        instance_signature = instance_callable_signature(&target).cloned();
         if let Some(value) = lower_static_callable_call(ctx, target, args, expr) {
             return value;
         }
     }
     let mut operands = vec![ctx.load_local(var, Some(expr.span)).value];
-    operands.extend(lower_args(ctx, args));
+    operands.extend(lower_args_with_signature(ctx, instance_signature.as_ref(), args));
     let result_type = result_type.unwrap_or_else(|| fallback_expr_type(expr));
     ctx.emit_value(Op::ClosureCall, operands, None, result_type, Op::ClosureCall.default_effects(), Some(expr.span))
 }
