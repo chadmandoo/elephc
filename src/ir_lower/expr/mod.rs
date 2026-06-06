@@ -2905,11 +2905,108 @@ fn lower_array_literal(ctx: &mut LoweringContext<'_, '_>, items: &[Expr], expr: 
         Some(expr.span),
     );
     for item in items {
+        if let ExprKind::Spread(inner) = &item.kind {
+            let source = lower_expr(ctx, inner);
+            lower_indexed_array_spread_into_array(ctx, array, source, elem_ty.as_ref(), item.span);
+            continue;
+        }
         let value = lower_expr(ctx, item);
         ctx.emit_void(Op::ArrayPush, vec![array.value, value.value], None, Op::ArrayPush.default_effects(), Some(item.span));
         release_value_after_retaining_insert(ctx, elem_ty.as_ref(), value, item.span);
     }
     array
+}
+
+/// Lowers an indexed-array spread by appending each source element to the destination.
+fn lower_indexed_array_spread_into_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    array: LoweredValue,
+    source: LoweredValue,
+    container_elem_ty: Option<&PhpType>,
+    span: crate::span::Span,
+) {
+    let source_elem_ty = match ctx.builder.value_php_type(source.value).codegen_repr() {
+        PhpType::Array(elem_ty) => elem_ty.codegen_repr(),
+        _ => PhpType::Mixed,
+    };
+    let len = ctx.emit_value(
+        Op::ArrayLen,
+        vec![source.value],
+        None,
+        PhpType::Int,
+        Op::ArrayLen.default_effects(),
+        Some(span),
+    );
+    let zero = emit_i64_at_span(ctx, 0, span);
+    let header = ctx.builder.create_named_block("array.spread.next", vec![(IrType::I64, PhpType::Int)]);
+    let body = ctx.builder.create_named_block("array.spread.body", Vec::new());
+    let exit = ctx.builder.create_named_block("array.spread.exit", Vec::new());
+    ctx.builder.terminate(Terminator::Br { target: header, args: vec![zero.value] });
+
+    ctx.builder.position_at_end(header);
+    let index = ctx.builder.block_param(header, 0);
+    let has_next = ctx.emit_value(
+        Op::ICmp,
+        vec![index, len.value],
+        Some(Immediate::CmpPredicate(CmpPredicate::Slt)),
+        PhpType::Bool,
+        Op::ICmp.default_effects(),
+        Some(span),
+    );
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: has_next.value,
+        then_target: body,
+        then_args: Vec::new(),
+        else_target: exit,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(body);
+    let value = ctx.emit_value(
+        Op::ArrayGet,
+        vec![source.value, index],
+        None,
+        source_elem_ty,
+        Op::ArrayGet.default_effects(),
+        Some(span),
+    );
+    ctx.emit_void(
+        Op::ArrayPush,
+        vec![array.value, value.value],
+        None,
+        Op::ArrayPush.default_effects(),
+        Some(span),
+    );
+    release_value_after_retaining_insert(ctx, container_elem_ty, value, span);
+    let one = emit_i64_at_span(ctx, 1, span);
+    let next = ctx.emit_value(
+        Op::IAdd,
+        vec![index, one.value],
+        None,
+        PhpType::Int,
+        Op::IAdd.default_effects(),
+        Some(span),
+    );
+    ctx.builder.terminate(Terminator::Br { target: header, args: vec![next.value] });
+
+    ctx.builder.position_at_end(exit);
+    crate::ir_lower::ownership::release_if_owned(ctx, source, Some(span));
+}
+
+/// Emits an integer constant at a specific source span.
+fn emit_i64_at_span(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: i64,
+    span: crate::span::Span,
+) -> LoweredValue {
+    ctx.emit_value(
+        Op::ConstI64,
+        Vec::new(),
+        Some(Immediate::I64(value)),
+        PhpType::Int,
+        Op::ConstI64.default_effects(),
+        Some(span),
+    )
 }
 
 /// Returns the element type from an indexed-array literal type.

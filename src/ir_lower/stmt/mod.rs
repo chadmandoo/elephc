@@ -511,7 +511,7 @@ fn lower_array_assign(
     }
     if op == Op::ArraySet {
         let (array_value, updated_ty, needs_storeback) =
-            prepare_indexed_array_local_write(ctx, array_value, value, span);
+            prepare_indexed_array_local_set(ctx, array_value, value, span);
         ctx.emit_void(
             op,
             vec![array_value.value, index.value, value.value],
@@ -608,6 +608,43 @@ fn lower_array_push(ctx: &mut LoweringContext<'_, '_>, array: &str, value: &Expr
         return;
     }
     ctx.emit_void(op, vec![array_value.value, value.value], None, op.default_effects(), Some(span));
+}
+
+/// Prepares an indexed-array local for an offset assignment.
+fn prepare_indexed_array_local_set(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    value: LoweredValue,
+    span: Span,
+) -> (LoweredValue, Option<PhpType>, bool) {
+    let current_ty = ctx.builder.value_php_type(array_value.value);
+    let value_ty = ctx.builder.value_php_type(value.value);
+    if indexed_array_refcounted_set_needs_mixed_conversion(&current_ty, &value_ty) {
+        let updated_ty = PhpType::Array(Box::new(PhpType::Mixed));
+        let converted = ctx.emit_value(
+            Op::ArrayToMixed,
+            vec![array_value.value],
+            None,
+            updated_ty.clone(),
+            Op::ArrayToMixed.default_effects(),
+            Some(span),
+        );
+        return (converted, Some(updated_ty), true);
+    }
+    prepare_indexed_array_local_write(ctx, array_value, value, span)
+}
+
+/// Returns true when a refcounted indexed-array assignment should use Mixed slots.
+fn indexed_array_refcounted_set_needs_mixed_conversion(
+    current_ty: &PhpType,
+    value_ty: &PhpType,
+) -> bool {
+    let PhpType::Array(elem_ty) = current_ty.codegen_repr() else {
+        return false;
+    };
+    let elem_ty = elem_ty.codegen_repr();
+    let value_ty = value_ty.codegen_repr();
+    elem_ty != PhpType::Mixed && elem_ty.is_refcounted() && value_ty.is_refcounted()
 }
 
 /// Converts typed indexed arrays to Mixed when a local write would make them heterogeneous.

@@ -2025,7 +2025,10 @@ fn load_property_store_value_to_result(
         }
         return Ok(());
     }
-    ctx.load_value_to_result(value)?;
+    let loaded_ty = ctx.load_value_to_result(value)?;
+    if slot_ty.codegen_repr().is_refcounted() {
+        abi::emit_incref_if_refcounted(ctx.emitter, &loaded_ty.codegen_repr());
+    }
     Ok(())
 }
 

@@ -1115,6 +1115,12 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
             PhpType::Float => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float"),
             PhpType::Int => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int"),
             PhpType::Bool => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool"),
+            PhpType::Array(elem) if elem.codegen_repr() == PhpType::Mixed => {
+                lower_mixed_to_mixed_indexed_array(ctx)?;
+            }
+            PhpType::AssocArray { value, .. } if value.codegen_repr() == PhpType::Mixed => {
+                lower_mixed_to_mixed_assoc_array(ctx)?;
+            }
             PhpType::Array(_)
             | PhpType::AssocArray { .. }
             | PhpType::Iterable
@@ -1137,6 +1143,39 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         source_ty,
         inst.result_php_type
     )))
+}
+
+/// Converts an untyped boxed Mixed payload into indexed-array storage with Mixed slots.
+fn lower_mixed_to_mixed_indexed_array(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, x1");                              // pass the unboxed indexed-array payload to the Mixed conversion helper
+            ctx.emitter.instruction("ldr x1, [x0, #-8]");                       // load indexed-array metadata before Mixed-slot conversion
+            ctx.emitter.instruction("lsr x1, x1, #8");                          // move the runtime value_type tag into the low bits
+            ctx.emitter.instruction("and x1, x1, #0x7f");                       // isolate the indexed-array value_type tag
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rsi, QWORD PTR [rdi - 8]");            // load indexed-array metadata before Mixed-slot conversion
+            ctx.emitter.instruction("shr rsi, 8");                              // move the runtime value_type tag into the low bits
+            ctx.emitter.instruction("and rsi, 0x7f");                           // isolate the indexed-array value_type tag
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_array_to_mixed");
+    Ok(())
+}
+
+/// Converts an untyped boxed Mixed payload into associative-array storage with Mixed values.
+fn lower_mixed_to_mixed_assoc_array(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, x1");                              // pass the unboxed associative-array payload to the Mixed conversion helper
+        }
+        Arch::X86_64 => {}
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_hash_to_mixed");
+    Ok(())
 }
 
 /// Lowers binary runtime fallbacks that Phase 04 can identify by operand type.
