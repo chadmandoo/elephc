@@ -475,6 +475,19 @@ fn lower_array_assign(
     let index = lower_expr(ctx, index);
     let value = lower_expr(ctx, value);
     let op = array_set_op(array_value.ir_type);
+    if op == Op::ArraySet {
+        let (array_value, updated_ty, needs_storeback) =
+            prepare_indexed_array_local_write(ctx, array_value, value, span);
+        ctx.emit_void(
+            op,
+            vec![array_value.value, index.value, value.value],
+            None,
+            op.default_effects(),
+            Some(span),
+        );
+        finish_indexed_array_local_write(ctx, array, array_value, updated_ty, needs_storeback, span);
+        return;
+    }
     ctx.emit_void(op, vec![array_value.value, index.value, value.value], None, op.default_effects(), Some(span));
 }
 
@@ -500,24 +513,92 @@ fn lower_array_push(ctx: &mut LoweringContext<'_, '_>, array: &str, value: &Expr
     } else {
         Op::RuntimeCall
     };
-    ctx.emit_void(op, vec![array_value.value, value.value], None, op.default_effects(), Some(span));
     if op == Op::ArrayPush {
-        let current_ty = ctx.builder.value_php_type(array_value.value);
-        let value_ty = ctx.builder.value_php_type(value.value);
-        if let Some(updated_ty) = array_push_updated_type(current_ty, value_ty) {
-            ctx.set_local_type(array, updated_ty);
-        }
+        let (array_value, updated_ty, needs_storeback) =
+            prepare_indexed_array_local_write(ctx, array_value, value, span);
+        ctx.emit_void(op, vec![array_value.value, value.value], None, op.default_effects(), Some(span));
+        finish_indexed_array_local_write(ctx, array, array_value, updated_ty, needs_storeback, span);
+        return;
+    }
+    ctx.emit_void(op, vec![array_value.value, value.value], None, op.default_effects(), Some(span));
+}
+
+/// Converts typed indexed arrays to Mixed when a local write would make them heterogeneous.
+pub(super) fn prepare_indexed_array_local_write(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    value: LoweredValue,
+    span: Span,
+) -> (LoweredValue, Option<PhpType>, bool) {
+    let current_ty = ctx.builder.value_php_type(array_value.value);
+    let value_ty = ctx.builder.value_php_type(value.value);
+    let Some(updated_ty) = indexed_array_write_updated_type(current_ty.clone(), value_ty) else {
+        return (array_value, None, false);
+    };
+    if !indexed_array_write_needs_mixed_conversion(&current_ty, &updated_ty) {
+        return (array_value, Some(updated_ty), false);
+    }
+    let converted = ctx.emit_value(
+        Op::ArrayToMixed,
+        vec![array_value.value],
+        None,
+        updated_ty.clone(),
+        Op::ArrayToMixed.default_effects(),
+        Some(span),
+    );
+    (converted, Some(updated_ty), true)
+}
+
+/// Updates local type facts and emits explicit storeback for converted array writes.
+pub(super) fn finish_indexed_array_local_write(
+    ctx: &mut LoweringContext<'_, '_>,
+    array: &str,
+    array_value: LoweredValue,
+    updated_ty: Option<PhpType>,
+    needs_storeback: bool,
+    span: Span,
+) {
+    let Some(updated_ty) = updated_ty else {
+        return;
+    };
+    if needs_storeback {
+        ctx.store_mutated_local(array, array_value, updated_ty, Some(span));
+    } else {
+        ctx.set_local_type(array, updated_ty);
     }
 }
 
-/// Returns the refined array type after appending to a statically empty indexed array.
-fn array_push_updated_type(current_ty: PhpType, value_ty: PhpType) -> Option<PhpType> {
+/// Returns the refined array type after writing a value into an indexed array.
+fn indexed_array_write_updated_type(current_ty: PhpType, value_ty: PhpType) -> Option<PhpType> {
     match current_ty.codegen_repr() {
         PhpType::Array(elem_ty) if is_empty_indexed_array_element(elem_ty.as_ref()) => {
             Some(PhpType::Array(Box::new(normalize_materialized_element_type(value_ty))))
         }
+        PhpType::Array(elem_ty) if elem_ty.codegen_repr() == PhpType::Mixed => None,
+        PhpType::Array(elem_ty) => {
+            let elem_ty = elem_ty.codegen_repr();
+            let value_ty = normalize_materialized_element_type(value_ty.codegen_repr());
+            if elem_ty == value_ty {
+                None
+            } else {
+                Some(PhpType::Array(Box::new(PhpType::Mixed)))
+            }
+        }
         _ => None,
     }
+}
+
+/// Returns true when an indexed-array write needs runtime conversion to Mixed slots.
+fn indexed_array_write_needs_mixed_conversion(current_ty: &PhpType, updated_ty: &PhpType) -> bool {
+    let PhpType::Array(current_elem) = current_ty.codegen_repr() else {
+        return false;
+    };
+    let PhpType::Array(updated_elem) = updated_ty.codegen_repr() else {
+        return false;
+    };
+    updated_elem.codegen_repr() == PhpType::Mixed
+        && current_elem.codegen_repr() != PhpType::Mixed
+        && !is_empty_indexed_array_element(current_elem.as_ref())
 }
 
 /// Returns true for the placeholder element type used by empty indexed arrays.

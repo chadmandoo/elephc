@@ -478,6 +478,39 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         value
     }
 
+    /// Emits a local storeback for in-place mutations without assignment acquire/release.
+    pub(crate) fn store_mutated_local(
+        &mut self,
+        name: &str,
+        value: LoweredValue,
+        php_type: PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        self.clear_static_callable_local(name);
+        let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let uses_global = self.uses_global_storage(name, previous_kind);
+        let slot = self.declare_local(name, php_type.clone());
+        if uses_global {
+            self.store_global_name(name, slot, value, span);
+            self.set_local_type(name, php_type);
+            return value;
+        }
+        let is_ref_bound =
+            self.is_ref_bound_local(name) && previous_kind == LocalKind::PhpLocal;
+        match (is_ref_bound, previous_kind) {
+            (true, _) => self.store_ref_cell_slot(slot, value, php_type, span),
+            (false, LocalKind::StaticLocal) => {
+                self.store_slot_with_op(slot, value, Op::StoreStaticLocal, span);
+                self.set_local_type(name, php_type);
+            }
+            _ => {
+                self.store_slot_with_op(slot, value, Op::StoreLocal, span);
+                self.set_local_type(name, php_type);
+            }
+        }
+        value
+    }
+
     /// Emits `unset($local)`, breaking by-reference aliases without writing through them.
     pub(crate) fn unset_local(&mut self, name: &str, null: LoweredValue, span: Option<Span>) -> LoweredValue {
         if !self.is_ref_bound_local(name) {

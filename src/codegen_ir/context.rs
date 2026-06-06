@@ -354,7 +354,7 @@ impl<'a> FunctionContext<'a> {
     }
 
     /// Returns true when a value producer can leave an owned source consumed by Mixed boxing.
-    fn value_can_own_mixed_box_source(&self, value: ValueId) -> Result<bool> {
+    pub(super) fn value_can_own_mixed_box_source(&self, value: ValueId) -> Result<bool> {
         let Some(value_ref) = self.function.value(value) else {
             return Err(CodegenIrError::missing_entry("value", value.as_raw()));
         };
@@ -378,6 +378,7 @@ impl<'a> FunctionContext<'a> {
                 | Op::StrInterpolate
                 | Op::ArrayNew
                 | Op::HashNew
+                | Op::ArrayToMixed
                 | Op::ArrayCloneShallow
                 | Op::HashCloneShallow
                 | Op::ArrayUnion

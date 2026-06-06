@@ -223,6 +223,12 @@ fn materialize_hash_value_aarch64(
             ctx.emitter.instruction("mov x3, x1");                              // pass the owned string pointer as the hash value low word
             ctx.emitter.instruction("mov x4, x2");                              // pass the owned string length as the hash value high word
         }
+        other if other.is_refcounted() && other == storage_value_ty => {
+            ctx.load_value_to_result(value)?;
+            retain_hash_refcounted_value_if_borrowed(ctx, value, other)?;
+            ctx.emitter.instruction("mov x3, x0");                              // pass the retained pointer-backed payload as the hash value low word
+            ctx.emitter.instruction("mov x4, xzr");                             // pointer-backed hash values leave the high value word empty
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "hash_set value PHP type {:?}",
@@ -254,12 +260,30 @@ fn materialize_hash_value_x86_64(
             ctx.emitter.instruction("mov rcx, rax");                            // pass the owned string pointer as the hash value low word
             ctx.emitter.instruction("mov r8, rdx");                             // pass the owned string length as the hash value high word
         }
+        other if other.is_refcounted() && other == storage_value_ty => {
+            ctx.load_value_to_result(value)?;
+            retain_hash_refcounted_value_if_borrowed(ctx, value, other)?;
+            ctx.emitter.instruction("mov rcx, rax");                            // pass the retained pointer-backed payload as the hash value low word
+            ctx.emitter.instruction("xor r8, r8");                              // pointer-backed hash values leave the high value word empty
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "hash_set value PHP type {:?}",
                 other
             )));
         }
+    }
+    Ok(())
+}
+
+/// Retains a hash value unless the source producer transfers ownership into the table.
+fn retain_hash_refcounted_value_if_borrowed(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    if !ctx.value_can_own_mixed_box_source(value)? {
+        abi::emit_incref_if_refcounted(ctx.emitter, value_ty);
     }
     Ok(())
 }
@@ -313,6 +337,9 @@ fn emit_hash_get_success_aarch64(ctx: &mut FunctionContext<'_>, value_ty: &PhpTy
         PhpType::Mixed => {
             ctx.emitter.instruction("mov x0, x1");                              // return the boxed Mixed pointer stored in the hash entry
         }
+        other if other.is_refcounted() => {
+            ctx.emitter.instruction("mov x0, x1");                              // return the borrowed pointer-backed hash payload
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "hash_get value PHP type {:?}",
@@ -338,6 +365,9 @@ fn emit_hash_get_success_x86_64(ctx: &mut FunctionContext<'_>, value_ty: &PhpTyp
         }
         PhpType::Mixed => {
             ctx.emitter.instruction("mov rax, rdi");                            // return the boxed Mixed pointer stored in the hash entry
+        }
+        other if other.is_refcounted() => {
+            ctx.emitter.instruction("mov rax, rdi");                            // return the borrowed pointer-backed hash payload
         }
         other => {
             return Err(CodegenIrError::unsupported(format!(
@@ -431,9 +461,12 @@ fn require_hash_get_result(value_ty: &PhpType, inst: &Instruction) -> Result<()>
     let result_ty = inst.result_php_type.codegen_repr();
     if matches!(
         value_ty,
-        PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str | PhpType::Mixed
+            PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str | PhpType::Mixed
     ) && result_ty == *value_ty
     {
+        return Ok(());
+    }
+    if value_ty.is_refcounted() && result_ty == *value_ty {
         return Ok(());
     }
     Err(CodegenIrError::unsupported(format!(
@@ -471,6 +504,9 @@ fn require_supported_hash_value(
         value_ty,
         PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str
     ) {
+        return Ok(value_ty);
+    }
+    if value_ty.is_refcounted() && value_ty == storage_value_ty.codegen_repr() {
         return Ok(value_ty);
     }
     Err(CodegenIrError::unsupported(format!(

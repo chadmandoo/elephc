@@ -382,6 +382,9 @@ fn widened_local_storage_type(current: &PhpType, incoming: &PhpType) -> PhpType 
         return current;
     }
     match (&current, &incoming) {
+        (current, PhpType::Void | PhpType::Never) if local_storage_can_hold_null(current) => {
+            current.clone()
+        }
         (PhpType::Array(_), PhpType::Array(_)) => incoming,
         (PhpType::AssocArray { .. }, PhpType::AssocArray { .. }) => incoming,
         (
@@ -390,6 +393,22 @@ fn widened_local_storage_type(current: &PhpType, incoming: &PhpType) -> PhpType 
         ) => incoming,
         _ => PhpType::Mixed,
     }
+}
+
+/// Returns true when a local storage shape can represent PHP null as a zero pointer.
+fn local_storage_can_hold_null(php_type: &PhpType) -> bool {
+    matches!(
+        php_type,
+        PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Object(_)
+            | PhpType::Packed(_)
+            | PhpType::Mixed
+            | PhpType::Union(_)
+            | PhpType::Iterable
+            | PhpType::Buffer(_)
+            | PhpType::Callable
+    )
 }
 
 /// Returns the IR storage class used for a local slot's PHP representation.

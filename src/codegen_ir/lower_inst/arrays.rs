@@ -10,7 +10,8 @@
 //!   the backend writes that pointer back to the source SSA slot and local slot.
 
 use crate::codegen::{
-    abi, emit_box_current_value_as_mixed, emit_release_pushed_refcounted_temp_after_array_push,
+    abi, emit_box_current_owned_value_as_mixed, emit_box_current_value_as_mixed,
+    emit_release_pushed_refcounted_temp_after_array_push, runtime_value_tag,
 };
 use crate::codegen::platform::Arch;
 use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
@@ -44,6 +45,32 @@ pub(super) fn lower_array_len(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     require_indexed_array(ctx.load_value_to_result(array)?, inst)?;
     let result_reg = abi::int_result_reg(ctx.emitter);
     abi::emit_load_from_address(ctx.emitter, result_reg, result_reg, 0);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers typed indexed-array widening to boxed Mixed slots.
+pub(super) fn lower_array_to_mixed(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 1 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expects exactly one operand",
+            inst.op.name()
+        )));
+    }
+    let array = expect_operand(inst, 0)?;
+    let elem_ty = indexed_array_element_type(&ctx.value_php_type(array)?, inst)?;
+    require_array_to_mixed_result(&inst.result_php_type.codegen_repr(), inst)?;
+    let value_tag = runtime_value_tag(&elem_ty) as i64;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(array, "x0")?;
+            abi::emit_load_int_immediate(ctx.emitter, "x1", value_tag);
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(array, "rdi")?;
+            abi::emit_load_int_immediate(ctx.emitter, "rsi", value_tag);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_array_to_mixed");
     store_if_result(ctx, inst)
 }
 
@@ -454,8 +481,7 @@ fn lower_mixed_array_push_aarch64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_result(value)?;
-    emit_box_current_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+    box_value_for_mixed_container(ctx, value, value_ty)?;
     abi::emit_push_reg(ctx.emitter, "x0");
     ctx.load_value_to_reg(array, "x9")?;
     ctx.emitter.instruction("mov x1, x0");                                      // pass the boxed Mixed payload to the refcounted append helper
@@ -472,8 +498,7 @@ fn lower_mixed_array_push_x86_64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_result(value)?;
-    emit_box_current_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+    box_value_for_mixed_container(ctx, value, value_ty)?;
     abi::emit_push_reg(ctx.emitter, "rax");
     ctx.load_value_to_reg(array, "r11")?;
     ctx.emitter.instruction("mov rsi, rax");                                    // pass the boxed Mixed payload to the refcounted append helper
@@ -491,11 +516,11 @@ fn lower_mixed_array_set_aarch64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_result(value)?;
     if matches!(value_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+        ctx.load_value_to_result(value)?;
         abi::emit_incref_if_refcounted(ctx.emitter, value_ty);
     } else {
-        emit_box_current_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+        box_value_for_mixed_container(ctx, value, value_ty)?;
     }
     abi::emit_push_reg(ctx.emitter, "x0");
     ctx.load_value_to_reg(array, "x0")?;
@@ -513,17 +538,32 @@ fn lower_mixed_array_set_x86_64(
     value: ValueId,
     value_ty: &PhpType,
 ) -> Result<()> {
-    ctx.load_value_to_result(value)?;
     if matches!(value_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+        ctx.load_value_to_result(value)?;
         abi::emit_incref_if_refcounted(ctx.emitter, value_ty);
     } else {
-        emit_box_current_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+        box_value_for_mixed_container(ctx, value, value_ty)?;
     }
     abi::emit_push_reg(ctx.emitter, "rax");
     ctx.load_value_to_reg(array, "rdi")?;
     ctx.load_value_to_reg(index, "rsi")?;
     abi::emit_pop_reg(ctx.emitter, "rdx");
     abi::emit_call_label(ctx.emitter, "__rt_array_set_mixed");
+    Ok(())
+}
+
+/// Boxes a value for a Mixed array, consuming owned producers when possible.
+fn box_value_for_mixed_container(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    ctx.load_value_to_result(value)?;
+    if ctx.value_can_own_mixed_box_source(value)? {
+        emit_box_current_owned_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+    } else {
+        emit_box_current_value_as_mixed(ctx.emitter, &value_ty.codegen_repr());
+    }
     Ok(())
 }
 
@@ -604,6 +644,18 @@ fn require_array_get_result(elem_ty: &PhpType, inst: &Instruction) -> Result<()>
         "array_get element PHP type {:?} with result PHP type {:?}",
         elem_ty, inst.result_php_type
     )))
+}
+
+/// Verifies that `array_to_mixed` produces an indexed array with boxed Mixed slots.
+fn require_array_to_mixed_result(result_ty: &PhpType, inst: &Instruction) -> Result<()> {
+    match result_ty {
+        PhpType::Array(elem_ty) if elem_ty.codegen_repr() == PhpType::Mixed => Ok(()),
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} result PHP type {:?}",
+            inst.op.name(),
+            other
+        ))),
+    }
 }
 
 /// Returns the stack/local slot loaded by an array operand when it came from `load_local`.

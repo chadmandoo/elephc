@@ -112,6 +112,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StrToF => conversions::lower_str_to_float(ctx, &inst),
         Op::Cast => conversions::lower_cast(ctx, &inst),
         Op::MixedBox => lower_mixed_box(ctx, &inst),
+        Op::ArrayToMixed => arrays::lower_array_to_mixed(ctx, &inst),
         Op::StrConcat => strings::lower_str_concat(ctx, &inst),
         Op::StrLen => strings::lower_str_len(ctx, &inst),
         Op::StrCharAt => strings::lower_str_char_at(ctx, &inst),
@@ -2834,7 +2835,9 @@ fn coerce_loaded_local_to_result_type(
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
             Ok(())
         }
-        (PhpType::Mixed, PhpType::Object(_)) => {
+        (PhpType::Mixed, PhpType::Array(_))
+        | (PhpType::Mixed, PhpType::AssocArray { .. })
+        | (PhpType::Mixed, PhpType::Object(_)) => {
             abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
             move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
             Ok(())

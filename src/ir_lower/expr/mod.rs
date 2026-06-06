@@ -932,6 +932,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
             return value;
         }
     }
+    if let Some(value) = lower_static_array_push(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_is_callable(ctx, canonical, args, expr) {
         return value;
     }
@@ -1683,6 +1686,50 @@ fn lower_unset_locals(
         }
     }
     Some(null)
+}
+
+/// Lowers `array_push($local, $value)` as a direct indexed-array mutation.
+fn lower_static_array_push(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_push" || args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let ExprKind::Variable(array_name) = &args[0].kind else {
+        return None;
+    };
+    if !matches!(ctx.local_type(array_name).codegen_repr(), PhpType::Array(_)) {
+        return None;
+    }
+    let array_value = ctx.load_local(array_name, Some(args[0].span));
+    if array_value.ir_type != IrType::Heap(IrHeapKind::Array) {
+        return None;
+    }
+    let value = lower_expr(ctx, &args[1]);
+    let (array_value, updated_ty, needs_storeback) =
+        super::stmt::prepare_indexed_array_local_write(ctx, array_value, value, expr.span);
+    ctx.emit_void(
+        Op::ArrayPush,
+        vec![array_value.value, value.value],
+        None,
+        Op::ArrayPush.default_effects(),
+        Some(expr.span),
+    );
+    super::stmt::finish_indexed_array_local_write(
+        ctx,
+        array_name,
+        array_value,
+        updated_ty,
+        needs_storeback,
+        expr.span,
+    );
+    Some(lower_null(ctx, expr))
 }
 
 /// Lowers builtin call operands, applying builtin-specific preservation where source order matters.
