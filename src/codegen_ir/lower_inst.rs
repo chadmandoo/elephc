@@ -945,6 +945,9 @@ fn callable_target_data<'a>(
 
 /// Lowers high-level runtime fallback casts that Phase 04 can identify by type.
 fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() == 3 {
+        return lower_mixed_array_runtime_set(ctx, inst);
+    }
     if inst.operands.len() == 2 {
         return lower_binary_runtime_call(ctx, inst);
     }
@@ -1015,6 +1018,76 @@ fn lower_mixed_array_runtime_get(
     abi::emit_call_label(ctx.emitter, "__rt_mixed_array_get");
     cast_loaded_mixed_pointer_to_result(ctx, &inst.result_php_type.codegen_repr())?;
     store_if_result(ctx, inst)
+}
+
+/// Lowers `$mixed[$key] = $value` through the shared boxed Mixed array/hash/stdClass writer.
+fn lower_mixed_array_runtime_set(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let receiver = expect_operand(inst, 0)?;
+    let key = expect_operand(inst, 1)?;
+    let value = expect_operand(inst, 2)?;
+    match ctx.value_php_type(receiver)?.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => {}
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "runtime_call array set with receiver PHP type {:?}",
+                other
+            )))
+        }
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_mixed_array_runtime_set_aarch64(ctx, receiver, key, value)?,
+        Arch::X86_64 => lower_mixed_array_runtime_set_x86_64(ctx, receiver, key, value)?,
+    }
+    Ok(())
+}
+
+/// Materializes AArch64 operands for the boxed Mixed array/hash writer.
+fn lower_mixed_array_runtime_set_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    receiver: ValueId,
+    key: ValueId,
+    value: ValueId,
+) -> Result<()> {
+    let value_ty = ctx.load_value_to_result(value)?.codegen_repr();
+    if matches!(value_ty, PhpType::Mixed | PhpType::Union(_)) {
+        abi::emit_incref_if_refcounted(ctx.emitter, &value_ty);
+    } else {
+        emit_box_current_value_as_mixed(ctx.emitter, &value_ty);
+    }
+    abi::emit_push_reg(ctx.emitter, "x0");
+    hashes::materialize_hash_key_aarch64(ctx, key)?;
+    abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+    ctx.load_value_to_reg(receiver, "x0")?;
+    abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+    abi::emit_pop_reg(ctx.emitter, "x3");
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_array_set");
+    Ok(())
+}
+
+/// Materializes x86_64 operands for the boxed Mixed array/hash writer.
+fn lower_mixed_array_runtime_set_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    receiver: ValueId,
+    key: ValueId,
+    value: ValueId,
+) -> Result<()> {
+    let value_ty = ctx.load_value_to_result(value)?.codegen_repr();
+    if matches!(value_ty, PhpType::Mixed | PhpType::Union(_)) {
+        abi::emit_incref_if_refcounted(ctx.emitter, &value_ty);
+    } else {
+        emit_box_current_value_as_mixed(ctx.emitter, &value_ty);
+    }
+    abi::emit_push_reg(ctx.emitter, "rax");
+    hashes::materialize_hash_key_x86_64(ctx, key)?;
+    abi::emit_push_reg_pair(ctx.emitter, "rsi", "rdx");
+    ctx.load_value_to_reg(receiver, "rdi")?;
+    abi::emit_pop_reg_pair(ctx.emitter, "rsi", "rdx");
+    abi::emit_pop_reg(ctx.emitter, "rcx");
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_array_set");
+    Ok(())
 }
 
 /// Casts the boxed Mixed pointer currently returned by a runtime helper when needed.

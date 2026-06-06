@@ -935,6 +935,7 @@ fn implode_runtime_label(ctx: &FunctionContext<'_>, inst: &Instruction) -> Resul
                 other
             ))),
         },
+        PhpType::Mixed | PhpType::Union(_) => Ok("__rt_implode"),
         other => Err(CodegenIrError::unsupported(format!(
             "implode array PHP type {:?}",
             other
@@ -948,7 +949,7 @@ fn lower_implode_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
     let array = expect_operand(inst, 1)?;
     ctx.load_string_value_to_regs(glue, "x1", "x2")?;
     ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the glue string while materializing the array argument
-    ctx.load_value_to_reg(array, "x0")?;
+    load_implode_array_aarch64(ctx, array)?;
     ctx.emitter.instruction("mov x3, x0");                                      // pass the indexed array pointer as the third implode argument
     ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the glue string into primary implode argument registers
     Ok(())
@@ -960,10 +961,48 @@ fn lower_implode_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Re
     let array = expect_operand(inst, 1)?;
     ctx.load_string_value_to_regs(glue, "rax", "rdx")?;
     abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
-    ctx.load_value_to_reg(array, "rax")?;
+    load_implode_array_x86_64(ctx, array)?;
     ctx.emitter.instruction("mov rdx, rax");                                    // pass the indexed array pointer as the third implode argument
     abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
     Ok(())
+}
+
+/// Loads the raw indexed-array payload consumed by `implode()` on AArch64.
+fn load_implode_array_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+) -> Result<()> {
+    match ctx.value_php_type(array)?.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(array, "x0")?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            ctx.emitter.instruction("mov x0, x1");                              // pass the unboxed array payload to implode()
+            Ok(())
+        }
+        _ => {
+            ctx.load_value_to_reg(array, "x0")?;
+            Ok(())
+        }
+    }
+}
+
+/// Loads the raw indexed-array payload consumed by `implode()` on x86_64.
+fn load_implode_array_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+) -> Result<()> {
+    match ctx.value_php_type(array)?.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(array, "rax")?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            ctx.emitter.instruction("mov rax, rdi");                            // pass the unboxed array payload to implode()
+            Ok(())
+        }
+        _ => {
+            ctx.load_value_to_reg(array, "rax")?;
+            Ok(())
+        }
+    }
 }
 
 /// Materializes AArch64 `substr_replace()` runtime arguments.
