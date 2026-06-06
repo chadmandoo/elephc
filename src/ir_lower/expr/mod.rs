@@ -2264,7 +2264,7 @@ fn lower_named_args_with_signature(
         return lower_args(ctx, args);
     };
     if plan.has_spread_args() {
-        if let Some(operands) = lower_named_args_with_spread_plan(ctx, sig, &plan) {
+        if let Some(operands) = lower_named_args_with_spread_plan(ctx, sig, &plan, &assoc_spread_sources) {
             return operands;
         }
         let normalized = plan.normalized_args();
@@ -2304,8 +2304,9 @@ fn lower_named_args_with_spread_plan(
     ctx: &mut LoweringContext<'_, '_>,
     sig: &FunctionSig,
     plan: &crate::types::call_args::CallArgPlan,
+    assoc_spread_sources: &[bool],
 ) -> Option<Vec<crate::ir::ValueId>> {
-    if sig.variadic.is_some() {
+    if sig.variadic.is_some() || assoc_spread_sources.iter().any(|is_assoc| *is_assoc) {
         return None;
     }
     let call_span = plan
