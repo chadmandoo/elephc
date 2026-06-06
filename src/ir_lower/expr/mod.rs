@@ -227,6 +227,19 @@ fn lower_null(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> LoweredValue {
     LoweredValue { value, ir_type: IrType::I64 }
 }
 
+/// Lowers a nullsafe expression that is known to short-circuit to PHP null.
+fn lower_boxed_null(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> LoweredValue {
+    let null = lower_null(ctx, expr);
+    ctx.emit_value(
+        Op::MixedBox,
+        vec![null.value],
+        None,
+        PhpType::Mixed,
+        Op::MixedBox.default_effects(),
+        Some(expr.span),
+    )
+}
+
 /// Lowers a binary operation.
 fn lower_binary(
     ctx: &mut LoweringContext<'_, '_>,
@@ -3468,6 +3481,9 @@ fn lower_property_get(
     expr: &Expr,
 ) -> LoweredValue {
     let object = lower_expr(ctx, object);
+    if op == Op::NullsafePropGet && value_is_definitely_null(ctx, object.value) {
+        return lower_boxed_null(ctx, expr);
+    }
     let data = ctx.intern_string(property);
     let result_type = property_get_result_type(ctx, object.value, property, op, expr);
     ctx.emit_value(
@@ -3478,6 +3494,11 @@ fn lower_property_get(
         op.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Returns true when value metadata proves the runtime value is PHP null.
+fn value_is_definitely_null(ctx: &LoweringContext<'_, '_>, value: crate::ir::ValueId) -> bool {
+    matches!(ctx.builder.value_php_type(value), PhpType::Void | PhpType::Never)
 }
 
 /// Returns precise PHP metadata for a named property read when class metadata is available.
@@ -3645,6 +3666,9 @@ fn lower_nullsafe_method_call(
 ) -> LoweredValue {
     let object = lower_expr(ctx, object);
     let object_ty = ctx.builder.value_php_type(object.value);
+    if value_is_definitely_null(ctx, object.value) {
+        return lower_boxed_null(ctx, expr);
+    }
     let Some((_, true)) = singular_object_class(&object_ty) else {
         return lower_method_call_with_receiver(
             ctx,
