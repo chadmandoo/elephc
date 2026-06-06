@@ -839,16 +839,19 @@ fn lower_current_exception(ctx: &mut LoweringContext<'_, '_>, span: Span) -> Low
 
 /// Binds and clears the active exception for a matched catch clause.
 fn lower_catch_bind(ctx: &mut LoweringContext<'_, '_>, catch: &CatchClause, span: Span) {
-    let immediate = catch.variable.as_ref().map(|variable| {
+    let (immediate, php_type) = catch.variable.as_ref().map_or((None, PhpType::Void), |variable| {
         let php_type = catch_variable_type(catch);
         let slot = ctx.declare_local(variable, php_type.clone());
-        ctx.set_local_type(variable, php_type);
-        Immediate::LocalSlot(slot)
+        ctx.set_local_type(variable, php_type.clone());
+        (Some(Immediate::LocalSlot(slot)), php_type)
     });
-    ctx.emit_void(
+    ctx.builder.emit_with_effects(
         Op::CatchBind,
         Vec::new(),
         immediate,
+        IrType::Void,
+        php_type,
+        Ownership::NonHeap,
         Op::CatchBind.default_effects(),
         Some(span),
     );
