@@ -1672,6 +1672,9 @@ fn coerce_to_return_type(
     value: LoweredValue,
     span: Option<Span>,
 ) -> LoweredValue {
+    if let Some(value) = coerce_container_to_return_type(ctx, value, span) {
+        return value;
+    }
     if value.ir_type == ctx.return_type {
         return value;
     }
@@ -1699,6 +1702,41 @@ fn coerce_to_return_type(
         ),
         IrType::Void => value,
     }
+}
+
+/// Widens returned container payload storage to the current function return contract.
+fn coerce_container_to_return_type(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Option<Span>,
+) -> Option<LoweredValue> {
+    let source_ty = ctx.builder.value_php_type(value.value).codegen_repr();
+    let return_ty = ctx.return_php_type.codegen_repr();
+    let op = match (source_ty, return_ty.clone()) {
+        (PhpType::Array(source_elem), PhpType::Array(return_elem))
+            if source_elem.codegen_repr() != PhpType::Mixed
+                && return_elem.codegen_repr() == PhpType::Mixed =>
+        {
+            Op::ArrayToMixed
+        }
+        (
+            PhpType::AssocArray { value: source_value, .. },
+            PhpType::AssocArray { value: return_value, .. },
+        ) if source_value.codegen_repr() != PhpType::Mixed
+            && return_value.codegen_repr() == PhpType::Mixed =>
+        {
+            Op::HashToMixed
+        }
+        _ => return None,
+    };
+    Some(ctx.emit_value(
+        op,
+        vec![value.value],
+        None,
+        return_ty,
+        op.default_effects(),
+        span,
+    ))
 }
 
 /// Coerces a value to integer storage.

@@ -303,6 +303,18 @@ fn lower_numeric_binary(
             Some(expr.span),
         );
     }
+    if matches!(op, BinOp::Mod) {
+        let lhs = coerce_to_int(ctx, lhs, expr);
+        let rhs = coerce_to_int(ctx, rhs, expr);
+        return ctx.emit_value(
+            Op::ISMod,
+            vec![lhs.value, rhs.value],
+            None,
+            PhpType::Int,
+            Op::ISMod.default_effects(),
+            Some(expr.span),
+        );
+    }
     if let Some(mixed_op) = mixed_numeric_op(op) {
         if should_use_mixed_numeric_binop(lhs.ir_type, rhs.ir_type) {
             return lower_mixed_numeric_binary(ctx, lhs, rhs, mixed_op, expr);
@@ -2455,7 +2467,7 @@ fn call_return_type(
     } else if let Some(php_type) = array_builtin_return_type(ctx, name, operands) {
         php_type
     } else if let Some(sig) = ctx.functions.get(name) {
-        sig.return_type.clone()
+        eir_user_function_return_type(sig)
     } else if let Some(sig) = ctx.extern_functions.get(name) {
         sig.return_type.clone()
     } else if let Some(sig) = first_class_builtin_signature(name) {
@@ -2466,6 +2478,42 @@ fn call_return_type(
         PhpType::Mixed
     };
     normalize_value_php_type(php_type)
+}
+
+/// Returns the caller-visible EIR return type for a user function signature.
+fn eir_user_function_return_type(signature: &FunctionSig) -> PhpType {
+    if signature.declared_return || !signature_has_dynamic_untyped_param(signature) {
+        return signature.return_type.clone();
+    }
+    dynamic_param_container_return_type(&signature.return_type)
+}
+
+/// Returns true when a PHP signature has params that EIR must receive as Mixed.
+fn signature_has_dynamic_untyped_param(signature: &FunctionSig) -> bool {
+    signature.params.iter().enumerate().any(|(index, (name, _))| {
+        let declared = signature.declared_params.get(index).copied().unwrap_or(false);
+        let by_ref = signature.ref_params.get(index).copied().unwrap_or(false);
+        let variadic = signature.variadic.as_deref() == Some(name.as_str());
+        !declared && !by_ref && !variadic
+    })
+}
+
+/// Widens inferred container return elements that may be built from dynamic params.
+fn dynamic_param_container_return_type(return_type: &PhpType) -> PhpType {
+    match return_type.codegen_repr() {
+        PhpType::Array(_) => PhpType::Array(Box::new(PhpType::Mixed)),
+        PhpType::AssocArray { key, .. } => PhpType::AssocArray {
+            key,
+            value: Box::new(PhpType::Mixed),
+        },
+        PhpType::Union(members) => PhpType::Union(
+            members
+                .iter()
+                .map(dynamic_param_container_return_type)
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 /// Returns argument-sensitive builtin result metadata when AST operands are still available.
@@ -3028,7 +3076,30 @@ fn assoc_array_literal_value_type_for_ir(
             }
             infer_expr_type_syntactic(value).codegen_repr()
         }
+        ExprKind::ArrayAccess { array, .. } => array_access_expr_value_type_for_ir(ctx, array)
+            .unwrap_or_else(|| infer_expr_type_syntactic(value).codegen_repr()),
         _ => infer_expr_type_syntactic(value).codegen_repr(),
+    }
+}
+
+/// Returns the element/value type for an array-access expression used inside a literal.
+fn array_access_expr_value_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    array: &Expr,
+) -> Option<PhpType> {
+    let array_ty = match &array.kind {
+        ExprKind::Variable(name) => ctx.local_types.get(name).cloned(),
+        ExprKind::ArrayLiteral(items) => Some(array_literal_type_for_ir(ctx, items, array)),
+        ExprKind::ArrayLiteralAssoc(pairs) => Some(assoc_array_literal_type_for_ir(ctx, pairs, array)),
+        _ => None,
+    }?
+    .codegen_repr();
+    match array_ty {
+        PhpType::Array(elem_ty) => Some(normalize_value_php_type(*elem_ty).codegen_repr()),
+        PhpType::AssocArray { value, .. } => Some(normalize_value_php_type(*value).codegen_repr()),
+        PhpType::Str => Some(PhpType::Str),
+        PhpType::Mixed | PhpType::Union(_) => Some(PhpType::Mixed),
+        _ => None,
     }
 }
 

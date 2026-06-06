@@ -15,7 +15,7 @@ use crate::ir::{Instruction, ValueId};
 use crate::types::PhpType;
 
 use super::super::super::context::FunctionContext;
-use super::{expect_operand, store_if_result};
+use super::{expect_operand, load_value_to_first_int_arg, store_if_result};
 
 /// Lowers a one-argument string builtin that directly delegates to a runtime helper.
 pub(super) fn lower_unary_string_runtime(
@@ -799,11 +799,9 @@ fn load_split_pair_args_aarch64(
     inst: &Instruction,
     name: &str,
 ) -> Result<()> {
-    let delimiter = expect_string_operand(ctx, inst, 0, name)?;
-    let subject = expect_string_operand(ctx, inst, 1, name)?;
-    ctx.load_string_value_to_regs(delimiter, "x1", "x2")?;
+    load_string_arg_to_regs(ctx, inst, 0, name, "x1", "x2")?;
     ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the delimiter string while materializing the subject string
-    ctx.load_string_value_to_regs(subject, "x1", "x2")?;
+    load_string_arg_to_regs(ctx, inst, 1, name, "x1", "x2")?;
     ctx.emitter.instruction("mov x3, x1");                                      // pass the subject string pointer as the secondary split argument
     ctx.emitter.instruction("mov x4, x2");                                      // pass the subject string length as the secondary split argument
     ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the delimiter string into primary split argument registers
@@ -816,15 +814,52 @@ fn load_split_pair_args_x86_64(
     inst: &Instruction,
     name: &str,
 ) -> Result<()> {
-    let delimiter = expect_string_operand(ctx, inst, 0, name)?;
-    let subject = expect_string_operand(ctx, inst, 1, name)?;
-    ctx.load_string_value_to_regs(delimiter, "rax", "rdx")?;
+    load_string_arg_to_regs(ctx, inst, 0, name, "rax", "rdx")?;
     abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
-    ctx.load_string_value_to_regs(subject, "rax", "rdx")?;
+    load_string_arg_to_regs(ctx, inst, 1, name, "rax", "rdx")?;
     ctx.emitter.instruction("mov rdi, rax");                                    // pass the subject string pointer as the secondary split argument
     ctx.emitter.instruction("mov rsi, rdx");                                    // pass the subject string length as the secondary split argument
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
     Ok(())
+}
+
+/// Materializes a builtin argument as a PHP string in caller-selected registers.
+fn load_string_arg_to_regs(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    index: usize,
+    name: &str,
+    ptr_reg: &str,
+    len_reg: &str,
+) -> Result<()> {
+    let value = expect_operand(inst, index)?;
+    let ty = ctx.value_php_type(value)?.codegen_repr();
+    match ty {
+        PhpType::Str => ctx.load_string_value_to_regs(value, ptr_reg, len_reg),
+        PhpType::Mixed | PhpType::Union(_) => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} arg {} for PHP type {:?}",
+            name,
+            index + 1,
+            other
+        ))),
+    }
+}
+
+/// Moves the target ABI string result pair into caller-selected registers when needed.
+fn move_string_result_to_regs(ctx: &mut FunctionContext<'_>, ptr_reg: &str, len_reg: &str) {
+    let (result_ptr_reg, result_len_reg) = abi::string_result_regs(ctx.emitter);
+    if ptr_reg != result_ptr_reg {
+        ctx.emitter.instruction(&format!("mov {}, {}", ptr_reg, result_ptr_reg)); // move the cast string pointer into the requested argument register
+    }
+    if len_reg != result_len_reg {
+        ctx.emitter.instruction(&format!("mov {}, {}", len_reg, result_len_reg)); // move the cast string length into the requested argument register
+    }
 }
 
 /// Materializes primary input and pattern strings for scanner-style helpers.
