@@ -1156,6 +1156,9 @@ fn static_callable_return_type(
                 .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
                 .unwrap_or(PhpType::Mixed)
         }
+        StaticCallableBinding::InstanceMethod { signature, .. } => {
+            normalize_value_php_type(signature.return_type.codegen_repr())
+        }
     }
 }
 
@@ -1237,6 +1240,7 @@ fn lower_static_callable_value_call(
                 Some(expr.span),
             ))
         }
+        StaticCallableBinding::InstanceMethod { .. } => None,
     }
 }
 
@@ -1253,7 +1257,9 @@ fn static_call_user_func_callback(
         ExprKind::FirstClassCallable(CallableTarget::StaticMethod { receiver, method }) => {
             resolve_static_method_callable(ctx, receiver.clone(), method.clone())
         }
-        ExprKind::Variable(name) => ctx.static_callable_local(name),
+        ExprKind::Variable(name) => ctx
+            .static_callable_local(name)
+            .and_then(direct_static_callable_binding),
         ExprKind::ArrayLiteral(items) => static_array_callable_target(ctx, items),
         _ => None,
     }
@@ -1271,6 +1277,9 @@ pub(crate) fn static_callable_binding_for_expr(
         }
         ExprKind::FirstClassCallable(CallableTarget::StaticMethod { receiver, method }) => {
             resolve_static_method_callable(ctx, receiver.clone(), method.clone())
+        }
+        ExprKind::FirstClassCallable(CallableTarget::Method { object, method }) => {
+            resolve_instance_method_callable(ctx, object, method.clone())
         }
         _ => None,
     }
@@ -1445,6 +1454,7 @@ fn lower_static_callable_call(
         StaticCallableBinding::StaticMethod { receiver, method } => {
             Some(lower_static_method_call(ctx, &receiver, &method, callback_args, expr))
         }
+        StaticCallableBinding::InstanceMethod { .. } => None,
     }
 }
 
@@ -1484,6 +1494,64 @@ fn resolve_static_method_callable(
 ) -> Option<StaticCallableBinding> {
     static_method_implementation_signature(ctx, &receiver, &method)?;
     Some(StaticCallableBinding::StaticMethod { receiver, method })
+}
+
+/// Resolves a first-class instance-method callable to signature metadata only.
+fn resolve_instance_method_callable(
+    ctx: &LoweringContext<'_, '_>,
+    object: &Expr,
+    method: String,
+) -> Option<StaticCallableBinding> {
+    let class_name = instance_callable_object_class(ctx, object)?;
+    let method_key = php_symbol_key(&method);
+    let signature = ctx.classes.get(&class_name)?.methods.get(&method_key)?.clone();
+    Some(StaticCallableBinding::InstanceMethod { signature })
+}
+
+/// Returns a static callable only when it can be lowered without descriptor state.
+fn direct_static_callable_binding(target: StaticCallableBinding) -> Option<StaticCallableBinding> {
+    if matches!(target, StaticCallableBinding::InstanceMethod { .. }) {
+        None
+    } else {
+        Some(target)
+    }
+}
+
+/// Resolves the concrete class for an object expression used in an instance FCC.
+fn instance_callable_object_class(
+    ctx: &LoweringContext<'_, '_>,
+    object: &Expr,
+) -> Option<String> {
+    match &object.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name)
+            .and_then(class_name_from_php_type),
+        ExprKind::This => ctx.current_class.as_deref().and_then(normalized_class_name),
+        ExprKind::NewObject { class_name, .. } => normalized_class_name(class_name.as_str()),
+        ExprKind::NewDynamicObject { fallback_class, .. } => {
+            normalized_class_name(fallback_class.as_str())
+        }
+        _ => class_name_from_php_type(&infer_expr_type_syntactic(object)),
+    }
+}
+
+/// Returns a non-empty normalized class name for an object PHP type.
+fn class_name_from_php_type(ty: &PhpType) -> Option<String> {
+    match ty.codegen_repr() {
+        PhpType::Object(class_name) => normalized_class_name(&class_name),
+        _ => None,
+    }
+}
+
+/// Trims PHP's optional leading namespace separator from class metadata names.
+fn normalized_class_name(class_name: &str) -> Option<String> {
+    let class_name = class_name.trim_start_matches('\\');
+    if class_name.is_empty() {
+        None
+    } else {
+        Some(class_name.to_string())
+    }
 }
 
 /// Looks up a PHP function name case-insensitively and returns the canonical candidate.
@@ -2548,14 +2616,17 @@ fn lower_closure(
 
 /// Lowers a closure variable call.
 fn lower_closure_call(ctx: &mut LoweringContext<'_, '_>, var: &str, args: &[Expr], expr: &Expr) -> LoweredValue {
+    let mut result_type = None;
     if let Some(target) = ctx.static_callable_local(var) {
+        result_type = Some(static_callable_return_type(ctx, &target));
         if let Some(value) = lower_static_callable_call(ctx, target, args, expr) {
             return value;
         }
     }
     let mut operands = vec![ctx.load_local(var, Some(expr.span)).value];
     operands.extend(lower_args(ctx, args));
-    ctx.emit_value(Op::ClosureCall, operands, None, fallback_expr_type(expr), Op::ClosureCall.default_effects(), Some(expr.span))
+    let result_type = result_type.unwrap_or_else(|| fallback_expr_type(expr));
+    ctx.emit_value(Op::ClosureCall, operands, None, result_type, Op::ClosureCall.default_effects(), Some(expr.span))
 }
 
 /// Lowers an expression call.
@@ -2597,7 +2668,7 @@ fn static_assignment_callable_target(
     if !matches!(target.kind, ExprKind::Variable(_)) {
         return None;
     }
-    static_callable_binding_for_expr(ctx, value)
+    static_callable_binding_for_expr(ctx, value).and_then(direct_static_callable_binding)
 }
 
 /// Lowers direct invocation of a literal first-class callable target.

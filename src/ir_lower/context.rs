@@ -53,6 +53,7 @@ pub(crate) enum StaticCallableBinding {
         receiver: StaticReceiver,
         method: String,
     },
+    InstanceMethod { signature: FunctionSig },
 }
 
 /// Captured closure value recorded at closure creation time for static calls.

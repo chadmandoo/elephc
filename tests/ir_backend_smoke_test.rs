@@ -3075,6 +3075,29 @@ echo ($fn)(5);
     );
 }
 
+/// Verifies stored instance-method first-class callables dispatch through `$fn()`.
+#[test]
+fn ir_backend_handles_stored_instance_method_variable_call() {
+    let source = r#"<?php
+class StoredVariableCallBox {
+    public function __construct(private string $name) {}
+
+    public function read(): string {
+        return $this->name;
+    }
+}
+
+$box = new StoredVariableCallBox("old");
+$fn = $box->read(...);
+$box = new StoredVariableCallBox("new");
+echo $fn();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stored_instance_method_variable_call", source),
+        "old"
+    );
+}
+
 /// Verifies stored instance-method callbacks keep their receiver in `array_filter()`.
 #[test]
 fn ir_backend_handles_stored_instance_method_array_filter_callbacks() {

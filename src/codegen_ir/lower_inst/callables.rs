@@ -36,6 +36,7 @@ pub(super) fn lower_closure_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
     let callable = expect_operand(inst, 0)?;
     match ctx.value_php_type(callable)?.codegen_repr() {
         PhpType::Str => lower_runtime_string_call(ctx, inst, callable, "closure_call"),
+        PhpType::Callable => instance_expr::lower_instance_method_closure_call(ctx, inst, callable),
         other => Err(CodegenIrError::unsupported(format!(
             "closure_call for callable PHP type {:?}",
             other

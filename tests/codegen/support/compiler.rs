@@ -9,6 +9,30 @@
 
 use super::*;
 
+/// Backend used by codegen fixtures when turning optimized AST/EIR into assembly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TestCodegenBackend {
+    Legacy,
+    Ir,
+}
+
+/// Selects the fixture backend from `ELEPHC_TEST_BACKEND`, defaulting to legacy codegen.
+fn selected_test_codegen_backend() -> TestCodegenBackend {
+    match std::env::var("ELEPHC_TEST_BACKEND") {
+        Ok(value) if value.eq_ignore_ascii_case("ir") || value.eq_ignore_ascii_case("eir") => {
+            TestCodegenBackend::Ir
+        }
+        Ok(value) if value.is_empty() || value.eq_ignore_ascii_case("legacy") => {
+            TestCodegenBackend::Legacy
+        }
+        Ok(value) => panic!(
+            "unsupported ELEPHC_TEST_BACKEND `{}`; expected `legacy`, `ir`, or `eir`",
+            value
+        ),
+        Err(_) => TestCodegenBackend::Legacy,
+    }
+}
+
 // Variant of `compile_source_to_asm_with_defines` that uses an empty define set.
 // Runs the full pipeline (tokenize → parse → resolve → type check → optimize → codegen)
 // and returns user assembly, runtime assembly, and required libraries for linking.
@@ -61,28 +85,50 @@ pub(crate) fn compile_source_to_asm_with_defines(
     let optimized = elephc::optimize::prune_constant_control_flow(optimized);
     let optimized = elephc::optimize::normalize_control_flow(optimized);
     let optimized = elephc::optimize::eliminate_dead_code(optimized);
-    validate_ir_lowering_for_codegen_fixture(&optimized, &check_result);
-    let (user_asm, runtime_asm) = elephc::codegen::generate(
-        &optimized,
-        &check_result.global_env,
-        &check_result.functions,
-        &check_result.callable_param_sigs,
-        &check_result.callable_return_sigs,
-        &check_result.callable_array_return_sigs,
-        &check_result.interfaces,
-        &check_result.classes,
-        &check_result.enums,
-        &check_result.packed_classes,
-        &check_result.extern_functions,
-        &check_result.extern_classes,
-        &check_result.extern_globals,
-        heap_size,
-        gc_stats,
-        heap_debug,
-        target(),
-    );
-    let runtime_features =
-        elephc::codegen::runtime_features_for_program_and_classes(&optimized, &check_result.classes);
+    let ir_module = lower_and_validate_ir_for_codegen_fixture(&optimized, &check_result);
+    let (user_asm, runtime_asm, runtime_features) = match selected_test_codegen_backend() {
+        TestCodegenBackend::Legacy => {
+            let (user_asm, runtime_asm) = elephc::codegen::generate(
+                &optimized,
+                &check_result.global_env,
+                &check_result.functions,
+                &check_result.callable_param_sigs,
+                &check_result.callable_return_sigs,
+                &check_result.callable_array_return_sigs,
+                &check_result.interfaces,
+                &check_result.classes,
+                &check_result.enums,
+                &check_result.packed_classes,
+                &check_result.extern_functions,
+                &check_result.extern_classes,
+                &check_result.extern_globals,
+                heap_size,
+                gc_stats,
+                heap_debug,
+                target(),
+            );
+            let runtime_features = elephc::codegen::runtime_features_for_program_and_classes(
+                &optimized,
+                &check_result.classes,
+            );
+            (user_asm, runtime_asm, runtime_features)
+        }
+        TestCodegenBackend::Ir => {
+            let user_asm = elephc::codegen_ir::generate_user_asm_from_ir(
+                &ir_module,
+                gc_stats,
+                heap_debug,
+            )
+            .expect("EIR backend codegen failed for codegen fixture");
+            let runtime_features = ir_module.required_runtime_features;
+            let runtime_asm = elephc::codegen::generate_runtime_with_features(
+                heap_size,
+                target(),
+                runtime_features,
+            );
+            (user_asm, runtime_asm, runtime_features)
+        }
+    };
     let mut required_libraries = check_result.required_libraries;
     for lib in elephc::codegen::required_libraries_for_runtime_features(runtime_features) {
         if !required_libraries.contains(&lib) {
@@ -93,15 +139,16 @@ pub(crate) fn compile_source_to_asm_with_defines(
     (user_asm, runtime_asm, required_libraries)
 }
 
-/// Validates that codegen fixtures also lower to structurally valid EIR.
-fn validate_ir_lowering_for_codegen_fixture(
+/// Lowers codegen fixtures to structurally valid EIR for validation and optional IR emission.
+fn lower_and_validate_ir_for_codegen_fixture(
     program: &elephc::parser::ast::Program,
     check_result: &elephc::types::CheckResult,
-) {
+) -> elephc::ir::Module {
     let module = elephc::ir_lower::lower_program(program, check_result, target())
         .expect("AST-to-EIR lowering failed for codegen fixture");
     elephc::ir::validate_module(&module)
         .expect("EIR validation failed for codegen fixture");
+    module
 }
 
 // Injects an exit harness into user assembly before the final `ret` instruction.

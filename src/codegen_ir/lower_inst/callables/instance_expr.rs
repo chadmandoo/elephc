@@ -1,5 +1,5 @@
 //! Purpose:
-//! Lowers EIR expression calls whose callable operand is a receiver-bound
+//! Lowers EIR callable calls whose callable operand is a receiver-bound
 //! instance-method first-class callable recovered from local SSA producers.
 //!
 //! Called from:
@@ -7,7 +7,8 @@
 //!
 //! Key details:
 //! - The descriptor already retains the captured receiver; this lowering
-//!   statically recovers that receiver and reuses the normal method-call ABI.
+//!   statically recovers that receiver and reuses the normal method-call ABI
+//!   for both `expr_call` and variable-call `closure_call` opcodes.
 
 use crate::codegen::abi;
 use crate::ir::{BlockId, Immediate, Instruction, Op, ValueDef, ValueId};
@@ -36,14 +37,34 @@ pub(super) fn lower_instance_method_expr_call(
     inst: &Instruction,
     callable: ValueId,
 ) -> Result<()> {
-    let target = instance_method_expr_call_target(ctx, callable, "expr_call")?;
+    lower_instance_method_callable_call(ctx, inst, callable, "expr_call")
+}
+
+/// Lowers `$fn(...)` when `$fn` is a stored instance-method first-class callable.
+pub(super) fn lower_instance_method_closure_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    callable: ValueId,
+) -> Result<()> {
+    lower_instance_method_callable_call(ctx, inst, callable, "closure_call")
+}
+
+/// Lowers a receiver-bound instance-method callable through the normal method-call ABI.
+fn lower_instance_method_callable_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    callable: ValueId,
+    owner: &str,
+) -> Result<()> {
+    let target = instance_method_expr_call_target(ctx, callable, owner)?;
     let visible_args = inst.operands.iter().skip(1).copied().collect::<Vec<_>>();
     let mut operands = Vec::with_capacity(visible_args.len() + 1);
     operands.push(target.receiver);
     operands.extend(visible_args);
     if operands.len() != target.param_types.len() {
         return Err(CodegenIrError::unsupported(format!(
-            "expr_call '{}' with {} operands for {} ABI params",
+            "{} '{}' with {} operands for {} ABI params",
+            owner,
             target.entry_label,
             operands.len(),
             target.param_types.len()

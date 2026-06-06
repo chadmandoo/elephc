@@ -1270,19 +1270,29 @@ fn class_method_already_emitted(
     })
 }
 
-/// Stores a call result, materializing PHP null for `void` returns when needed.
+/// Stores a call result, boxing concrete returns for generic EIR result slots.
 fn store_call_result(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     return_ty: &PhpType,
 ) -> Result<()> {
     if let Some(result) = inst.result {
-        if return_ty.codegen_repr() == PhpType::Void || ctx.value_php_type(result)? == PhpType::Void {
+        let result_ty = ctx.value_php_type(result)?;
+        let return_ty = return_ty.codegen_repr();
+        if return_ty == PhpType::Void || result_ty == PhpType::Void {
             abi::emit_load_int_immediate(
                 ctx.emitter,
                 abi::int_result_reg(ctx.emitter),
                 0x7fff_ffff_ffff_fffe,
             );
+            if matches!(result_ty, PhpType::Mixed | PhpType::Union(_)) {
+                emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Void);
+            }
+            ctx.store_result_value(result)?;
+            return Ok(());
+        }
+        if matches!(result_ty, PhpType::Mixed | PhpType::Union(_)) && return_ty != PhpType::Mixed {
+            emit_box_current_value_as_mixed(ctx.emitter, &return_ty);
         }
         ctx.store_result_value(result)?;
     }

@@ -904,6 +904,29 @@ echo ($fn)(5);
     );
 }
 
+/// Verifies stored instance-method variable calls match legacy output.
+#[test]
+fn parity_stored_instance_method_variable_call() {
+    assert_backend_parity(
+        "stored_instance_method_variable_call",
+        r#"<?php
+class StoredVariableCallBox {
+    public function __construct(private string $name) {}
+
+    public function read(): string {
+        return $this->name;
+    }
+}
+
+$box = new StoredVariableCallBox("old");
+$fn = $box->read(...);
+$box = new StoredVariableCallBox("new");
+echo $fn();
+"#,
+        &[],
+    );
+}
+
 /// Verifies stored instance-method `array_filter()` callbacks keep legacy receiver capture.
 #[test]
 fn parity_stored_instance_method_array_filter_callbacks() {
