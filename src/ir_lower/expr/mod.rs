@@ -31,9 +31,14 @@ use crate::types::{
 };
 
 mod constants;
+mod nullsafe_chain;
 
 /// Lowers an expression and returns its EIR value.
 pub(crate) fn lower_expr(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> LoweredValue {
+    if let Some(value) = nullsafe_chain::lower(ctx, expr) {
+        return value;
+    }
+
     match &expr.kind {
         ExprKind::StringLiteral(value) => lower_string_literal(ctx, value, expr),
         ExprKind::IntLiteral(value) => lower_int_literal(ctx, *value, expr),
@@ -3442,6 +3447,25 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
     ctx.emit_value(Op::ExprCall, operands, None, fallback_expr_type(expr), Op::ExprCall.default_effects(), Some(expr.span))
 }
 
+/// Lowers an expression call once the callable expression is already evaluated.
+fn lower_expr_call_from_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    callee: LoweredValue,
+    args: &[Expr],
+    expr: &Expr,
+) -> LoweredValue {
+    let mut operands = vec![callee.value];
+    operands.extend(lower_args(ctx, args));
+    ctx.emit_value(
+        Op::ExprCall,
+        operands,
+        None,
+        fallback_expr_type(expr),
+        Op::ExprCall.default_effects(),
+        Some(expr.span),
+    )
+}
+
 /// Resolves an assignment-expression callee whose assigned value is a static callable.
 fn static_assignment_callable_target(
     ctx: &LoweringContext<'_, '_>,
@@ -3536,6 +3560,17 @@ fn lower_property_get(
     expr: &Expr,
 ) -> LoweredValue {
     let object = lower_expr(ctx, object);
+    lower_property_get_from_value(ctx, object, property, op, expr)
+}
+
+/// Lowers a named property read once the receiver is already evaluated.
+fn lower_property_get_from_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    object: LoweredValue,
+    property: &str,
+    op: Op,
+    expr: &Expr,
+) -> LoweredValue {
     if op == Op::NullsafePropGet && value_is_definitely_null(ctx, object.value) {
         return lower_boxed_null(ctx, expr);
     }
@@ -3646,6 +3681,16 @@ fn singular_object_class(php_type: &PhpType) -> Option<(&str, bool)> {
 /// Lowers a dynamic property read.
 fn lower_dynamic_property_get(ctx: &mut LoweringContext<'_, '_>, object: &Expr, property: &Expr, expr: &Expr) -> LoweredValue {
     let object = lower_expr(ctx, object);
+    lower_dynamic_property_get_from_value(ctx, object, property, expr)
+}
+
+/// Lowers a dynamic property read once the receiver is already evaluated.
+fn lower_dynamic_property_get_from_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    object: LoweredValue,
+    property: &Expr,
+    expr: &Expr,
+) -> LoweredValue {
     let property = lower_expr(ctx, property);
     ctx.emit_value(
         Op::DynamicPropGet,

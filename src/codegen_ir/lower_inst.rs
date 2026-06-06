@@ -1360,6 +1360,9 @@ fn catch_bind_store_type(
 fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let object = expect_operand(inst, 0)?;
     let method_name = method_name_data(ctx, inst)?.to_string();
+    if let Some((class_name, true)) = objects::nullable_object_receiver_class(ctx, object)? {
+        return lower_nullable_receiver_method_call(ctx, inst, object, &class_name, &method_name);
+    }
     let object_ty = ctx.value_php_type(object)?;
     let PhpType::Object(class_name) = object_ty else {
         return Err(CodegenIrError::unsupported(format!(
@@ -1404,6 +1407,77 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
     store_call_result(ctx, inst, &target.return_ty)?;
     emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
+}
+
+/// Lowers a method call after an earlier EIR guard has proven a nullable receiver non-null.
+fn lower_nullable_receiver_method_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    class_name: &str,
+    method_name: &str,
+) -> Result<()> {
+    let target = resolve_method_call_target(ctx, class_name, method_name, inst.operands.len())?;
+    let receiver_ty = PhpType::Object(class_name.to_string());
+    let mut param_types = Vec::with_capacity(target.params.len() + 1);
+    param_types.push(receiver_ty.clone());
+    param_types.extend(target.params.iter().map(|param| param.codegen_repr()));
+    let mut ref_params = Vec::with_capacity(target.ref_params.len() + 1);
+    ref_params.push(false);
+    ref_params.extend(target.ref_params.iter().copied());
+    let null_label = ctx.next_label("method_receiver_null");
+    let done_label = ctx.next_label("method_receiver_done");
+    let receiver_reg = abi::nested_call_reg(ctx.emitter);
+    objects::emit_nullable_receiver_object_payload(ctx, object, &null_label, receiver_reg)?;
+    let call_args = materialize_method_call_args_with_receiver_reg_and_refs(
+        ctx,
+        receiver_reg,
+        &receiver_ty,
+        &inst.operands,
+        &param_types,
+        &ref_params,
+    )?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
+    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_call_label(ctx.emitter, &method_symbol(&target.impl_class, &target.method_key));
+    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    store_call_result(ctx, inst, &target.return_ty)?;
+    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)?;
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&null_label);
+    emit_method_call_on_null_fatal(ctx, method_name);
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Emits PHP's fatal diagnostic for calling an instance method on null.
+fn emit_method_call_on_null_fatal(ctx: &mut FunctionContext<'_>, method_name: &str) {
+    let message = format!(
+        "Fatal error: Call to a member function {}() on null\n",
+        method_name
+    );
+    let (message_label, message_len) = ctx.data.add_string(message.as_bytes());
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #2");                              // write the member-call-on-null fatal to stderr
+            ctx.emitter.adrp("x1", &message_label);
+            ctx.emitter.add_lo12("x1", "x1", &message_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the member-call-on-null fatal byte length
+            ctx.emitter.syscall(4);
+            abi::emit_exit(ctx.emitter, 1);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov edi, 2");                              // write the member-call-on-null fatal to Linux stderr
+            abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", message_len));      // pass the member-call-on-null fatal byte length
+            ctx.emitter.instruction("mov eax, 1");                              // Linux x86_64 syscall 1 = write
+            ctx.emitter.instruction("syscall");                                 // emit the member-call-on-null fatal before exiting
+            abi::emit_exit(ctx.emitter, 1);
+        }
+    }
 }
 
 /// Returns the direct runtime intrinsic for built-in `Generator` instance methods.

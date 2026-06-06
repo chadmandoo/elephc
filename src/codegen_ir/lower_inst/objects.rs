@@ -851,6 +851,9 @@ fn emit_constructor_call(
 pub(super) fn lower_prop_get(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let object = expect_operand(inst, 0)?;
     let property = property_name_immediate(ctx, inst)?.to_string();
+    if let Some((class_name, true)) = nullable_object_receiver_class(ctx, object)? {
+        return lower_nullable_prop_get_with_warning(ctx, inst, object, &class_name, &property);
+    }
     if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
         return lower_mixed_prop_get(ctx, inst, object, &property);
     }
@@ -887,6 +890,56 @@ fn lower_mixed_prop_get(
     abi::emit_call_label(ctx.emitter, "__rt_mixed_property_get");
     cast_loaded_mixed_pointer_to_result(ctx, &inst.result_php_type.codegen_repr())?;
     store_if_result(ctx, inst)
+}
+
+/// Lowers `$maybeObject->property`, warning when the receiver is PHP null.
+fn lower_nullable_prop_get_with_warning(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    class_name: &str,
+    property: &str,
+) -> Result<()> {
+    let slot = resolve_property_slot_for_class(ctx, class_name, property, inst)?;
+    let null_label = ctx.next_label("nullable_prop_warning_null");
+    let done_label = ctx.next_label("nullable_prop_warning_done");
+    let base_reg = abi::symbol_scratch_reg(ctx.emitter);
+    emit_nullable_receiver_object_payload(ctx, object, &null_label, base_reg)?;
+    if slot.is_declared {
+        emit_uninitialized_typed_property_guard(ctx, &slot, base_reg);
+    }
+    emit_property_load(ctx, &slot, base_reg)?;
+    if inst.result_php_type.codegen_repr() == PhpType::Mixed
+        && slot.php_type.codegen_repr() != PhpType::Mixed
+    {
+        emit_box_current_value_as_mixed(ctx.emitter, &slot.php_type.codegen_repr());
+    }
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&null_label);
+    emit_property_on_null_warning(ctx, property);
+    emit_boxed_null(ctx);
+
+    ctx.emitter.label(&done_label);
+    store_if_result(ctx, inst)
+}
+
+/// Emits PHP's warning for reading a property from null.
+fn emit_property_on_null_warning(ctx: &mut FunctionContext<'_>, property: &str) {
+    let message = format!("Warning: Attempt to read property \"{}\" on null\n", property);
+    let (message_label, message_len) = ctx.data.add_string(message.as_bytes());
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.adrp("x1", &message_label);
+            ctx.emitter.add_lo12("x1", "x1", &message_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the property-on-null warning byte length
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "rdi", &message_label);
+            ctx.emitter.instruction(&format!("mov esi, {}", message_len));      // pass the property-on-null warning byte length
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
 }
 
 /// Lowers a nullsafe declared-property read for nullable object receivers.
