@@ -95,6 +95,7 @@ pub(super) fn emit_main_prologue(ctx: &mut FunctionContext<'_>) {
         abi::emit_enable_heap_debug_flag(ctx.emitter);
     }
     store_argc_local_if_present(ctx);
+    store_argv_local_if_present(ctx);
     zero_initialize_main_cleanup_locals(ctx);
     zero_initialize_ref_cell_owner_locals(ctx);
 }
@@ -557,4 +558,27 @@ fn store_argc_local_if_present(ctx: &mut FunctionContext<'_>) {
         return;
     };
     abi::store_at_offset(ctx.emitter, abi::process_argc_reg(ctx.emitter.target), offset);
+}
+
+/// Builds and stores the PHP `$argv` array when the EIR main function has that local.
+fn store_argv_local_if_present(ctx: &mut FunctionContext<'_>) {
+    let Some(argv_slot) = ctx
+        .function
+        .locals
+        .iter()
+        .find(|local| local.name.as_deref() == Some("argv"))
+        .map(|local| local.id)
+    else {
+        return;
+    };
+    let Ok(offset) = ctx.local_offset(argv_slot) else {
+        return;
+    };
+    ctx.emitter.comment("build $argv array from OS argv");
+    abi::emit_call_label(ctx.emitter, "__rt_build_argv");
+    abi::emit_store(
+        ctx.emitter,
+        &PhpType::Array(Box::new(PhpType::Str)),
+        offset,
+    );
 }

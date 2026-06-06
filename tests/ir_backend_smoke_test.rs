@@ -37,6 +37,11 @@ fn ir_backend_echoes_scalar_literals() {
         ("float", "<?php echo 1.5;", "1.5"),
         ("local_store", "<?php $x = 40; echo $x;", "40"),
         ("argc_load", "<?php echo $argc;", "1"),
+        (
+            "argv_bootstrap",
+            "<?php echo count($argv); echo ':'; echo strlen($argv[0]) > 0 ? 'Y' : 'N';",
+            "1:Y",
+        ),
         ("iadd", "<?php echo $argc + 2;", "3"),
         ("isub", "<?php echo $argc - 1;", "0"),
         ("imul", "<?php echo $argc * 3;", "3"),
