@@ -630,14 +630,10 @@ fn eir_signature_with_php_param_contracts(
         let declared = signature.declared_params.get(index).copied().unwrap_or(false);
         let by_ref = signature.ref_params.get(index).copied().unwrap_or(false);
         let variadic = signature.variadic.as_deref() == Some(name.as_str());
-        if !declared
-            && !by_ref
-            && !variadic
-            && callable_param_sigs.contains_key(&(owner_name.to_string(), name.clone()))
-        {
-            continue;
-        }
         if !declared && !by_ref && !variadic {
+            if preserve_untyped_eir_param_contract(owner_name, name, php_type, callable_param_sigs) {
+                continue;
+            }
             *php_type = PhpType::Mixed;
             has_dynamic_untyped_param = true;
         }
@@ -646,6 +642,17 @@ fn eir_signature_with_php_param_contracts(
         eir_signature.return_type = dynamic_param_container_return_type(&eir_signature.return_type);
     }
     eir_signature
+}
+
+/// Returns true when an inferred untyped parameter has an EIR-safe concrete ABI contract.
+fn preserve_untyped_eir_param_contract(
+    owner_name: &str,
+    param_name: &str,
+    php_type: &PhpType,
+    callable_param_sigs: &std::collections::HashMap<(String, String), FunctionSig>,
+) -> bool {
+    matches!(php_type.codegen_repr(), PhpType::Callable)
+        || callable_param_sigs.contains_key(&(owner_name.to_string(), param_name.to_string()))
 }
 
 /// Widens inferred container return elements that may be built from dynamic params.
