@@ -2506,6 +2506,7 @@ fn lower_named_args_with_spread_plan(
     let prefix_type = ctx.builder.value_php_type(prefix.value);
     let prefix_temp_name = ctx.declare_hidden_temp(prefix_type.clone());
     store_value_into_temp(ctx, &prefix_temp_name, prefix_type, prefix, prefix_expr.span);
+    let single_prefix_spread = !matches!(prefix_expr.kind, ExprKind::ArrayLiteral(_));
     let prefix_temp = Expr::new(ExprKind::Variable(prefix_temp_name), prefix_expr.span);
 
     let mut source_values = vec![None; plan.source_args.len()];
@@ -2514,6 +2515,12 @@ fn lower_named_args_with_spread_plan(
             return None;
         }
         source_values[source_index] = Some(lower_call_source_arg(ctx, source_arg));
+    }
+    if single_prefix_spread {
+        if let [check] = plan.spread_bounds_checks.as_slice() {
+            let prefix_value = lower_expr(ctx, &prefix_temp);
+            emit_named_spread_bounds_guard(ctx, prefix_value.value, check, call_span);
+        }
     }
 
     let mut operands = Vec::with_capacity(plan.regular_args.len());
@@ -2580,6 +2587,115 @@ fn lower_named_args_with_spread_plan(
         }
     }
     Some(operands)
+}
+
+/// Emits named-after-spread min/max checks against the already materialized prefix temp.
+fn emit_named_spread_bounds_guard(
+    ctx: &mut LoweringContext<'_, '_>,
+    spread: crate::ir::ValueId,
+    check: &crate::types::call_args::SpreadBoundsCheck,
+    span: crate::span::Span,
+) {
+    if check.min_len == 0 && check.max_len.is_none() {
+        return;
+    }
+    let len = ctx.emit_value(
+        Op::ArrayLen,
+        vec![spread],
+        None,
+        PhpType::Int,
+        Op::ArrayLen.default_effects(),
+        Some(span),
+    );
+    emit_named_spread_min_len_guard(ctx, len.value, check.min_len, span);
+    emit_named_spread_max_len_guard(
+        ctx,
+        len.value,
+        check.max_len,
+        check.max_len_param_name.as_deref(),
+        span,
+    );
+}
+
+/// Emits the underflow branch for a named-after-spread bounds check.
+fn emit_named_spread_min_len_guard(
+    ctx: &mut LoweringContext<'_, '_>,
+    len: crate::ir::ValueId,
+    min_len: usize,
+    span: crate::span::Span,
+) {
+    if min_len == 0 {
+        return;
+    }
+    let min = emit_i64_at_span(ctx, min_len as i64, span);
+    let has_required_args = ctx.emit_value(
+        Op::ICmp,
+        vec![len, min.value],
+        Some(Immediate::CmpPredicate(CmpPredicate::Sge)),
+        PhpType::Bool,
+        Op::ICmp.default_effects(),
+        Some(span),
+    );
+    let ok = ctx.builder.create_named_block("call.named_spread.min.ok", Vec::new());
+    let fatal = ctx.builder.create_named_block("call.named_spread.min.fatal", Vec::new());
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: has_required_args.value,
+        then_target: ok,
+        then_args: Vec::new(),
+        else_target: fatal,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(fatal);
+    let message = ctx.intern_string("Fatal error: named argument spread length mismatch\n");
+    ctx.builder.terminate(Terminator::Fatal { message });
+
+    ctx.builder.position_at_end(ok);
+}
+
+/// Emits the overflow branch for a named-after-spread bounds check.
+fn emit_named_spread_max_len_guard(
+    ctx: &mut LoweringContext<'_, '_>,
+    len: crate::ir::ValueId,
+    max_len: Option<usize>,
+    param_name: Option<&str>,
+    span: crate::span::Span,
+) {
+    let Some(max_len) = max_len else {
+        return;
+    };
+    let max = emit_i64_at_span(ctx, max_len as i64, span);
+    let within_bound = ctx.emit_value(
+        Op::ICmp,
+        vec![len, max.value],
+        Some(Immediate::CmpPredicate(CmpPredicate::Sle)),
+        PhpType::Bool,
+        Op::ICmp.default_effects(),
+        Some(span),
+    );
+    let ok = ctx.builder.create_named_block("call.named_spread.max.ok", Vec::new());
+    let fatal = ctx.builder.create_named_block("call.named_spread.max.fatal", Vec::new());
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: within_bound.value,
+        then_target: ok,
+        then_args: Vec::new(),
+        else_target: fatal,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(fatal);
+    let message = if let Some(param_name) = param_name {
+        format!(
+            "Fatal error: Named parameter ${} overwrites previous argument\n",
+            param_name
+        )
+    } else {
+        "Fatal error: named argument spread length mismatch\n".to_string()
+    };
+    let message = ctx.intern_string(&message);
+    ctx.builder.terminate(Terminator::Fatal { message });
+
+    ctx.builder.position_at_end(ok);
 }
 
 /// Lowers a single associative spread as named parameter reads by key.
