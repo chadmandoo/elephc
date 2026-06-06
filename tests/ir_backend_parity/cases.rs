@@ -914,6 +914,35 @@ foreach ($values as $value) {
     );
 }
 
+/// Verifies local `array_filter()` mode values keep legacy instance callback ABI shape.
+#[test]
+fn parity_stored_instance_method_array_filter_local_mode_callbacks() {
+    assert_backend_parity(
+        "stored_instance_method_array_filter_local_mode_callbacks",
+        r#"<?php
+class StoredKeyFilterBox {
+    public int $offset = 0;
+
+    public function keep(int $key): bool {
+        return $key + $this->offset === 1;
+    }
+}
+
+$box = new StoredKeyFilterBox();
+$box->offset = 0;
+$filter = $box->keep(...);
+$mode = ARRAY_FILTER_USE_KEY;
+$values = array_filter([7, 8, 9], $filter, $mode);
+echo count($values);
+foreach ($values as $value) {
+    echo ":";
+    echo $value;
+}
+"#,
+        &[],
+    );
+}
+
 /// Verifies reflection attribute owner metadata matches the legacy backend.
 #[test]
 fn parity_reflection_owner_attributes() {

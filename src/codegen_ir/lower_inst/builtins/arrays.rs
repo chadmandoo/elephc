@@ -832,16 +832,29 @@ fn static_array_filter_mode(ctx: &FunctionContext<'_>, mode: Option<ValueId>) ->
     let Some(mode) = mode else {
         return Ok(Some(0));
     };
-    let Some(value_ref) = ctx.function.value(mode) else {
-        return Err(CodegenIrError::missing_entry("value", mode.as_raw()));
+    array_filter_mode_const_i64(ctx, mode)
+}
+
+/// Returns a visible integer mode from a direct constant or same-block local load.
+fn array_filter_mode_const_i64(ctx: &FunctionContext<'_>, value: ValueId) -> Result<Option<i64>> {
+    let Some(value_ref) = ctx.function.value(value) else {
+        return Err(CodegenIrError::missing_entry("value", value.as_raw()));
     };
-    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+    let ValueDef::Instruction { block, index, inst } = value_ref.def else {
         return Ok(None);
     };
     let Some(inst_ref) = ctx.function.instruction(inst) else {
         return Err(CodegenIrError::missing_entry("instruction", inst.as_raw()));
     };
-    if !matches!(inst_ref.op, Op::ConstI64) {
+    let inst_ref = if inst_ref.op == Op::LoadLocal {
+        let Some(inst_ref) = array_filter_local_mode_source_instruction(ctx, block, index, inst_ref)? else {
+            return Ok(None);
+        };
+        inst_ref
+    } else {
+        inst_ref
+    };
+    if inst_ref.op != Op::ConstI64 {
         return Ok(None);
     }
     let Some(Immediate::I64(value)) = inst_ref.immediate else {
@@ -850,6 +863,52 @@ fn static_array_filter_mode(ctx: &FunctionContext<'_>, mode: Option<ValueId>) ->
         ));
     };
     Ok(Some(value))
+}
+
+/// Resolves an `array_filter()` mode local load to the last same-block store before it.
+fn array_filter_local_mode_source_instruction<'a>(
+    ctx: &'a FunctionContext<'_>,
+    block: BlockId,
+    load_index: u32,
+    load_inst: &Instruction,
+) -> Result<Option<&'a Instruction>> {
+    let Some(Immediate::LocalSlot(slot)) = load_inst.immediate else {
+        return Err(CodegenIrError::invalid_module(
+            "array_filter mode load_local has no local slot",
+        ));
+    };
+    let block_ref = ctx
+        .function
+        .block(block)
+        .ok_or_else(|| CodegenIrError::missing_entry("block", block.as_raw()))?;
+    let mut stored = None;
+    for (index, inst_id) in block_ref.instructions.iter().enumerate() {
+        if index as u32 >= load_index {
+            break;
+        }
+        let inst_ref = ctx
+            .function
+            .instruction(*inst_id)
+            .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst_id.as_raw()))?;
+        if inst_ref.op == Op::StoreLocal
+            && matches!(inst_ref.immediate, Some(Immediate::LocalSlot(candidate)) if candidate == slot)
+        {
+            stored = inst_ref.operands.first().copied();
+        }
+    }
+    let Some(stored) = stored else {
+        return Ok(None);
+    };
+    let Some(value_ref) = ctx.function.value(stored) else {
+        return Err(CodegenIrError::missing_entry("value", stored.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(None);
+    };
+    ctx.function
+        .instruction(inst)
+        .map(Some)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))
 }
 
 /// Returns an indexed-array element type compatible with callback runtime helpers.

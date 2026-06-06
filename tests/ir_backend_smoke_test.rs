@@ -3080,6 +3080,40 @@ foreach ($values as $value) {
     );
 }
 
+/// Verifies local `array_filter()` mode values select the instance callback ABI shape.
+#[test]
+fn ir_backend_handles_stored_instance_method_array_filter_local_mode_callbacks() {
+    let source = r#"<?php
+class StoredKeyFilterBox {
+    public int $offset = 0;
+
+    public function keep(int $key): bool {
+        return $key + $this->offset === 1;
+    }
+}
+
+$box = new StoredKeyFilterBox();
+$box->offset = 0;
+$filter = $box->keep(...);
+$mode = ARRAY_FILTER_USE_KEY;
+$box = new StoredKeyFilterBox();
+$box->offset = 99;
+$values = array_filter([7, 8, 9], $filter, $mode);
+echo count($values);
+foreach ($values as $value) {
+    echo ":";
+    echo $value;
+}
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend(
+            "stored_instance_method_array_filter_local_mode_callbacks",
+            source
+        ),
+        "1:8"
+    );
+}
+
 /// Verifies fixed-class object construction calls `__construct` through the EIR method ABI.
 #[test]
 fn ir_backend_calls_simple_constructor() {
