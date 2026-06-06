@@ -6,8 +6,8 @@
 //! - `crate::codegen_ir::lower_inst::builtins::lower_builtin_call()`.
 //!
 //! Key details:
-//! - Aggregate helpers only accept indexed arrays with non-float scalar slots
-//!   because they read 8-byte integer payloads directly.
+//! - Aggregate helpers accept indexed arrays with 8-byte payload slots, and
+//!   dispatch to refcount-aware runtime variants when payloads own heap values.
 //! - Associative key filters require hash operands because their runtime helpers copy hash entries.
 
 use crate::codegen::{
@@ -153,12 +153,12 @@ pub(super) fn lower_array_flip(ctx: &mut FunctionContext<'_>, inst: &Instruction
 pub(super) fn lower_array_reverse(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_reverse", 1)?;
     let array = expect_operand(inst, 0)?;
-    require_eight_byte_indexed_array(ctx.value_php_type(array)?, "array_reverse")?;
+    let elem_ty = eight_byte_indexed_array_element_type(ctx.value_php_type(array)?, "array_reverse")?;
     ctx.load_value_to_result(array)?;
     if ctx.emitter.target.arch == Arch::X86_64 {
         ctx.emitter.instruction("mov rdi, rax");                                // pass the source indexed-array pointer as the reverse helper argument
     }
-    abi::emit_call_label(ctx.emitter, "__rt_array_reverse");
+    abi::emit_call_label(ctx.emitter, array_reverse_runtime_helper(&elem_ty));
     store_if_result(ctx, inst)
 }
 
@@ -166,12 +166,12 @@ pub(super) fn lower_array_reverse(ctx: &mut FunctionContext<'_>, inst: &Instruct
 pub(super) fn lower_array_unique(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_unique", 1)?;
     let array = expect_operand(inst, 0)?;
-    require_eight_byte_indexed_array(ctx.value_php_type(array)?, "array_unique")?;
+    let elem_ty = eight_byte_indexed_array_element_type(ctx.value_php_type(array)?, "array_unique")?;
     ctx.load_value_to_result(array)?;
     if ctx.emitter.target.arch == Arch::X86_64 {
         ctx.emitter.instruction("mov rdi, rax");                                // pass the source indexed-array pointer as the dedup helper argument
     }
-    abi::emit_call_label(ctx.emitter, "__rt_array_unique");
+    abi::emit_call_label(ctx.emitter, array_unique_runtime_helper(&elem_ty));
     store_if_result(ctx, inst)
 }
 
@@ -761,7 +761,7 @@ pub(super) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instructio
     super::ensure_arg_count(inst, "array_merge", 2)?;
     let first = expect_operand(inst, 0)?;
     let second = expect_operand(inst, 1)?;
-    require_compatible_eight_byte_indexed_arrays(
+    let elem_ty = compatible_eight_byte_indexed_array_element_type(
         ctx.value_php_type(first)?,
         ctx.value_php_type(second)?,
         "array_merge",
@@ -776,7 +776,7 @@ pub(super) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instructio
             ctx.load_value_to_reg(second, "rsi")?;
         }
     }
-    abi::emit_call_label(ctx.emitter, "__rt_array_merge");
+    abi::emit_call_label(ctx.emitter, array_merge_runtime_helper(&elem_ty));
     store_if_result(ctx, inst)
 }
 
@@ -1341,7 +1341,8 @@ fn array_filter_source_element_type(ty: PhpType) -> Result<PhpType> {
             if matches!(
                 elem,
                 PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never
-            ) {
+            ) || elem.is_refcounted()
+            {
                 return Ok(elem);
             }
             Err(CodegenIrError::unsupported(format!(
@@ -2882,12 +2883,6 @@ fn require_assoc_array_key_set_result_type(
     )))
 }
 
-/// Verifies a builtin can use scalar indexed-array helpers with 8-byte slots.
-fn require_eight_byte_indexed_array(ty: PhpType, name: &str) -> Result<()> {
-    let _ = eight_byte_indexed_array_element_type(ty, name)?;
-    Ok(())
-}
-
 /// Verifies that a `range()` endpoint can be passed to the integer runtime helper.
 fn require_range_endpoint(ty: PhpType, name: &str) -> Result<()> {
     match ty.codegen_repr() {
@@ -2911,19 +2906,22 @@ fn require_range_result_type(result_ty: &PhpType) -> Result<()> {
     }
 }
 
-/// Verifies two indexed arrays can share an 8-byte scalar runtime helper.
-fn require_compatible_eight_byte_indexed_arrays(
+/// Returns the shared element type for two compatible 8-byte indexed arrays.
+fn compatible_eight_byte_indexed_array_element_type(
     first: PhpType,
     second: PhpType,
     name: &str,
-) -> Result<()> {
+) -> Result<PhpType> {
     let first = eight_byte_indexed_array_element_type(first, name)?;
     let second = eight_byte_indexed_array_element_type(second, name)?;
     if first == second
         || matches!(first, PhpType::Never | PhpType::Void)
         || matches!(second, PhpType::Never | PhpType::Void)
     {
-        return Ok(());
+        if matches!(first, PhpType::Never | PhpType::Void) {
+            return Ok(second);
+        }
+        return Ok(first);
     }
     Err(CodegenIrError::unsupported(format!(
         "{} for incompatible indexed-array element PHP types {:?} and {:?}",
@@ -3239,7 +3237,7 @@ fn array_flip_runtime_helper(value_elem_ty: &PhpType) -> &'static str {
     }
 }
 
-/// Returns the element type for indexed arrays supported by scalar 8-byte helpers.
+/// Returns the element type for indexed arrays supported by 8-byte helper slots.
 fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
     match ty.codegen_repr() {
         PhpType::Array(elem) => {
@@ -3252,7 +3250,8 @@ fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpT
                     | PhpType::Callable
                     | PhpType::Void
                     | PhpType::Never
-            ) {
+            ) || elem.is_refcounted()
+            {
                 return Ok(elem);
             }
             Err(CodegenIrError::unsupported(format!(
@@ -3262,6 +3261,33 @@ fn eight_byte_indexed_array_element_type(ty: PhpType, name: &str) -> Result<PhpT
             )))
         }
         other => Err(CodegenIrError::unsupported(format!("{} for PHP type {:?}", name, other))),
+    }
+}
+
+/// Returns the runtime helper for `array_reverse()` based on element ownership.
+fn array_reverse_runtime_helper(elem_ty: &PhpType) -> &'static str {
+    if elem_ty.is_refcounted() {
+        "__rt_array_reverse_refcounted"
+    } else {
+        "__rt_array_reverse"
+    }
+}
+
+/// Returns the runtime helper for `array_unique()` based on element ownership.
+fn array_unique_runtime_helper(elem_ty: &PhpType) -> &'static str {
+    if elem_ty.is_refcounted() {
+        "__rt_array_unique_refcounted"
+    } else {
+        "__rt_array_unique"
+    }
+}
+
+/// Returns the runtime helper for `array_merge()` based on element ownership.
+fn array_merge_runtime_helper(elem_ty: &PhpType) -> &'static str {
+    if elem_ty.is_refcounted() {
+        "__rt_array_merge_refcounted"
+    } else {
+        "__rt_array_merge"
     }
 }
 

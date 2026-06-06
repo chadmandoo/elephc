@@ -722,6 +722,10 @@ fn lower_count(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> 
             abi::emit_load_from_address(ctx.emitter, result_reg, result_reg, 0);
             store_if_result(ctx, inst)
         }
+        PhpType::Mixed | PhpType::Union(_) => {
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_count");
+            store_if_result(ctx, inst)
+        }
         other => Err(CodegenIrError::unsupported(format!(
             "count for PHP type {:?}",
             other

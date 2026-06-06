@@ -8,6 +8,8 @@
 //! Key details:
 //! - Static locals are backed by `.comm` symbols and an initialization marker,
 //!   so their values persist across function calls without using frame slots.
+//! - Initializers transfer their freshly-created owner into the static slot;
+//!   assignments retain refcounted values before publishing a second owner.
 
 use crate::codegen::abi;
 use crate::ir::{Instruction, LocalSlot, LocalSlotId, ValueId};
@@ -39,7 +41,10 @@ pub(super) fn lower_store_static_local(ctx: &mut FunctionContext<'_>, inst: &Ins
     let slot = resolve_static_local_slot(ctx, inst)?;
     ensure_static_local_type_supported(&slot, inst)?;
     ensure_static_local_value_supported(ctx, &slot, value, inst)?;
-    ctx.load_value_to_result(value)?;
+    let loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
+    if loaded_ty.is_refcounted() {
+        abi::emit_incref_if_refcounted(ctx.emitter, &loaded_ty);
+    }
     abi::emit_store_result_to_symbol(ctx.emitter, &slot.symbol, &slot.php_type, true);
     clear_static_local_high_word_if_needed(ctx, &slot);
     Ok(())
@@ -100,15 +105,18 @@ fn local_slot<'a>(
 
 /// Verifies that this backend slice knows how to represent the static-local type.
 fn ensure_static_local_type_supported(slot: &StaticLocalSlot, inst: &Instruction) -> Result<()> {
-    match slot.php_type {
-        PhpType::Bool | PhpType::Int | PhpType::Float | PhpType::Str | PhpType::Void => Ok(()),
-        _ => Err(CodegenIrError::unsupported(format!(
+    let ty = slot.php_type.codegen_repr();
+    if matches!(ty, PhpType::Bool | PhpType::Int | PhpType::Float | PhpType::Str | PhpType::Void)
+        || ty.is_refcounted()
+    {
+        return Ok(());
+    }
+    Err(CodegenIrError::unsupported(format!(
             "{} for static local ${} with PHP type {:?}",
             inst.op.name(),
             slot.name,
             slot.php_type
-        ))),
-    }
+    )))
 }
 
 /// Verifies the assigned value already has the static-local storage representation.
@@ -118,8 +126,9 @@ fn ensure_static_local_value_supported(
     value: ValueId,
     inst: &Instruction,
 ) -> Result<()> {
-    let value_ty = ctx.value_php_type(value)?;
-    if value_ty == slot.php_type {
+    let value_ty = ctx.value_php_type(value)?.codegen_repr();
+    let slot_ty = slot.php_type.codegen_repr();
+    if static_local_value_type_matches(&value_ty, &slot_ty) {
         return Ok(());
     }
     Err(CodegenIrError::unsupported(format!(
@@ -129,6 +138,18 @@ fn ensure_static_local_value_supported(
         slot.name,
         slot.php_type
     )))
+}
+
+/// Returns true when a stored value can use the static-local symbol layout.
+fn static_local_value_type_matches(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    if value_ty == slot_ty {
+        return true;
+    }
+    matches!(
+        (value_ty, slot_ty),
+        (PhpType::Array(value_elem), PhpType::Array(_))
+            if matches!(value_elem.codegen_repr(), PhpType::Never | PhpType::Void)
+    )
 }
 
 /// Clears the unused second word for non-string static-local storage.
