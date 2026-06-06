@@ -884,6 +884,26 @@ array_walk([1, 2], $walk);
     );
 }
 
+/// Verifies stored instance-method first-class callable expression calls match legacy output.
+#[test]
+fn parity_stored_instance_method_expr_call() {
+    assert_backend_parity(
+        "stored_instance_method_expr_call",
+        r#"<?php
+class StoredExprCallBox {
+    public function add(int $value): int {
+        return $value + 7;
+    }
+}
+
+$box = new StoredExprCallBox();
+$fn = $box->add(...);
+echo ($fn)(5);
+"#,
+        &[],
+    );
+}
+
 /// Verifies stored instance-method `array_filter()` callbacks keep legacy receiver capture.
 #[test]
 fn parity_stored_instance_method_array_filter_callbacks() {

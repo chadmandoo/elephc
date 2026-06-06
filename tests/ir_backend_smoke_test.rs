@@ -3050,6 +3050,31 @@ array_walk([1, 2], $walk);
     );
 }
 
+/// Verifies stored instance-method first-class callables dispatch through `expr_call`.
+#[test]
+fn ir_backend_handles_stored_instance_method_expr_call() {
+    let source = r#"<?php
+class StoredExprCallBox {
+    public int $base = 0;
+
+    public function add(int $value): int {
+        return $this->base + $value;
+    }
+}
+
+$box = new StoredExprCallBox();
+$box->base = 7;
+$fn = $box->add(...);
+$box = new StoredExprCallBox();
+$box->base = 100;
+echo ($fn)(5);
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("stored_instance_method_expr_call", source),
+        "12"
+    );
+}
+
 /// Verifies stored instance-method callbacks keep their receiver in `array_filter()`.
 #[test]
 fn ir_backend_handles_stored_instance_method_array_filter_callbacks() {

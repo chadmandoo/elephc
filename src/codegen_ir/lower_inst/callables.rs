@@ -22,6 +22,8 @@ use super::super::context::FunctionContext;
 use super::{direct_call_stack_pad_bytes, expect_operand, materialize_direct_call_args};
 use crate::codegen_ir::{CodegenIrError, Result};
 
+mod instance_expr;
+
 /// Resolved user function candidate for a runtime string callable.
 struct RuntimeStringFunctionTarget {
     name: String,
@@ -46,6 +48,7 @@ pub(super) fn lower_expr_call(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     let callable = expect_operand(inst, 0)?;
     match ctx.value_php_type(callable)?.codegen_repr() {
         PhpType::Str => lower_runtime_string_call(ctx, inst, callable, "expr_call"),
+        PhpType::Callable => instance_expr::lower_instance_method_expr_call(ctx, inst, callable),
         other => Err(CodegenIrError::unsupported(format!(
             "expr_call for callable PHP type {:?}",
             other
