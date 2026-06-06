@@ -15,6 +15,7 @@ use crate::codegen::{
     abi, callable_descriptor, callable_dispatch, emit_box_current_owned_value_as_mixed,
     emit_box_current_value_as_mixed, emit_release_pushed_refcounted_temp_after_array_push,
 };
+use crate::codegen::builtins::arrays::call_user_func_array as cufa;
 use crate::codegen::platform::Arch;
 use crate::ir::{Instruction, Op, ValueDef, ValueId};
 use crate::names::{function_symbol, method_symbol, php_symbol_key};
@@ -23,10 +24,11 @@ use crate::types::{FunctionSig, PhpType};
 
 use super::super::context::FunctionContext;
 use super::{
-    class_method_already_emitted, direct_call_stack_pad_bytes,
+    class_method_already_emitted, class_method_body_exists, direct_call_stack_pad_bytes,
     emit_instance_method_descriptor_entry_wrapper, emit_legacy_deferred_callable_support_inline,
-    emit_ref_arg_writebacks, emit_runtime_callable_invoker_inline, expect_operand,
-    legacy_context_from_eir_module, materialize_direct_call_args,
+    emit_ref_arg_writebacks, emit_runtime_callable_invoker_inline,
+    emit_runtime_descriptor_with_receiver_capture, expect_operand, legacy_context_from_eir_module,
+    materialize_direct_call_args,
     materialize_method_call_args_with_receiver_reg_and_refs, store_call_result,
 };
 use crate::codegen_ir::{CodegenIrError, Result};
@@ -102,8 +104,15 @@ pub(super) fn lower_callable_descriptor_invoke(
 ) -> Result<()> {
     let callable = expect_operand(inst, 0)?;
     let arg_mixed = expect_operand(inst, 1)?;
-    require_mixed_arg_container(ctx, arg_mixed, "callable_descriptor_invoke")?;
+    require_descriptor_arg_container(ctx, arg_mixed, "callable_descriptor_invoke")?;
     match ctx.value_php_type(callable)?.codegen_repr() {
+        PhpType::Str => lower_runtime_string_descriptor_invoke(
+            ctx,
+            inst,
+            callable,
+            arg_mixed,
+            "callable_descriptor_invoke",
+        ),
         PhpType::Callable => lower_descriptor_invoker_call_with_mixed_arg(
             ctx,
             inst,
@@ -129,6 +138,14 @@ pub(super) fn lower_callable_descriptor_invoke(
                 "callable_descriptor_invoke",
             )
         }
+        PhpType::Object(class_name) => lower_invokable_object_descriptor_invoke(
+            ctx,
+            inst,
+            callable,
+            arg_mixed,
+            &class_name,
+            "callable_descriptor_invoke",
+        ),
         other => Err(CodegenIrError::unsupported(format!(
             "callable_descriptor_invoke for callable PHP type {:?}",
             other
@@ -136,18 +153,164 @@ pub(super) fn lower_callable_descriptor_invoke(
     }
 }
 
-/// Verifies that a descriptor-invoker argument operand is a boxed Mixed container.
-fn require_mixed_arg_container(
+/// Selects a descriptor for a runtime string callable and invokes it with a Mixed arg container.
+fn lower_runtime_string_descriptor_invoke(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    callable: ValueId,
+    arg_mixed: ValueId,
+    op_name: &str,
+) -> Result<()> {
+    let cases = runtime_string_descriptor_cases(ctx);
+    if cases.is_empty() {
+        return Err(CodegenIrError::unsupported(
+            "callable_descriptor_invoke for runtime string with no descriptor targets",
+        ));
+    }
+
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(callable, ptr_reg, len_reg)?;
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+
+    let done_label = ctx.next_label(&format!("{}_runtime_string_done", op_name));
+    let miss_label = ctx.next_label(&format!("{}_runtime_string_missing", op_name));
+    let call_reg = abi::nested_call_reg(ctx.emitter);
+    let selector = callable_dispatch::RuntimeCallableSelector::StringNameStack {
+        ptr_offset: 0,
+        len_offset: 8,
+        call_reg,
+    };
+    let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
+    for case in &cases {
+        let next_case = ctx.next_label("runtime_string_descriptor_next");
+        callable_dispatch::emit_branch_if_callable_case_mismatch(
+            &selector,
+            case,
+            &next_case,
+            ctx.emitter,
+            &mut legacy_ctx,
+            ctx.data,
+        );
+        emit_static_descriptor_case_invoke(ctx, inst, arg_mixed, &case.descriptor_label)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+        ctx.emitter.label(&next_case);
+    }
+    abi::emit_jump(ctx.emitter, &miss_label);
+
+    ctx.emitter.label(&miss_label);
+    emit_undefined_runtime_string_call_fatal(ctx);
+
+    ctx.emitter.label(&done_label);
+    abi::emit_release_temporary_stack(ctx.emitter, 16);
+    Ok(())
+}
+
+/// Builds runtime callable descriptor cases for string-name dynamic invocation.
+fn runtime_string_descriptor_cases(
+    ctx: &mut FunctionContext<'_>,
+) -> Vec<callable_dispatch::RuntimeCallableCase> {
+    let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
+    legacy_ctx.functions.retain(|name, _| {
+        ctx.module
+            .functions
+            .iter()
+            .any(|function| !function.flags.is_main && function.name == *name)
+    });
+    let cases = callable_dispatch::runtime_callable_cases(&mut legacy_ctx, ctx.data, &[], None);
+    emit_legacy_deferred_callable_support_inline(ctx, &mut legacy_ctx);
+    cases
+}
+
+/// Lowers `call_user_func_array($object, $args)` through an `__invoke` descriptor.
+fn lower_invokable_object_descriptor_invoke(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    receiver: ValueId,
+    arg_mixed: ValueId,
+    class_name: &str,
+    op_name: &str,
+) -> Result<()> {
+    let normalized_class = class_name.trim_start_matches('\\').to_string();
+    let method_key = "__invoke";
+    let class_info = ctx
+        .module
+        .class_infos
+        .get(normalized_class.as_str())
+        .ok_or_else(|| {
+            CodegenIrError::unsupported(format!(
+                "{} for invokable object with unknown class '{}'",
+                op_name, normalized_class
+            ))
+        })?;
+    let sig = class_info
+        .methods
+        .get(method_key)
+        .ok_or_else(|| {
+            CodegenIrError::unsupported(format!(
+                "{} for non-invokable object '{}'",
+                op_name, normalized_class
+            ))
+        })?
+        .clone();
+    let impl_class = class_info
+        .method_impl_classes
+        .get(method_key)
+        .cloned()
+        .unwrap_or_else(|| normalized_class.clone());
+    if !class_method_body_exists(ctx, &impl_class, method_key) {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} for invokable object '{}' without emitted __invoke body",
+            op_name, normalized_class
+        )));
+    }
+
+    let receiver_ty = PhpType::Object(normalized_class.clone());
+    let captures = vec![("receiver".to_string(), receiver_ty.clone(), false)];
+    let entry_label =
+        emit_instance_method_descriptor_entry_wrapper(ctx, &impl_class, method_key, &sig)?;
+    let invoker_label = emit_runtime_callable_invoker_inline(ctx, &sig, &captures);
+    let php_name = format!("{}::__invoke", normalized_class);
+    let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
+        ctx.data,
+        &entry_label,
+        Some(&php_name),
+        callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
+        Some(&sig),
+        &captures,
+        &[],
+        callable_descriptor::CallableDescriptorInvocation::method(
+            callable_descriptor::CallableDescriptorShape::InstanceMethod,
+            Some(normalized_class),
+            method_key,
+        ),
+        Some(&invoker_label),
+    );
+    emit_runtime_descriptor_with_receiver_capture(ctx, &descriptor_label, receiver, &receiver_ty)?;
+    emit_descriptor_reg_invoker_call_with_mixed_arg(
+        ctx,
+        inst,
+        abi::nested_call_reg(ctx.emitter),
+        arg_mixed,
+        op_name,
+        true,
+    )
+}
+
+/// Verifies that a descriptor-invoker argument operand is a supported container shape.
+fn require_descriptor_arg_container(
     ctx: &FunctionContext<'_>,
     arg_mixed: ValueId,
     op_name: &str,
 ) -> Result<()> {
     let arg_ty = ctx.value_php_type(arg_mixed)?.codegen_repr();
-    if arg_ty == PhpType::Mixed {
+    if matches!(
+        arg_ty,
+        PhpType::Mixed | PhpType::Union(_) | PhpType::Array(_) | PhpType::AssocArray { .. }
+    ) {
         return Ok(());
     }
     Err(CodegenIrError::invalid_module(format!(
-        "{} argument container has PHP type {:?}",
+        "{} argument container has unsupported PHP type {:?}",
         op_name, arg_ty
     )))
 }
@@ -829,7 +992,7 @@ fn lower_descriptor_invoker_call_with_args(
     let invoker_reg = abi::symbol_scratch_reg(ctx.emitter);
     ctx.load_value_to_reg(callable, descriptor_reg)?;
     callable_descriptor::emit_load_invoker_from_descriptor(ctx.emitter, invoker_reg, descriptor_reg);
-    let ready_label = ctx.next_label(&format!("{}_descriptor_invoker_ready", op_name));
+    let ready_label = descriptor_invoker_ready_label(ctx, op_name);
     emit_branch_if_invoker_present(ctx, invoker_reg, &ready_label);
     emit_missing_descriptor_invoker_fatal(ctx, op_name);
 
@@ -854,9 +1017,39 @@ fn emit_descriptor_reg_invoker_call_with_mixed_arg(
     op_name: &str,
     release_runtime_descriptor: bool,
 ) -> Result<()> {
+    if descriptor_arg_is_prebuilt_mixed_box(ctx, arg_mixed)? {
+        return emit_descriptor_reg_invoker_call_with_prebuilt_mixed_arg(
+            ctx,
+            inst,
+            descriptor_reg,
+            arg_mixed,
+            op_name,
+            release_runtime_descriptor,
+        );
+    }
+
+    emit_descriptor_reg_invoker_call_with_normalized_arg(
+        ctx,
+        inst,
+        descriptor_reg,
+        arg_mixed,
+        op_name,
+        release_runtime_descriptor,
+    )
+}
+
+/// Calls a descriptor invoker with a boxed Mixed argument created by EIR lowering.
+fn emit_descriptor_reg_invoker_call_with_prebuilt_mixed_arg(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    descriptor_reg: &str,
+    arg_mixed: ValueId,
+    op_name: &str,
+    release_runtime_descriptor: bool,
+) -> Result<()> {
     let invoker_reg = abi::symbol_scratch_reg(ctx.emitter);
     callable_descriptor::emit_load_invoker_from_descriptor(ctx.emitter, invoker_reg, descriptor_reg);
-    let ready_label = ctx.next_label(&format!("{}_descriptor_invoker_ready", op_name));
+    let ready_label = descriptor_invoker_ready_label(ctx, op_name);
     emit_branch_if_invoker_present(ctx, invoker_reg, &ready_label);
     emit_missing_descriptor_invoker_fatal(ctx, op_name);
 
@@ -874,6 +1067,146 @@ fn emit_descriptor_reg_invoker_call_with_mixed_arg(
     }
     release_prebuilt_invoker_arg_preserving_result(ctx, arg_mixed)?;
     store_descriptor_invoker_result(ctx, inst)
+}
+
+/// Calls a descriptor invoker after cloning and boxing a raw argument-array container.
+fn emit_descriptor_reg_invoker_call_with_normalized_arg(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    descriptor_reg: &str,
+    arg_container: ValueId,
+    op_name: &str,
+    release_runtime_descriptor: bool,
+) -> Result<()> {
+    let invoker_reg = abi::symbol_scratch_reg(ctx.emitter);
+    callable_descriptor::emit_load_invoker_from_descriptor(ctx.emitter, invoker_reg, descriptor_reg);
+    let ready_label = descriptor_invoker_ready_label(ctx, op_name);
+    emit_branch_if_invoker_present(ctx, invoker_reg, &ready_label);
+    emit_missing_descriptor_invoker_fatal(ctx, op_name);
+
+    ctx.emitter.label(&ready_label);
+    abi::emit_push_reg(ctx.emitter, descriptor_reg);                            // preserve the callable descriptor while normalizing call_user_func_array() args
+    emit_normalized_invoker_arg_container(ctx, arg_container, release_runtime_descriptor)?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));          // preserve the boxed normalized argument container for invocation and cleanup
+    abi::emit_load_temporary_stack_slot(ctx.emitter, descriptor_reg, 16);
+    move_reg_to_arg(ctx, descriptor_reg, 0);
+    let arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 1);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, arg_reg, 0);
+    callable_descriptor::emit_load_invoker_from_descriptor(ctx.emitter, invoker_reg, descriptor_reg);
+    abi::emit_call_reg(ctx.emitter, invoker_reg);
+    release_invoker_arg_preserving_result(ctx);
+    release_saved_descriptor_after_normalized_arg(ctx, release_runtime_descriptor);
+    store_descriptor_invoker_result(ctx, inst)
+}
+
+/// Returns the branch-ready label name for a descriptor invoker callsite.
+fn descriptor_invoker_ready_label(ctx: &mut FunctionContext<'_>, op_name: &str) -> String {
+    if op_name == "callable_descriptor_invoke" {
+        return ctx.next_label("cufa_descriptor_invoker_ready");
+    }
+    ctx.next_label(&format!("{}_descriptor_invoker_ready", op_name))
+}
+
+/// Returns true when the argument container is already a temporary Mixed box.
+fn descriptor_arg_is_prebuilt_mixed_box(
+    ctx: &FunctionContext<'_>,
+    arg_mixed: ValueId,
+) -> Result<bool> {
+    if ctx.value_php_type(arg_mixed)?.codegen_repr() != PhpType::Mixed {
+        return Ok(false);
+    }
+    let Some(value_ref) = ctx.function.value(arg_mixed) else {
+        return Err(CodegenIrError::missing_entry("value", arg_mixed.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(false);
+    };
+    let Some(inst) = ctx.function.instruction(inst) else {
+        return Err(CodegenIrError::missing_entry("instruction", inst.as_raw()));
+    };
+    Ok(inst.op == Op::MixedBox)
+}
+
+/// Emits a normalized boxed Mixed argument container for descriptor invokers.
+fn emit_normalized_invoker_arg_container(
+    ctx: &mut FunctionContext<'_>,
+    arg_container: ValueId,
+    emit_receiver_mixed_markers: bool,
+) -> Result<()> {
+    let container_ty = ctx.value_php_type(arg_container)?.codegen_repr();
+    let dest_reg = abi::int_arg_reg_name(ctx.emitter.target, 1);
+    match container_ty {
+        PhpType::Array(elem_ty) => {
+            ctx.load_value_to_reg(arg_container, dest_reg)?;
+            cufa::emit_clone_indexed_array_for_invoker(dest_reg, &elem_ty.codegen_repr(), ctx.emitter);
+            let mixed_array_ty = PhpType::Array(Box::new(PhpType::Mixed));
+            cufa::emit_box_invoker_arg_clone_as_mixed(dest_reg, &mixed_array_ty, ctx.emitter);
+            Ok(())
+        }
+        PhpType::AssocArray { value, .. } => {
+            ctx.load_value_to_reg(arg_container, dest_reg)?;
+            cufa::emit_clone_assoc_array_for_invoker_with_value_type(
+                dest_reg,
+                &value.codegen_repr(),
+                ctx.emitter,
+            );
+            let mixed_hash_ty = PhpType::AssocArray {
+                key: Box::new(PhpType::Mixed),
+                value: Box::new(PhpType::Mixed),
+            };
+            cufa::emit_box_invoker_arg_clone_as_mixed(dest_reg, &mixed_hash_ty, ctx.emitter);
+            Ok(())
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            if emit_receiver_mixed_markers {
+                ctx.emitter.comment("receiver_mixed_indexed_args");
+                ctx.emitter.comment("receiver_mixed_assoc_args");
+            }
+            ctx.load_value_to_reg(arg_container, dest_reg)?;
+            let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
+            cufa::emit_clone_runtime_mixed_invoker_arg_as_mixed(
+                dest_reg,
+                ctx.emitter,
+                &mut legacy_ctx,
+                ctx.data,
+            );
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "callable_descriptor_invoke argument container PHP type {:?}",
+            other
+        ))),
+    }?;
+    move_normalized_invoker_arg_to_result(ctx, dest_reg);
+    Ok(())
+}
+
+/// Moves the normalized Mixed argument container into the ABI result register.
+fn move_normalized_invoker_arg_to_result(ctx: &mut FunctionContext<'_>, source_reg: &str) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    if source_reg == result_reg {
+        return;
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, source_reg)); // place the normalized invoker argument where the caller will preserve it
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, source_reg)); // place the normalized invoker argument where the caller will preserve it
+        }
+    }
+}
+
+/// Releases the descriptor saved while normalizing the argument container.
+fn release_saved_descriptor_after_normalized_arg(
+    ctx: &mut FunctionContext<'_>,
+    release_runtime_descriptor: bool,
+) {
+    if release_runtime_descriptor {
+        release_saved_runtime_descriptor_preserving_result(ctx);
+    } else {
+        abi::emit_release_temporary_stack(ctx.emitter, 16);
+    }
 }
 
 /// Branches to `ready_label` when a callable descriptor has a uniform invoker.

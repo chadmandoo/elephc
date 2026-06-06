@@ -28,7 +28,7 @@ use crate::span::Span;
 use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::{
     array_key_type_from_value_type, checker::infer_expr_type_syntactic,
-    merge_array_key_types, normalized_array_key_type, FunctionSig, PhpType,
+    merge_array_key_types, normalized_array_key_type, ExternFunctionSig, FunctionSig, PhpType,
 };
 
 mod constants;
@@ -1177,6 +1177,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_dynamic_call_user_func(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_dynamic_call_user_func_array(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_array_map(ctx, canonical, args, expr) {
         return value;
     }
@@ -1357,6 +1360,12 @@ fn lower_static_call_user_func(
             let [callback_arg, arg_array] = args else {
                 return None;
             };
+            if matches!(arg_array.kind, ExprKind::ArrayLiteralAssoc(_))
+                && static_callable_binding_for_expr(ctx, callback_arg)
+                    .is_some_and(|target| matches!(target, StaticCallableBinding::InstanceMethod { .. }))
+            {
+                return None;
+            }
             let callback_args = static_call_user_func_array_args(arg_array)?;
             if let Some(callback) = instance_call_user_func_callback(ctx, callback_arg) {
                 return lower_instance_callable_call_user_func(
@@ -1420,6 +1429,179 @@ fn lower_dynamic_call_user_func(
         Op::ExprCall.default_effects(),
         Some(expr.span),
     ))
+}
+
+/// Lowers dynamic `call_user_func_array()` through the descriptor-invoker EIR path.
+fn lower_dynamic_call_user_func_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "call_user_func_array" {
+        return None;
+    }
+    let [callback_expr, arg_array_expr] = args else {
+        return None;
+    };
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let signature = callable_descriptor_signature_for_expr(ctx, callback_expr);
+    let callback = lower_expr(ctx, callback_expr);
+    let arg_array =
+        lower_descriptor_invoker_arg_array_for_call_user_func_array(
+            ctx,
+            arg_array_expr,
+            signature.as_ref(),
+        )
+        .unwrap_or_else(|| lower_expr(ctx, arg_array_expr));
+    Some(ctx.emit_value(
+        Op::CallableDescriptorInvoke,
+        vec![callback.value, arg_array.value],
+        None,
+        PhpType::Mixed,
+        Op::CallableDescriptorInvoke.default_effects(),
+        Some(expr.span),
+    ))
+}
+
+/// Returns the callable signature available to descriptor-invoker argument lowering.
+fn callable_descriptor_signature_for_expr(
+    ctx: &LoweringContext<'_, '_>,
+    callback: &Expr,
+) -> Option<FunctionSig> {
+    match &callback.kind {
+        ExprKind::Ternary { then_expr, else_expr, .. } => {
+            let left = callable_descriptor_signature_for_expr(ctx, then_expr)?;
+            let right = callable_descriptor_signature_for_expr(ctx, else_expr)?;
+            compatible_descriptor_signature(left, &right)
+        }
+        ExprKind::ShortTernary { value, default } => {
+            let left = callable_descriptor_signature_for_expr(ctx, value)?;
+            let right = callable_descriptor_signature_for_expr(ctx, default)?;
+            compatible_descriptor_signature(left, &right)
+        }
+        _ => static_callable_binding_for_expr(ctx, callback)
+            .and_then(|target| signature_for_static_callable_binding(ctx, target)),
+    }
+}
+
+/// Keeps a descriptor signature only when two runtime branches have the same callable ABI.
+fn compatible_descriptor_signature(left: FunctionSig, right: &FunctionSig) -> Option<FunctionSig> {
+    (left == *right).then_some(left)
+}
+
+/// Extracts a callable signature from a statically understood callable binding.
+fn signature_for_static_callable_binding(
+    ctx: &LoweringContext<'_, '_>,
+    target: StaticCallableBinding,
+) -> Option<FunctionSig> {
+    match target {
+        StaticCallableBinding::UserFunction(name) => ctx.functions.get(&name).cloned(),
+        StaticCallableBinding::ExternFunction(name) => ctx
+            .extern_functions
+            .get(&name)
+            .map(function_sig_from_extern_for_descriptor),
+        StaticCallableBinding::Builtin(_) => None,
+        StaticCallableBinding::Closure { signature, .. } => Some(signature),
+        StaticCallableBinding::StaticMethod { receiver, method }
+        | StaticCallableBinding::StaticMethodDescriptor { receiver, method } => {
+            static_method_implementation_signature(ctx, &receiver, &method).cloned()
+        }
+        StaticCallableBinding::InstanceMethod { signature, .. } => Some(signature),
+    }
+}
+
+/// Converts an extern signature into the PHP-facing descriptor invoker signature.
+fn function_sig_from_extern_for_descriptor(sig: &ExternFunctionSig) -> FunctionSig {
+    FunctionSig {
+        params: sig.params.clone(),
+        defaults: vec![None; sig.params.len()],
+        return_type: sig.return_type.clone(),
+        declared_return: true,
+        ref_params: vec![false; sig.params.len()],
+        declared_params: vec![true; sig.params.len()],
+        variadic: None,
+        deprecation: None,
+    }
+}
+
+/// Builds an invoker argument array that preserves by-reference literal variables.
+fn lower_descriptor_invoker_arg_array_for_call_user_func_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    arg_array: &Expr,
+    sig: Option<&FunctionSig>,
+) -> Option<LoweredValue> {
+    let ExprKind::ArrayLiteral(items) = &arg_array.kind else {
+        return None;
+    };
+    if items.iter().any(is_spread_arg) || !items.iter().enumerate().any(|(index, item)| {
+        invoker_ref_arg_variable(sig, index, item).is_some()
+    }) {
+        return None;
+    }
+
+    let elem_ty = PhpType::Mixed;
+    let array_ty = PhpType::Array(Box::new(elem_ty.clone()));
+    let array = ctx.emit_value(
+        Op::ArrayNew,
+        Vec::new(),
+        Some(Immediate::Capacity(items.len() as u32)),
+        array_ty.clone(),
+        Op::ArrayNew.default_effects(),
+        Some(arg_array.span),
+    );
+    for (index, item) in items.iter().enumerate() {
+        let value = if let Some(var_name) = invoker_ref_arg_variable(sig, index, item) {
+            lower_invoker_ref_arg_marker(ctx, var_name, item.span)
+        } else {
+            let value = lower_expr(ctx, item);
+            coerce_variadic_tail_value(ctx, value, &array_ty, item.span)
+        };
+        ctx.emit_void(
+            Op::ArrayPush,
+            vec![array.value, value.value],
+            None,
+            Op::ArrayPush.default_effects(),
+            Some(item.span),
+        );
+        release_value_after_retaining_insert(ctx, Some(&elem_ty), value, item.span);
+    }
+    Some(array)
+}
+
+/// Returns the variable name when this literal argument should be passed by reference.
+fn invoker_ref_arg_variable<'a>(
+    sig: Option<&FunctionSig>,
+    index: usize,
+    item: &'a Expr,
+) -> Option<&'a str> {
+    if !sig.and_then(|sig| sig.ref_params.get(index)).copied().unwrap_or(false) {
+        return None;
+    }
+    match &item.kind {
+        ExprKind::Variable(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+/// Emits an invoker reference-cell marker for a local variable argument.
+fn lower_invoker_ref_arg_marker(
+    ctx: &mut LoweringContext<'_, '_>,
+    var_name: &str,
+    span: Span,
+) -> LoweredValue {
+    let php_type = ctx.local_type(var_name);
+    let slot = ctx.declare_local(var_name, php_type);
+    ctx.emit_value(
+        Op::InvokerRefArg,
+        Vec::new(),
+        Some(Immediate::LocalSlot(slot)),
+        PhpType::Mixed,
+        Op::InvokerRefArg.default_effects(),
+        Some(span),
+    )
 }
 
 /// Lowers `array_map()` for a static callback and indexed array literal source.

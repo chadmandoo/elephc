@@ -14,7 +14,7 @@ use crate::ir::instr::{InstId, Instruction};
 use crate::ir::types::IrType;
 use crate::ir::value::{Value, ValueId};
 use crate::parser::ast::Stmt;
-use crate::types::PhpType;
+use crate::types::{FunctionSig, PhpType};
 
 /// Module-local identifier for an EIR function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -62,6 +62,7 @@ pub struct Function {
     pub instructions: Vec<Instruction>,
     pub entry: BlockId,
     pub source_signature: Option<String>,
+    pub signature: Option<FunctionSig>,
     pub generator_source: Option<GeneratorSource>,
     pub flags: FunctionFlags,
 }
@@ -81,6 +82,7 @@ impl Function {
             instructions: Vec::new(),
             entry: BlockId::from_raw(0),
             source_signature: None,
+            signature: None,
             generator_source: None,
             flags: FunctionFlags::default(),
         }

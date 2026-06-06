@@ -9,7 +9,7 @@
 //! - Keeps frontend type metadata, runtime cache assumptions, and target-specific emission ordered before linking.
 
 pub(crate) mod abi;
-mod builtins;
+pub(crate) mod builtins;
 pub(crate) mod callable_descriptor;
 pub(crate) mod callable_dispatch;
 pub(crate) mod runtime_callable_invoker;

@@ -9,7 +9,11 @@
 //! - Results are written to fixed value-placement slots immediately after definition.
 //! - Unsupported opcodes fail explicitly instead of falling back to legacy AST codegen.
 
-use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed, runtime};
+use crate::codegen::{
+    abi, callable_descriptor, emit_box_current_value_as_mixed,
+    emit_box_runtime_payload_as_mixed, runtime,
+};
+use crate::codegen::builtins::arrays::call_user_func_array::INVOKER_ARG_REF_CELL_TAG;
 use crate::codegen::context::{
     Context as LegacyContext, DeferredRuntimeCallableInvoker, TRY_HANDLER_DIAG_DEPTH_OFFSET,
     TRY_HANDLER_JMP_BUF_OFFSET,
@@ -23,7 +27,9 @@ use crate::ir::{
 use crate::names::{
     function_symbol, ir_global_symbol, method_symbol, php_symbol_key, static_method_symbol,
 };
-use crate::types::{callable_wrapper_sig, first_class_callable_builtin_sig, FunctionSig, PhpType};
+use crate::types::{
+    callable_wrapper_sig, first_class_callable_builtin_sig, ExternFunctionSig, FunctionSig, PhpType,
+};
 
 use super::context::FunctionContext;
 use super::function_variants;
@@ -112,6 +118,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StrToF => conversions::lower_str_to_float(ctx, &inst),
         Op::Cast => conversions::lower_cast(ctx, &inst),
         Op::MixedBox => lower_mixed_box(ctx, &inst),
+        Op::InvokerRefArg => lower_invoker_ref_arg(ctx, &inst),
         Op::ArrayToMixed => arrays::lower_array_to_mixed(ctx, &inst),
         Op::HashToMixed => hashes::lower_hash_to_mixed(ctx, &inst),
         Op::StrConcat => strings::lower_str_concat(ctx, &inst),
@@ -456,6 +463,12 @@ fn function_signature_from_eir_with_param_count(
     function: &crate::ir::Function,
     param_count: usize,
 ) -> FunctionSig {
+    if let Some(signature) = &function.signature {
+        if signature.params.len() == param_count {
+            return signature.clone();
+        }
+    }
+
     FunctionSig {
         params: function
             .params
@@ -760,8 +773,8 @@ fn emit_instance_method_descriptor_entry_wrapper(
 ) -> Result<String> {
     let visible_arg_types = descriptor_visible_arg_types(sig);
     require_instance_descriptor_wrapper_arg_types(ctx, class_name, method_key, &visible_arg_types)?;
-    let wrapper_label = ctx.next_label("instance_method_descriptor_entry");
-    let done_label = ctx.next_label("instance_method_descriptor_entry_done");
+    let wrapper_label = ctx.next_label("callable_instance_method");
+    let done_label = ctx.next_label("callable_instance_method_done");
     abi::emit_jump(ctx.emitter, &done_label);
     ctx.emitter.label(&wrapper_label);
     emit_instance_method_descriptor_entry_wrapper_body(ctx, class_name, method_key, &visible_arg_types);
@@ -1071,6 +1084,21 @@ fn legacy_context_from_eir_module(module: &crate::ir::Module) -> LegacyContext {
         .map(|group| group.name)
         .collect();
     ctx.callable_param_sigs = module.callable_param_sigs.clone();
+    for decl in &module.extern_decls {
+        ctx.extern_functions.insert(
+            decl.name.clone(),
+            ExternFunctionSig {
+                name: decl.name.clone(),
+                params: decl
+                    .params
+                    .iter()
+                    .map(|param| (param.name.clone(), param.php_type.clone()))
+                    .collect(),
+                return_type: decl.return_php_type.clone(),
+                library: decl.link_libs.first().cloned(),
+            },
+        );
+    }
     ctx.classes = module.class_infos.clone();
     ctx.interfaces = module.interface_infos.clone();
     ctx.enums = module.enum_infos.clone();
@@ -1080,7 +1108,7 @@ fn legacy_context_from_eir_module(module: &crate::ir::Module) -> LegacyContext {
 }
 
 /// Returns true when the EIR module contains the concrete instance-method body.
-fn class_method_body_exists(ctx: &FunctionContext<'_>, class_name: &str, method_key: &str) -> bool {
+pub(super) fn class_method_body_exists(ctx: &FunctionContext<'_>, class_name: &str, method_key: &str) -> bool {
     ctx.module.class_methods.iter().any(|function| {
         !function.flags.is_static
             && function
@@ -1091,7 +1119,7 @@ fn class_method_body_exists(ctx: &FunctionContext<'_>, class_name: &str, method_
 }
 
 /// Allocates a runtime descriptor and stores the receiver in capture slot zero.
-fn emit_runtime_descriptor_with_receiver_capture(
+pub(super) fn emit_runtime_descriptor_with_receiver_capture(
     ctx: &mut FunctionContext<'_>,
     descriptor_label: &str,
     receiver: ValueId,
@@ -3632,6 +3660,34 @@ fn lower_mixed_box(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<
         source_ty
     };
     emit_box_current_value_as_mixed(ctx.emitter, &box_ty);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers an invoker-only by-reference argument marker for descriptor calls.
+fn lower_invoker_ref_arg(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let slot = expect_local_slot(inst)?;
+    let source_ty = ctx.local_php_type(slot)?.codegen_repr();
+    let offset = ctx.local_offset(slot)?;
+    let ref_cell_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let marker_tag_reg = abi::tertiary_scratch_reg(ctx.emitter);
+    let source_tag_reg = abi::symbol_scratch_reg(ctx.emitter);
+    if local_slot_stores_ref_cell_pointer(ctx, slot) {
+        abi::load_at_offset(ctx.emitter, ref_cell_reg, offset);
+    } else {
+        abi::emit_frame_slot_address(ctx.emitter, ref_cell_reg, offset);
+    }
+    abi::emit_load_int_immediate(ctx.emitter, marker_tag_reg, INVOKER_ARG_REF_CELL_TAG);
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        source_tag_reg,
+        crate::codegen::runtime_value_tag(&source_ty) as i64,
+    );
+    emit_box_runtime_payload_as_mixed(
+        ctx.emitter,
+        marker_tag_reg,
+        ref_cell_reg,
+        source_tag_reg,
+    );
     store_if_result(ctx, inst)
 }
 

@@ -1977,8 +1977,8 @@ fn emit_normalized_invoker_arg_mixed(
             emit_box_invoker_arg_clone_as_mixed(dest_reg, &normalized_ty, emitter);
             PhpType::Mixed
         }
-        PhpType::AssocArray { .. } => {
-            emit_clone_assoc_array_for_invoker(dest_reg, emitter);
+        PhpType::AssocArray { value, .. } => {
+            emit_clone_assoc_array_for_invoker_with_value_type(dest_reg, value, emitter);
             let normalized_ty = PhpType::AssocArray {
                 key: Box::new(PhpType::Mixed),
                 value: Box::new(PhpType::Mixed),
@@ -1995,7 +1995,7 @@ fn emit_normalized_invoker_arg_mixed(
 }
 
 /// Clones a boxed runtime Mixed argument container into a normalized boxed Mixed container.
-fn emit_clone_runtime_mixed_invoker_arg_as_mixed(
+pub(crate) fn emit_clone_runtime_mixed_invoker_arg_as_mixed(
     dest_reg: &str,
     emitter: &mut Emitter,
     ctx: &mut Context,
@@ -2116,6 +2116,15 @@ fn emit_load_indexed_array_runtime_value_type_tag(
 
 /// Clones and converts an associative callback argument array to boxed Mixed entries.
 pub(crate) fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut Emitter) {
+    emit_clone_assoc_array_for_invoker_with_value_type(dest_reg, &PhpType::Int, emitter);
+}
+
+/// Clones an associative callback argument array and boxes entries when needed.
+pub(crate) fn emit_clone_assoc_array_for_invoker_with_value_type(
+    dest_reg: &str,
+    value_ty: &PhpType,
+    emitter: &mut Emitter,
+) {
     let hash_arg_reg = abi::int_arg_reg_name(emitter.target, 0);
     let result_reg = abi::int_result_reg(emitter);
     if hash_arg_reg != dest_reg {
@@ -2125,7 +2134,9 @@ pub(crate) fn emit_clone_assoc_array_for_invoker(dest_reg: &str, emitter: &mut E
     if hash_arg_reg != result_reg {
         emitter.instruction(&format!("mov {}, {}", hash_arg_reg, result_reg));  // pass the cloned argument hash to the Mixed-entry conversion helper
     }
-    abi::emit_call_label(emitter, "__rt_hash_to_mixed");
+    if !matches!(value_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+        abi::emit_call_label(emitter, "__rt_hash_to_mixed");
+    }
     if dest_reg != result_reg {
         emitter.instruction(&format!("mov {}, {}", dest_reg, result_reg));      // keep the normalized Mixed argument hash in the invoker ABI register
     }

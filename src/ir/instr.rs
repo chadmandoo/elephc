@@ -222,6 +222,7 @@ pub enum Op {
     ResourceToStr,
     Cast,
     MixedBox,
+    InvokerRefArg,
     MixedUnbox,
     MixedTagOf,
     ArrayToMixed,
@@ -374,6 +375,7 @@ impl Op {
             IToStr | FToStr | ResourceToStr | StrConcat | StrCharAt | StrInterpolate
             | MixedCastString | VarDump | PrintR => E::ALLOC_CONCAT,
             Cast => E::READS_HEAP | E::ALLOC_CONCAT | E::MAY_WARN | E::MAY_FATAL,
+            InvokerRefArg => E::READS_LOCAL | E::ALLOC_HEAP,
             MixedBox | ArrayToMixed | HashToMixed | ArrayNew | HashNew | ObjectNew
             | ClosureNew | FirstClassCallableNew | CallableArrayNew | BufferNew | GeneratorNew => {
                 E::ALLOC_HEAP
@@ -510,6 +512,7 @@ impl Op {
             ResourceToStr => "resource_to_str",
             Cast => "cast",
             MixedBox => "mixed_box",
+            InvokerRefArg => "invoker_ref_arg",
             MixedUnbox => "mixed_unbox",
             MixedTagOf => "mixed_tag_of",
             ArrayToMixed => "array_to_mixed",

@@ -190,6 +190,7 @@ pub(crate) fn lower_user_function(
     );
     function.params = function_params(&eir_signature);
     function.source_signature = Some(source_signature(name, &eir_signature));
+    function.signature = Some(eir_runtime_metadata_signature(&eir_signature));
     attach_generator_source_if_needed(&mut function, body, eir_signature.params.len());
     let closures = lower_body_into_function(
         &mut function,
@@ -246,6 +247,7 @@ pub(crate) fn lower_class_method(
         ..FunctionFlags::default()
     };
     function.source_signature = Some(source_signature(&name, signature));
+    function.signature = Some(eir_runtime_metadata_signature(signature));
     let mut env = env_from_signature(signature);
     let mut body_params = signature.params.clone();
     if is_static {
@@ -373,6 +375,7 @@ fn lower_closure_function_with_signature(
     function.params = function_params(&signature);
     function.params.extend(closure_capture_params(captures));
     function.source_signature = Some(source_signature(name, &signature));
+    function.signature = Some(eir_runtime_metadata_signature(&signature));
     attach_generator_source_if_needed(&mut function, body, signature.params.len());
     let env = env_with_closure_captures(&signature, captures);
     let lowered_params = params_with_closure_captures(&signature, captures);
@@ -642,6 +645,19 @@ fn eir_signature_with_php_param_contracts(
         eir_signature.return_type = dynamic_param_container_return_type(&eir_signature.return_type);
     }
     eir_signature
+}
+
+/// Marks boxed ABI parameters as materialization targets for reused runtime invokers.
+fn eir_runtime_metadata_signature(signature: &FunctionSig) -> FunctionSig {
+    let mut signature = signature.clone();
+    for (index, (_, php_type)) in signature.params.iter().enumerate() {
+        if matches!(php_type.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+            if let Some(declared) = signature.declared_params.get_mut(index) {
+                *declared = true;
+            }
+        }
+    }
+    signature
 }
 
 /// Returns true when an inferred untyped parameter has an EIR-safe concrete ABI contract.
