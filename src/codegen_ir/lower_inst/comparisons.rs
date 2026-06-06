@@ -34,7 +34,10 @@ pub(super) fn lower_strict_eq(
         emit_mixed_strict_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
         return store_if_result(ctx, inst);
     }
-    if matches!((&lhs_ty, &rhs_ty), (PhpType::Object(_), PhpType::Object(_))) {
+    if matches!(
+        (&lhs_ty, &rhs_ty),
+        (PhpType::Object(_), PhpType::Object(_)) | (PhpType::Iterable, PhpType::Iterable)
+    ) {
         emit_pointer_compare(ctx, lhs, rhs, is_equal)?;
         return store_if_result(ctx, inst);
     }

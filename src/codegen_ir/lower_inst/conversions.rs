@@ -156,11 +156,23 @@ fn lower_cast_to_string(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Re
             abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
             store_if_result(ctx, inst)
         }
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            lower_array_like_to_string(ctx, inst)
+        }
         other => Err(CodegenIrError::unsupported(format!(
             "string cast for PHP type {:?}",
             other
         ))),
     }
+}
+
+/// Lowers array-like PHP values to the literal string used by PHP casts.
+fn lower_array_like_to_string(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let (label, len) = ctx.data.add_string(b"Array");
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
+    abi::emit_load_int_immediate(ctx.emitter, len_reg, len as i64);
+    store_if_result(ctx, inst)
 }
 
 /// Converts the loaded native resource payload into PHP's one-based display id.

@@ -47,7 +47,9 @@ pub(super) fn lower_var_dump(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
             emit_var_dump_null(ctx);
             Ok(())
         }
-        PhpType::Array(_) | PhpType::AssocArray { .. } => emit_var_dump_array(ctx),
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            emit_var_dump_array(ctx)
+        }
         PhpType::Mixed | PhpType::Union(_) => emit_var_dump_mixed(ctx),
         other => Err(CodegenIrError::unsupported(format!(
             "var_dump for PHP type {:?}",

@@ -9,7 +9,7 @@
 //! - Frame size is value-placement bytes plus the target frame footer, rounded to 16 bytes.
 //! - Main currently exits through the process syscall, matching the legacy entry path.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::codegen::abi;
 use crate::codegen::{
@@ -18,7 +18,7 @@ use crate::codegen::{
 };
 use crate::codegen::context::TRY_HANDLER_SLOT_SIZE;
 use crate::codegen::platform::Arch;
-use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op};
+use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op, Terminator, ValueDef};
 use crate::names::function_symbol;
 use crate::types::PhpType;
 
@@ -137,6 +137,7 @@ pub(super) fn emit_function_prologue_with_label(
             abi::emit_store(ctx.emitter, &PhpType::Mixed, offset);
         }
     }
+    zero_initialize_function_cleanup_locals(ctx);
     Ok(())
 }
 
@@ -275,6 +276,147 @@ fn emit_main_refcounted_cleanup(ctx: &mut FunctionContext<'_>, offset: usize, ty
     ctx.emitter.label(&done);
 }
 
+/// Zero-initializes function locals that may be released by the shared epilogue.
+fn zero_initialize_function_cleanup_locals(ctx: &mut FunctionContext<'_>) {
+    for (_, _, ty, offset) in function_cleanup_locals(ctx) {
+        match ty {
+            PhpType::Str => {
+                abi::emit_store_zero_to_local_slot(ctx.emitter, offset);
+                abi::emit_store_zero_to_local_slot(ctx.emitter, offset - 8);
+            }
+            _ => {
+                abi::emit_store_zero_to_local_slot(ctx.emitter, offset);
+            }
+        }
+    }
+}
+
+/// Releases owned function locals that do not directly provide the return value.
+fn emit_function_local_epilogue_cleanup(ctx: &mut FunctionContext<'_>) {
+    let cleanup_locals = function_cleanup_locals(ctx);
+    if cleanup_locals.is_empty() {
+        return;
+    }
+    let return_ty = ctx.function.return_php_type.codegen_repr();
+    let preserves_return = !matches!(return_ty, PhpType::Void | PhpType::Never);
+    if preserves_return {
+        push_return_value(ctx, &return_ty);
+    }
+    for (name, _, ty, offset) in cleanup_locals {
+        ctx.emitter.comment(&format!("epilogue cleanup ${}", name));
+        match ty {
+            PhpType::Str => emit_main_string_cleanup(ctx, offset),
+            PhpType::Callable => emit_main_refcounted_cleanup(ctx, offset, &ty),
+            other if other.is_refcounted() => emit_main_refcounted_cleanup(ctx, offset, &other),
+            _ => {}
+        }
+    }
+    if preserves_return {
+        pop_return_value(ctx, &return_ty);
+    }
+}
+
+/// Returns function local slots that receive owned refcounted values through `StoreLocal`.
+fn function_cleanup_locals(ctx: &FunctionContext<'_>) -> Vec<(String, LocalSlotId, PhpType, usize)> {
+    let param_names = ctx
+        .function
+        .params
+        .iter()
+        .map(|param| param.name.as_str())
+        .collect::<HashSet<_>>();
+    let returned_slots = direct_return_local_slots(ctx.function);
+    let mut locals = ctx
+        .function
+        .locals
+        .iter()
+        .filter(|local| local.kind == LocalKind::PhpLocal)
+        .filter(|local| {
+            local
+                .name
+                .as_deref()
+                .is_none_or(|name| !param_names.contains(name))
+        })
+        .filter(|local| !returned_slots.contains(&local.id))
+        .filter(|local| local_slot_has_store(ctx.function, local.id))
+        .filter_map(|local| {
+            let ty = local.php_type.codegen_repr();
+            if !(matches!(ty, PhpType::Str | PhpType::Callable) || ty.is_refcounted()) {
+                return None;
+            }
+            let offset = ctx.local_offset(local.id).ok()?;
+            let name = local
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("slot{}", local.id.as_raw()));
+            Some((name, local.id, ty, offset))
+        })
+        .collect::<Vec<_>>();
+    locals.sort_by_key(|(_, _, _, offset)| *offset);
+    locals
+}
+
+/// Returns local slots whose loaded value is returned directly by any terminator.
+fn direct_return_local_slots(function: &Function) -> HashSet<LocalSlotId> {
+    function
+        .blocks
+        .iter()
+        .filter_map(|block| match &block.terminator {
+            Some(Terminator::Return { value: Some(value) }) => {
+                direct_return_local_slot(function, *value)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Returns the local slot behind a returned `load_local` SSA value when visible.
+fn direct_return_local_slot(function: &Function, value: crate::ir::ValueId) -> Option<LocalSlotId> {
+    let value = function.value(value)?;
+    let ValueDef::Instruction { inst, .. } = value.def else {
+        return None;
+    };
+    let inst = function.instruction(inst)?;
+    if inst.op != Op::LoadLocal {
+        return None;
+    }
+    match inst.immediate {
+        Some(Immediate::LocalSlot(slot)) => Some(slot),
+        _ => None,
+    }
+}
+
+/// Preserves the current typed return value on the temporary stack.
+fn push_return_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
+    match ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_push_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        _ => {
+            abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        }
+    }
+}
+
+/// Restores a typed return value preserved by `push_return_value`.
+fn pop_return_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
+    match ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_pop_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        _ => {
+            abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        }
+    }
+}
+
 /// Emits allocation/free totals to stderr using the shared runtime counters.
 fn emit_gc_stats(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.comment("gc-stats: print allocation statistics to stderr");
@@ -303,6 +445,7 @@ pub(super) fn emit_function_epilogue(ctx: &mut FunctionContext<'_>) {
         .clone()
         .expect("codegen_ir bug: user function has no epilogue label");
     ctx.emitter.label(&label);
+    emit_function_local_epilogue_cleanup(ctx);
     abi::emit_frame_restore(ctx.emitter, ctx.frame_size);
     abi::emit_return(ctx.emitter);
     ctx.epilogue_emitted = true;
