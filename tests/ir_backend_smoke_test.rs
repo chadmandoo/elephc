@@ -123,6 +123,11 @@ fn ir_backend_handles_scalar_equality() {
         ("strict_string_ne", "<?php if (\"a\" !== \"b\") { echo 8; }", "8"),
         ("loose_string_eq", "<?php if (\"a\" == \"a\") { echo 9; }", "9"),
         ("loose_string_ne", "<?php if (\"a\" != \"b\") { echo 10; }", "10"),
+        ("loose_number_numeric_string", "<?php $n = 10; $s = \"1e1\"; echo $n == $s ? \"Y\" : \"N\";", "Y"),
+        ("loose_number_non_numeric_string", "<?php $n = 0; $s = \"abc\"; echo $n == $s ? \"Y\" : \"N\";", "N"),
+        ("loose_number_non_numeric_string_ne", "<?php $n = 0; $s = \"abc\"; echo $n != $s ? \"Y\" : \"N\";", "Y"),
+        ("loose_bool_string_truthiness", "<?php $s = \"abc\"; echo true == $s ? \"T\" : \"F\"; echo \":\"; echo false == $s ? \"T\" : \"F\";", "T:F"),
+        ("loose_null_string_empty_rule", "<?php $empty = \"\"; $zero = \"0\"; echo null == $empty ? \"T\" : \"F\"; echo \":\"; echo null == $zero ? \"T\" : \"F\";", "T:F"),
         ("match_int", "<?php echo match ($argc) { 1 => 11, default => 0 };", "11"),
     ] {
         assert_eq!(compile_and_run_ir_backend(name, source), expected);

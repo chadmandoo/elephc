@@ -8,8 +8,8 @@
 //! - Strict equality respects static PHP type identity before comparing payloads.
 //! - Mixed strict equality boxes concrete operands and delegates tag/payload comparison
 //!   to the shared runtime helper.
-//! - Loose equality is intentionally limited to scalar int/bool/null and
-//!   string-vs-string cases until mixed numeric/string coercions are lowered.
+//! - Loose equality mirrors the legacy scalar paths for int/bool/null/string
+//!   combinations and delegates string numeric parsing to shared runtime helpers.
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
@@ -189,6 +189,12 @@ pub(super) fn lower_loose_eq(
     let rhs_ty = ctx.value_php_type(rhs)?;
     if lhs_ty == PhpType::Str && rhs_ty == PhpType::Str {
         emit_string_eq_call(ctx, lhs, rhs, is_equal, "__rt_str_loose_eq")?;
+    } else if string_bool_comparable(&lhs_ty, &rhs_ty) {
+        emit_bool_string_loose_eq(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
+    } else if string_null_comparable(&lhs_ty, &rhs_ty) {
+        emit_null_string_loose_eq(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
+    } else if string_numeric_comparable(&lhs_ty, &rhs_ty) {
+        emit_numeric_string_loose_eq(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
     } else if loose_intish_comparable(&lhs_ty, &rhs_ty) {
         let compare_truthiness = lhs_ty == PhpType::Bool || rhs_ty == PhpType::Bool;
         emit_intish_compare(ctx, lhs, rhs, is_equal, compare_truthiness)?;
@@ -201,6 +207,207 @@ pub(super) fn lower_loose_eq(
         )));
     }
     store_if_result(ctx, inst)
+}
+
+/// Returns true when loose equality must compare a bool with a string by PHP truthiness.
+fn string_bool_comparable(lhs_ty: &PhpType, rhs_ty: &PhpType) -> bool {
+    matches!((lhs_ty, rhs_ty), (PhpType::Bool, PhpType::Str) | (PhpType::Str, PhpType::Bool))
+}
+
+/// Returns true when loose equality must compare null with the empty string.
+fn string_null_comparable(lhs_ty: &PhpType, rhs_ty: &PhpType) -> bool {
+    matches!(
+        (lhs_ty, rhs_ty),
+        (PhpType::Void | PhpType::Never, PhpType::Str)
+            | (PhpType::Str, PhpType::Void | PhpType::Never)
+    )
+}
+
+/// Returns true when loose equality must parse a string as a PHP numeric string.
+fn string_numeric_comparable(lhs_ty: &PhpType, rhs_ty: &PhpType) -> bool {
+    matches!((lhs_ty, rhs_ty), (PhpType::Int | PhpType::Float, PhpType::Str))
+        || matches!((lhs_ty, rhs_ty), (PhpType::Str, PhpType::Int | PhpType::Float))
+}
+
+/// Emits loose equality for bool/string operands using PHP truthiness rules.
+fn emit_bool_string_loose_eq(
+    ctx: &mut FunctionContext<'_>,
+    lhs: ValueId,
+    lhs_ty: &PhpType,
+    rhs: ValueId,
+    rhs_ty: &PhpType,
+    is_equal: bool,
+) -> Result<()> {
+    let (bool_value, string_value) = if *lhs_ty == PhpType::Bool {
+        (lhs, rhs)
+    } else {
+        debug_assert_eq!(*rhs_ty, PhpType::Bool);
+        (rhs, lhs)
+    };
+    let bool_reg = abi::tertiary_scratch_reg(ctx.emitter);
+    load_intish_value(ctx, bool_value, bool_reg, true)?;
+    ctx.load_value_to_result(string_value)?;
+    emit_string_truthiness_to_result(ctx);
+    emit_compare_reg_with_result(ctx, bool_reg, is_equal);
+    Ok(())
+}
+
+/// Emits loose equality for null/string operands using PHP's empty-string rule.
+fn emit_null_string_loose_eq(
+    ctx: &mut FunctionContext<'_>,
+    lhs: ValueId,
+    lhs_ty: &PhpType,
+    rhs: ValueId,
+    _rhs_ty: &PhpType,
+    is_equal: bool,
+) -> Result<()> {
+    let string_value = if *lhs_ty == PhpType::Str { lhs } else { rhs };
+    ctx.load_value_to_result(string_value)?;
+    emit_compare_current_string_length_to_zero(ctx, is_equal);
+    Ok(())
+}
+
+/// Emits loose equality for number/string operands using PHP numeric-string parsing.
+fn emit_numeric_string_loose_eq(
+    ctx: &mut FunctionContext<'_>,
+    lhs: ValueId,
+    lhs_ty: &PhpType,
+    rhs: ValueId,
+    rhs_ty: &PhpType,
+    is_equal: bool,
+) -> Result<()> {
+    let (numeric_value, numeric_ty, string_value) = if *lhs_ty == PhpType::Str {
+        (rhs, rhs_ty, lhs)
+    } else {
+        (lhs, lhs_ty, rhs)
+    };
+    load_numeric_to_float_reg(ctx, numeric_value, numeric_ty, abi::float_result_reg(ctx.emitter))?;
+    abi::emit_push_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+    ctx.load_value_to_result(string_value)?;
+    abi::emit_call_label(ctx.emitter, "__rt_str_to_number");
+    let false_label = ctx.next_label("loose_numeric_string_false");
+    let done_label = ctx.next_label("loose_numeric_string_done");
+    let saved_float_reg = secondary_float_reg(ctx.emitter.target.arch);
+    abi::emit_pop_float_reg(ctx.emitter, saved_float_reg);
+    emit_branch_if_current_flag_false(ctx, &false_label);
+    emit_compare_saved_float_with_parsed_string(ctx);
+    emit_float_bool_from_flags(ctx, is_equal);
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&false_label);
+    emit_bool_literal(ctx, !is_equal);
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Converts the current string result register pair to PHP truthiness in the integer result register.
+fn emit_string_truthiness_to_result(ctx: &mut FunctionContext<'_>) {
+    let falsy_label = ctx.next_label("str_falsy");
+    let truthy_label = ctx.next_label("str_truthy");
+    let done_label = ctx.next_label("str_truth_done");
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz {}, {}", len_reg, falsy_label)); // empty strings are falsy
+            ctx.emitter.instruction(&format!("cmp {}, #1", len_reg));           // check whether this can be the special string "0"
+            ctx.emitter.instruction(&format!("b.ne {}", truthy_label));         // non-empty strings longer than one byte are truthy
+            ctx.emitter.instruction(&format!("ldrb w9, [{}]", ptr_reg));        // load the only string byte for the PHP "0" exception
+            ctx.emitter.instruction("cmp w9, #48");                             // compare the byte with ASCII '0'
+            ctx.emitter.instruction(&format!("b.eq {}", falsy_label));          // the exact string "0" is falsy
+            ctx.emitter.label(&truthy_label);
+            ctx.emitter.instruction("mov x0, #1");                              // materialize string truthiness as true
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip the falsy path
+            ctx.emitter.label(&falsy_label);
+            ctx.emitter.instruction("mov x0, #0");                              // materialize string truthiness as false
+            ctx.emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            let scratch = abi::temp_int_reg(ctx.emitter.target);
+            ctx.emitter.instruction(&format!("test {}, {}", len_reg, len_reg)); // empty strings are falsy
+            ctx.emitter.instruction(&format!("je {}", falsy_label));            // branch to the falsy path for empty strings
+            ctx.emitter.instruction(&format!("cmp {}, 1", len_reg));            // check whether this can be the special string "0"
+            ctx.emitter.instruction(&format!("jne {}", truthy_label));          // non-empty strings longer than one byte are truthy
+            ctx.emitter.instruction(&format!("movzx {}d, BYTE PTR [{}]", scratch, ptr_reg)); // load the only string byte for the PHP "0" exception
+            ctx.emitter.instruction(&format!("cmp {}d, 48", scratch));          // compare the byte with ASCII '0'
+            ctx.emitter.instruction(&format!("je {}", falsy_label));            // the exact string "0" is falsy
+            ctx.emitter.label(&truthy_label);
+            ctx.emitter.instruction("mov rax, 1");                              // materialize string truthiness as true
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip the falsy path
+            ctx.emitter.label(&falsy_label);
+            ctx.emitter.instruction("mov rax, 0");                              // materialize string truthiness as false
+            ctx.emitter.label(&done_label);
+        }
+    }
+}
+
+/// Compares the current string length register against zero and materializes equality.
+fn emit_compare_current_string_length_to_zero(ctx: &mut FunctionContext<'_>, is_equal: bool) {
+    let (_, len_reg) = abi::string_result_regs(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", len_reg));           // compare the string length with the empty string for null loose equality
+            ctx.emitter.instruction(&format!("cset x0, {}", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize the null/string loose comparison result
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, 0", len_reg));            // compare the string length with the empty string for null loose equality
+            ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize the null/string loose comparison byte
+            ctx.emitter.instruction("movzx rax, al");                           // widen the loose comparison byte into the integer result register
+        }
+    }
+}
+
+/// Branches to `label` when `__rt_str_to_number` reported a non-numeric string.
+fn emit_branch_if_current_flag_false(ctx: &mut FunctionContext<'_>, label: &str) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // test whether string-to-number parsing failed
+            ctx.emitter.instruction(&format!("b.eq {}", label));                // branch when the string was not numeric
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // test whether string-to-number parsing failed
+            ctx.emitter.instruction(&format!("je {}", label));                  // branch when the string was not numeric
+        }
+    }
+}
+
+/// Compares the saved numeric operand with the parsed string number.
+fn emit_compare_saved_float_with_parsed_string(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("fcmp d1, d0");                             // compare the numeric operand against the parsed numeric string
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("ucomisd xmm1, xmm0");                      // compare the numeric operand against the parsed numeric string
+        }
+    }
+}
+
+/// Materializes the current floating-point equality flags as a PHP boolean.
+fn emit_float_bool_from_flags(ctx: &mut FunctionContext<'_>, is_equal: bool) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cset x0, {}", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize numeric-string equality as boolean
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize numeric-string equality in the low byte
+            ctx.emitter.instruction("movzx rax, al");                           // widen the numeric-string equality byte into the integer result register
+        }
+    }
+}
+
+/// Compares an integer register with the canonical integer result and materializes equality.
+fn emit_compare_reg_with_result(ctx: &mut FunctionContext<'_>, lhs_reg: &str, is_equal: bool) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, result_reg)); // compare scalar truthiness operands
+            ctx.emitter.instruction(&format!("cset x0, {}", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize truthiness equality as boolean
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, result_reg)); // compare scalar truthiness operands
+            ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize truthiness equality in the low byte
+            ctx.emitter.instruction("movzx rax, al");                           // widen the truthiness equality byte into the integer result register
+        }
+    }
 }
 
 /// Lowers the scalar spaceship operator, returning -1, 0, or 1.
