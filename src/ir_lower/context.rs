@@ -17,6 +17,7 @@ use crate::ir::{
     BlockId, Builder, DataId, DataPool, Effects, Immediate, IrType, LocalKind, LocalSlotId, Op,
     Ownership, ValueId, Function,
 };
+use crate::names::php_symbol_key;
 use crate::parser::ast::{ExprKind, StaticReceiver, TypeExpr};
 use crate::span::Span;
 use crate::types::{
@@ -436,7 +437,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let uses_global = self.uses_global_storage(name, previous_kind);
         let slot = self.declare_local(name, php_type.clone());
         let source = value;
-        let release_source_after_store = self.should_release_rhs_after_local_store(value);
+        let release_source_after_store = self.value_is_owning_temporary(value);
         if !uses_global
             && previous_kind == LocalKind::PhpLocal
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
@@ -573,10 +574,13 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         );
     }
 
-    /// Returns whether a RHS producer definitely owns storage duplicated into a local slot.
-    fn should_release_rhs_after_local_store(&self, value: LoweredValue) -> bool {
+    /// Returns whether a value producer owns storage duplicated by a retaining consumer.
+    pub(crate) fn value_is_owning_temporary(&self, value: LoweredValue) -> bool {
         if !value.ir_type.is_refcounted_storage() {
             return false;
+        }
+        if self.value_is_owning_builtin_temporary(value.value) {
+            return true;
         }
         matches!(
             self.builder.value_defining_op(value.value),
@@ -611,6 +615,23 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::GeneratorNew
             )
         )
+    }
+
+    /// Returns true for builtin calls whose return value is newly allocated for the caller.
+    fn value_is_owning_builtin_temporary(&self, value: ValueId) -> bool {
+        let Some(inst) = self.builder.value_defining_instruction(value) else {
+            return false;
+        };
+        if inst.op != Op::BuiltinCall {
+            return false;
+        }
+        let Some(Immediate::Data(name_id)) = inst.immediate else {
+            return false;
+        };
+        let Some(name) = self.data.function_names.get(name_id.as_raw() as usize) else {
+            return false;
+        };
+        builtin_call_result_owns_storage_as_temporary(name)
     }
 
     /// Returns true when straight-line callable binding metadata is safe for a local.
@@ -775,6 +796,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             span,
         )
     }
+}
+
+/// Returns true when a builtin result must be released after a retaining consumer.
+fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
+    matches!(
+        php_symbol_key(name.trim_start_matches('\\')).as_str(),
+        "array_column"
+    )
 }
 
 /// Converts an owner function name into a valid fragment for synthetic closure names.

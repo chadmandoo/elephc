@@ -22,6 +22,34 @@ fn fresh_array_local_assignment_releases_source_after_store() {
     assert_eq!(text.matches("release").count(), 1, "expected one release in {text}");
 }
 
+/// Verifies storing a freshly returned `array_column()` result releases the producer.
+#[test]
+fn array_column_assignment_releases_source_after_store() {
+    let module = super::lower_source(
+        r#"<?php
+$users = [["name" => "Ada"], ["name" => "Linus"]];
+$names = array_column($users, "name");
+"#,
+    );
+    let text = print_module(&module);
+    let builtin = text.find("builtin_call").expect("expected array_column call in lowered IR");
+    let tail = &text[builtin..];
+    let store = tail.find("store_local").expect("expected local store after array_column");
+    let release = tail.find("release").expect("expected release after array_column store");
+    assert!(store < release, "expected release after store in {text}");
+}
+
+/// Verifies nested array literals release refcounted row temporaries after insertion.
+#[test]
+fn nested_array_literal_releases_pushed_hash_temporary() {
+    let module = super::lower_source(r#"<?php $users = [["name" => "Ada"]];"#);
+    let text = print_module(&module);
+    let push = text.find("array_push").expect("expected row append in lowered IR");
+    let tail = &text[push..];
+    let release = tail.find("release").expect("expected row release after append");
+    assert!(release > 0, "expected release after array_push in {text}");
+}
+
 /// Verifies overwriting a refcounted array local releases the previous value.
 #[test]
 fn overwriting_array_local_emits_release() {

@@ -95,6 +95,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "array_chunk" => arrays::lower_array_chunk(ctx, inst),
         "array_pad" => arrays::lower_array_pad(ctx, inst),
         "array_combine" => arrays::lower_array_combine(ctx, inst),
+        "array_column" => arrays::lower_array_column(ctx, inst),
         "array_flip" => arrays::lower_array_flip(ctx, inst),
         "array_fill" => arrays::lower_array_fill(ctx, inst),
         "array_fill_keys" => arrays::lower_array_fill_keys(ctx, inst),

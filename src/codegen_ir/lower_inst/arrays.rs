@@ -24,7 +24,9 @@ use crate::codegen_ir::{CodegenIrError, Result};
 /// Lowers indexed-array allocation through the shared runtime constructor.
 pub(super) fn lower_array_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let capacity = expect_capacity(inst)?.max(4);
-    let elem_size = array_element_size(&inst.result_php_type.codegen_repr())?;
+    let result_ty = inst.result_php_type.codegen_repr();
+    let elem_ty = indexed_array_element_type(&result_ty, inst)?;
+    let elem_size = array_element_size(&result_ty)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             abi::emit_load_int_immediate(ctx.emitter, "x0", capacity as i64);
@@ -36,6 +38,11 @@ pub(super) fn lower_array_new(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_array_new");
+    crate::codegen::emit_array_value_type_stamp(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        &elem_ty,
+    );
     store_if_result(ctx, inst)
 }
 
@@ -517,10 +524,8 @@ fn lower_array_push_aarch64(
             abi::emit_call_label(ctx.emitter, "__rt_array_push_str");
         }
         other if other.is_refcounted() => {
-            ctx.load_value_to_reg(value, "x0")?;
-            abi::emit_incref_if_refcounted(ctx.emitter, &other);
+            ctx.load_value_to_reg(value, "x1")?;
             ctx.load_value_to_reg(array, "x9")?;
-            ctx.emitter.instruction("mov x1, x0");                              // pass the retained heap payload to the refcounted append helper
             ctx.emitter.instruction("mov x0, x9");                              // pass the indexed-array receiver to the refcounted append helper
             abi::emit_call_label(ctx.emitter, "__rt_array_push_refcounted");
         }
@@ -563,11 +568,7 @@ fn lower_array_push_x86_64(
             abi::emit_call_label(ctx.emitter, "__rt_array_push_str");
         }
         other if other.is_refcounted() => {
-            ctx.load_value_to_reg(value, "rax")?;
-            abi::emit_push_reg(ctx.emitter, "r11");
-            abi::emit_incref_if_refcounted(ctx.emitter, &other);
-            abi::emit_pop_reg(ctx.emitter, "r11");
-            ctx.emitter.instruction("mov rsi, rax");                            // pass the retained heap payload to the refcounted append helper
+            ctx.load_value_to_reg(value, "rsi")?;
             ctx.emitter.instruction("mov rdi, r11");                            // pass the indexed-array receiver to the refcounted append helper
             abi::emit_call_label(ctx.emitter, "__rt_array_push_refcounted");
         }

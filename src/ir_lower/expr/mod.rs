@@ -2527,6 +2527,7 @@ fn array_builtin_return_type(
 ) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "array_combine" => array_combine_builtin_return_type(ctx, operands),
+        "array_column" => array_column_builtin_return_type(ctx, operands),
         "array_flip" => array_flip_builtin_return_type(ctx, operands),
         "array_fill_keys" => array_fill_keys_builtin_return_type(ctx, operands),
         "array_merge" => array_merge_builtin_return_type(ctx, operands),
@@ -2556,6 +2557,21 @@ fn array_builtin_return_type(
             }
         }
         _ => None,
+    }
+}
+
+/// Returns the extracted column element type for `array_column()`.
+fn array_column_builtin_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    operands: &[crate::ir::ValueId],
+) -> Option<PhpType> {
+    let array = operands.first()?;
+    match ctx.builder.value_php_type(*array).codegen_repr() {
+        PhpType::Array(inner) => match inner.codegen_repr() {
+            PhpType::AssocArray { value, .. } => Some(PhpType::Array(value)),
+            other => Some(other),
+        },
+        other => Some(other),
     }
 }
 
@@ -2711,19 +2727,110 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
 
 /// Lowers an indexed array literal.
 fn lower_array_literal(ctx: &mut LoweringContext<'_, '_>, items: &[Expr], expr: &Expr) -> LoweredValue {
+    let array_ty = array_literal_type_for_ir(ctx, items, expr);
+    let elem_ty = indexed_array_literal_element_type(&array_ty);
     let array = ctx.emit_value(
         Op::ArrayNew,
         Vec::new(),
         Some(Immediate::Capacity(items.len() as u32)),
-        fallback_expr_type(expr),
+        array_ty,
         Op::ArrayNew.default_effects(),
         Some(expr.span),
     );
     for item in items {
         let value = lower_expr(ctx, item);
         ctx.emit_void(Op::ArrayPush, vec![array.value, value.value], None, Op::ArrayPush.default_effects(), Some(item.span));
+        release_value_after_retaining_insert(ctx, elem_ty.as_ref(), value, item.span);
     }
     array
+}
+
+/// Returns the element type from an indexed-array literal type.
+fn indexed_array_literal_element_type(array_ty: &PhpType) -> Option<PhpType> {
+    match array_ty.codegen_repr() {
+        PhpType::Array(elem) => Some(elem.codegen_repr()),
+        _ => None,
+    }
+}
+
+/// Releases an inserted temporary when the container retained or copied its payload.
+fn release_value_after_retaining_insert(
+    ctx: &mut LoweringContext<'_, '_>,
+    container_elem_ty: Option<&PhpType>,
+    value: LoweredValue,
+    span: crate::span::Span,
+) {
+    if matches!(container_elem_ty.map(PhpType::codegen_repr), Some(PhpType::Mixed)) {
+        return;
+    }
+    if ctx.value_is_owning_temporary(value) {
+        crate::ir_lower::ownership::release_if_owned(ctx, value, Some(span));
+    }
+}
+
+/// Returns the indexed-array type that the EIR backend can faithfully materialize.
+fn array_literal_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    items: &[Expr],
+    expr: &Expr,
+) -> PhpType {
+    if items.is_empty() {
+        return fallback_expr_type(expr);
+    }
+    let mut elem_ty = array_literal_element_type_for_ir(ctx, &items[0]);
+    for item in items.iter().skip(1) {
+        elem_ty = merge_ir_indexed_element_type(
+            elem_ty,
+            array_literal_element_type_for_ir(ctx, item),
+        );
+    }
+    PhpType::Array(Box::new(elem_ty))
+}
+
+/// Returns the best EIR storage element type for one indexed-array literal item.
+fn array_literal_element_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    item: &Expr,
+) -> PhpType {
+    match &item.kind {
+        ExprKind::Spread(inner) => match array_literal_element_type_for_ir(ctx, inner).codegen_repr() {
+            PhpType::Array(elem) => elem.codegen_repr(),
+            _ => PhpType::Mixed,
+        },
+        ExprKind::ArrayLiteral(items) => array_literal_type_for_ir(ctx, items, item).codegen_repr(),
+        ExprKind::ArrayLiteralAssoc(pairs) => assoc_array_literal_type_for_ir(ctx, pairs, item),
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| infer_expr_type_syntactic(item))
+            .codegen_repr(),
+        ExprKind::FunctionCall { name, .. } => {
+            let canonical = name.as_str();
+            if let Some(sig) = ctx.functions.get(canonical) {
+                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+            }
+            if let Some(sig) = ctx.extern_functions.get(canonical) {
+                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+            }
+            infer_expr_type_syntactic(item).codegen_repr()
+        }
+        _ => infer_expr_type_syntactic(item).codegen_repr(),
+    }
+}
+
+/// Merges indexed-array element types for EIR storage metadata.
+fn merge_ir_indexed_element_type(left: PhpType, right: PhpType) -> PhpType {
+    if left == right {
+        return left;
+    }
+    if matches!(left.codegen_repr(), PhpType::Void | PhpType::Never) {
+        return right;
+    }
+    if matches!(right.codegen_repr(), PhpType::Void | PhpType::Never) {
+        return left;
+    }
+    PhpType::Mixed
 }
 
 /// Lowers an associative array literal.

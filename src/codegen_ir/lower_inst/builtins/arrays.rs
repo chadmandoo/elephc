@@ -21,6 +21,7 @@ use crate::types::{array_key_type_from_value_type, PhpType};
 use super::super::super::context::FunctionContext;
 use super::super::{expect_operand, store_if_result};
 
+mod column;
 mod key_exists;
 mod keys;
 mod search;
@@ -125,6 +126,11 @@ pub(super) fn lower_array_combine(ctx: &mut FunctionContext<'_>, inst: &Instruct
     require_array_combine_result_type(&value_elem_ty, &inst.result_php_type.codegen_repr())?;
     lower_array_combine_call(ctx, keys, values, &value_elem_ty)?;
     store_if_result(ctx, inst)
+}
+
+/// Lowers `array_column()` through the target-aware legacy column helpers.
+pub(super) fn lower_array_column(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    column::lower_array_column(ctx, inst)
 }
 
 /// Lowers `array_flip()` through the legacy hash-building runtime helpers.

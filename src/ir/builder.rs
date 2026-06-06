@@ -123,14 +123,16 @@ impl<'f> Builder<'f> {
 
     /// Returns the opcode that produced an instruction-defined value, if available.
     pub fn value_defining_op(&self, value: ValueId) -> Option<Op> {
+        self.value_defining_instruction(value).map(|inst| inst.op)
+    }
+
+    /// Returns the instruction that produced an instruction-defined value, if available.
+    pub fn value_defining_instruction(&self, value: ValueId) -> Option<&Instruction> {
         let value = self.func.values.get(value.as_raw() as usize)?;
         let ValueDef::Instruction { inst, .. } = value.def else {
             return None;
         };
-        self.func
-            .instructions
-            .get(inst.as_raw() as usize)
-            .map(|inst| inst.op)
+        self.func.instructions.get(inst.as_raw() as usize)
     }
 
     /// Returns the current insertion block when one is selected.
