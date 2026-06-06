@@ -274,6 +274,10 @@ fn lower_methods_for_class_like(
         if !method.has_body {
             continue;
         }
+        let method_key = php_method_key(&method.name);
+        if class_method_already_lowered(module, class_name, &method_key, method.is_static) {
+            continue;
+        }
         function::lower_class_method(
             class_name,
             &method.name,
