@@ -6,7 +6,7 @@
 //! - `crate::codegen_ir::lower_inst::lower_instruction()`.
 //!
 //! Key details:
-//! - This phase handles concrete scalar values only; heap, array, object, and Mixed casts remain explicit errors.
+//! - Concrete scalar casts stay inline; Mixed numeric casts delegate to boxed runtime helpers.
 //! - String numeric parsing delegates to the shared runtime routines used by the legacy backend paths.
 
 use crate::codegen::abi;
@@ -124,6 +124,10 @@ fn lower_cast_to_float(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Res
         PhpType::Str => {
             ctx.load_value_to_result(value)?;
             abi::emit_call_label(ctx.emitter, "__rt_str_to_number");
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
         }
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             predicates::emit_array_truthiness(ctx, value)?;

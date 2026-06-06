@@ -5,7 +5,7 @@
 //! - `crate::codegen_ir::lower_inst::builtins::lower_builtin_call()`.
 //!
 //! Key details:
-//! - Supports concrete integer/boolean and floating-point operands only.
+//! - Supports concrete integer/boolean, floating-point, and boxed Mixed numeric operands.
 //! - Mixed PHP comparison semantics stay unsupported until the backend can
 //!   materialize and compare boxed `Mixed` values.
 
@@ -17,6 +17,7 @@ use crate::types::PhpType;
 use crate::codegen_ir::{CodegenIrError, Result};
 
 use super::super::super::context::FunctionContext;
+use super::super::load_value_to_first_int_arg;
 use super::{expect_operand, store_if_result};
 
 mod binary;
@@ -824,6 +825,11 @@ fn load_numeric_as_float(
         PhpType::Void | PhpType::Never => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
             abi::emit_int_result_to_float_result(ctx.emitter);
+            Ok(())
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
             Ok(())
         }
         other => Err(CodegenIrError::unsupported(format!(
