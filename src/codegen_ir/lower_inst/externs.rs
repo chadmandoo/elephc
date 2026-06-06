@@ -1,6 +1,6 @@
 //! Purpose:
 //! Lowers scalar extern function calls from EIR into the target C ABI.
-//! Covers the Phase 04 parity path for non-string, non-callable FFI calls.
+//! Covers the Phase 04 parity path for string, scalar, pointer, and descriptor-backed callable FFI calls.
 //!
 //! Called from:
 //! - `crate::codegen_ir::lower_inst::lower_instruction()`.
@@ -10,13 +10,18 @@
 //!   module only materializes precomputed SSA values into C ABI locations.
 //! - String parameters are converted to call-scoped C strings and released
 //!   immediately after the foreign call returns.
-//! - Callable extern parameters require trampoline handling and remain explicit
-//!   unsupported cases until their dedicated lowering lands.
+//! - Callable extern parameters lower to C function pointers. Descriptor-backed
+//!   callables use generated trampolines when the callable signature is known.
 
 use crate::codegen::abi;
+use crate::codegen::callable_descriptor;
+use crate::codegen::context::DeferredExternCallbackTrampoline;
 use crate::codegen::platform::Arch;
-use crate::ir::{ExternDecl, ExternParamDecl, Instruction, ValueId};
-use crate::types::PhpType;
+use crate::ir::{
+    ExternDecl, ExternParamDecl, Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId,
+};
+use crate::names::{function_symbol, php_symbol_key};
+use crate::types::{FunctionSig, PhpType};
 
 use super::super::context::FunctionContext;
 use super::{expect_data, expect_operand, store_if_result};
@@ -108,10 +113,18 @@ fn validate_extern_shape(decl: &ExternDecl) -> Result<()> {
 
 /// Validates one extern-facing PHP type against the scalar subset this module supports.
 fn validate_supported_extern_type(name: &str, ty: &PhpType, position: &str) -> Result<()> {
-    match ty.codegen_repr() {
-        PhpType::Int | PhpType::Bool | PhpType::Float | PhpType::Str | PhpType::Void
-        | PhpType::Pointer(_) => Ok(()),
-        other => Err(CodegenIrError::unsupported(format!(
+    match (position, ty.codegen_repr()) {
+        ("parameter", PhpType::Callable) => Ok(()),
+        (
+            _,
+            PhpType::Int
+            | PhpType::Bool
+            | PhpType::Float
+            | PhpType::Str
+            | PhpType::Void
+            | PhpType::Pointer(_),
+        ) => Ok(()),
+        (_, other) => Err(CodegenIrError::unsupported(format!(
             "extern {} {} type {:?}",
             name,
             position,
@@ -123,6 +136,7 @@ fn validate_supported_extern_type(name: &str, ty: &PhpType, position: &str) -> R
 /// Returns the C ABI type for an extern parameter after PHP-specific conversion.
 fn c_abi_param_type(param: &ExternParamDecl) -> PhpType {
     match param.php_type.codegen_repr() {
+        PhpType::Callable => PhpType::Pointer(None),
         PhpType::Str => PhpType::Pointer(None),
         other => other,
     }
@@ -146,6 +160,14 @@ fn materialize_extern_arg(
     let target_ty = param.php_type.codegen_repr();
     let actual_ty = ctx.value_php_type(value)?;
     match (&target_ty, actual_ty.codegen_repr()) {
+        (PhpType::Callable, PhpType::Callable) => {
+            materialize_extern_callable_arg(ctx, value);
+            return Ok(PhpType::Pointer(None));
+        }
+        (PhpType::Callable, PhpType::Str) => {
+            materialize_extern_string_callable_arg(ctx, value)?;
+            return Ok(PhpType::Pointer(None));
+        }
         (PhpType::Pointer(_), PhpType::Void) => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
         }
@@ -174,6 +196,216 @@ fn materialize_extern_arg(
         }
     }
     Ok(target_ty)
+}
+
+/// Materializes a constant string callback as a direct C function pointer.
+fn materialize_extern_string_callable_arg(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+) -> Result<()> {
+    let callback_name = const_string_value(ctx, value).ok_or_else(|| {
+        CodegenIrError::unsupported("extern callable parameter from runtime string value")
+    })?;
+    let resolved_name = ctx
+        .callable_function_by_name(callback_name)
+        .map(|function| function.name.as_str())
+        .unwrap_or(callback_name);
+    abi::emit_symbol_address(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        &function_symbol(resolved_name),
+    );
+    Ok(())
+}
+
+/// Returns the literal string for a constant-string value.
+fn const_string_value<'a>(ctx: &'a FunctionContext<'_>, value: ValueId) -> Option<&'a str> {
+    let value = ctx.function.value(value)?;
+    let ValueDef::Instruction { inst, .. } = value.def else {
+        return None;
+    };
+    let inst = ctx.function.instruction(inst)?;
+    if !matches!(inst.op, Op::ConstStr) {
+        return None;
+    }
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    ctx.module.data.strings.get(data.as_raw() as usize).map(String::as_str)
+}
+
+/// Materializes an EIR callable descriptor as a C-compatible callback function pointer.
+fn materialize_extern_callable_arg(ctx: &mut FunctionContext<'_>, value: ValueId) {
+    let callback_sig = callable_signature_for_value(ctx, value);
+    ctx.load_value_to_result(value)
+        .expect("callable extern arg value was validated before materialization");
+    if let Some(callback_sig) = callback_sig {
+        emit_stateful_extern_callback_trampoline(ctx, &callback_sig);
+        return;
+    }
+    callable_descriptor::emit_load_entry_from_descriptor(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        abi::int_result_reg(ctx.emitter),
+    );
+}
+
+/// Emits a descriptor-backed extern callback trampoline and leaves its address in the result register.
+fn emit_stateful_extern_callback_trampoline(
+    ctx: &mut FunctionContext<'_>,
+    callback_sig: &FunctionSig,
+) {
+    let slot_name = ctx.next_label("extern_callback_descriptor");
+    let slot_label = ctx.data.add_comm(slot_name, 8);
+    let trampoline_label = ctx.next_label("extern_callback_trampoline");
+    let done_label = ctx.next_label("extern_callback_trampoline_done");
+    let trampoline = DeferredExternCallbackTrampoline {
+        label: trampoline_label.clone(),
+        descriptor_slot_label: slot_label.clone(),
+        visible_arg_types: callback_sig
+            .params
+            .iter()
+            .map(|(_, ty)| ty.codegen_repr())
+            .collect(),
+        return_type: callback_sig.return_type.codegen_repr(),
+    };
+
+    abi::emit_jump(ctx.emitter, &done_label);
+    crate::codegen::emit_extern_callback_trampoline(ctx.emitter, &trampoline);
+    ctx.emitter.label(&done_label);
+
+    ctx.emitter.comment("extern callback: bind descriptor trampoline");
+    callable_descriptor::emit_retain_current_descriptor(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    abi::emit_load_symbol_to_reg(ctx.emitter, abi::int_result_reg(ctx.emitter), &slot_label, 0);
+    callable_descriptor::emit_release_current_descriptor(ctx.emitter);
+    abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    abi::emit_store_reg_to_symbol(ctx.emitter, abi::int_result_reg(ctx.emitter), &slot_label, 0);
+    abi::emit_symbol_address(ctx.emitter, abi::int_result_reg(ctx.emitter), &trampoline_label);
+}
+
+/// Recovers a callable signature from a value definition when the EIR carries enough metadata.
+fn callable_signature_for_value(ctx: &FunctionContext<'_>, value: ValueId) -> Option<FunctionSig> {
+    callable_signature_for_value_seen(ctx, value, &mut Vec::new())
+}
+
+/// Recovers callable signatures while avoiding cycles through locals or forwarding opcodes.
+fn callable_signature_for_value_seen(
+    ctx: &FunctionContext<'_>,
+    value: ValueId,
+    seen: &mut Vec<ValueId>,
+) -> Option<FunctionSig> {
+    if seen.contains(&value) {
+        return None;
+    }
+    seen.push(value);
+    let signature = value_instruction(ctx, value).and_then(|inst| match inst.op {
+        Op::FirstClassCallableNew => first_class_callable_signature(ctx, inst),
+        Op::LoadLocal => load_local_callable_signature(ctx, inst, seen),
+        Op::Acquire | Op::Move | Op::Borrow => inst
+            .operands
+            .first()
+            .and_then(|operand| callable_signature_for_value_seen(ctx, *operand, seen)),
+        _ => None,
+    });
+    seen.pop();
+    signature
+}
+
+/// Returns the instruction that defines an SSA value.
+fn value_instruction<'a>(
+    ctx: &'a FunctionContext<'_>,
+    value: ValueId,
+) -> Option<&'a Instruction> {
+    let value = ctx.function.value(value)?;
+    let ValueDef::Instruction { inst, .. } = value.def else {
+        return None;
+    };
+    ctx.function.instruction(inst)
+}
+
+/// Recovers a callable signature from all stores feeding one local slot.
+fn load_local_callable_signature(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+    seen: &mut Vec<ValueId>,
+) -> Option<FunctionSig> {
+    let Some(Immediate::LocalSlot(slot)) = inst.immediate else {
+        return None;
+    };
+    stored_callable_signature_for_slot(ctx, slot, seen)
+}
+
+/// Returns a slot signature only when every callable store agrees on one contract.
+fn stored_callable_signature_for_slot(
+    ctx: &FunctionContext<'_>,
+    slot: LocalSlotId,
+    seen: &mut Vec<ValueId>,
+) -> Option<FunctionSig> {
+    let mut signature = None;
+    for inst in &ctx.function.instructions {
+        if !matches!(inst.op, Op::StoreLocal) || inst.immediate != Some(Immediate::LocalSlot(slot)) {
+            continue;
+        }
+        let value = *inst.operands.first()?;
+        let candidate = callable_signature_for_value_seen(ctx, value, seen)?;
+        if signature.as_ref().is_some_and(|existing| existing != &candidate) {
+            return None;
+        }
+        signature = Some(candidate);
+    }
+    signature
+}
+
+/// Recovers the callable signature for a first-class callable descriptor.
+fn first_class_callable_signature(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+) -> Option<FunctionSig> {
+    let target = first_class_callable_target(ctx, inst)?;
+    if let Some((receiver_label, method_name)) = target.rsplit_once("::") {
+        return first_class_method_callable_signature(ctx, inst, receiver_label, method_name);
+    }
+    ctx.callable_function_by_name(target)
+        .map(super::function_signature_from_eir)
+}
+
+/// Returns the first-class callable target string attached to an EIR instruction.
+fn first_class_callable_target<'a>(
+    ctx: &'a FunctionContext<'_>,
+    inst: &Instruction,
+) -> Option<&'a str> {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    ctx.module.data.strings.get(data.as_raw() as usize).map(String::as_str)
+}
+
+/// Recovers a first-class method callable signature from receiver metadata.
+fn first_class_method_callable_signature(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+    receiver_label: &str,
+    method_name: &str,
+) -> Option<FunctionSig> {
+    let method_key = php_symbol_key(method_name);
+    if receiver_label.trim_start_matches('\\') == "object" {
+        let receiver = inst.operands.first().copied()?;
+        let PhpType::Object(class_name) = ctx.value_php_type(receiver).ok()?.codegen_repr() else {
+            return None;
+        };
+        return ctx
+            .module
+            .class_infos
+            .get(class_name.trim_start_matches('\\'))
+            .and_then(|class| class.methods.get(&method_key).cloned());
+    }
+    let receiver = receiver_label.trim_start_matches('\\');
+    ctx.module
+        .class_infos
+        .get(receiver)
+        .and_then(|class| class.static_methods.get(&method_key))
+        .cloned()
 }
 
 /// Returns true when two scalar extern ABI types can be passed without extra conversion.

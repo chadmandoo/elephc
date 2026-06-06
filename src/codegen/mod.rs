@@ -39,7 +39,7 @@ mod stmt;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
-pub(crate) use functions::emit_callback_wrapper;
+pub(crate) use functions::{emit_callback_wrapper, emit_extern_callback_trampoline};
 
 thread_local! {
     /// Number of `spl_autoload_register` closure rules the autoload pass
