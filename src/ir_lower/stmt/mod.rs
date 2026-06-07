@@ -9,7 +9,9 @@
 //! - Structured control flow creates EIR blocks; complex PHP runtime behavior
 //!   uses high-level opcodes with conservative effects.
 
-use crate::ir::{BlockId, Immediate, IrType, LocalKind, Op, Ownership, SwitchCase, Terminator};
+use crate::ir::{
+    BlockId, CmpPredicate, Immediate, IrType, LocalKind, Op, Ownership, SwitchCase, Terminator,
+};
 use crate::ir_lower::context::{FinallyFrame, LoopFrame, LoweredValue, LoweringContext};
 use crate::ir_lower::effects_lookup;
 use crate::ir_lower::expr::{
@@ -971,7 +973,7 @@ fn initialize_foreach_mixed_local_if_needed(
     ctx.store_local(name, boxed, PhpType::Mixed, Some(span));
 }
 
-/// Lowers a `switch` and terminates the shared exit block when every arm exits earlier.
+/// Lowers a `switch` with source-ordered pattern evaluation and PHP fallthrough.
 fn lower_switch(
     ctx: &mut LoweringContext<'_, '_>,
     subject: &Expr,
@@ -982,16 +984,44 @@ fn lower_switch(
     let subject = coerce_to_int(ctx, subject, None);
     let exit = ctx.builder.create_named_block("switch.exit", Vec::new());
     let default_block = ctx.builder.create_named_block("switch.default", Vec::new());
-    let mut blocks = Vec::with_capacity(cases.len());
+    let blocks = cases
+        .iter()
+        .map(|_| ctx.builder.create_named_block("switch.case", Vec::new()))
+        .collect::<Vec<_>>();
+
+    if can_lower_static_switch(cases) {
+        lower_static_switch_dispatch(ctx, subject, cases, &blocks, default_block);
+    } else {
+        lower_dynamic_switch_dispatch(ctx, subject, cases, &blocks, default_block);
+    }
+
+    lower_switch_bodies(ctx, cases, default, &blocks, default_block, exit);
+}
+
+/// Returns true when every switch case pattern can use the static integer switch terminator.
+fn can_lower_static_switch(cases: &[(Vec<Expr>, Vec<Stmt>)]) -> bool {
+    cases
+        .iter()
+        .flat_map(|(case_exprs, _)| case_exprs)
+        .all(|case_expr| int_case_value(case_expr).is_some())
+}
+
+/// Emits the compact integer-switch dispatch for statically-known case values.
+fn lower_static_switch_dispatch(
+    ctx: &mut LoweringContext<'_, '_>,
+    subject: LoweredValue,
+    cases: &[(Vec<Expr>, Vec<Stmt>)],
+    blocks: &[BlockId],
+    default_block: BlockId,
+) {
     let mut switch_cases = Vec::new();
-    for (case_exprs, _) in cases {
-        let case_block = ctx.builder.create_named_block("switch.case", Vec::new());
+    for ((case_exprs, _), case_block) in cases.iter().zip(blocks) {
         for case_expr in case_exprs {
-            if let Some(value) = int_case_value(case_expr) {
-                switch_cases.push(SwitchCase { value, target: case_block, args: Vec::new() });
-            }
+            let Some(value) = int_case_value(case_expr) else {
+                continue;
+            };
+            switch_cases.push(SwitchCase { value, target: *case_block, args: Vec::new() });
         }
-        blocks.push(case_block);
     }
     ctx.builder.terminate(Terminator::Switch {
         scrutinee: subject.value,
@@ -999,16 +1029,64 @@ fn lower_switch(
         default: default_block,
         default_args: Vec::new(),
     });
+    ctx.clear_static_callable_locals();
+}
 
+/// Emits source-ordered dynamic switch pattern checks for non-literal case expressions.
+fn lower_dynamic_switch_dispatch(
+    ctx: &mut LoweringContext<'_, '_>,
+    subject: LoweredValue,
+    cases: &[(Vec<Expr>, Vec<Stmt>)],
+    blocks: &[BlockId],
+    default_block: BlockId,
+) {
+    for ((case_exprs, _), case_block) in cases.iter().zip(blocks) {
+        for case_expr in case_exprs {
+            let case_value = lower_expr(ctx, case_expr);
+            let case_value = coerce_to_int(ctx, case_value, Some(case_expr.span));
+            let matched = ctx.emit_value(
+                Op::ICmp,
+                vec![subject.value, case_value.value],
+                Some(Immediate::CmpPredicate(CmpPredicate::Eq)),
+                PhpType::Bool,
+                Op::ICmp.default_effects(),
+                Some(case_expr.span),
+            );
+            let miss_block = ctx.builder.create_named_block("switch.next", Vec::new());
+            ctx.builder.terminate(Terminator::CondBr {
+                cond: matched.value,
+                then_target: *case_block,
+                then_args: Vec::new(),
+                else_target: miss_block,
+                else_args: Vec::new(),
+            });
+            ctx.builder.position_at_end(miss_block);
+        }
+    }
+    branch_to(ctx, default_block);
+    ctx.clear_static_callable_locals();
+}
+
+/// Lowers switch case/default bodies and preserves PHP fallthrough between adjacent bodies.
+fn lower_switch_bodies(
+    ctx: &mut LoweringContext<'_, '_>,
+    cases: &[(Vec<Expr>, Vec<Stmt>)],
+    default: Option<&[Stmt]>,
+    blocks: &[BlockId],
+    default_block: BlockId,
+    exit: BlockId,
+) {
     ctx.clear_static_callable_locals();
     ctx.loop_stack.push(LoopFrame { break_block: exit, continue_block: exit });
-    let mut exit_reachable = false;
-    for ((_, body), block) in cases.iter().zip(blocks) {
-        ctx.builder.position_at_end(block);
+    for (index, ((_, body), block)) in cases.iter().zip(blocks).enumerate() {
+        ctx.builder.position_at_end(*block);
         lower_block(ctx, body);
         if !ctx.builder.insertion_block_is_terminated() {
-            exit_reachable = true;
-            branch_to(ctx, exit);
+            if let Some(next_block) = blocks.get(index + 1) {
+                branch_to(ctx, *next_block);
+            } else {
+                branch_to(ctx, default_block);
+            }
         }
         ctx.clear_static_callable_locals();
     }
@@ -1017,14 +1095,10 @@ fn lower_switch(
         lower_block(ctx, default);
     }
     if !ctx.builder.insertion_block_is_terminated() {
-        exit_reachable = true;
         branch_to(ctx, exit);
     }
     ctx.loop_stack.pop();
     ctx.builder.position_at_end(exit);
-    if !exit_reachable {
-        ctx.builder.terminate(Terminator::Unreachable);
-    }
     ctx.clear_static_callable_locals();
 }
 
