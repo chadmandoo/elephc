@@ -115,6 +115,9 @@ pub struct DeferredFiberWrapper {
     pub sig: FunctionSig,
     pub visible_param_count: usize,
     pub hidden_arg_types: Vec<PhpType>,
+    /// `true` when hidden descriptor captures must be retained before calling the
+    /// wrapped closure because that closure frame will release them as owned params.
+    pub retain_hidden_args_for_closure_call: bool,
     /// `true` when the wrapper should call the callable descriptor's uniform
     /// invoker instead of re-materializing a statically known ABI signature.
     pub use_descriptor_invoker: bool,

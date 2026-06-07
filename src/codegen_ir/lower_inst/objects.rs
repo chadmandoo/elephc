@@ -15,7 +15,7 @@
 
 use std::collections::HashSet;
 
-use crate::codegen::{abi, emit_box_current_value_as_mixed};
+use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed};
 use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::intrinsics::IntrinsicCall;
@@ -1410,6 +1410,10 @@ fn emit_property_default(
             abi::emit_store_to_address(ctx.emitter, ptr_reg, object_reg, default.offset);
             abi::emit_store_to_address(ctx.emitter, len_reg, object_reg, default.offset + 8);
         }
+        LiteralDefaultValue::Null => {
+            abi::emit_store_zero_to_address(ctx.emitter, object_reg, default.offset);
+            abi::emit_store_zero_to_address(ctx.emitter, object_reg, default.offset + 8);
+        }
         LiteralDefaultValue::BoxedNull => {
             abi::emit_push_reg(ctx.emitter, object_reg);
             emit_boxed_null_literal_to_result(ctx);
@@ -2728,12 +2732,28 @@ fn emit_property_store(
     if slot.is_packed {
         return emit_packed_field_store(ctx, value, slot, base_reg);
     }
+    let value_ty = ctx.value_php_type(value)?;
+    if is_pointer_sized_property_type(&slot.php_type)
+        && is_pointer_slot_null_sentinel(ctx, value, &value_ty)?
+    {
+        release_previous_property_value(ctx, base_reg, &slot.php_type, slot.offset, None);
+        abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset);
+        abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
+        return Ok(());
+    }
     match &slot.php_type {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_push_reg(ctx.emitter, base_reg);
             load_property_store_value_to_result(ctx, value, &slot.php_type)?;
             abi::emit_pop_reg(ctx.emitter, base_reg);
+            release_previous_property_value(
+                ctx,
+                base_reg,
+                &slot.php_type,
+                slot.offset,
+                Some(&slot.php_type),
+            );
             abi::emit_store_to_address(ctx.emitter, ptr_reg, base_reg, slot.offset);
             abi::emit_store_to_address(ctx.emitter, len_reg, base_reg, slot.offset + 8);
         }
@@ -2758,6 +2778,13 @@ fn emit_property_store(
             abi::emit_push_reg(ctx.emitter, base_reg);
             load_property_store_value_to_result(ctx, value, &slot.php_type)?;
             abi::emit_pop_reg(ctx.emitter, base_reg);
+            release_previous_property_value(
+                ctx,
+                base_reg,
+                &slot.php_type,
+                slot.offset,
+                Some(&slot.php_type),
+            );
             abi::emit_store_to_address(ctx.emitter, int_reg, base_reg, slot.offset);
             abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
         }
@@ -2767,6 +2794,53 @@ fn emit_property_store(
         ))),
     }
     Ok(())
+}
+
+/// Releases the old value in a declared property slot before overwriting it.
+fn release_previous_property_value(
+    ctx: &mut FunctionContext<'_>,
+    base_reg: &str,
+    prop_ty: &PhpType,
+    offset: usize,
+    preserve_result_ty: Option<&PhpType>,
+) {
+    let prop_ty = prop_ty.codegen_repr();
+    let releases_value =
+        matches!(prop_ty, PhpType::Str | PhpType::Callable) || prop_ty.is_refcounted();
+    if !releases_value {
+        return;
+    }
+    if let Some(result_ty) = preserve_result_ty {
+        abi::emit_push_result_value(ctx.emitter, &result_ty.codegen_repr());
+    }
+    abi::emit_push_reg(ctx.emitter, base_reg);
+    abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), base_reg, offset);
+    match prop_ty {
+        PhpType::Str => abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe"),
+        PhpType::Callable => callable_descriptor::emit_release_current_descriptor(ctx.emitter),
+        ty => abi::emit_decref_if_refcounted(ctx.emitter, &ty),
+    }
+    abi::emit_pop_reg(ctx.emitter, base_reg);
+    if let Some(result_ty) = preserve_result_ty {
+        restore_property_store_result(ctx, &result_ty.codegen_repr());
+    }
+}
+
+/// Restores a property-store result value saved around previous-slot release.
+fn restore_property_store_result(ctx: &mut FunctionContext<'_>, result_ty: &PhpType) {
+    match result_ty.codegen_repr() {
+        PhpType::Float => {
+            abi::emit_pop_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+        }
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        PhpType::Void | PhpType::Never => {}
+        _ => {
+            abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        }
+    }
 }
 
 /// Loads an SSA value in the shape required by a typed object property store.

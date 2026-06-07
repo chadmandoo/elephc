@@ -115,6 +115,7 @@ pub(super) fn prepare_fiber_wrapper(callable_expr: &Expr, ctx: &mut Context) -> 
         sig,
         visible_param_count,
         hidden_arg_types,
+        retain_hidden_args_for_closure_call: true,
         use_descriptor_invoker: false,
     });
     Some(label)
@@ -151,6 +152,7 @@ pub(super) fn prepare_descriptor_invoker_wrapper(ctx: &mut Context) -> String {
         sig: descriptor_invoker_placeholder_sig(),
         visible_param_count: 0,
         hidden_arg_types: Vec::new(),
+        retain_hidden_args_for_closure_call: true,
         use_descriptor_invoker: true,
     });
     label

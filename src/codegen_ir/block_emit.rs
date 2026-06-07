@@ -75,6 +75,7 @@ fn emit_eir_fiber_wrappers(module: &Module, emitter: &mut Emitter) {
             sig: wrapper.sig,
             visible_param_count: wrapper.visible_param_count,
             hidden_arg_types: wrapper.hidden_arg_types,
+            retain_hidden_args_for_closure_call: false,
             use_descriptor_invoker: wrapper.use_descriptor_invoker,
         };
         emit_fiber_wrapper(emitter, &wrapper);
@@ -532,6 +533,9 @@ fn emit_static_property_default_value(
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
             abi::emit_load_int_immediate(ctx.emitter, len_reg, len as i64);
+        }
+        LiteralDefaultValue::Null => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
         }
         LiteralDefaultValue::BoxedNull => {
             emit_boxed_null_literal_to_result(ctx);

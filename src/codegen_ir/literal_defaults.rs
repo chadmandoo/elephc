@@ -27,6 +27,7 @@ pub(crate) enum LiteralDefaultValue {
     Bool(bool),
     Float(f64),
     Str(String),
+    Null,
     BoxedNull,
     Array {
         elem_type: PhpType,
@@ -72,6 +73,7 @@ pub(crate) fn literal_default_value(
         },
         (PhpType::Str, ExprKind::StringLiteral(value)) => Ok(LiteralDefaultValue::Str(value.clone())),
         (PhpType::Mixed | PhpType::Union(_), ExprKind::Null) => Ok(LiteralDefaultValue::BoxedNull),
+        (PhpType::Object(_), ExprKind::Null) => Ok(LiteralDefaultValue::Null),
         (PhpType::AssocArray { value, .. }, ExprKind::ArrayLiteral(items)) if items.is_empty() => {
             Ok(LiteralDefaultValue::EmptyAssocArray {
                 value_type: value.as_ref().codegen_repr(),
