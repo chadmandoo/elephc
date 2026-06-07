@@ -327,40 +327,6 @@ impl Checker {
             .get(&impl_class_name)
             .map(|class_info| Self::declared_method_param_flags(class_info, &method_key, false))
             .unwrap_or_default();
-        // Phase 1: widen undeclared regular params via the shared union accumulator. Only the
-        // inferred `Int` fallback (or a parameter this accumulator already tracks) is widened, so
-        // intrinsic methods whose parameters are intentionally `Mixed`/typed are left untouched.
-        // Borrows `&mut self` for the accumulator, so it runs before the class signature is borrowed.
-        let mut desired_params: Vec<(usize, PhpType)> = Vec::new();
-        if let Some((regular_param_count, current_param_types)) = self
-            .classes
-            .get(&impl_class_name)
-            .and_then(|class_info| class_info.methods.get(&method_key))
-            .map(|sig| {
-                let regular_param_count = if sig.variadic.is_some() {
-                    sig.params.len().saturating_sub(1)
-                } else {
-                    sig.params.len()
-                };
-                let types: Vec<PhpType> = sig.params.iter().map(|(_, ty)| ty.clone()).collect();
-                (regular_param_count, types)
-            })
-        {
-            let observe_key = format!("{}::{}", impl_class_name, method_key);
-            for (i, arg_ty) in arg_types.iter().enumerate() {
-                if i < regular_param_count
-                    && !declared_flags.get(i).copied().unwrap_or(false)
-                    && (current_param_types.get(i) == Some(&PhpType::Int)
-                        || self.fn_param_observed_types.contains_key(&(observe_key.clone(), i)))
-                {
-                    if let Some(desired) = self.record_observed_param_type(&observe_key, i, arg_ty) {
-                        desired_params.push((i, desired));
-                    }
-                }
-            }
-        }
-
-        // Phase 2: apply the widened parameter types and the variadic element type.
         if let Some(class_info) = self.classes.get_mut(&impl_class_name) {
             if let Some(sig) = class_info.methods.get_mut(&method_key) {
                 let regular_param_count = if sig.variadic.is_some() {
@@ -368,9 +334,19 @@ impl Checker {
                 } else {
                     sig.params.len()
                 };
-                for (i, ty) in desired_params {
-                    if i < sig.params.len() {
-                        sig.params[i].1 = ty;
+                for (i, arg_ty) in arg_types.iter().enumerate() {
+                    if i < regular_param_count
+                        && !declared_flags.get(i).copied().unwrap_or(false)
+                        && !matches!(*arg_ty, PhpType::Void | PhpType::Never | PhpType::Callable)
+                    {
+                        let key = (format!("{}::{}", impl_class_name, method_key), i);
+                        let seen = self.param_specialization_seen.contains(&key);
+                        if sig.params[i].1 == PhpType::Int && !seen {
+                            self.param_specialization_seen.insert(key);
+                            sig.params[i].1 = arg_ty.clone();
+                        } else {
+                            sig.params[i].1 = Self::union_param_type(&sig.params[i].1, arg_ty);
+                        }
                     }
                 }
                 if method_variadic_tail_needs_iterable(
@@ -745,40 +721,6 @@ impl Checker {
             .get(class_name)
             .map(|class_info| Self::declared_method_param_flags(class_info, method, true))
             .unwrap_or_default();
-        // Phase 1: widen undeclared regular params via the shared union accumulator. Only the
-        // inferred `Int` fallback (or a parameter this accumulator already tracks) is widened, so
-        // intrinsic static methods with intentionally `Mixed`/typed parameters are left untouched.
-        // Borrows `&mut self` for the accumulator, so it runs before the class signature is borrowed.
-        let mut desired_params: Vec<(usize, PhpType)> = Vec::new();
-        if let Some((regular_param_count, current_param_types)) = self
-            .classes
-            .get(class_name)
-            .and_then(|class_info| class_info.static_methods.get(method))
-            .map(|sig| {
-                let regular_param_count = if sig.variadic.is_some() {
-                    sig.params.len().saturating_sub(1)
-                } else {
-                    sig.params.len()
-                };
-                let types: Vec<PhpType> = sig.params.iter().map(|(_, ty)| ty.clone()).collect();
-                (regular_param_count, types)
-            })
-        {
-            let observe_key = format!("{}::{}::static", class_name, method);
-            for (i, arg_ty) in arg_types.iter().enumerate() {
-                if i < regular_param_count
-                    && !static_declared_flags.get(i).copied().unwrap_or(false)
-                    && (current_param_types.get(i) == Some(&PhpType::Int)
-                        || self.fn_param_observed_types.contains_key(&(observe_key.clone(), i)))
-                {
-                    if let Some(desired) = self.record_observed_param_type(&observe_key, i, arg_ty) {
-                        desired_params.push((i, desired));
-                    }
-                }
-            }
-        }
-
-        // Phase 2: apply the widened parameter types and the variadic element type.
         if let Some(class_info) = self.classes.get_mut(class_name) {
             if let Some(sig) = class_info.static_methods.get_mut(method) {
                 let regular_param_count = if sig.variadic.is_some() {
@@ -786,9 +728,19 @@ impl Checker {
                 } else {
                     sig.params.len()
                 };
-                for (i, ty) in desired_params {
-                    if i < sig.params.len() {
-                        sig.params[i].1 = ty;
+                for (i, arg_ty) in arg_types.iter().enumerate() {
+                    if i < regular_param_count
+                        && !static_declared_flags.get(i).copied().unwrap_or(false)
+                        && !matches!(*arg_ty, PhpType::Void | PhpType::Never | PhpType::Callable)
+                    {
+                        let key = (format!("static:{}::{}", class_name, method), i);
+                        let seen = self.param_specialization_seen.contains(&key);
+                        if sig.params[i].1 == PhpType::Int && !seen {
+                            self.param_specialization_seen.insert(key);
+                            sig.params[i].1 = arg_ty.clone();
+                        } else {
+                            sig.params[i].1 = Self::union_param_type(&sig.params[i].1, arg_ty);
+                        }
                     }
                 }
                 if method_variadic_tail_needs_iterable(
@@ -832,10 +784,16 @@ impl Checker {
                 for (i, arg_ty) in arg_types.iter().enumerate() {
                     if i < regular_param_count
                         && !instance_declared_flags.get(i).copied().unwrap_or(false)
-                        && sig.params[i].1 == PhpType::Int
-                        && *arg_ty != PhpType::Int
+                        && !matches!(*arg_ty, PhpType::Void | PhpType::Never | PhpType::Callable)
                     {
-                        sig.params[i].1 = arg_ty.clone();
+                        let key = (format!("{}::{}", direct_impl_class_name, method), i);
+                        let seen = self.param_specialization_seen.contains(&key);
+                        if sig.params[i].1 == PhpType::Int && !seen {
+                            self.param_specialization_seen.insert(key);
+                            sig.params[i].1 = arg_ty.clone();
+                        } else {
+                            sig.params[i].1 = Self::union_param_type(&sig.params[i].1, arg_ty);
+                        }
                     }
                 }
                 if sig.variadic.is_some() && arg_types.len() > regular_param_count {

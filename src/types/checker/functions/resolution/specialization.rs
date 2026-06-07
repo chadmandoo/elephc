@@ -106,11 +106,11 @@ impl Checker {
     /// Specializes an untyped user-defined function's signature from the actual argument
     /// types at a specific call site.
     ///
-    /// For functions declared without explicit parameter type annotations, this widens each
-    /// undeclared regular parameter via `record_observed_param_type` (accumulating the union of
-    /// the types observed for that parameter across call sites) and updates the stored signature
-    /// in place. Variadic parameters are handled separately, including the special case of
-    /// unknown-named variadic arguments which widen the variadic element type to `Iterable`.
+    /// For functions that were declared without explicit parameter type annotations,
+    /// this infers concrete types from the call-site arguments and updates the stored
+    /// signature in place. Handles both regular parameters and variadic parameters,
+    /// including the special case of unknown-named variadic arguments which widen
+    /// the variadic element type to `Iterable`.
     pub(crate) fn specialize_untyped_function_params(
         &mut self,
         name: &str,
@@ -121,44 +121,27 @@ impl Checker {
             .iter()
             .map(|arg| self.infer_type(arg, caller_env))
             .collect::<Result<Vec<_>, CompileError>>()?;
-        let Some((regular_param_count, declared_params, has_variadic)) =
-            self.functions.get(name).map(|sig| {
-                (
-                    crate::types::call_args::regular_param_count(sig),
-                    sig.declared_params.clone(),
-                    sig.variadic.is_some(),
-                )
-            })
-        else {
-            return Ok(());
-        };
-
-        // Phase 1: accumulate observed call-site types per undeclared regular parameter. This
-        // borrows `&mut self` for the accumulator, so it must not hold a borrow of the signature.
-        let mut desired_param_types: Vec<(usize, PhpType)> = Vec::new();
-        let mut seen_idx = 0usize;
-        for (arg, actual_ty) in args.iter().zip(actual_arg_types.iter()) {
-            if matches!(arg.kind, ExprKind::Spread(_)) {
-                continue;
-            }
-            if seen_idx < regular_param_count
-                && !declared_params.get(seen_idx).copied().unwrap_or(false)
-            {
-                if let Some(desired) = self.record_observed_param_type(name, seen_idx, actual_ty) {
-                    desired_param_types.push((seen_idx, desired));
-                }
-            }
-            seen_idx += 1;
-        }
-
-        // Phase 2: write the widened parameter types and update the variadic element type.
         if let Some(stored_sig) = self.functions.get_mut(name) {
-            for (idx, ty) in desired_param_types {
-                if idx < stored_sig.params.len() {
-                    stored_sig.params[idx].1 = ty;
+            let regular_param_count = crate::types::call_args::regular_param_count(stored_sig);
+            let mut seen_idx = 0usize;
+            for (arg, actual_ty) in args.iter().zip(actual_arg_types.iter()) {
+                if matches!(arg.kind, ExprKind::Spread(_)) {
+                    continue;
                 }
+                if seen_idx < regular_param_count
+                    && !stored_sig
+                        .declared_params
+                        .get(seen_idx)
+                        .copied()
+                        .unwrap_or(false)
+                    && stored_sig.params[seen_idx].1 == PhpType::Int
+                    && *actual_ty != PhpType::Int
+                {
+                    stored_sig.params[seen_idx].1 = actual_ty.clone();
+                }
+                seen_idx += 1;
             }
-            if has_variadic && seen_idx > regular_param_count {
+            if stored_sig.variadic.is_some() && seen_idx > regular_param_count {
                 let regular_names: Vec<String> = stored_sig.params[..regular_param_count]
                     .iter()
                     .map(|(name, _)| name.clone())
@@ -182,47 +165,14 @@ impl Checker {
         Ok(())
     }
 
-    /// Records an observed call-site argument type for an undeclared (untyped) parameter and
-    /// returns the parameter's specialized type, or `None` to leave the parameter unchanged.
-    ///
-    /// The accumulator unions every observed argument type for `(name, idx)` across call sites.
-    /// `Int`, `Bool`, and `Void` arguments do not, on their own, specialize a parameter — matching
-    /// the historical behavior where they keep the `Int` fallback (`void` is never recorded, since
-    /// it models `null`/no-value sources). So while the accumulated union is empty or contains only
-    /// `Int`/`Bool`, this returns `None`. Once a stronger type is observed (e.g. `string`), the full
-    /// accumulated union — including any previously seen `Int`/`Bool`, e.g. `int|string` — is
-    /// returned so codegen boxes the parameter as a `Mixed` runtime value and each argument keeps
-    /// its own runtime type instead of being coerced to the last-seen type.
-    pub(crate) fn record_observed_param_type(
-        &mut self,
-        name: &str,
-        idx: usize,
-        actual_ty: &PhpType,
-    ) -> Option<PhpType> {
-        if matches!(actual_ty, PhpType::Void) {
-            return None;
-        }
-        let key = (name.to_string(), idx);
-        let accumulated = match self.fn_param_observed_types.get(&key) {
-            Some(prev) => self.normalize_union_type(vec![prev.clone(), actual_ty.clone()]),
-            None => actual_ty.clone(),
-        };
-        self.fn_param_observed_types.insert(key, accumulated.clone());
-        if is_int_or_bool_only(&accumulated) {
-            None
-        } else {
-            Some(accumulated)
-        }
-    }
-
-    /// Specializes parameter types from the actual argument types at a call site and
+    /// Infers concrete parameter types from actual argument types at a call site and
     /// returns them if they differ from the stored signature.
     ///
     /// This is the core specialization logic used by `respecialize_resolved_function_params_if_needed`.
     /// For each argument position with an inferred `Callable` type, it records the callable's
-    /// signature against the parameter name for later use. For undeclared parameters it widens the
-    /// type via `record_observed_param_type`, accumulating the union of every type observed for that
-    /// parameter across call sites (see that method for the int-fallback and `void` handling).
+    /// signature against the parameter name for later use. For undeclared parameters with `Int`
+    /// as a fallback type, it replaces the fallback with the actual argument type when the
+    /// actual type is not itself `Int`, `Bool`, or `Void`.
     ///
     /// Returns `Some(param_types)` if any changes were made, `None` otherwise.
     fn respecialized_param_types_for_call(
@@ -270,12 +220,31 @@ impl Checker {
                     .get(seen_idx)
                     .copied()
                     .unwrap_or(false)
+                && !matches!(
+                    actual_ty,
+                    PhpType::Void | PhpType::Never | PhpType::Callable
+                )
             {
-                if let Some(desired) =
-                    self.record_observed_param_type(name, seen_idx, &actual_ty)
-                {
-                    if param_types[seen_idx].1 != desired {
-                        param_types[seen_idx].1 = desired;
+                let key = (name.to_string(), seen_idx);
+                let seen = self.param_specialization_seen.contains(&key);
+                if param_types[seen_idx].1 == PhpType::Int && !seen {
+                    // Discard the `Int` fallback exactly once: adopt the type of the
+                    // first call so an all-`Str` (etc.) parameter is not polluted by
+                    // unioning the fallback. The seen set marks the discard so a real
+                    // later int call still widens instead of re-adopting.
+                    self.param_specialization_seen.insert(key);
+                    if param_types[seen_idx].1 != actual_ty {
+                        param_types[seen_idx].1 = actual_ty.clone();
+                        changed = true;
+                    }
+                } else {
+                    // Widen to the union so heterogeneous call sites become `Mixed`
+                    // rather than a single (wrong) type. A no-op for an already-`Mixed`
+                    // or patched parameter (so e.g. `Generator::send`'s value stays
+                    // `Mixed`).
+                    let widened = Self::union_param_type(&param_types[seen_idx].1, &actual_ty);
+                    if param_types[seen_idx].1 != widened {
+                        param_types[seen_idx].1 = widened;
                         changed = true;
                     }
                 }
@@ -284,22 +253,6 @@ impl Checker {
         }
 
         Ok(changed.then_some(param_types))
-    }
-}
-
-/// Returns true when an accumulated parameter type contains only `Int`/`Bool` members.
-///
-/// Untyped parameters fall back to `Int`, and historically calls that only ever pass integers or
-/// booleans keep whatever type the rest of the checker inferred (booleans must stay `bool` so a
-/// strict `=== true`/`=== false` guard is not folded away). Such observations are still recorded
-/// in the accumulator — so they widen to a union once a stronger type (e.g. `string`) appears —
-/// but on their own they do not drive call-site specialization.
-fn is_int_or_bool_only(ty: &PhpType) -> bool {
-    match ty {
-        PhpType::Union(members) => members
-            .iter()
-            .all(|member| matches!(member, PhpType::Int | PhpType::Bool)),
-        other => matches!(other, PhpType::Int | PhpType::Bool),
     }
 }
 

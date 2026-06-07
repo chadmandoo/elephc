@@ -6,8 +6,34 @@
 //!
 //! Key details:
 //! - Handles platform-specific linker flags, qemu ARM64 execution, and runtime object caching.
+//! - Per-test assembly is fed to `as` over stdin so no intermediate `test.s`
+//!   file is written, which shaves ~1/3 of the file-system events the macOS
+//!   `syspolicyd` / on-access AV scans inspect during a full `cargo test`.
+
+use std::io::Write as _;
+use std::process::Stdio;
 
 use super::*;
+
+/// Assemble `asm` to `obj_path` by piping the source through `as`'s stdin so
+/// no intermediate `.s` file is created.
+fn assemble_from_stdin(asm: &str, obj_path: &Path) {
+    let mut cmd = Command::new(assembler_cmd());
+    if target().platform == Platform::MacOS {
+        cmd.args(["-arch", target().darwin_arch_name()]);
+    }
+    cmd.arg("-o").arg(obj_path).arg("-");
+    cmd.stdin(Stdio::piped());
+    let mut child = cmd.spawn().expect("failed to spawn assembler");
+    child
+        .stdin
+        .as_mut()
+        .expect("assembler stdin missing")
+        .write_all(asm.as_bytes())
+        .expect("failed to feed assembler");
+    let status = child.wait().expect("failed to wait for assembler");
+    assert!(status.success(), "assembler failed");
+}
 
 /// Returns the cached base runtime object path, assembling the runtime on first call.
 /// Creates a temp directory, generates an 8_388_608-byte heap runtime without optional
@@ -21,17 +47,8 @@ pub(crate) fn get_runtime_obj() -> &'static Path {
             target(),
             elephc::codegen::RuntimeFeatures::none(),
         );
-        let asm_path = dir.join("runtime.s");
         let obj_path = dir.join("runtime.o");
-        fs::write(&asm_path, &runtime_asm).unwrap();
-
-        let mut cmd = Command::new(assembler_cmd());
-        if target().platform == Platform::MacOS {
-            cmd.args(["-arch", target().darwin_arch_name()]);
-        }
-        cmd.arg("-o").arg(&obj_path).arg(&asm_path);
-        let status = cmd.status().expect("failed to assemble runtime");
-        assert!(status.success(), "runtime assembler failed");
+        assemble_from_stdin(&runtime_asm, &obj_path);
         obj_path
     })
 }
@@ -85,17 +102,8 @@ pub(crate) fn assemble_custom_runtime(heap_size: usize, dir: &Path) -> std::path
         target(),
         elephc::codegen::RuntimeFeatures::none(),
     );
-    let asm_path = dir.join("runtime.s");
     let obj_path = dir.join("runtime.o");
-    fs::write(&asm_path, &runtime_asm).unwrap();
-
-    let mut cmd = Command::new(assembler_cmd());
-    if target().platform == Platform::MacOS {
-        cmd.args(["-arch", target().darwin_arch_name()]);
-    }
-    cmd.arg("-o").arg(&obj_path).arg(&asm_path);
-    let status = cmd.status().expect("failed to assemble custom runtime");
-    assert!(status.success(), "custom runtime assembler failed");
+    assemble_from_stdin(&runtime_asm, &obj_path);
     obj_path
 }
 
@@ -113,6 +121,21 @@ pub(crate) fn link_binary(
 ) {
     let actual_link_libs = effective_link_libs(extra_link_libs);
 
+    // The elephc-tls and elephc-pdo bridge staticlibs both live in
+    // `<target>/debug` alongside the test binaries; surface that directory on the
+    // linker search path automatically whenever a compiled program links either
+    // bridge, so PDO tests get the same robust, absolute `-L` as TLS instead of
+    // depending on a cwd-relative lookup. The Docker scripts override
+    // CARGO_TARGET_DIR to point at a shared volume, so honour that envvar before
+    // falling back to the in-tree target/.
+    let needs_bridge_staticlib = actual_link_libs
+        .iter()
+        .any(|l| *l == "elephc_tls" || *l == "elephc_pdo");
+    let bridge_staticlib_dir = match std::env::var("CARGO_TARGET_DIR") {
+        Ok(dir) if !dir.is_empty() => format!("{}/debug", dir),
+        _ => format!("{}/target/debug", env!("CARGO_MANIFEST_DIR")),
+    };
+
     match target().platform {
         Platform::MacOS => {
             let mut ld_cmd = Command::new("ld");
@@ -128,6 +151,9 @@ pub(crate) fn link_binary(
                 get_sdk_version(),
                 get_sdk_version(),
             ]);
+            if needs_bridge_staticlib {
+                ld_cmd.arg(format!("-L{}", bridge_staticlib_dir));
+            }
             for path in extra_link_paths {
                 ld_cmd.arg(format!("-L{}", path));
             }
@@ -137,8 +163,18 @@ pub(crate) fn link_binary(
             for framework in extra_frameworks {
                 ld_cmd.args(["-framework", framework]);
             }
-            let ld_status = ld_cmd.status().expect("failed to run linker");
-            assert!(ld_status.success(), "linker failed");
+            // The PostgreSQL driver in the PDO bridge pulls in `whoami`, which
+            // references CoreFoundation / SystemConfiguration on macOS.
+            if actual_link_libs.iter().any(|lib| *lib == "elephc_pdo") {
+                ld_cmd.args(["-framework", "CoreFoundation"]);
+                ld_cmd.args(["-framework", "SystemConfiguration"]);
+            }
+            let ld_out = ld_cmd.output().expect("failed to run linker");
+            assert!(
+                ld_out.status.success(),
+                "linker failed:\n{}",
+                String::from_utf8_lossy(&ld_out.stderr)
+            );
         }
         Platform::Linux => {
             let mut ld_cmd = Command::new(gcc_cmd());
@@ -151,6 +187,9 @@ pub(crate) fn link_binary(
             if !actual_link_libs.is_empty() {
                 ld_cmd.arg("-Wl,--no-as-needed");
             }
+            if needs_bridge_staticlib {
+                ld_cmd.arg(format!("-L{}", bridge_staticlib_dir));
+            }
             for path in extra_link_paths {
                 ld_cmd.arg(format!("-L{}", path));
             }
@@ -162,8 +201,17 @@ pub(crate) fn link_binary(
             }
             // Math and POSIX regex libraries needed on Linux
             ld_cmd.args(["-lm", "-lpthread"]);
-            let ld_status = ld_cmd.status().expect("failed to run linker");
-            assert!(ld_status.success(), "linker failed");
+            // rustls (elephc-tls) and the elephc-pdo bridge staticlib (PDO)
+            // both pull in the dynamic loader for the libc unwinder on Linux.
+            if needs_bridge_staticlib {
+                ld_cmd.arg("-ldl");
+            }
+            let ld_out = ld_cmd.output().expect("failed to run linker");
+            assert!(
+                ld_out.status.success(),
+                "linker failed:\n{}",
+                String::from_utf8_lossy(&ld_out.stderr)
+            );
         }
     }
 }
@@ -202,19 +250,10 @@ pub(crate) fn assemble_and_run(
     extra_link_paths: &[String],
     extra_frameworks: &[String],
 ) -> String {
-    let asm_path = dir.join("test.s");
     let obj_path = dir.join("test.o");
     let bin_path = dir.join("test");
 
-    fs::write(&asm_path, user_asm).unwrap();
-
-    let mut as_cmd = Command::new(assembler_cmd());
-    if target().platform == Platform::MacOS {
-        as_cmd.args(["-arch", target().darwin_arch_name()]);
-    }
-    as_cmd.arg("-o").arg(&obj_path).arg(&asm_path);
-    let as_status = as_cmd.status().expect("failed to run assembler");
-    assert!(as_status.success(), "assembler failed");
+    assemble_from_stdin(user_asm, &obj_path);
 
     link_binary(
         &obj_path,
@@ -257,19 +296,10 @@ pub(crate) fn assemble_and_run_capture(
     extra_link_paths: &[String],
     extra_frameworks: &[String],
 ) -> ProgramOutput {
-    let asm_path = dir.join("test.s");
     let obj_path = dir.join("test.o");
     let bin_path = dir.join("test");
 
-    fs::write(&asm_path, user_asm).unwrap();
-
-    let mut as_cmd = Command::new(assembler_cmd());
-    if target().platform == Platform::MacOS {
-        as_cmd.args(["-arch", target().darwin_arch_name()]);
-    }
-    as_cmd.arg("-o").arg(&obj_path).arg(&asm_path);
-    let as_status = as_cmd.status().expect("failed to run assembler");
-    assert!(as_status.success(), "assembler failed");
+    assemble_from_stdin(user_asm, &obj_path);
 
     link_binary(
         &obj_path,
@@ -299,19 +329,10 @@ pub(crate) fn assemble_and_run_expect_failure(
     extra_link_paths: &[String],
     extra_frameworks: &[String],
 ) -> String {
-    let asm_path = dir.join("test.s");
     let obj_path = dir.join("test.o");
     let bin_path = dir.join("test");
 
-    fs::write(&asm_path, user_asm).unwrap();
-
-    let mut as_cmd = Command::new(assembler_cmd());
-    if target().platform == Platform::MacOS {
-        as_cmd.args(["-arch", target().darwin_arch_name()]);
-    }
-    as_cmd.arg("-o").arg(&obj_path).arg(&asm_path);
-    let as_status = as_cmd.status().expect("failed to run assembler");
-    assert!(as_status.success(), "assembler failed");
+    assemble_from_stdin(user_asm, &obj_path);
 
     link_binary(
         &obj_path,

@@ -147,6 +147,7 @@ Aliases: `(integer)`, `(double)`, `(real)`, `(boolean)`.
 | `is_bool()`     | `is_bool($val): bool`        | Returns true if bool           |
 | `is_iterable()` | `is_iterable($val): bool`    | Returns true if array or Traversable-compatible iterable |
 | `is_callable()` | `is_callable($val): bool`    | Returns true for closures, first-class callables, strings case-insensitively naming known builtins, user functions, or public static methods (`"Class::method"`), `[$obj, "method"]` arrays with public methods, `[ClassName::class, "method"]` static method arrays, and objects with public `__invoke()`. |
+| `is_resource()` | `is_resource($val): bool`    | Returns true if value is an open resource handle |
 | `is_nan()`      | `is_nan($val): bool`         | Returns true if NAN            |
 | `is_finite()`   | `is_finite($val): bool`      | Returns true if not INF/NAN    |
 | `is_infinite()` | `is_infinite($val): bool`    | Returns true if INF or -INF    |
@@ -184,6 +185,7 @@ Narrowing applies to function and method parameters. A parameter whose call site
 - Scalar loose comparison (`==`, `!=`) follows PHP-style bool truthiness, null-vs-empty-string, numeric-string, and non-numeric string byte-comparison rules for constant-folded literals and non-folded runtime scalar operands.
 - `??=` is checked against typed assignment storage for variables, object properties, static properties, and non-append array elements. For concrete local variable types, the fallback must keep the same type or be a literal `null`.
 - Plain array numeric casts (`(int)$array`, `(float)$array`) follow elephc's existing array cast semantics (return the element count rather than PHP's `0`/`1`). Direct `iterable` numeric casts use PHP's empty/non-empty `0`/`1` semantics.
+- `__destruct` runs when an object's refcount reaches zero (scope exit, reassignment, `unset`, program end), matching PHP's timing, but **object resurrection is not supported**: re-storing `$this` so the object would outlive the destructor does not keep it alive — the object is still freed once `__destruct` returns.
 ### Filesystem functions not implemented
 
 These standard PHP filesystem functions are intentionally absent from elephc because they have no meaningful semantics in a compiled native binary:

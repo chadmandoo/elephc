@@ -15,6 +15,7 @@ pub(crate) mod callable_dispatch;
 pub(crate) mod runtime_callable_invoker;
 mod callables;
 mod class_methods;
+mod property_init_thunks;
 /// Codegen context module.
 pub mod context;
 mod data_section;
@@ -109,6 +110,7 @@ use crate::types::{
     PackedClassInfo, PhpType, TypeEnv,
 };
 use class_methods::emit_class_methods;
+use property_init_thunks::emit_property_init_thunk;
 use data_section::DataSection;
 use driver_support::align16;
 use emit::Emitter;
@@ -135,6 +137,13 @@ use program_usage::{
 
 /// Generates user-code assembly for the target.
 /// Returns the raw assembly string.
+/// Generates the user assembly object for a checked and optimized program.
+///
+/// The returned assembly contains user functions, class metadata, `_main`, and
+/// user-specific data, but not the shared cached runtime object. When
+/// `requires_elephc_tls` is true, `_main` publishes the TLS staticlib entry
+/// points before user code runs so dynamic URL helpers can call through them.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_user_asm(
     program: &Program,
     global_env: &TypeEnv,
@@ -153,6 +162,7 @@ pub fn generate_user_asm(
     gc_stats: bool,
     heap_debug: bool,
     target: Target,
+    requires_elephc_tls: bool,
 ) -> String {
     let mut emitter = Emitter::new(target);
     if target.arch == platform::Arch::X86_64 {
@@ -266,6 +276,29 @@ pub fn generate_user_asm(
             extern_classes,
             extern_globals,
         );
+        // Per-class property-default thunk (_class_propinit_<id>), invoked by
+        // __rt_new_by_name so new $var() / registered wrappers + filters get
+        // their declared property defaults. Same filtered/sorted class set as
+        // the method emission above and the _class_propinit_ptrs table.
+        emit_property_init_thunk(
+            &mut emitter,
+            &mut data,
+            class_name,
+            class_info,
+            functions,
+            callable_param_sigs,
+            callable_return_sigs,
+            &function_variant_group_names,
+            &global_constants,
+            interfaces,
+            &declared_traits,
+            classes,
+            enums,
+            packed_classes,
+            extern_functions,
+            extern_classes,
+            extern_globals,
+        );
     }
 
     emit_interface_return_wrappers(
@@ -300,6 +333,7 @@ pub fn generate_user_asm(
         emitted_class_names.as_ref(),
         gc_stats,
         heap_debug,
+        requires_elephc_tls,
     )
 }
 
@@ -496,6 +530,7 @@ fn collect_emitted_class_names(
     for factory in reflection::collect_attribute_factories(classes) {
         names.insert(factory.class_name);
     }
+    collect_dynamic_object_factory_classes(program, classes, &mut names);
     expand_emitted_class_dependencies(&mut names, classes);
     names
 }
@@ -749,6 +784,17 @@ fn collect_dynamic_object_factory_classes_in_expr(
                 collect_dynamic_object_factory_classes_in_expr(arg, classes, names);
             }
         }
+        ExprKind::NewDynamic { name_expr, args } => {
+            for class_name in expr::objects::supported_dynamic_new_builtin_class_names() {
+                if classes.contains_key(*class_name) {
+                    names.insert((*class_name).to_string());
+                }
+            }
+            collect_dynamic_object_factory_classes_in_expr(name_expr, classes, names);
+            for arg in args {
+                collect_dynamic_object_factory_classes_in_expr(arg, classes, names);
+            }
+        }
         ExprKind::ExprCall { callee, args } => {
             collect_dynamic_object_factory_classes_in_expr(callee, classes, names);
             for arg in args {
@@ -871,6 +917,7 @@ fn emitted_class_descends_from(
 /// Generates complete target assembly including runtime.
 /// Returns tuple of (user_asm, full_asm_with_runtime).
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn generate(
     program: &Program,
     global_env: &TypeEnv,
@@ -889,6 +936,7 @@ pub fn generate(
     gc_stats: bool,
     heap_debug: bool,
     target: Target,
+    requires_elephc_tls: bool,
 ) -> (String, String) {
     let user_asm = generate_user_asm(
         program,
@@ -908,6 +956,7 @@ pub fn generate(
         gc_stats,
         heap_debug,
         target,
+        requires_elephc_tls,
     );
     let runtime_features = runtime_features_for_program_and_classes(program, classes);
     let runtime_asm = generate_runtime_with_features(heap_size, target, runtime_features);

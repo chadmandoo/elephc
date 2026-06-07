@@ -60,11 +60,6 @@ pub(crate) struct Checker {
     pub function_variant_groups: HashMap<String, Vec<String>>,
     /// Canonical function signatures indexed by fully-qualified name.
     pub functions: HashMap<String, FunctionSig>,
-    /// Accumulated call-site argument types observed for undeclared (untyped) parameters,
-    /// keyed by `(function_name, regular_param_index)`. Used to widen an inferred parameter
-    /// type to a union when distinct call sites pass incompatible types (e.g. `int` then
-    /// `string`), instead of letting the last call overwrite the previous inference.
-    pub fn_param_observed_types: HashMap<(String, usize), PhpType>,
     /// Top-level constant types indexed by canonical name.
     pub constants: HashMap<String, PhpType>,
     /// Tracks the return type of closures assigned to variables, keyed by variable name.
@@ -77,6 +72,12 @@ pub(crate) struct Checker {
     /// Tracks callable signatures inferred for user-function callable parameters,
     /// keyed by (function_name, param_name).
     pub callable_param_sigs: HashMap<(String, String), FunctionSig>,
+    /// Tracks which undeclared function parameters have already had their type
+    /// adopted from a real call site, keyed by (function_name, param_index). The
+    /// first such call adopts the actual argument type; later disagreeing calls
+    /// widen the parameter to `Mixed` (so e.g. a parameter called with both an int
+    /// and a string is `Mixed`, not collapsed to one type).
+    pub param_specialization_seen: HashSet<(String, usize)>,
     /// Tracks callable signatures inferred for user-function callable returns.
     pub callable_return_sigs: HashMap<String, FunctionSig>,
     /// Tracks callable element signatures inferred for user-function array returns.

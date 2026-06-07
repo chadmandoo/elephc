@@ -1,6 +1,6 @@
 [package]
 name = "elephc"
-version = "0.23.3"
+version = "0.23.6"
 edition = "2021"
 description = "A PHP-to-native AOT compiler"
 license = "MIT"
@@ -10,9 +10,43 @@ readme = "README.md"
 keywords = ["php", "compiler", "aot", "native", "codegen"]
 categories = ["compilers", "command-line-utilities"]
 
+# The bridge staticlibs are default workspace members so plain `cargo build` /
+# `cargo test` materialize libelephc_tls.a (https:// wrapper) and
+# libelephc_pdo.a (PDO: SQLite + PostgreSQL) into target/<profile>/, where
+# linker.rs locates them for programs that use those features.
+[workspace]
+members = [".", "crates/elephc-tls", "crates/elephc-pdo"]
+default-members = [".", "crates/elephc-tls", "crates/elephc-pdo"]
+resolver = "2"
+
 [[bin]]
 name = "elephc"
 path = "src/main.rs"
 
 [dependencies]
 serde_json = "1"
+# flate2 (default miniz_oxide backend = pure Rust, no system zlib) is used by the
+# compiler to inflate raw-DEFLATE phar:// entries at compile time. Decompress-only.
+flate2 = "1"
+# bzip2-rs is a PURE-RUST bzip2 decoder (no system libbz2, no C toolchain) used by
+# the compiler to decompress bzip2 phar:// entries at compile time. Decompress-only.
+bzip2-rs = "0.1"
+
+# elephc-tls / elephc-pdo are runtime staticlibs, not used by the Rust compiler
+# itself — but the codegen test runner links libelephc_tls.a (https:// wrapper)
+# and libelephc_pdo.a (PDO) into test binaries, so they ship as dev-dependencies
+# to make `cargo test` / `cargo nextest run` build them automatically. (Without
+# this the staticlibs are only built by `cargo build` of the default-members,
+# which a sharded nextest run does not perform — `ld: library 'elephc_pdo' not
+# found`.)
+[dev-dependencies]
+elephc-tls = { path = "crates/elephc-tls" }
+elephc-pdo = { path = "crates/elephc-pdo" }
+# flate2 lets the phar:// codegen tests build gzip (raw-DEFLATE) fixture entries
+# with the same encoder the compiler decodes, guaranteeing a version-stable
+# round-trip without shelling out to php.
+flate2 = "1"
+# The streams codegen tests host a local HTTPS fixture so https:// wrapper
+# success coverage does not depend on outbound network access.
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-pemfile = "2"

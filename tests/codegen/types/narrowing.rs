@@ -158,35 +158,81 @@ fn test_elseif_narrowing_chain() {
 }
 
 /// Tests that a branch ending in a `: never` function call lets the code after an
-/// if/elseif chain (with no final else) keep the complement type. The trailing
-/// `$x->speak()` only type-checks if the `fail()` clause is recognized as diverging and
-/// `$x` is therefore narrowed to `Animal`; without `never` detection `$x` would still be
-/// the `int|Cat|Dog` union and the method call on a multi-class union would be rejected.
+/// if/elseif chain (with no final else) keep the complement type. After the chain `$x`
+/// must be narrowed to `int`, which the `: int` return type requires; without `never`
+/// detection `$x` would still be `mixed` and `return $x` would be rejected (a `mixed`
+/// value does not satisfy an `int` return). The `mixed` parameter avoids the method-call
+/// route, which would not distinguish the cases since `mixed` receivers dispatch
+/// dynamically.
 #[test]
 fn test_elseif_chain_with_never_divergence() {
     let out = compile_and_run(
         r#"<?php
-        interface Animal { function speak(): string; }
-        class Cat implements Animal { function speak(): string { return "meow"; } }
-        class Dog implements Animal { function speak(): string { return "woof"; } }
-
         function fail(): never {
             throw new \Exception("boom");
         }
 
-        function describe($x): string {
-            if (is_int($x)) {
-                return "int:" . $x;
-            } elseif (!($x instanceof Animal)) {
+        function classify(mixed $x): int {
+            if (is_string($x)) {
+                return 0;
+            } elseif (!is_int($x)) {
                 fail();
             }
             // All clauses diverge and there is no else, so reaching here means every guard
-            // was false => $x must be an Animal.
-            return $x->speak();
+            // was false => $x must be an int.
+            return $x;
         }
 
-        echo describe(7), "|", describe(new Cat()), "|", describe(new Dog());
+        echo classify("hi"), "|", classify(41);
         "#,
     );
-    assert_eq!(out, "int:7|meow|woof");
+    assert_eq!(out, "0|41");
+}
+
+/// Regression: a non-diverging clause *before* a diverging type guard must not leave the
+/// variable narrowed after the `if`. The `$flag` branch reaches the trailing statement
+/// without ever evaluating the `instanceof` guard, so `$x` must stay `mixed` (where `+` is
+/// allowed) rather than being narrowed to `Box` (where arithmetic is rejected). A rule that
+/// kept the complement whenever only the last clause diverged would fail to compile here.
+#[test]
+fn test_narrowing_not_kept_when_earlier_clause_falls_through() {
+    let out = compile_and_run(
+        r#"<?php
+        class Box {}
+        function f(mixed $x, bool $flag): void {
+            if ($flag) {
+                echo "";
+            } elseif (!($x instanceof Box)) {
+                return;
+            }
+            echo $x + 1;
+        }
+        f(41, true);
+        "#,
+    );
+    assert_eq!(out, "42");
+}
+
+/// Regression: when different clauses narrow different variables, every narrowed variable
+/// must be restored after the `if`, not only the first. The non-diverging `$x` clause means
+/// the trailing statement can run with `$y` unconstrained, so `$y` must stay `mixed` rather
+/// than leaking the `Box` narrowing from its diverging clause. A single-slot restore would
+/// leave `$y` as `Box` and reject the arithmetic.
+#[test]
+fn test_narrowing_restores_all_narrowed_variables() {
+    let out = compile_and_run(
+        r#"<?php
+        class Box {}
+        function f(mixed $x, mixed $y): void {
+            if ($x instanceof Box) {
+                echo "";
+            } elseif (!($y instanceof Box)) {
+                return;
+            }
+            echo $y + 1;
+        }
+        f(new Box(), 7);
+        "#,
+    );
+    assert_eq!(out, "8");
 }
