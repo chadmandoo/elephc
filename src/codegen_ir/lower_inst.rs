@@ -1407,8 +1407,7 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
             | PhpType::AssocArray { .. }
             | PhpType::Iterable
             | PhpType::Object(_) => {
-                abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
-                move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
+                emit_unbox_mixed_to_owned_refcounted_result(ctx, &result_ty);
             }
             other => {
                 return Err(CodegenIrError::unsupported(format!(
@@ -4546,7 +4545,7 @@ fn plan_call_arg_temp_cleanups(
 /// Returns whether argument materialization allocates a caller-owned Mixed box.
 fn direct_call_arg_creates_mixed_temp(source_ty: &PhpType, param_ty: &PhpType) -> bool {
     matches!(param_ty.codegen_repr(), PhpType::Mixed)
-        && !matches!(source_ty.codegen_repr(), PhpType::Mixed)
+        && !matches!(source_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_))
 }
 
 /// Saves the current pointer result into the reserved call-argument cleanup area.
@@ -4972,6 +4971,13 @@ fn mixed_unbox_low_payload_reg(ctx: &FunctionContext<'_>) -> &'static str {
     }
 }
 
+/// Unboxes a boxed Mixed/Union payload and retains it for an owned concrete heap result.
+fn emit_unbox_mixed_to_owned_refcounted_result(ctx: &mut FunctionContext<'_>, result_ty: &PhpType) {
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
+    abi::emit_incref_if_refcounted(ctx.emitter, result_ty);
+}
+
 /// Stores an unboxed scalar Mixed payload back through the original by-reference source.
 fn store_current_scalar_result_to_ref_source(
     ctx: &mut FunctionContext<'_>,
@@ -5235,13 +5241,11 @@ fn coerce_loaded_local_to_result_type(
         (PhpType::Mixed, PhpType::Array(_))
         | (PhpType::Mixed, PhpType::AssocArray { .. })
         | (PhpType::Mixed, PhpType::Object(_)) => {
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
-            move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
+            emit_unbox_mixed_to_owned_refcounted_result(ctx, &result_ty);
             Ok(())
         }
         (PhpType::Mixed, PhpType::Iterable) => {
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
-            move_reg_to_int_result(ctx, mixed_unbox_low_payload_reg(ctx));
+            emit_unbox_mixed_to_owned_refcounted_result(ctx, &result_ty);
             Ok(())
         }
         (PhpType::Mixed, PhpType::Void) => {

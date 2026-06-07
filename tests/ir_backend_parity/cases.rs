@@ -330,6 +330,36 @@ foreach ($g as $g) {
     );
 }
 
+/// Verifies recursive regex child iterators keep their boxed child object alive.
+#[test]
+fn parity_recursive_regex_iterator_children() {
+    assert_backend_parity(
+        "recursive_regex_iterator_children",
+        r#"<?php
+$filter = new RecursiveRegexIterator(
+    new RecursiveArrayIterator([
+        "keep" => ["apple" => 1, "skip" => 2],
+        "drop" => ["banana" => 3],
+        "tail" => "apple",
+    ]),
+    "/keep|apple|tail/",
+    RecursiveRegexIterator::MATCH,
+    RecursiveRegexIterator::USE_KEY
+);
+$tree = new RecursiveIteratorIterator($filter, RecursiveIteratorIterator::SELF_FIRST);
+foreach ($tree as $key => $value) {
+    echo $tree->getDepth();
+    echo ":";
+    echo $key;
+    echo "=";
+    echo gettype($value) === "array" ? "array" : $value;
+    echo ";";
+}
+"#,
+        &[],
+    );
+}
+
 /// Verifies Fiber descriptor-backed callable construction matches legacy backend behavior.
 #[test]
 fn parity_fiber_descriptor_backed_callables() {
