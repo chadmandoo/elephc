@@ -6704,7 +6704,7 @@ fn lower_class_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticRece
 
 /// Lowers a scoped constant read.
 fn lower_scoped_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticReceiver, name: &str, expr: &Expr) -> LoweredValue {
-    let class_name = receiver_name(receiver);
+    let class_name = scoped_constant_receiver_name(ctx, receiver);
     let normalized_class_name = class_name.trim_start_matches('\\');
     if ctx
         .enums
@@ -6725,7 +6725,7 @@ fn lower_scoped_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticRec
     if let Some(value) = ctx.scoped_constant_value(&class_name, name) {
         return lower_expr(ctx, &value);
     }
-    let key = format!("{}::{}", receiver_name(receiver), name);
+    let key = format!("{}::{}", class_name, name);
     let data = ctx.intern_string(&key);
     ctx.emit_value(
         Op::ScopedConstantGet,
@@ -6735,6 +6735,14 @@ fn lower_scoped_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticRec
         Op::ScopedConstantGet.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Returns the class name to use for a scoped constant lookup.
+fn scoped_constant_receiver_name(ctx: &LoweringContext<'_, '_>, receiver: &StaticReceiver) -> String {
+    match receiver {
+        StaticReceiver::Static => receiver_name(receiver),
+        _ => static_receiver_class_name(ctx, receiver).unwrap_or_else(|| receiver_name(receiver)),
+    }
 }
 
 /// Lowers `new self`, `new static`, or `new parent`.
