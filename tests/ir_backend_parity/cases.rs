@@ -112,6 +112,21 @@ echo "done";
     );
 }
 
+/// Verifies returned concat strings survive later calls before the caller consumes them.
+#[test]
+fn parity_returned_concat_survives_caller_concat() {
+    assert_backend_parity(
+        "returned_concat_survives_caller_concat",
+        r#"<?php
+function eir_label($name) {
+    return "[" . $name . "]";
+}
+echo eir_label("title") . "|" . eir_label("slug");
+"#,
+        &[],
+    );
+}
+
 /// Verifies missing indexed-array reads return null and emit PHP's warning.
 #[test]
 fn parity_indexed_array_missing_key_warns() {

@@ -11,7 +11,7 @@
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
-use crate::ir::{Instruction, Ownership};
+use crate::ir::{Instruction, Op, Ownership, ValueDef, ValueId};
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
@@ -56,6 +56,9 @@ pub(super) fn lower_release(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     ) {
         return Ok(());
     }
+    if value_is_scratch_string(ctx, value)? {
+        return Ok(());
+    }
 
     let ty = ctx.load_value_to_result(value)?;
     match ty {
@@ -78,6 +81,36 @@ pub(super) fn lower_release(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
         }
     }
     Ok(())
+}
+
+/// Returns whether a value is a transient string backed by concat scratch storage.
+fn value_is_scratch_string(ctx: &FunctionContext<'_>, value: ValueId) -> Result<bool> {
+    if ctx.value_php_type(value)? != PhpType::Str {
+        return Ok(false);
+    }
+    let value_metadata = ctx
+        .function
+        .value(value)
+        .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))?;
+    let ValueDef::Instruction { inst, .. } = value_metadata.def else {
+        return Ok(false);
+    };
+    let inst = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    Ok(matches!(
+        inst.op,
+        Op::IToStr
+            | Op::FToStr
+            | Op::BoolToStr
+            | Op::ResourceToStr
+            | Op::MixedCastString
+            | Op::StrConcat
+            | Op::StrCharAt
+            | Op::StrInterpolate
+            | Op::RuntimeCall
+    ))
 }
 
 /// Lowers a pure ownership forwarding opcode by copying the operand into the result slot.

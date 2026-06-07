@@ -16,7 +16,8 @@ use crate::ir_lower::context::{FinallyFrame, LoopFrame, LoweredValue, LoweringCo
 use crate::ir_lower::effects_lookup;
 use crate::ir_lower::expr::{
     coerce_to_int_at_span, lower_callable_array_for_assignment, lower_closure_for_assignment, lower_expr,
-    static_callable_binding_for_expr, type_satisfies_array_access_for_ir,
+    static_callable_binding_for_expr, string_op_uses_scratch_storage,
+    type_satisfies_array_access_for_ir,
 };
 use crate::names::php_symbol_key;
 use crate::parser::ast::{CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
@@ -1502,7 +1503,33 @@ fn lower_return(ctx: &mut LoweringContext<'_, '_>, value: Option<&Expr>, span: S
     };
     let value = coerce_to_return_type(ctx, value, Some(span));
     let value = acquire_borrowed_return_value(ctx, value, span);
+    let value = persist_scratch_return_string(ctx, value, span);
     terminate_return(ctx, Some(value.value));
+}
+
+/// Copies scratch-backed string results before they cross a function boundary.
+fn persist_scratch_return_string(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Span,
+) -> LoweredValue {
+    if value.ir_type != IrType::Str {
+        return value;
+    }
+    let Some(op) = ctx.builder.value_defining_op(value.value) else {
+        return value;
+    };
+    if !string_op_uses_scratch_storage(op) {
+        return value;
+    }
+    ctx.emit_value(
+        Op::StrPersist,
+        vec![value.value],
+        None,
+        PhpType::Str,
+        Op::StrPersist.default_effects(),
+        Some(span),
+    )
 }
 
 /// Acquires return values read from heap containers before local cleanup runs.
