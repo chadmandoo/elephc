@@ -9,9 +9,11 @@
 //! - Object payload layout must match the legacy backend and runtime helpers:
 //!   heap kind word before payload, class id at payload offset 0, then 16 bytes
 //!   per declared property slot plus an optional dynamic-property hash pointer.
-//! - This slice intentionally rejects references, interface method entries that
-//!   need missing EIR symbols, and non-literal default property expressions
-//!   until their runtime paths land.
+//! - Reference properties store a pointer to a local or heap ref-cell in the
+//!   property slot, while normal declared properties store values directly.
+//! - This slice intentionally rejects interface method entries that need missing
+//!   EIR symbols and non-literal default property expressions until their runtime
+//!   paths land.
 
 use std::collections::HashSet;
 
@@ -19,15 +21,15 @@ use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed, 
 use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::intrinsics::IntrinsicCall;
-use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
+use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
 use crate::names::{method_symbol, php_symbol_key};
 use crate::types::{ClassInfo, InterfaceInfo, PhpType};
 
 use super::super::context::FunctionContext;
 use super::{
     callables, cast_loaded_mixed_pointer_to_result, direct_call_stack_pad_bytes, expect_data,
-    expect_operand, iterators, load_value_to_first_int_arg, materialize_direct_call_args,
-    store_if_result,
+    emit_ref_arg_writebacks, expect_operand, iterators, load_value_to_first_int_arg,
+    materialize_direct_call_args_with_refs, store_if_result,
 };
 use crate::codegen_ir::fibers;
 use crate::codegen_ir::literal_defaults::{
@@ -52,6 +54,7 @@ struct PropertySlot {
     offset: usize,
     is_declared: bool,
     is_packed: bool,
+    is_reference: bool,
 }
 
 /// Declared-property candidate reachable from a `Mixed` object receiver.
@@ -74,7 +77,14 @@ struct DynamicNewCandidate {
     allow_dynamic_properties: bool,
     uninitialized_marker_offsets: Vec<usize>,
     property_defaults: Vec<PropertyDefault>,
-    constructor_impl: Option<(String, Vec<PhpType>)>,
+    constructor_impl: Option<ConstructorCallTarget>,
+}
+
+/// Constructor metadata needed after object allocation has produced `$this`.
+struct ConstructorCallTarget {
+    impl_class: String,
+    param_types: Vec<PhpType>,
+    ref_params: Vec<bool>,
 }
 
 /// Lowers fixed-class object allocation and optional constructor invocation.
@@ -150,7 +160,11 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
                 .iter()
                 .map(|(_, ty)| ty.codegen_repr())
                 .collect::<Vec<_>>();
-            Some((impl_class, param_types))
+            Some(ConstructorCallTarget {
+                impl_class,
+                param_types,
+                ref_params: constructor.ref_params.clone(),
+            })
         } else if !inst.operands.is_empty() {
             return Err(CodegenIrError::unsupported(format!(
                 "constructor arguments for class {} without __construct",
@@ -181,15 +195,16 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         .ok_or_else(|| CodegenIrError::invalid_module("object_new missing result value"))?;
     ctx.store_result_value(result)?;
     emit_property_defaults(ctx, result, &property_defaults)?;
-    if let Some((impl_class, param_types)) = constructor_impl {
+    if let Some(constructor) = constructor_impl {
         emit_constructor_call(
             ctx,
             result,
             &inst.operands,
             &class_name,
-            &impl_class,
+            &constructor.impl_class,
             &constructor_key,
-            &param_types,
+            &constructor.param_types,
+            &constructor.ref_params,
         )?;
     }
     Ok(())
@@ -460,6 +475,7 @@ fn lower_iterator_iterator_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         offset: inner_offset,
         is_declared: true,
         is_packed: false,
+        is_reference: false,
     };
     emit_object_allocation(
         ctx,
@@ -1171,7 +1187,11 @@ fn dynamic_new_candidate(
             .iter()
             .map(|(_, ty)| ty.codegen_repr())
             .collect::<Vec<_>>();
-        Some((impl_class, param_types))
+        Some(ConstructorCallTarget {
+            impl_class,
+            param_types,
+            ref_params: constructor.ref_params.clone(),
+        })
     } else if arg_count == 0 {
         None
     } else {
@@ -1302,15 +1322,16 @@ fn emit_dynamic_new_candidate(
     )?;
     ctx.store_result_value(result)?;
     emit_property_defaults(ctx, result, &candidate.property_defaults)?;
-    if let Some((impl_class, param_types)) = &candidate.constructor_impl {
+    if let Some(constructor) = &candidate.constructor_impl {
         emit_constructor_call(
             ctx,
             result,
             constructor_args,
             &candidate.class_name,
-            impl_class,
+            &constructor.impl_class,
             &php_symbol_key("__construct"),
-            param_types,
+            &constructor.param_types,
+            &constructor.ref_params,
         )?;
     }
     Ok(())
@@ -1488,6 +1509,7 @@ fn emit_constructor_call(
     impl_class: &str,
     constructor_key: &str,
     constructor_param_types: &[PhpType],
+    constructor_ref_params: &[bool],
 ) -> Result<()> {
     let mut args = Vec::with_capacity(constructor_args.len() + 1);
     args.push(object);
@@ -1495,13 +1517,16 @@ fn emit_constructor_call(
     let mut param_types = Vec::with_capacity(constructor_param_types.len() + 1);
     param_types.push(PhpType::Object(class_name.to_string()));
     param_types.extend_from_slice(constructor_param_types);
-    let overflow_bytes = materialize_direct_call_args(ctx, &args, &param_types)?;
-    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, overflow_bytes);
+    let mut ref_params = Vec::with_capacity(constructor_ref_params.len() + 1);
+    ref_params.push(false);
+    ref_params.extend_from_slice(constructor_ref_params);
+    let call_args = materialize_direct_call_args_with_refs(ctx, &args, &param_types, &ref_params)?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
     abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_call_label(ctx.emitter, &method_symbol(impl_class, constructor_key));
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
-    abi::emit_release_temporary_stack(ctx.emitter, overflow_bytes);
-    Ok(())
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
 }
 
 /// Lowers a declared object property read for statically known object receivers.
@@ -2225,6 +2250,9 @@ pub(super) fn lower_prop_set(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
     ensure_property_value_supported(ctx, &slot, value, &value_ty, inst)?;
     let base_reg = abi::symbol_scratch_reg(ctx.emitter);
     ctx.load_value_to_reg(object, base_reg)?;
+    if is_promoted_reference_property_bind(ctx, object, value, &slot)? {
+        return emit_reference_property_bind(ctx, value, &slot, base_reg);
+    }
     emit_property_store(ctx, value, &slot, base_reg)
 }
 
@@ -2706,14 +2734,7 @@ fn resolve_property_slot_for_class(
         .class_infos
         .get(normalized)
         .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", normalized)))?;
-    if class_info.reference_properties.contains(property) {
-        return Err(CodegenIrError::unsupported(format!(
-            "{} for reference property {}::${}",
-            inst.op.name(),
-            normalized,
-            property
-        )));
-    }
+    let is_reference = class_info.reference_properties.contains(property);
     let Some((index, (_, php_type))) = class_info
         .properties
         .iter()
@@ -2742,6 +2763,7 @@ fn resolve_property_slot_for_class(
         offset,
         is_declared: class_info.declared_properties.contains(property),
         is_packed: false,
+        is_reference,
     })
 }
 
@@ -2917,6 +2939,7 @@ fn resolve_packed_field_slot(
         offset: field.offset,
         is_declared: false,
         is_packed: true,
+        is_reference: false,
     })
 }
 
@@ -3159,6 +3182,9 @@ fn emit_property_load(
     if slot.is_packed {
         return emit_packed_field_load(ctx, slot, base_reg);
     }
+    if slot.is_reference {
+        return emit_reference_property_load(ctx, slot, base_reg);
+    }
     match &slot.php_type {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
@@ -3180,6 +3206,38 @@ fn emit_property_load(
         _ => return Err(CodegenIrError::unsupported(format!(
             "property load for PHP type {:?}",
             slot.php_type
+        ))),
+    }
+    Ok(())
+}
+
+/// Emits a declared reference-property load by dereferencing the stored ref-cell pointer.
+fn emit_reference_property_load(
+    ctx: &mut FunctionContext<'_>,
+    slot: &PropertySlot,
+    base_reg: &str,
+) -> Result<()> {
+    let pointer_reg = reference_pointer_reg(ctx, base_reg);
+    abi::emit_load_from_address(ctx.emitter, pointer_reg, base_reg, slot.offset);
+    match slot.php_type.codegen_repr() {
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, ptr_reg, pointer_reg, 0);
+            abi::emit_load_from_address(ctx.emitter, len_reg, pointer_reg, 8);
+        }
+        PhpType::Float => {
+            let float_reg = abi::float_result_reg(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, float_reg, pointer_reg, 0);
+        }
+        ty if is_pointer_sized_property_type(&ty)
+            || matches!(ty, PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never) =>
+        {
+            let int_reg = abi::int_result_reg(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, int_reg, pointer_reg, 0);
+        }
+        ty => return Err(CodegenIrError::unsupported(format!(
+            "reference property load for PHP type {:?}",
+            ty
         ))),
     }
     Ok(())
@@ -3232,6 +3290,9 @@ fn emit_property_store(
 ) -> Result<()> {
     if slot.is_packed {
         return emit_packed_field_store(ctx, value, slot, base_reg);
+    }
+    if slot.is_reference {
+        return emit_reference_property_write(ctx, value, slot, base_reg);
     }
     let value_ty = ctx.value_php_type(value)?;
     if is_pointer_sized_property_type(&slot.php_type)
@@ -3295,6 +3356,178 @@ fn emit_property_store(
         ))),
     }
     Ok(())
+}
+
+/// Emits a promoted constructor-property bind by storing the parameter ref-cell address.
+fn emit_reference_property_bind(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    slot: &PropertySlot,
+    base_reg: &str,
+) -> Result<()> {
+    super::materialize_local_ref_arg_address(ctx, value)?;
+    abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), base_reg, slot.offset);
+    abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
+    Ok(())
+}
+
+/// Returns true for the constructor-promotion bind pattern `$this->x = $x`.
+fn is_promoted_reference_property_bind(
+    ctx: &FunctionContext<'_>,
+    object: ValueId,
+    value: ValueId,
+    slot: &PropertySlot,
+) -> Result<bool> {
+    if !slot.is_reference {
+        return Ok(false);
+    }
+    let Some(object_source) = loaded_local_source(ctx, object)? else {
+        return Ok(false);
+    };
+    if !local_slot_name_is(ctx, object_source.slot, "this") {
+        return Ok(false);
+    }
+    let Some(value_source) = loaded_local_source(ctx, value)? else {
+        return Ok(false);
+    };
+    if !local_slot_name_is(ctx, value_source.slot, &slot.property) {
+        return Ok(false);
+    }
+    Ok(value_source.is_ref_cell && local_slot_is_by_ref_param(ctx, value_source.slot))
+}
+
+/// Describes an SSA value that was produced by loading an addressable local slot.
+struct LoadedLocalSource {
+    slot: LocalSlotId,
+    is_ref_cell: bool,
+}
+
+/// Resolves a loaded SSA value back to its source local slot when possible.
+fn loaded_local_source(
+    ctx: &FunctionContext<'_>,
+    value: ValueId,
+) -> Result<Option<LoadedLocalSource>> {
+    let Some(value_ref) = ctx.function.value(value) else {
+        return Err(CodegenIrError::missing_entry("value", value.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(None);
+    };
+    let inst_ref = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    let is_ref_cell = match inst_ref.op {
+        Op::LoadLocal => false,
+        Op::LoadRefCell => true,
+        _ => return Ok(None),
+    };
+    let Some(Immediate::LocalSlot(slot)) = inst_ref.immediate else {
+        return Err(CodegenIrError::invalid_module(
+            "loaded local value has no local slot immediate",
+        ));
+    };
+    Ok(Some(LoadedLocalSource { slot, is_ref_cell }))
+}
+
+/// Returns true when a local slot has the requested PHP source name.
+fn local_slot_name_is(ctx: &FunctionContext<'_>, slot: LocalSlotId, expected: &str) -> bool {
+    ctx.function
+        .locals
+        .get(slot.as_raw() as usize)
+        .and_then(|local| local.name.as_deref())
+        .is_some_and(|name| name == expected)
+}
+
+/// Returns true when a local slot is the storage slot for a by-reference parameter.
+fn local_slot_is_by_ref_param(ctx: &FunctionContext<'_>, slot: LocalSlotId) -> bool {
+    ctx.function
+        .params
+        .get(slot.as_raw() as usize)
+        .is_some_and(|param| param.by_ref)
+}
+
+/// Emits an assignment through a reference property's stored ref-cell pointer.
+fn emit_reference_property_write(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    slot: &PropertySlot,
+    base_reg: &str,
+) -> Result<()> {
+    abi::emit_push_reg(ctx.emitter, base_reg);
+    load_property_store_value_to_result(ctx, value, &slot.php_type)?;
+    abi::emit_pop_reg(ctx.emitter, base_reg);
+    let pointer_reg = reference_pointer_reg(ctx, base_reg);
+    abi::emit_load_from_address(ctx.emitter, pointer_reg, base_reg, slot.offset);
+    release_previous_referenced_value(ctx, pointer_reg, &slot.php_type, Some(&slot.php_type));
+    store_current_result_to_reference_cell(ctx, pointer_reg, &slot.php_type)
+}
+
+/// Releases the old value held in a reference cell before overwriting it.
+fn release_previous_referenced_value(
+    ctx: &mut FunctionContext<'_>,
+    pointer_reg: &str,
+    prop_ty: &PhpType,
+    preserve_result_ty: Option<&PhpType>,
+) {
+    let prop_ty = prop_ty.codegen_repr();
+    let releases_value =
+        matches!(prop_ty, PhpType::Str | PhpType::Callable) || prop_ty.is_refcounted();
+    if !releases_value {
+        return;
+    }
+    if let Some(result_ty) = preserve_result_ty {
+        abi::emit_push_result_value(ctx.emitter, &result_ty.codegen_repr());
+    }
+    abi::emit_push_reg(ctx.emitter, pointer_reg);
+    abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+    match prop_ty {
+        PhpType::Str => abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe"),
+        PhpType::Callable => callable_descriptor::emit_release_current_descriptor(ctx.emitter),
+        ty => abi::emit_decref_if_refcounted(ctx.emitter, &ty),
+    }
+    abi::emit_pop_reg(ctx.emitter, pointer_reg);
+    if let Some(result_ty) = preserve_result_ty {
+        restore_property_store_result(ctx, &result_ty.codegen_repr());
+    }
+}
+
+/// Stores the current result registers into a reference cell.
+fn store_current_result_to_reference_cell(
+    ctx: &mut FunctionContext<'_>,
+    pointer_reg: &str,
+    prop_ty: &PhpType,
+) -> Result<()> {
+    match prop_ty.codegen_repr() {
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_store_to_address(ctx.emitter, ptr_reg, pointer_reg, 0);
+            abi::emit_store_to_address(ctx.emitter, len_reg, pointer_reg, 8);
+        }
+        PhpType::Float => {
+            abi::emit_store_to_address(ctx.emitter, abi::float_result_reg(ctx.emitter), pointer_reg, 0);
+        }
+        ty if is_pointer_sized_property_type(&ty)
+            || matches!(ty, PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never) =>
+        {
+            abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+        }
+        ty => return Err(CodegenIrError::unsupported(format!(
+            "reference property store for PHP type {:?}",
+            ty
+        ))),
+    }
+    Ok(())
+}
+
+/// Returns a scratch register that can hold a reference-cell pointer beside the object base.
+fn reference_pointer_reg(ctx: &FunctionContext<'_>, base_reg: &str) -> &'static str {
+    let symbol_reg = abi::symbol_scratch_reg(ctx.emitter);
+    if base_reg == symbol_reg {
+        abi::secondary_scratch_reg(ctx.emitter)
+    } else {
+        symbol_reg
+    }
 }
 
 /// Releases the old value in a declared property slot before overwriting it.

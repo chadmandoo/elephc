@@ -4107,7 +4107,14 @@ fn materialize_direct_call_args_with_refs_and_options(
     let mut arg_temp_bytes = 0usize;
     for (index, (value, param_ty)) in args.iter().zip(param_types.iter()).enumerate() {
         if ref_params[index] {
-            materialize_ref_arg_address(ctx, *value, index, arg_temp_bytes, &ref_writebacks)?;
+            materialize_ref_arg_address(
+                ctx,
+                *value,
+                index,
+                param_ty,
+                arg_temp_bytes,
+                &ref_writebacks,
+            )?;
             abi::emit_push_result_value(ctx.emitter, &PhpType::Int);
         } else {
             ctx.load_value_to_result(*value)?;
@@ -4163,7 +4170,14 @@ fn materialize_static_method_call_args_with_refs(
     let mut arg_temp_bytes = call_arg_temp_slot_size(&PhpType::Int);
     for (index, (value, param_ty)) in args.iter().zip(param_types.iter()).enumerate() {
         if ref_params[index] {
-            materialize_ref_arg_address(ctx, *value, index, arg_temp_bytes, &ref_writebacks)?;
+            materialize_ref_arg_address(
+                ctx,
+                *value,
+                index,
+                param_ty,
+                arg_temp_bytes,
+                &ref_writebacks,
+            )?;
             abi::emit_push_result_value(ctx.emitter, &PhpType::Int);
         } else {
             ctx.load_value_to_result(*value)?;
@@ -4377,7 +4391,14 @@ fn materialize_method_call_args_with_receiver_local_and_refs(
     let mut arg_temp_bytes = call_arg_temp_slot_size(&abi_param_types[0]);
     for (index, (value, param_ty)) in operands.iter().zip(visible_param_types.iter()).enumerate() {
         if visible_ref_params[index] {
-            materialize_ref_arg_address(ctx, *value, index, arg_temp_bytes, &ref_writebacks)?;
+            materialize_ref_arg_address(
+                ctx,
+                *value,
+                index,
+                param_ty,
+                arg_temp_bytes,
+                &ref_writebacks,
+            )?;
             abi::emit_push_result_value(ctx.emitter, &PhpType::Int);
         } else {
             ctx.load_value_to_result(*value)?;
@@ -4438,7 +4459,14 @@ fn materialize_method_call_args_with_receiver_reg_and_refs(
     {
         let param_index = index + 1;
         if ref_params[param_index] {
-            materialize_ref_arg_address(ctx, *value, param_index, arg_temp_bytes, &ref_writebacks)?;
+            materialize_ref_arg_address(
+                ctx,
+                *value,
+                param_index,
+                &param_types[param_index],
+                arg_temp_bytes,
+                &ref_writebacks,
+            )?;
             abi::emit_push_result_value(ctx.emitter, &PhpType::Int);
         } else {
             ctx.load_value_to_result(*value)?;
@@ -4535,6 +4563,7 @@ fn materialize_ref_arg_address(
     ctx: &mut FunctionContext<'_>,
     value: ValueId,
     param_index: usize,
+    param_ty: &PhpType,
     arg_temp_bytes: usize,
     writebacks: &[RefArgWriteback],
 ) -> Result<()> {
@@ -4550,7 +4579,60 @@ fn materialize_ref_arg_address(
         );
         return Ok(());
     }
-    materialize_local_ref_arg_address(ctx, value)
+    if local_ref_arg_source(ctx, value).is_ok() {
+        return materialize_local_ref_arg_address(ctx, value);
+    }
+    materialize_temporary_ref_arg_cell(ctx, value, param_ty)
+}
+
+/// Allocates a heap ref-cell for a by-reference argument that is not a local variable.
+fn materialize_temporary_ref_arg_cell(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    param_ty: &PhpType,
+) -> Result<()> {
+    let source_ty = ctx.load_value_to_result(value)?;
+    let target_ty = param_ty.codegen_repr();
+    coerce_ref_cell_store_value(ctx, &source_ty, &target_ty)?;
+    abi::emit_push_result_value(ctx.emitter, &target_ty);
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 16);
+    abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
+    let cell_reg = abi::symbol_scratch_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    abi::emit_pop_reg(ctx.emitter, cell_reg);
+    store_pushed_value_to_ref_cell(ctx, cell_reg, &target_ty);
+    move_reg_to_int_result(ctx, cell_reg);
+    Ok(())
+}
+
+/// Stores the pushed argument value into a freshly allocated by-reference cell.
+fn store_pushed_value_to_ref_cell(
+    ctx: &mut FunctionContext<'_>,
+    cell_reg: &str,
+    val_ty: &PhpType,
+) {
+    let temp_reg = if cell_reg == abi::temp_int_reg(ctx.emitter.target) {
+        abi::symbol_scratch_reg(ctx.emitter)
+    } else {
+        abi::temp_int_reg(ctx.emitter.target)
+    };
+    match val_ty.codegen_repr() {
+        PhpType::Str => {
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+            abi::emit_store_to_address(ctx.emitter, ptr_reg, cell_reg, 0);
+            abi::emit_store_to_address(ctx.emitter, len_reg, cell_reg, 8);
+        }
+        PhpType::Float => {
+            abi::emit_pop_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
+            abi::emit_store_to_address(ctx.emitter, abi::float_result_reg(ctx.emitter), cell_reg, 0);
+        }
+        _ => {
+            abi::emit_pop_reg(ctx.emitter, temp_reg);
+            abi::emit_store_to_address(ctx.emitter, temp_reg, cell_reg, 0);
+            abi::emit_store_zero_to_address(ctx.emitter, cell_reg, 8);
+        }
+    }
 }
 
 /// Writes temporary Mixed by-reference cells back into the original caller locals.
