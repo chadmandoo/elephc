@@ -1269,15 +1269,17 @@ fn lower_lazy_isset(
     let data = ctx.intern_function_name(name);
 
     for (idx, arg) in args.iter().enumerate() {
-        let value = lower_expr(ctx, arg);
-        let checked = ctx.emit_value(
-            Op::BuiltinCall,
-            vec![value.value],
-            Some(Immediate::Data(data)),
-            PhpType::Int,
-            effects_lookup::builtin_effects(name),
-            Some(arg.span),
-        );
+        let checked = lower_lazy_isset_operand(ctx, arg).unwrap_or_else(|| {
+            let value = lower_expr(ctx, arg);
+            ctx.emit_value(
+                Op::BuiltinCall,
+                vec![value.value],
+                Some(Immediate::Data(data)),
+                PhpType::Int,
+                effects_lookup::builtin_effects(name),
+                Some(arg.span),
+            )
+        });
         let then_target = if idx + 1 == args.len() {
             ctx.builder.create_named_block("isset.lazy_true", Vec::new())
         } else {
@@ -1304,6 +1306,28 @@ fn lower_lazy_isset(
 
     ctx.builder.position_at_end(merge);
     Some(ctx.load_local(&temp_name, Some(expr.span)))
+}
+
+/// Lowers a single `isset()` operand that has special lazy PHP semantics.
+fn lower_lazy_isset_operand(
+    ctx: &mut LoweringContext<'_, '_>,
+    arg: &Expr,
+) -> Option<LoweredValue> {
+    let ExprKind::ArrayAccess { array, index } = &arg.kind else {
+        return None;
+    };
+    if !array_access_expr_satisfies_array_access(ctx, array) {
+        return None;
+    }
+    let synthetic = Expr::new(
+        ExprKind::MethodCall {
+            object: array.clone(),
+            method: "offsetExists".to_string(),
+            args: vec![(**index).clone()],
+        },
+        arg.span,
+    );
+    Some(lower_expr(ctx, &synthetic))
 }
 
 /// Lowers direct function/static-method first-class callable probes for `is_callable()`.
@@ -2695,10 +2719,7 @@ fn unset_array_access_has_object_receiver(
             .unwrap_or_else(|| infer_expr_type_syntactic(array)),
         _ => infer_expr_type_syntactic(array),
     };
-    matches!(
-        ty.codegen_repr(),
-        PhpType::Object(class_name) if class_implements_interface_for_ir(ctx, &class_name, "ArrayAccess")
-    )
+    type_satisfies_array_access_for_ir(ctx, &ty)
 }
 
 /// Lowers `unset($object[$key])` as `ArrayAccess::offsetUnset($key)`.
@@ -5153,7 +5174,7 @@ fn array_access_runtime_call_result_type(
     match ctx.builder.value_php_type(array).codegen_repr() {
         PhpType::Object(class_name) => array_access_offset_get_return_type(ctx, &class_name)
             .unwrap_or_else(|| fallback_expr_type(expr)),
-        PhpType::Mixed | PhpType::Union(_) => PhpType::Mixed,
+        PhpType::Mixed => PhpType::Mixed,
         _ => fallback_expr_type(expr),
     }
 }
@@ -5163,13 +5184,71 @@ fn array_access_offset_get_return_type(
     ctx: &LoweringContext<'_, '_>,
     class_name: &str,
 ) -> Option<PhpType> {
-    if !class_implements_interface_for_ir(ctx, class_name, "ArrayAccess") {
+    if !object_name_satisfies_interface_for_ir(ctx, class_name, "ArrayAccess") {
         return None;
     }
     let method_key = php_symbol_key("offsetGet");
     class_method_return_type_for_ir(ctx, class_name, &method_key)
         .or_else(|| interface_method_return_type_for_ir(ctx, "ArrayAccess", &method_key))
         .map(normalize_value_php_type)
+}
+
+/// Returns true when a syntactic array receiver is statically known as `ArrayAccess`.
+fn array_access_expr_satisfies_array_access(
+    ctx: &LoweringContext<'_, '_>,
+    array: &Expr,
+) -> bool {
+    let ty = match &array.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| infer_expr_type_syntactic(array)),
+        _ => infer_expr_type_syntactic(array),
+    };
+    type_satisfies_array_access_for_ir(ctx, &ty)
+}
+
+/// Returns true when every possible object arm satisfies PHP's `ArrayAccess` interface.
+pub(crate) fn type_satisfies_array_access_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    ty: &PhpType,
+) -> bool {
+    match ty {
+        PhpType::Object(class_name) => {
+            object_name_satisfies_interface_for_ir(ctx, class_name, "ArrayAccess")
+        }
+        PhpType::Union(members) => {
+            let mut saw_object = false;
+            for member in members {
+                match member {
+                    PhpType::Void | PhpType::Never => {}
+                    other if type_satisfies_array_access_for_ir(ctx, other) => {
+                        saw_object = true;
+                    }
+                    _ => return false,
+                }
+            }
+            saw_object
+        }
+        _ => false,
+    }
+}
+
+/// Returns true when a class or interface name satisfies the requested interface.
+fn object_name_satisfies_interface_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    interface_name: &str,
+) -> bool {
+    let normalized = class_name.trim_start_matches('\\');
+    if php_symbol_key(normalized) == php_symbol_key(interface_name.trim_start_matches('\\')) {
+        return true;
+    }
+    if ctx.interfaces.contains_key(normalized) {
+        return interface_extends_interface_for_ir(ctx, normalized, interface_name);
+    }
+    class_implements_interface_for_ir(ctx, normalized, interface_name)
 }
 
 /// Returns whether a lowered class implements an interface, following parents.
@@ -5187,13 +5266,38 @@ fn class_implements_interface_for_ir(
         if info
             .interfaces
             .iter()
-            .any(|interface| php_symbol_key(interface.trim_start_matches('\\')) == interface_key)
+            .any(|interface| {
+                let interface = interface.trim_start_matches('\\');
+                php_symbol_key(interface) == interface_key
+                    || interface_extends_interface_for_ir(ctx, interface, interface_name)
+            })
         {
             return true;
         }
         current = info.parent.as_deref();
     }
     false
+}
+
+/// Returns true when an interface extends the requested ancestor interface.
+fn interface_extends_interface_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    interface_name: &str,
+    ancestor_name: &str,
+) -> bool {
+    if php_symbol_key(interface_name.trim_start_matches('\\'))
+        == php_symbol_key(ancestor_name.trim_start_matches('\\'))
+    {
+        return true;
+    }
+    let Some(info) = ctx.interfaces.get(interface_name.trim_start_matches('\\')) else {
+        return false;
+    };
+    info.parents.iter().any(|parent| {
+        let parent = parent.trim_start_matches('\\');
+        php_symbol_key(parent) == php_symbol_key(ancestor_name.trim_start_matches('\\'))
+            || interface_extends_interface_for_ir(ctx, parent, ancestor_name)
+    })
 }
 
 /// Returns a method return type from class metadata, following parent classes.

@@ -1372,21 +1372,127 @@ fn try_lower_array_access_runtime_call(
     let Some(receiver) = inst.operands.first().copied() else {
         return Ok(None);
     };
-    let receiver_ty = ctx.value_php_type(receiver)?.codegen_repr();
-    let PhpType::Object(class_name) = receiver_ty else {
+    let receiver_ty = ctx.raw_value_php_type(receiver)?;
+    let Some(dispatch) = array_access_runtime_dispatch(ctx, &receiver_ty) else {
         return Ok(None);
     };
-    if !class_implements_interface(ctx, &class_name, "ArrayAccess") {
-        return Ok(None);
-    }
     let method_name = match inst.operands.len() {
         2 if inst.result_php_type.codegen_repr() == PhpType::Void => "append",
         2 => "offsetGet",
         3 => "offsetSet",
         _ => return Ok(None),
     };
-    lower_runtime_object_method_call(ctx, inst, &class_name, method_name)?;
+    match dispatch {
+        ArrayAccessRuntimeDispatch::Concrete(class_name) => {
+            lower_runtime_object_method_call(ctx, inst, &class_name, method_name)?;
+        }
+        ArrayAccessRuntimeDispatch::Interface {
+            boxed_receiver: false,
+        } => {
+            lower_interface_method_call(ctx, inst, "ArrayAccess", method_name)?;
+        }
+        ArrayAccessRuntimeDispatch::Interface {
+            boxed_receiver: true,
+        } => {
+            lower_boxed_array_access_interface_call(ctx, inst, method_name)?;
+        }
+    }
     Ok(Some(()))
+}
+
+/// Selects the ArrayAccess runtime dispatch strategy for a receiver type.
+fn array_access_runtime_dispatch(
+    ctx: &FunctionContext<'_>,
+    receiver_ty: &PhpType,
+) -> Option<ArrayAccessRuntimeDispatch> {
+    match receiver_ty {
+        PhpType::Object(class_name) => {
+            let normalized = class_name.trim_start_matches('\\');
+            if interface_satisfies_interface(ctx, normalized, "ArrayAccess") {
+                return Some(ArrayAccessRuntimeDispatch::Interface {
+                    boxed_receiver: false,
+                });
+            }
+            if class_implements_interface(ctx, normalized, "ArrayAccess") {
+                return Some(ArrayAccessRuntimeDispatch::Concrete(normalized.to_string()));
+            }
+            None
+        }
+        PhpType::Union(members) if union_satisfies_array_access(ctx, members) => {
+            Some(ArrayAccessRuntimeDispatch::Interface {
+                boxed_receiver: true,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Returns true when all non-null union arms are ArrayAccess-compatible objects.
+fn union_satisfies_array_access(ctx: &FunctionContext<'_>, members: &[PhpType]) -> bool {
+    let mut saw_object = false;
+    for member in members {
+        match member {
+            PhpType::Void | PhpType::Never => {}
+            PhpType::Object(class_name) => {
+                if !object_name_satisfies_interface(ctx, class_name, "ArrayAccess") {
+                    return false;
+                }
+                saw_object = true;
+            }
+            _ => return false,
+        }
+    }
+    saw_object
+}
+
+/// Returns true when a class or interface name satisfies the requested interface.
+fn object_name_satisfies_interface(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    interface_name: &str,
+) -> bool {
+    let normalized = class_name.trim_start_matches('\\');
+    interface_satisfies_interface(ctx, normalized, interface_name)
+        || class_implements_interface(ctx, normalized, interface_name)
+}
+
+/// Lowers ArrayAccess on a boxed union receiver through runtime interface metadata.
+fn lower_boxed_array_access_interface_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    method_name: &str,
+) -> Result<()> {
+    let (interface_name, method_key, callee_sig) =
+        resolve_interface_call_signature(ctx, "ArrayAccess", method_name, inst.operands.len())?;
+    let receiver = expect_operand(inst, 0)?;
+    let receiver_ty = PhpType::Object(interface_name.clone());
+    let mut param_types = Vec::with_capacity(callee_sig.params.len() + 1);
+    param_types.push(receiver_ty.clone());
+    param_types.extend(callee_sig.params.iter().map(|(_, ty)| ty.codegen_repr()));
+    let mut ref_params = Vec::with_capacity(callee_sig.ref_params.len() + 1);
+    ref_params.push(false);
+    ref_params.extend(callee_sig.ref_params.iter().copied());
+
+    ctx.load_value_to_result(receiver)?;
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    let receiver_reg = abi::nested_call_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, mixed_unbox_low_payload_reg(ctx));
+    abi::emit_pop_reg(ctx.emitter, receiver_reg);
+    let call_args = materialize_method_call_args_with_receiver_reg_and_refs(
+        ctx,
+        receiver_reg,
+        &receiver_ty,
+        &inst.operands,
+        &param_types,
+        &ref_params,
+    )?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
+    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    let return_ty = iterators::emit_interface_dispatch_call(ctx, &interface_name, &method_key, None)?;
+    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    store_call_result(ctx, inst, &return_ty)?;
+    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
 }
 
 /// Emits the concrete method body backing a PHP object runtime fallback.
@@ -1450,13 +1556,42 @@ fn class_implements_interface(
         if info
             .interfaces
             .iter()
-            .any(|interface| php_symbol_key(interface.trim_start_matches('\\')) == interface_key)
+            .any(|interface| {
+                let interface = interface.trim_start_matches('\\');
+                php_symbol_key(interface) == interface_key
+                    || interface_satisfies_interface(ctx, interface, interface_name)
+            })
         {
             return true;
         }
         current = info.parent.as_deref();
     }
     false
+}
+
+/// Returns true when an interface is or extends the requested ancestor.
+fn interface_satisfies_interface(
+    ctx: &FunctionContext<'_>,
+    interface_name: &str,
+    ancestor_name: &str,
+) -> bool {
+    if php_symbol_key(interface_name.trim_start_matches('\\'))
+        == php_symbol_key(ancestor_name.trim_start_matches('\\'))
+    {
+        return true;
+    }
+    let Some(interface_info) = ctx
+        .module
+        .interface_infos
+        .get(interface_name.trim_start_matches('\\'))
+    else {
+        return false;
+    };
+    interface_info.parents.iter().any(|parent| {
+        let parent = parent.trim_start_matches('\\');
+        php_symbol_key(parent) == php_symbol_key(ancestor_name.trim_start_matches('\\'))
+            || interface_satisfies_interface(ctx, parent, ancestor_name)
+    })
 }
 
 /// Converts an untyped boxed Mixed payload into indexed-array storage with Mixed slots.
@@ -1938,6 +2073,32 @@ fn lower_interface_method_call(
     interface_name: &str,
     method_name: &str,
 ) -> Result<()> {
+    let (normalized, method_key, callee_sig) =
+        resolve_interface_call_signature(ctx, interface_name, method_name, inst.operands.len())?;
+    let mut param_types = Vec::with_capacity(callee_sig.params.len() + 1);
+    param_types.push(PhpType::Object(normalized.clone()));
+    param_types.extend(callee_sig.params.iter().map(|(_, ty)| ty.codegen_repr()));
+    let mut ref_params = Vec::with_capacity(callee_sig.ref_params.len() + 1);
+    ref_params.push(false);
+    ref_params.extend(callee_sig.ref_params.iter().copied());
+    let call_args =
+        materialize_direct_call_args_with_refs(ctx, &inst.operands, &param_types, &ref_params)?;
+    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
+    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    let return_ty = iterators::emit_interface_dispatch_call(ctx, &normalized, &method_key, None)?;
+    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    store_call_result(ctx, inst, &return_ty)?;
+    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
+}
+
+/// Resolves interface method metadata and validates the EIR ABI operand count.
+fn resolve_interface_call_signature(
+    ctx: &FunctionContext<'_>,
+    interface_name: &str,
+    method_name: &str,
+    operand_count: usize,
+) -> Result<(String, String, FunctionSig)> {
     let normalized = interface_name.trim_start_matches('\\');
     let method_key = php_symbol_key(method_name);
     let callee_sig = ctx
@@ -1953,30 +2114,16 @@ fn lower_interface_method_call(
         })?
         .clone();
     let expected_args = callee_sig.params.len() + 1;
-    if inst.operands.len() != expected_args {
+    if operand_count != expected_args {
         return Err(CodegenIrError::unsupported(format!(
             "interface method call to {}::{} with {} operands for {} ABI params",
             normalized,
             method_name,
-            inst.operands.len(),
+            operand_count,
             expected_args
         )));
     }
-    let mut param_types = Vec::with_capacity(callee_sig.params.len() + 1);
-    param_types.push(PhpType::Object(normalized.to_string()));
-    param_types.extend(callee_sig.params.iter().map(|(_, ty)| ty.codegen_repr()));
-    let mut ref_params = Vec::with_capacity(callee_sig.ref_params.len() + 1);
-    ref_params.push(false);
-    ref_params.extend(callee_sig.ref_params.iter().copied());
-    let call_args =
-        materialize_direct_call_args_with_refs(ctx, &inst.operands, &param_types, &ref_params)?;
-    let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
-    abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
-    let return_ty = iterators::emit_interface_dispatch_call(ctx, normalized, &method_key, None)?;
-    abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
-    abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
-    store_call_result(ctx, inst, &return_ty)?;
-    emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
+    Ok((normalized.to_string(), method_key, callee_sig))
 }
 
 /// Lowers a method call after an earlier EIR guard has proven a nullable receiver non-null.
@@ -2816,6 +2963,12 @@ struct RefArgWriteback {
     source_is_ref_cell: bool,
     source_ty: PhpType,
     cell_offset: usize,
+}
+
+/// Runtime dispatch path for EIR `RuntimeCall` instructions that mean ArrayAccess indexing.
+enum ArrayAccessRuntimeDispatch {
+    Concrete(String),
+    Interface { boxed_receiver: bool },
 }
 
 /// Source for the hidden called-class id passed to static method bodies.

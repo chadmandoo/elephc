@@ -14,7 +14,7 @@ use crate::ir_lower::context::{FinallyFrame, LoopFrame, LoweredValue, LoweringCo
 use crate::ir_lower::effects_lookup;
 use crate::ir_lower::expr::{
     lower_callable_array_for_assignment, lower_closure_for_assignment, lower_expr,
-    static_callable_binding_for_expr,
+    static_callable_binding_for_expr, type_satisfies_array_access_for_ir,
 };
 use crate::parser::ast::{CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
 use crate::span::Span;
@@ -1690,7 +1690,14 @@ fn lower_static_property_array_assign(
         return;
     }
 
-    let property_value = load_static_property(ctx, receiver, property, span);
+    let property_value = if let Some(property_ty) =
+        static_property_type(ctx, receiver, property)
+            .filter(|ty| type_satisfies_array_access_for_ir(ctx, ty))
+    {
+        load_static_property_as(ctx, receiver, property, property_ty, span)
+    } else {
+        load_static_property(ctx, receiver, property, span)
+    };
     let index = lower_expr(ctx, index);
     let value = lower_expr(ctx, value);
     ctx.emit_void(
@@ -1818,6 +1825,31 @@ fn lower_property_array_assign(
             vec![object.value, property_value.value],
             Some(Immediate::Data(data)),
             Op::PropSet.default_effects(),
+            Some(span),
+        );
+        return;
+    }
+
+    if let Some(property_ty) =
+        object_property_type(ctx, object.value, property)
+            .filter(|ty| type_satisfies_array_access_for_ir(ctx, ty))
+    {
+        let data = ctx.intern_string(property);
+        let property_value = ctx.emit_value(
+            Op::PropGet,
+            vec![object.value],
+            Some(Immediate::Data(data)),
+            property_ty,
+            Op::PropGet.default_effects(),
+            Some(span),
+        );
+        let index = lower_expr(ctx, index);
+        let value = lower_expr(ctx, value);
+        ctx.emit_void(
+            Op::RuntimeCall,
+            vec![property_value.value, index.value, value.value],
+            None,
+            effects_lookup::runtime_effects(),
             Some(span),
         );
         return;
