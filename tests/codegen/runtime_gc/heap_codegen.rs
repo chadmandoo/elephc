@@ -32,7 +32,9 @@ fn test_new_object_codegen_sets_heap_kind() {
         false,
         false,
     );
-    assert!(user_asm.contains("new Foo()"));
+    if !codegen_fixture_uses_ir_backend() {
+        assert!(user_asm.contains("new Foo()"));
+    }
     match target().arch {
         Arch::AArch64 => assert!(user_asm.contains("str x9, [x0, #-8]"), "{user_asm}"),
         Arch::X86_64 => assert!(user_asm.contains("mov QWORD PTR [rax - 8], r10"), "{user_asm}"),

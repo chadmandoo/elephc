@@ -33,6 +33,11 @@ fn selected_test_codegen_backend() -> TestCodegenBackend {
     }
 }
 
+/// Returns true when codegen fixtures are compiling through the EIR backend.
+pub(crate) fn codegen_fixture_uses_ir_backend() -> bool {
+    selected_test_codegen_backend() == TestCodegenBackend::Ir
+}
+
 // Variant of `compile_source_to_asm_with_defines` that uses an empty define set.
 // Runs the full pipeline (tokenize → parse → resolve → type check → optimize → codegen)
 // and returns user assembly, runtime assembly, and required libraries for linking.

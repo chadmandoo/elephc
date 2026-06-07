@@ -315,7 +315,7 @@ fn emit_runtime_closure_descriptor_with_captures(
     for (idx, ((_, capture_ty, by_ref), operand)) in captures.iter().zip(operands.iter()).enumerate() {
         if *by_ref {
             let slot = local_slot_for_loaded_value(ctx, *operand)?;
-            let release_replaced_value = ctx.value_ownership(*operand)? == Ownership::Owned;
+            let release_replaced_value = promoted_ref_capture_replaces_owned_value(ctx, *operand)?;
             promote_local_slot_for_ref_capture(ctx, slot, None, capture_ty, release_replaced_value)?;
             materialize_local_ref_arg_address(ctx, *operand)?;
             callable_descriptor::emit_store_current_result_to_runtime_capture(
@@ -345,6 +345,17 @@ fn emit_runtime_closure_descriptor_with_captures(
         ctx.emitter.instruction(&format!("mov {}, {}", result_reg, descriptor_reg)); // return the runtime closure descriptor pointer
     }
     Ok(())
+}
+
+/// Returns whether a by-reference closure capture replaces a caller-owned local value.
+fn promoted_ref_capture_replaces_owned_value(
+    ctx: &FunctionContext<'_>,
+    value: ValueId,
+) -> Result<bool> {
+    Ok(matches!(
+        ctx.value_ownership(value)?,
+        Ownership::Owned | Ownership::MaybeOwned
+    ))
 }
 
 /// Promotes a normal local slot to a heap ref-cell for an escaping by-reference capture.
