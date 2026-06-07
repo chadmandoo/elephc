@@ -316,7 +316,7 @@ fn lower_function_declarations(
     }
 }
 
-/// Lowers methods declared on classes, interfaces, and traits when a body exists.
+/// Lowers concrete class/interface methods, including trait methods flattened into classes.
 fn lower_class_like_methods(
     statements: &[Stmt],
     module: &mut Module,
@@ -326,9 +326,15 @@ fn lower_class_like_methods(
 ) {
     for stmt in statements {
         match &stmt.kind {
-            StmtKind::ClassDecl { name, methods, .. } | StmtKind::TraitDecl { name, methods, .. } => {
+            StmtKind::ClassDecl { name, methods, .. } => {
+                let methods = check_result
+                    .classes
+                    .get(name)
+                    .map(|class_info| class_info.method_decls.as_slice())
+                    .unwrap_or(methods.as_slice());
                 lower_methods_for_class_like(name, methods, module, check_result, constants, fiber_return_sigs);
             }
+            StmtKind::TraitDecl { .. } => {}
             StmtKind::InterfaceDecl { name, methods, .. } => {
                 lower_methods_for_class_like(name, methods, module, check_result, constants, fiber_return_sigs);
             }
