@@ -10,6 +10,7 @@
 
 use super::super::cursor::Cursor;
 use super::super::token::Token;
+use super::identifiers::is_ident_continue;
 use crate::errors::CompileError;
 use crate::span::Span;
 use std::iter::Peekable;
@@ -80,7 +81,7 @@ pub(in crate::lexer) fn scan_double_string_interpolated(
                 cursor.advance(); // consume '$'
                 let mut name = String::new();
                 while let Some(ch) = cursor.peek() {
-                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                    if is_ident_continue(ch) {
                         name.push(ch);
                         cursor.advance();
                     } else {
@@ -290,7 +291,7 @@ fn interpolate_heredoc_content(
                 chars.next();
                 let mut name = String::new();
                 while let Some(&ch) = chars.peek() {
-                    if ch.is_ascii_alphanumeric() || ch == '_' {
+                    if is_ident_continue(ch) {
                         name.push(ch);
                         chars.next();
                     } else {
