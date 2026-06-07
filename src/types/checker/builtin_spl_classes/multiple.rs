@@ -190,7 +190,11 @@ fn multiple_attach_iterator_body() -> Vec<Stmt> {
 /// Builds the synthetic method body for multiple detach iterator.
 fn multiple_detach_iterator_body() -> Vec<Stmt> {
     vec![
-        assign_stmt("newIterators", empty_array_expr()),
+        typed_assign_stmt(
+            "newIterators",
+            TypeExpr::Array(Box::new(named_type("Iterator"))),
+            empty_array_expr(),
+        ),
         assign_stmt("newInfos", empty_array_expr()),
         assign_stmt("i", int_expr(0)),
         assign_stmt("limit", count_expr(multiple_iterators_expr())),
@@ -341,7 +345,7 @@ fn multiple_output_body(method: &str) -> Vec<Stmt> {
             ],
             None,
         ),
-        assign_stmt("out", empty_array_expr()),
+        assign_stmt("out", empty_assoc_array_expr()),
         assign_stmt("i", int_expr(0)),
         assign_stmt("limit", count_expr(multiple_iterators_expr())),
         while_stmt(

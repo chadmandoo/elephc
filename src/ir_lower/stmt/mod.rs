@@ -653,7 +653,10 @@ fn indexed_array_refcounted_set_needs_mixed_conversion(
     };
     let elem_ty = elem_ty.codegen_repr();
     let value_ty = value_ty.codegen_repr();
-    elem_ty != PhpType::Mixed && elem_ty.is_refcounted() && value_ty.is_refcounted()
+    elem_ty != value_ty
+        && elem_ty != PhpType::Mixed
+        && elem_ty.is_refcounted()
+        && value_ty.is_refcounted()
 }
 
 /// Converts typed indexed arrays to Mixed when a local write would make them heterogeneous.
@@ -710,6 +713,9 @@ fn indexed_array_write_updated_type(current_ty: PhpType, value_ty: PhpType) -> O
         PhpType::Array(elem_ty) if elem_ty.codegen_repr() == PhpType::Mixed => None,
         PhpType::Array(elem_ty) => {
             let elem_ty = elem_ty.codegen_repr();
+            if elem_ty == value_ty.codegen_repr() {
+                return None;
+            }
             let value_ty = normalize_array_write_element_type(value_ty.codegen_repr());
             if elem_ty == value_ty {
                 None
@@ -755,6 +761,7 @@ fn lower_typed_assign(
         .as_ref()
         .map(|assignment| assignment.value)
         .unwrap_or_else(|| lower_expr(ctx, value));
+    let lowered = coerce_typed_assign_value(ctx, lowered, &php_type, span);
     ctx.declare_local(name, php_type.clone());
     ctx.store_local(name, lowered, php_type, Some(span));
     let callable_result = if direct_closure {
@@ -769,6 +776,31 @@ fn lower_typed_assign(
         .or(callable_result);
     if let Some(target) = static_callable {
         ctx.bind_static_callable_local(name, target);
+    }
+}
+
+/// Coerces a typed local assignment into the storage shape required by the declared type.
+fn coerce_typed_assign_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    php_type: &PhpType,
+    span: Span,
+) -> LoweredValue {
+    let target_ty = php_type.codegen_repr();
+    let source_ty = ctx.builder.value_php_type(value.value).codegen_repr();
+    if source_ty == target_ty {
+        return value;
+    }
+    match target_ty {
+        PhpType::Mixed => ctx.emit_value(
+            Op::MixedBox,
+            vec![value.value],
+            None,
+            PhpType::Mixed,
+            Op::MixedBox.default_effects(),
+            Some(span),
+        ),
+        _ => value,
     }
 }
 

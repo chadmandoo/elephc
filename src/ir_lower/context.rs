@@ -180,10 +180,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         match type_expr {
             TypeExpr::Named(name) => {
                 let name = name.as_str().trim_start_matches('\\');
-                if self.packed_classes.contains_key(name) {
+                let php_type = named_type_expr_to_php_type(name);
+                if matches!(php_type, PhpType::Object(_)) && self.packed_classes.contains_key(name) {
                     PhpType::Packed(name.to_string())
                 } else {
-                    PhpType::Object(name.to_string())
+                    php_type
                 }
             }
             TypeExpr::Buffer(inner) => {

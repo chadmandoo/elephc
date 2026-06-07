@@ -615,6 +615,7 @@ fn required_builtin_spl_metadata_methods(class_name: &str) -> &'static [&'static
             "valid",
             "getInnerIterator",
         ],
+        "MultipleIterator" => &["current", "key", "next", "rewind", "valid"],
         "__ElephcAppendIteratorArrayIterator" => &[
             "current",
             "key",
@@ -816,6 +817,21 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
                 | "__elephcstoragegetarraycopy"
                 | "__elephcstoragekey"
                 | "__elephcstoragecurrent"
+        ),
+        "MultipleIterator" => matches!(
+            method_key,
+            "__construct"
+                | "getflags"
+                | "setflags"
+                | "attachiterator"
+                | "detachiterator"
+                | "containsiterator"
+                | "countiterators"
+                | "rewind"
+                | "valid"
+                | "key"
+                | "current"
+                | "next"
         ),
         "__ElephcAppendIteratorArrayIterator" => matches!(
             method_key,

@@ -566,7 +566,9 @@ fn materialize_hash_mixed_value_aarch64(
     value_ty: &PhpType,
 ) -> Result<()> {
     if value_ty == &PhpType::Mixed {
-        ctx.load_value_to_reg(value, "x3")?;
+        ctx.load_value_to_result(value)?;
+        retain_hash_refcounted_value_if_borrowed(ctx, value, value_ty)?;
+        ctx.emitter.instruction("mov x3, x0");                                  // pass the retained boxed Mixed pointer as the hash value low word
         ctx.emitter.instruction("mov x4, xzr");                                 // boxed Mixed hash values do not use the high payload word
         return Ok(());
     }
@@ -584,7 +586,9 @@ fn materialize_hash_mixed_value_x86_64(
     value_ty: &PhpType,
 ) -> Result<()> {
     if value_ty == &PhpType::Mixed {
-        ctx.load_value_to_reg(value, "rcx")?;
+        ctx.load_value_to_result(value)?;
+        retain_hash_refcounted_value_if_borrowed(ctx, value, value_ty)?;
+        ctx.emitter.instruction("mov rcx, rax");                                // pass the retained boxed Mixed pointer as the hash value low word
         ctx.emitter.instruction("xor r8, r8");                                  // boxed Mixed hash values do not use the high payload word
         return Ok(());
     }
