@@ -940,7 +940,17 @@ fn lower_fiber_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<
         .unwrap_or(0);
     let callable_arg = abi::int_arg_reg_name(ctx.emitter.target, 0);
     if let Some(callable) = inst.operands.first().copied() {
-        ctx.load_value_to_reg(callable, callable_arg)?;
+        let callable_ty = ctx.value_php_type(callable)?.codegen_repr();
+        if callable_ty == PhpType::Str {
+            callables::emit_runtime_string_descriptor_value(
+                ctx,
+                callable,
+                callable_arg,
+                "fiber_constructor",
+            )?;
+        } else {
+            ctx.load_value_to_reg(callable, callable_arg)?;
+        }
     } else {
         abi::emit_load_int_immediate(ctx.emitter, callable_arg, 0);
     }

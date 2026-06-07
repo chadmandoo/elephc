@@ -579,6 +579,56 @@ $strings->start("A", "B", "C", "D", "E");
     );
 }
 
+/// Verifies Fiber callable descriptors receive start args and expose terminal returns.
+#[test]
+fn ir_backend_starts_descriptor_backed_fibers_with_arguments() {
+    let closure_variable = r#"<?php
+$fn = function(int $x): int {
+    echo $x;
+    return $x + 1;
+};
+$f = new Fiber($fn);
+$v = $f->start(41);
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("fiber_start_closure_variable", closure_variable),
+        "41/null/42"
+    );
+
+    let first_class_function = r#"<?php
+function fiber_job(int $x): int {
+    echo $x;
+    return $x + 1;
+}
+$f = new Fiber(fiber_job(...));
+$v = $f->start(41);
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("fiber_start_first_class_function", first_class_function),
+        "41/null/42"
+    );
+
+    let builtin_string = r#"<?php
+$f = new Fiber("STRLEN");
+$v = $f->start("hello");
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#;
+    assert_eq!(
+        compile_and_run_ir_backend("fiber_start_string_builtin", builtin_string),
+        "null/5"
+    );
+}
+
 /// Verifies Fiber suspend and resume transfer boxed Mixed values across the boundary.
 #[test]
 fn ir_backend_suspends_and_resumes_fibers() {

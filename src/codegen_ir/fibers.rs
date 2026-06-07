@@ -40,7 +40,7 @@ pub(crate) fn wrapper_for_fiber_new(
     if let Some(closure) = closure_literal_operand(module, function, callable) {
         return Some(wrapper_for_closure(closure));
     }
-    if callable_operand_is_descriptor_backed(function, callable) {
+    if callable_operand_uses_descriptor_invoker(function, callable) {
         return Some(descriptor_invoker_wrapper());
     }
     None
@@ -89,14 +89,14 @@ fn closure_literal_operand<'a>(
         .find(|closure| closure.name == *closure_name)
 }
 
-/// Returns true when a Fiber callable operand is already a runtime callable descriptor.
-fn callable_operand_is_descriptor_backed(
+/// Returns true when a Fiber callable operand runs through the descriptor-invoker wrapper.
+fn callable_operand_uses_descriptor_invoker(
     function: &Function,
     callable: crate::ir::ValueId,
 ) -> bool {
     function
         .value(callable)
-        .is_some_and(|value| matches!(value.php_type.codegen_repr(), PhpType::Callable))
+        .is_some_and(|value| matches!(value.php_type.codegen_repr(), PhpType::Callable | PhpType::Str))
 }
 
 /// Builds a deferred Fiber wrapper description from the concrete EIR closure signature.

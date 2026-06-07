@@ -221,6 +221,56 @@ fn runtime_string_descriptor_cases(
     cases
 }
 
+/// Selects a callable descriptor from a runtime string callable name.
+pub(super) fn emit_runtime_string_descriptor_value(
+    ctx: &mut FunctionContext<'_>,
+    callable: ValueId,
+    dest_reg: &str,
+    op_name: &str,
+) -> Result<()> {
+    let cases = runtime_string_descriptor_cases(ctx);
+    if cases.is_empty() {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} for runtime string with no descriptor targets",
+            op_name
+        )));
+    }
+
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(callable, ptr_reg, len_reg)?;
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+
+    let done_label = ctx.next_label(&format!("{}_runtime_string_descriptor_done", op_name));
+    let miss_label = ctx.next_label(&format!("{}_runtime_string_descriptor_missing", op_name));
+    let selector = callable_dispatch::RuntimeCallableSelector::StringNameStack {
+        ptr_offset: 0,
+        len_offset: 8,
+        call_reg: dest_reg,
+    };
+    let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
+    for case in &cases {
+        let next_case = ctx.next_label("runtime_string_descriptor_next");
+        callable_dispatch::emit_branch_if_callable_case_mismatch(
+            &selector,
+            case,
+            &next_case,
+            ctx.emitter,
+            &mut legacy_ctx,
+            ctx.data,
+        );
+        abi::emit_jump(ctx.emitter, &done_label);
+        ctx.emitter.label(&next_case);
+    }
+    abi::emit_jump(ctx.emitter, &miss_label);
+
+    ctx.emitter.label(&miss_label);
+    emit_undefined_runtime_string_call_fatal(ctx);
+
+    ctx.emitter.label(&done_label);
+    abi::emit_release_temporary_stack(ctx.emitter, 16);
+    Ok(())
+}
+
 /// Lowers `call_user_func_array($object, $args)` through an `__invoke` descriptor.
 fn lower_invokable_object_descriptor_invoke(
     ctx: &mut FunctionContext<'_>,
