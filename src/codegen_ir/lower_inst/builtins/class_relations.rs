@@ -155,7 +155,12 @@ fn class_uses(ctx: &FunctionContext<'_>, target: &ClassLikeTarget) -> Vec<String
         ClassLikeTarget::Class(class_name) => lookup_class(ctx, class_name)
             .map(|info| info.used_traits.clone())
             .unwrap_or_default(),
-        ClassLikeTarget::Trait(trait_name) => crate::codegen::declared_trait_uses(trait_name),
+        ClassLikeTarget::Trait(trait_name) => ctx
+            .module
+            .declared_trait_uses
+            .get(trait_name)
+            .cloned()
+            .unwrap_or_default(),
         ClassLikeTarget::Interface(_) | ClassLikeTarget::Unknown => Vec::new(),
     }
 }
