@@ -26,6 +26,8 @@ use super::{expect_operand, store_if_result};
 const EXTS_PTR_SYMBOL: &str = "_spl_autoload_exts_ptr";
 const EXTS_LEN_SYMBOL: &str = "_spl_autoload_exts_len";
 const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
+const APPLY_DYNAMIC_CALLBACK_PTR_OFFSET: usize = 32;
+const APPLY_DYNAMIC_CALLBACK_LEN_OFFSET: usize = 40;
 
 const SPL_CLASS_NAMES: &[&str] = &[
     "AppendIterator",
@@ -90,6 +92,24 @@ const SPL_CLASS_NAMES: &[&str] = &[
     "UnexpectedValueException",
     "ValueError",
 ];
+
+/// Callback strategy supported by the current EIR `iterator_apply()` lowering.
+enum IteratorApplyCallback {
+    StaticUserFunction {
+        label: String,
+        return_ty: PhpType,
+    },
+    DynamicString {
+        targets: Vec<IteratorApplyCallbackTarget>,
+    },
+}
+
+/// Runtime-selectable zero-argument user function for dynamic string callbacks.
+struct IteratorApplyCallbackTarget {
+    name: String,
+    label: String,
+    return_ty: PhpType,
+}
 
 /// Lowers autoload registration stubs by preserving arg effects and returning true.
 pub(super) fn lower_spl_autoload_bool(
@@ -246,7 +266,7 @@ pub(super) fn lower_iterator_to_array(
     store_if_result(ctx, inst)
 }
 
-/// Lowers `iterator_apply()` for a static zero-argument user-function callback.
+/// Lowers `iterator_apply()` for zero-argument user-function callbacks.
 pub(super) fn lower_iterator_apply(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -258,33 +278,20 @@ pub(super) fn lower_iterator_apply(
         ));
     }
     let source = expect_operand(inst, 0)?;
-    let callback = expect_operand(inst, 1)?;
-    let callback_name = static_string_operand(ctx, callback)?.ok_or_else(|| {
-        CodegenIrError::unsupported("iterator_apply EIR dynamic callback")
-    })?;
-    let callback_function = ctx.callable_function_by_name(&callback_name).ok_or_else(|| {
-        CodegenIrError::unsupported(format!(
-            "iterator_apply callback {} without emitted EIR function",
-            callback_name
-        ))
-    })?;
-    if !callback_function.params.is_empty() {
-        return Err(CodegenIrError::unsupported(format!(
-            "iterator_apply callback {} with {} params",
-            callback_name,
-            callback_function.params.len()
-        )));
-    }
-    let callback_label = function_symbol(&callback_function.name);
-    let callback_return_ty = callback_function.return_php_type.codegen_repr();
+    let callback_value = expect_operand(inst, 1)?;
+    let callback = iterator_apply_callback(ctx, callback_value)?;
     let source_ty = ctx.value_php_type(source)?.codegen_repr();
+
+    if matches!(callback, IteratorApplyCallback::DynamicString { .. }) {
+        let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+        ctx.load_string_value_to_regs(callback_value, ptr_reg, len_reg)?;
+        abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+    }
 
     ctx.load_value_to_result(source)?;
     match source_ty {
-        PhpType::Iterable => emit_apply_loaded_iterable(ctx, &callback_label, &callback_return_ty)?,
-        PhpType::Object(_) => {
-            emit_apply_loaded_traversable_object(ctx, &callback_label, &callback_return_ty)?
-        }
+        PhpType::Iterable => emit_apply_loaded_iterable(ctx, &callback)?,
+        PhpType::Object(_) => emit_apply_loaded_traversable_object(ctx, &callback)?,
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "iterator_apply for PHP type {:?}",
@@ -292,7 +299,93 @@ pub(super) fn lower_iterator_apply(
             )))
         }
     }
+    if matches!(callback, IteratorApplyCallback::DynamicString { .. }) {
+        abi::emit_release_temporary_stack(ctx.emitter, 16);
+    }
     store_if_result(ctx, inst)
+}
+
+/// Resolves the supported callback forms for `iterator_apply()`.
+fn iterator_apply_callback(
+    ctx: &mut FunctionContext<'_>,
+    callback: ValueId,
+) -> Result<IteratorApplyCallback> {
+    if let Some(callback_name) = static_string_operand(ctx, callback)? {
+        let callback_function = ctx.callable_function_by_name(&callback_name).ok_or_else(|| {
+            CodegenIrError::unsupported(format!(
+                "iterator_apply callback {} without emitted EIR function",
+                callback_name
+            ))
+        })?;
+        if !callback_function.params.is_empty() {
+            return Err(CodegenIrError::unsupported(format!(
+                "iterator_apply callback {} with {} params",
+                callback_name,
+                callback_function.params.len()
+            )));
+        }
+        return Ok(IteratorApplyCallback::StaticUserFunction {
+            label: function_symbol(&callback_function.name),
+            return_ty: callback_function.return_php_type.codegen_repr(),
+        });
+    }
+
+    match ctx.value_php_type(callback)?.codegen_repr() {
+        PhpType::Str => {
+            let targets = iterator_apply_runtime_string_targets(ctx);
+            if targets.is_empty() {
+                return Err(CodegenIrError::unsupported(
+                    "iterator_apply EIR dynamic string callback with no zero-arg targets",
+                ));
+            }
+            Ok(IteratorApplyCallback::DynamicString { targets })
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "iterator_apply EIR dynamic callback PHP type {:?}",
+            other
+        ))),
+    }
+}
+
+/// Collects zero-argument user functions that dynamic string callbacks may select.
+fn iterator_apply_runtime_string_targets(
+    ctx: &FunctionContext<'_>,
+) -> Vec<IteratorApplyCallbackTarget> {
+    let mut targets = ctx
+        .module
+        .functions
+        .iter()
+        .filter(|function| !function.flags.is_main)
+        .filter(|function| function.params.is_empty())
+        .filter_map(|function| {
+            let return_ty = function.return_php_type.codegen_repr();
+            if !iterator_apply_callback_return_supported(&return_ty) {
+                return None;
+            }
+            Some(IteratorApplyCallbackTarget {
+                name: function.name.clone(),
+                label: function_symbol(&function.name),
+                return_ty,
+            })
+        })
+        .collect::<Vec<_>>();
+    targets.sort_by(|left, right| left.label.cmp(&right.label));
+    targets.dedup_by(|left, right| left.label == right.label);
+    targets
+}
+
+/// Returns true when callback truthiness can be tested by this lowering.
+fn iterator_apply_callback_return_supported(return_ty: &PhpType) -> bool {
+    matches!(
+        return_ty.codegen_repr(),
+        PhpType::Bool
+            | PhpType::Int
+            | PhpType::Float
+            | PhpType::Void
+            | PhpType::Never
+            | PhpType::Mixed
+            | PhpType::Union(_)
+    )
 }
 
 /// Loads the single object operand into the canonical integer result register.
@@ -633,8 +726,7 @@ fn emit_count_loaded_traversable_object(ctx: &mut FunctionContext<'_>) -> Result
 /// Dispatches an `iterable` pointer to object traversal for `iterator_apply()`.
 fn emit_apply_loaded_iterable(
     ctx: &mut FunctionContext<'_>,
-    callback_label: &str,
-    callback_return_ty: &PhpType,
+    callback: &IteratorApplyCallback,
 ) -> Result<()> {
     let object_case = ctx.next_label("iterator_apply_iterable_object");
     let done = ctx.next_label("iterator_apply_iterable_done");
@@ -655,7 +747,7 @@ fn emit_apply_loaded_iterable(
 
     ctx.emitter.label(&object_case);
     abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
-    emit_apply_loaded_traversable_object(ctx, callback_label, callback_return_ty)?;
+    emit_apply_loaded_traversable_object(ctx, callback)?;
 
     ctx.emitter.label(&done);
     Ok(())
@@ -664,8 +756,7 @@ fn emit_apply_loaded_iterable(
 /// Applies a callback to a loaded Traversable object by probing IteratorAggregate first.
 fn emit_apply_loaded_traversable_object(
     ctx: &mut FunctionContext<'_>,
-    callback_label: &str,
-    callback_return_ty: &PhpType,
+    callback: &IteratorApplyCallback,
 ) -> Result<()> {
     let direct_case = ctx.next_label("iterator_apply_object_iterator");
     let aggregate_case = ctx.next_label("iterator_apply_object_aggregate");
@@ -679,24 +770,23 @@ fn emit_apply_loaded_traversable_object(
 
     ctx.emitter.label(&direct_case);
     abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
-    emit_apply_loaded_iterator_object(ctx, callback_label, callback_return_ty)?;
+    emit_apply_loaded_iterator_object(ctx, callback)?;
     abi::emit_jump(ctx.emitter, &done);
 
     ctx.emitter.label(&aggregate_case);
     abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
     move_result_to_receiver_arg(ctx);
     iterators::emit_interface_dispatch_call(ctx, "IteratorAggregate", "getiterator", None)?;
-    emit_apply_loaded_iterator_object(ctx, callback_label, callback_return_ty)?;
+    emit_apply_loaded_iterator_object(ctx, callback)?;
 
     ctx.emitter.label(&done);
     Ok(())
 }
 
-/// Drives Iterator and invokes the static callback once for each valid position.
+/// Drives Iterator and invokes the selected callback once for each valid position.
 fn emit_apply_loaded_iterator_object(
     ctx: &mut FunctionContext<'_>,
-    callback_label: &str,
-    callback_return_ty: &PhpType,
+    callback: &IteratorApplyCallback,
 ) -> Result<()> {
     let receiver_reg = abi::nested_call_reg(ctx.emitter);
     ctx.emitter.instruction(&format!(
@@ -724,9 +814,7 @@ fn emit_apply_loaded_iterator_object(
     iterators::emit_interface_dispatch_call(ctx, "Iterator", "valid", None)?;
     emit_branch_if_invalid_iterator(ctx, &loop_end);
 
-    abi::emit_call_label(ctx.emitter, callback_label);
-    emit_increment_saved_apply_count(ctx);
-    emit_branch_if_callback_result_false(ctx, callback_return_ty, &loop_end)?;
+    emit_apply_callback_invocation(ctx, callback, &loop_end)?;
 
     reload_saved_iterator_receiver(ctx);
     iterators::emit_interface_dispatch_call(ctx, "Iterator", "next", None)?;
@@ -1222,6 +1310,125 @@ fn emit_increment_saved_count(ctx: &mut FunctionContext<'_>) {
     }
 }
 
+/// Invokes the callback selected for the current `iterator_apply()` iteration.
+fn emit_apply_callback_invocation(
+    ctx: &mut FunctionContext<'_>,
+    callback: &IteratorApplyCallback,
+    loop_end: &str,
+) -> Result<()> {
+    match callback {
+        IteratorApplyCallback::StaticUserFunction { label, return_ty } => {
+            abi::emit_call_label(ctx.emitter, label);
+            emit_increment_saved_apply_count(ctx);
+            emit_branch_if_callback_result_false(ctx, return_ty, loop_end)
+        }
+        IteratorApplyCallback::DynamicString { targets } => {
+            emit_dynamic_string_apply_callback_invocation(ctx, targets, loop_end)
+        }
+    }
+}
+
+/// Dispatches a saved runtime string callback to a zero-argument user function.
+fn emit_dynamic_string_apply_callback_invocation(
+    ctx: &mut FunctionContext<'_>,
+    targets: &[IteratorApplyCallbackTarget],
+    loop_end: &str,
+) -> Result<()> {
+    let done_label = ctx.next_label("iterator_apply_dynamic_callback_done");
+    let miss_label = ctx.next_label("iterator_apply_dynamic_callback_missing");
+    let mut case_labels = Vec::with_capacity(targets.len());
+    for target in targets {
+        let label = ctx.next_label(&format!(
+            "iterator_apply_dynamic_callback_{}",
+            label_fragment(&target.name)
+        ));
+        emit_branch_if_saved_apply_callback_name_matches(ctx, &target.name, &label);
+        case_labels.push(label);
+    }
+    abi::emit_jump(ctx.emitter, &miss_label);
+
+    for (target, label) in targets.iter().zip(case_labels.iter()) {
+        ctx.emitter.label(label);
+        abi::emit_call_label(ctx.emitter, &target.label);
+        emit_increment_saved_apply_count(ctx);
+        emit_branch_if_callback_result_false(ctx, &target.return_ty, loop_end)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
+
+    ctx.emitter.label(&miss_label);
+    emit_dynamic_string_apply_callback_abort(ctx);
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Branches when the saved runtime callback string matches a candidate PHP function name.
+fn emit_branch_if_saved_apply_callback_name_matches(
+    ctx: &mut FunctionContext<'_>,
+    name: &str,
+    matched_label: &str,
+) {
+    emit_apply_callback_name_compare(ctx, name.as_bytes(), matched_label);
+    let trimmed = name.trim_start_matches('\\');
+    if trimmed == name {
+        let qualified = format!("\\{}", name);
+        emit_apply_callback_name_compare(ctx, qualified.as_bytes(), matched_label);
+    }
+}
+
+/// Converts PHP function names into assembly-label-safe fragments.
+fn label_fragment(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect()
+}
+
+/// Emits a case-insensitive compare against the saved `iterator_apply()` callback name.
+fn emit_apply_callback_name_compare(
+    ctx: &mut FunctionContext<'_>,
+    candidate: &[u8],
+    matched_label: &str,
+) {
+    let (candidate_label, candidate_len) = ctx.data.add_string(candidate);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(
+                ctx.emitter,
+                "x1",
+                APPLY_DYNAMIC_CALLBACK_PTR_OFFSET,
+            );
+            abi::emit_load_temporary_stack_slot(
+                ctx.emitter,
+                "x2",
+                APPLY_DYNAMIC_CALLBACK_LEN_OFFSET,
+            );
+            abi::emit_symbol_address(ctx.emitter, "x3", &candidate_label);
+            abi::emit_load_int_immediate(ctx.emitter, "x4", candidate_len as i64);
+            abi::emit_call_label(ctx.emitter, "__rt_strcasecmp");
+            ctx.emitter.instruction("cmp x0, #0");                              // did the saved iterator_apply callback name match this function?
+            ctx.emitter.instruction(&format!("b.eq {}", matched_label));        // dispatch to this callback when names match case-insensitively
+        }
+        Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(
+                ctx.emitter,
+                "rdi",
+                APPLY_DYNAMIC_CALLBACK_PTR_OFFSET,
+            );
+            abi::emit_load_temporary_stack_slot(
+                ctx.emitter,
+                "rsi",
+                APPLY_DYNAMIC_CALLBACK_LEN_OFFSET,
+            );
+            abi::emit_symbol_address(ctx.emitter, "rdx", &candidate_label);
+            abi::emit_load_int_immediate(ctx.emitter, "rcx", candidate_len as i64);
+            abi::emit_call_label(ctx.emitter, "__rt_strcasecmp");
+            ctx.emitter.instruction("test rax, rax");                           // did the saved iterator_apply callback name match this function?
+            ctx.emitter.instruction(&format!("je {}", matched_label));          // dispatch to this callback when names match case-insensitively
+        }
+    }
+}
+
 /// Increments the saved iterator_apply callback-invocation count beneath the receiver slot.
 fn emit_increment_saved_apply_count(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
@@ -1232,6 +1439,31 @@ fn emit_increment_saved_apply_count(ctx: &mut FunctionContext<'_>) {
         }
         Arch::X86_64 => {
             ctx.emitter.instruction("add QWORD PTR [rsp + 16], 1");             // count this callback invocation beneath the receiver slot
+        }
+    }
+}
+
+/// Emits a fatal diagnostic when a dynamic callback string cannot select a supported function.
+fn emit_dynamic_string_apply_callback_abort(ctx: &mut FunctionContext<'_>) {
+    let message =
+        b"Fatal error: iterator_apply callback string does not name a supported callable\n";
+    let (message_label, message_len) = ctx.data.add_string(message);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #2");                              // write the unresolved iterator_apply callback diagnostic to stderr
+            ctx.emitter.adrp("x1", &message_label);                             // load the iterator_apply callback diagnostic page
+            ctx.emitter.add_lo12("x1", "x1", &message_label);                  // resolve the iterator_apply callback diagnostic address
+            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the iterator_apply callback diagnostic byte length to write
+            ctx.emitter.syscall(4);
+            abi::emit_exit(ctx.emitter, 1);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov edi, 2");                              // write the unresolved iterator_apply callback diagnostic to Linux stderr
+            abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", message_len));      // pass the iterator_apply callback diagnostic byte length to write
+            ctx.emitter.instruction("mov eax, 1");                              // Linux x86_64 syscall 1 = write
+            ctx.emitter.instruction("syscall");                                 // emit the callback diagnostic before terminating
+            abi::emit_exit(ctx.emitter, 1);
         }
     }
 }
