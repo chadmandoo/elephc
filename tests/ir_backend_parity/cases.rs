@@ -120,6 +120,95 @@ foreach ($g as $g) {
     );
 }
 
+/// Verifies Fiber descriptor-backed callable construction matches legacy backend behavior.
+#[test]
+fn parity_fiber_descriptor_backed_callables() {
+    assert_backend_parity(
+        "fiber_first_class_function",
+        r#"<?php
+function fiber_job(int $x): int {
+    echo "job:" . $x;
+    return $x + 1;
+}
+$f = new Fiber(fiber_job(...));
+$v = $f->start(7);
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+        &[],
+    );
+    assert_backend_parity(
+        "fiber_string_builtin",
+        r#"<?php
+$f = new Fiber("STRLEN");
+echo $f->start("abcd");
+"#,
+        &[],
+    );
+    assert_backend_parity(
+        "fiber_static_callable_array",
+        r#"<?php
+class FiberStaticJob {
+    public static function run(string $value): string {
+        echo "static:" . $value;
+        return "static:done";
+    }
+}
+$f = new Fiber([FiberStaticJob::class, "run"]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+        &[],
+    );
+    assert_backend_parity(
+        "fiber_instance_callable_array",
+        r#"<?php
+class FiberArrayJob {
+    public function __construct(private string $prefix) {}
+
+    public function run(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+$job = new FiberArrayJob("array:");
+$f = new Fiber([$job, "run"]);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+        &[],
+    );
+    assert_backend_parity(
+        "fiber_invokable_object",
+        r#"<?php
+class FiberInvokerJob {
+    public function __construct(private string $prefix) {}
+
+    public function __invoke(string $value): string {
+        echo $this->prefix . $value;
+        return $this->prefix . "done";
+    }
+}
+$job = new FiberInvokerJob("invoke:");
+$f = new Fiber($job);
+$v = $f->start("go");
+echo "/";
+echo is_null($v) ? "null" : $v;
+echo "/";
+echo $f->getReturn();
+"#,
+        &[],
+    );
+}
+
 /// Verifies recent static callable fixes match the legacy backend behavior.
 #[test]
 fn parity_static_callable_checks() {
