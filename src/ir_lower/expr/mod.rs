@@ -4962,6 +4962,12 @@ fn assoc_array_literal_value_type_for_ir(
         }
         ExprKind::ArrayAccess { array, .. } => array_access_expr_value_type_for_ir(ctx, array)
             .unwrap_or_else(|| infer_expr_type_syntactic(value).codegen_repr()),
+        ExprKind::PropertyAccess { object, property } => property_access_expr_type_for_ir(
+            ctx,
+            object,
+            property,
+        )
+        .unwrap_or_else(|| infer_expr_type_syntactic(value).codegen_repr()),
         _ => infer_expr_type_syntactic(value).codegen_repr(),
     }
 }
@@ -4973,6 +4979,9 @@ fn array_access_expr_value_type_for_ir(
 ) -> Option<PhpType> {
     let array_ty = match &array.kind {
         ExprKind::Variable(name) => ctx.local_types.get(name).cloned(),
+        ExprKind::PropertyAccess { object, property } => {
+            property_access_expr_type_for_ir(ctx, object, property)
+        }
         ExprKind::ArrayLiteral(items) => Some(array_literal_type_for_ir(ctx, items, array)),
         ExprKind::ArrayLiteralAssoc(pairs) => Some(assoc_array_literal_type_for_ir(ctx, pairs, array)),
         _ => None,
@@ -4985,6 +4994,25 @@ fn array_access_expr_value_type_for_ir(
         PhpType::Mixed | PhpType::Union(_) => Some(PhpType::Mixed),
         _ => None,
     }
+}
+
+/// Returns the declared type for an object property expression used inside a literal.
+fn property_access_expr_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    object: &Expr,
+    property: &str,
+) -> Option<PhpType> {
+    let class_name = instance_callable_object_class(ctx, object)?;
+    let normalized = class_name.trim_start_matches('\\');
+    if let Some(property_ty) = runtime_property_type_override(ctx, normalized, property) {
+        return Some(normalize_value_php_type(property_ty));
+    }
+    let class_info = ctx.classes.get(normalized)?;
+    class_info
+        .properties
+        .iter()
+        .find(|(name, _)| name == property)
+        .map(|(_, ty)| normalize_value_php_type(ty.codegen_repr()))
 }
 
 /// Merges associative-array value types for EIR storage metadata.
@@ -6152,16 +6180,19 @@ fn lower_method_call(
     let result_type = method_call_result_type(ctx, object.value, method, op, expr);
     let mut operands = vec![object.value];
     let sig = method_signature(ctx, object.value, method).cloned();
-    operands.extend(lower_args_with_signature(ctx, sig.as_ref(), args));
+    let arg_values = lower_args_with_signature(ctx, sig.as_ref(), args);
+    operands.extend(arg_values.iter().copied());
     let data = ctx.intern_string(method);
-    ctx.emit_value(
+    let call = ctx.emit_value(
         op,
         operands,
         Some(Immediate::Data(data)),
         result_type,
         op.default_effects(),
         Some(expr.span),
-    )
+    );
+    release_owned_call_arg_temporaries(ctx, &arg_values, expr.span);
+    call
 }
 
 /// Lowers `?Object->method()` calls so null receivers fatal before argument evaluation.
@@ -6307,16 +6338,37 @@ fn lower_method_call_with_receiver(
     let result_type = method_call_result_type(ctx, object.value, method, op, expr);
     let mut operands = vec![object.value];
     let sig = method_signature(ctx, object.value, method).cloned();
-    operands.extend(lower_args_with_signature(ctx, sig.as_ref(), args));
+    let arg_values = lower_args_with_signature(ctx, sig.as_ref(), args);
+    operands.extend(arg_values.iter().copied());
     let data = ctx.intern_string(method);
-    ctx.emit_value(
+    let call = ctx.emit_value(
         op,
         operands,
         Some(Immediate::Data(data)),
         result_type,
         op.default_effects(),
         Some(expr.span),
-    )
+    );
+    release_owned_call_arg_temporaries(ctx, &arg_values, expr.span);
+    call
+}
+
+/// Releases normalized call arguments that were allocated only for this call.
+fn release_owned_call_arg_temporaries(
+    ctx: &mut LoweringContext<'_, '_>,
+    args: &[crate::ir::ValueId],
+    span: Span,
+) {
+    for value in args {
+        let php_type = ctx.builder.value_php_type(*value);
+        let lowered = LoweredValue {
+            value: *value,
+            ir_type: value_ir_type(&php_type),
+        };
+        if ctx.value_is_owning_temporary(lowered) {
+            crate::ir_lower::ownership::release_if_owned(ctx, lowered, Some(span));
+        }
+    }
 }
 
 /// Returns the checked signature for an instance method call when metadata is available.

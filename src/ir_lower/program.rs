@@ -778,6 +778,21 @@ fn required_builtin_spl_metadata_methods(class_name: &str) -> &'static [&'static
             "offsetSet",
             "offsetUnset",
         ],
+        "SplHeap" => &["current", "key", "next", "rewind", "valid", "count"],
+        "SplMaxHeap" | "SplMinHeap" => &["compare"],
+        "SplPriorityQueue" => &["current", "key", "next", "rewind", "valid", "count"],
+        "SplObjectStorage" => &[
+            "current",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+            "count",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+        ],
         "RegexIterator" => &["accept", "current", "key"],
         "RecursiveArrayIterator" => &["hasChildren", "getChildren"],
         "RecursiveFilterIterator" => &["hasChildren"],
@@ -971,6 +986,80 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
                 | "__debuginfo"
                 | "enqueue"
                 | "dequeue"
+        ),
+        "SplHeap" => matches!(
+            method_key,
+            "__construct"
+                | "insert"
+                | "extract"
+                | "top"
+                | "count"
+                | "isempty"
+                | "rewind"
+                | "current"
+                | "key"
+                | "next"
+                | "valid"
+                | "recoverfromcorruption"
+                | "iscorrupted"
+                | "__debuginfo"
+                | "compare"
+                | "__elephcbestindex"
+                | "__elephcremoveat"
+        ),
+        "SplMaxHeap" | "SplMinHeap" => matches!(method_key, "compare"),
+        "SplPriorityQueue" => matches!(
+            method_key,
+            "__construct"
+                | "compare"
+                | "insert"
+                | "setextractflags"
+                | "getextractflags"
+                | "extract"
+                | "top"
+                | "count"
+                | "isempty"
+                | "rewind"
+                | "current"
+                | "key"
+                | "next"
+                | "valid"
+                | "recoverfromcorruption"
+                | "iscorrupted"
+                | "__debuginfo"
+                | "__elephcbestindex"
+                | "__elephcoutputat"
+                | "__elephcremoveat"
+        ),
+        "SplObjectStorage" => matches!(
+            method_key,
+            "__construct"
+                | "attach"
+                | "detach"
+                | "contains"
+                | "addall"
+                | "removeall"
+                | "removeallexcept"
+                | "getinfo"
+                | "setinfo"
+                | "count"
+                | "rewind"
+                | "valid"
+                | "key"
+                | "current"
+                | "next"
+                | "seek"
+                | "offsetexists"
+                | "offsetget"
+                | "offsetset"
+                | "offsetunset"
+                | "gethash"
+                | "serialize"
+                | "unserialize"
+                | "__serialize"
+                | "__unserialize"
+                | "__debuginfo"
+                | "__elephcindexof"
         ),
         "IteratorIterator" => matches!(
             method_key,

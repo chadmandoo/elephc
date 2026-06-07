@@ -2070,8 +2070,13 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     let mut ref_params = Vec::with_capacity(target.ref_params.len() + 1);
     ref_params.push(false);
     ref_params.extend(target.ref_params.iter().copied());
-    let call_args =
-        materialize_direct_call_args_with_refs(ctx, &inst.operands, &param_types, &ref_params)?;
+    let call_args = materialize_direct_call_args_with_refs_and_options(
+        ctx,
+        &inst.operands,
+        &param_types,
+        &ref_params,
+        true,
+    )?;
     let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
     abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     if let Some(slot) = target.dynamic_slot {
@@ -2082,6 +2087,7 @@ fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
     store_call_result(ctx, inst, &target.return_ty)?;
+    emit_call_arg_temp_cleanups(ctx, &call_args);
     emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
 }
 
@@ -3103,6 +3109,15 @@ struct MethodCallTarget {
 struct CallArgMaterialization {
     overflow_bytes: usize,
     ref_writebacks: Vec<RefArgWriteback>,
+    cleanup_slots: Vec<CallArgTempCleanup>,
+    cleanup_bytes: usize,
+}
+
+/// Caller-owned temporary argument that must be released after the call returns.
+struct CallArgTempCleanup {
+    param_index: usize,
+    offset: usize,
+    ty: PhpType,
 }
 
 /// A caller-side scalar local boxed into a temporary Mixed by-reference cell.
@@ -3169,10 +3184,15 @@ fn resolve_method_call_target(
             impl_class, method_name
         )));
     }
+    let dynamic_slot = if class_info.final_methods.contains(&method_key) {
+        None
+    } else {
+        dynamic_slot
+    };
     Ok(MethodCallTarget {
         impl_class,
         method_key,
-        dynamic_slot: if has_direct_body { None } else { dynamic_slot },
+        dynamic_slot,
         params: callee_sig
             .params
             .iter()
@@ -3549,6 +3569,17 @@ fn materialize_direct_call_args_with_refs(
     param_types: &[PhpType],
     ref_params: &[bool],
 ) -> Result<CallArgMaterialization> {
+    materialize_direct_call_args_with_refs_and_options(ctx, args, param_types, ref_params, false)
+}
+
+/// Loads SSA operands into ABI argument slots with optional caller-temp cleanup tracking.
+fn materialize_direct_call_args_with_refs_and_options(
+    ctx: &mut FunctionContext<'_>,
+    args: &[ValueId],
+    param_types: &[PhpType],
+    ref_params: &[bool],
+    track_mixed_temp_cleanups: bool,
+) -> Result<CallArgMaterialization> {
     if args.len() != param_types.len() {
         return Err(CodegenIrError::invalid_module(format!(
             "direct call materialization received {} args for {} params",
@@ -3568,6 +3599,15 @@ fn materialize_direct_call_args_with_refs(
     let abi_param_types = abi_param_types_for_refs(param_types, ref_params);
     let assignments =
         abi::build_outgoing_arg_assignments_for_target(ctx.emitter.target, &abi_param_types, 0);
+    let cleanup_slots = if track_mixed_temp_cleanups {
+        plan_call_arg_temp_cleanups(ctx, args, param_types, ref_params)?
+    } else {
+        Vec::new()
+    };
+    let cleanup_bytes = cleanup_slots.len() * 16;
+    if cleanup_bytes > 0 {
+        abi::emit_reserve_temporary_stack(ctx.emitter, cleanup_bytes);
+    }
     let mut arg_temp_bytes = 0usize;
     for (index, (value, param_ty)) in args.iter().zip(param_types.iter()).enumerate() {
         if ref_params[index] {
@@ -3577,6 +3617,9 @@ fn materialize_direct_call_args_with_refs(
             ctx.load_value_to_result(*value)?;
             let source_ty = ctx.raw_value_php_type(*value)?;
             let push_ty = materialize_direct_call_arg_for_param(ctx, &source_ty, param_ty)?;
+            if let Some(cleanup) = cleanup_slots.iter().find(|cleanup| cleanup.param_index == index) {
+                save_call_arg_temp_cleanup(ctx, cleanup, arg_temp_bytes);
+            }
             abi::emit_push_result_value(ctx.emitter, &push_ty);
         }
         arg_temp_bytes += call_arg_temp_slot_size(&abi_param_types[index]);
@@ -3584,6 +3627,8 @@ fn materialize_direct_call_args_with_refs(
     Ok(CallArgMaterialization {
         overflow_bytes: abi::materialize_outgoing_args(ctx.emitter, &assignments),
         ref_writebacks,
+        cleanup_slots,
+        cleanup_bytes,
     })
 }
 
@@ -3635,6 +3680,8 @@ fn materialize_static_method_call_args_with_refs(
     Ok(CallArgMaterialization {
         overflow_bytes: abi::materialize_outgoing_args(ctx.emitter, &assignments),
         ref_writebacks,
+        cleanup_slots: Vec::new(),
+        cleanup_bytes: 0,
     })
 }
 
@@ -3720,6 +3767,67 @@ fn materialize_direct_call_arg_for_param(
     }
 }
 
+/// Plans temporary Mixed call arguments that must remain alive until after the callee returns.
+fn plan_call_arg_temp_cleanups(
+    ctx: &FunctionContext<'_>,
+    args: &[ValueId],
+    param_types: &[PhpType],
+    ref_params: &[bool],
+) -> Result<Vec<CallArgTempCleanup>> {
+    let mut cleanups = Vec::new();
+    for (index, (value, param_ty)) in args.iter().zip(param_types.iter()).enumerate() {
+        if ref_params[index] {
+            continue;
+        }
+        let source_ty = ctx.raw_value_php_type(*value)?;
+        if direct_call_arg_creates_mixed_temp(&source_ty, param_ty) {
+            cleanups.push(CallArgTempCleanup {
+                param_index: index,
+                offset: cleanups.len() * 16,
+                ty: PhpType::Mixed,
+            });
+        }
+    }
+    Ok(cleanups)
+}
+
+/// Returns whether argument materialization allocates a caller-owned Mixed box.
+fn direct_call_arg_creates_mixed_temp(source_ty: &PhpType, param_ty: &PhpType) -> bool {
+    matches!(param_ty.codegen_repr(), PhpType::Mixed)
+        && !matches!(source_ty.codegen_repr(), PhpType::Mixed)
+}
+
+/// Saves the current pointer result into the reserved call-argument cleanup area.
+fn save_call_arg_temp_cleanup(
+    ctx: &mut FunctionContext<'_>,
+    cleanup: &CallArgTempCleanup,
+    arg_temp_bytes: usize,
+) {
+    let scratch = abi::symbol_scratch_reg(ctx.emitter);
+    let offset = arg_temp_bytes + cleanup.offset;
+    abi::emit_temporary_stack_address(ctx.emitter, scratch, offset);
+    abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), scratch, 0);
+}
+
+/// Releases caller-owned temporary arguments after the call result has been saved.
+fn emit_call_arg_temp_cleanups(
+    ctx: &mut FunctionContext<'_>,
+    call_args: &CallArgMaterialization,
+) {
+    if call_args.cleanup_slots.is_empty() {
+        return;
+    }
+    for cleanup in &call_args.cleanup_slots {
+        abi::emit_load_temporary_stack_slot(
+            ctx.emitter,
+            abi::int_result_reg(ctx.emitter),
+            cleanup.offset,
+        );
+        abi::emit_decref_if_refcounted(ctx.emitter, &cleanup.ty);
+    }
+    abi::emit_release_temporary_stack(ctx.emitter, call_args.cleanup_bytes);
+}
+
 /// Converts the currently loaded indexed-array argument into boxed Mixed slots.
 fn emit_loaded_indexed_array_to_mixed(
     ctx: &mut FunctionContext<'_>,
@@ -3794,6 +3902,8 @@ fn materialize_method_call_args_with_receiver_reg_and_refs(
     Ok(CallArgMaterialization {
         overflow_bytes: abi::materialize_outgoing_args(ctx.emitter, &assignments),
         ref_writebacks,
+        cleanup_slots: Vec::new(),
+        cleanup_bytes: 0,
     })
 }
 

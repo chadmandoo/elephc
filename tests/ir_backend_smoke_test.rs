@@ -3988,6 +3988,24 @@ fn ir_backend_handles_power_and_spaceship() {
     );
 }
 
+/// Verifies class methods can compare boxed mixed numeric parameters with spaceship.
+#[test]
+fn ir_backend_handles_mixed_method_spaceship() {
+    let source = r#"<?php
+class C {
+    public function cmp(mixed $left, mixed $right): int {
+        return $left <=> $right;
+    }
+}
+
+$c = new C();
+echo $c->cmp(5, 3);
+echo ":";
+echo $c->cmp(1, 3);
+"#;
+    assert_eq!(compile_and_run_ir_backend("mixed_method_spaceship", source), "1:-1");
+}
+
 /// Verifies explicit ownership ops emitted around string local slots.
 #[test]
 fn ir_backend_handles_string_ownership_ops() {

@@ -1582,6 +1582,9 @@ fn lower_property_assign(
         Op::PropSet.default_effects(),
         Some(span),
     );
+    if let Some(property_ty) = object_property_type(ctx, object.value, property) {
+        release_property_assignment_source_after_retaining_store(ctx, &property_ty, value, span);
+    }
 }
 
 /// Converts array literals to hash storage when a declared object property requires assoc storage.
@@ -1726,7 +1729,7 @@ fn lower_property_array_push(
             Op::PropGet,
             vec![object.value],
             Some(Immediate::Data(data)),
-            property_ty,
+            property_ty.clone(),
             Op::PropGet.default_effects(),
             Some(span),
         );
@@ -1738,6 +1741,7 @@ fn lower_property_array_push(
             Op::ArrayPush.default_effects(),
             Some(span),
         );
+        release_property_array_insert_value_after_retain(ctx, &property_ty, value, span);
         ctx.emit_void(
             Op::PropSet,
             vec![object.value, property_value.value],
@@ -1745,6 +1749,7 @@ fn lower_property_array_push(
             Op::PropSet.default_effects(),
             Some(span),
         );
+        release_rewritten_property_value_after_retaining_store(ctx, &property_ty, property_value, span);
         return;
     }
 
@@ -1777,7 +1782,7 @@ fn lower_property_array_assign(
             Op::PropGet,
             vec![object.value],
             Some(Immediate::Data(data)),
-            property_ty,
+            property_ty.clone(),
             Op::PropGet.default_effects(),
             Some(span),
         );
@@ -1790,6 +1795,7 @@ fn lower_property_array_assign(
             Op::ArraySet.default_effects(),
             Some(span),
         );
+        release_property_array_insert_value_after_retain(ctx, &property_ty, value, span);
         ctx.emit_void(
             Op::PropSet,
             vec![object.value, property_value.value],
@@ -1797,6 +1803,7 @@ fn lower_property_array_assign(
             Op::PropSet.default_effects(),
             Some(span),
         );
+        release_rewritten_property_value_after_retaining_store(ctx, &property_ty, property_value, span);
         return;
     }
     if let Some(property_ty) =
@@ -1807,7 +1814,7 @@ fn lower_property_array_assign(
             Op::PropGet,
             vec![object.value],
             Some(Immediate::Data(data)),
-            property_ty,
+            property_ty.clone(),
             Op::PropGet.default_effects(),
             Some(span),
         );
@@ -1820,6 +1827,7 @@ fn lower_property_array_assign(
             Op::HashSet.default_effects(),
             Some(span),
         );
+        release_property_array_insert_value_after_retain(ctx, &property_ty, value, span);
         ctx.emit_void(
             Op::PropSet,
             vec![object.value, property_value.value],
@@ -1827,6 +1835,7 @@ fn lower_property_array_assign(
             Op::PropSet.default_effects(),
             Some(span),
         );
+        release_rewritten_property_value_after_retaining_store(ctx, &property_ty, property_value, span);
         return;
     }
 
@@ -1865,6 +1874,71 @@ fn lower_property_array_assign(
         effects_lookup::runtime_effects(),
         Some(span),
     );
+}
+
+/// Releases a temporary assigned into an object property after `PropSet` retains or boxes it.
+fn release_property_assignment_source_after_retaining_store(
+    ctx: &mut LoweringContext<'_, '_>,
+    property_ty: &PhpType,
+    value: LoweredValue,
+    span: Span,
+) {
+    if !ctx.value_is_owning_temporary(value) {
+        return;
+    }
+    if !property_store_keeps_independent_ref(property_ty, &ctx.builder.value_php_type(value.value)) {
+        return;
+    }
+    crate::ir_lower::ownership::release_if_owned(ctx, value, Some(span));
+}
+
+/// Releases an element temporary after a property-array write retains it for storage.
+fn release_property_array_insert_value_after_retain(
+    ctx: &mut LoweringContext<'_, '_>,
+    property_ty: &PhpType,
+    value: LoweredValue,
+    span: Span,
+) {
+    let Some(elem_ty) = indexed_property_array_element_type(property_ty) else {
+        return;
+    };
+    if matches!(elem_ty.codegen_repr(), PhpType::Mixed | PhpType::Callable) {
+        return;
+    }
+    if ctx.value_is_owning_temporary(value) {
+        crate::ir_lower::ownership::release_if_owned(ctx, value, Some(span));
+    }
+}
+
+/// Releases the loaded property value after rewriting it through a retaining `PropSet`.
+fn release_rewritten_property_value_after_retaining_store(
+    ctx: &mut LoweringContext<'_, '_>,
+    property_ty: &PhpType,
+    property_value: LoweredValue,
+    span: Span,
+) {
+    if property_ty.codegen_repr().is_refcounted() {
+        crate::ir_lower::ownership::release_if_owned(ctx, property_value, Some(span));
+    }
+}
+
+/// Returns whether a property store creates a distinct retained/boxed owner for the value.
+fn property_store_keeps_independent_ref(property_ty: &PhpType, value_ty: &PhpType) -> bool {
+    let property_ty = property_ty.codegen_repr();
+    let value_ty = value_ty.codegen_repr();
+    if matches!((&property_ty, &value_ty), (PhpType::Mixed, PhpType::Mixed)) {
+        return false;
+    }
+    property_ty.is_refcounted()
+}
+
+/// Returns the element type for property arrays that use retaining indexed/hash helpers.
+fn indexed_property_array_element_type(property_ty: &PhpType) -> Option<PhpType> {
+    match property_ty.codegen_repr() {
+        PhpType::Array(elem_ty) => Some(elem_ty.codegen_repr()),
+        PhpType::AssocArray { value, .. } => Some(value.codegen_repr()),
+        _ => None,
+    }
 }
 
 /// Emits a no-op marker for declaration-only or frontend-only statements.

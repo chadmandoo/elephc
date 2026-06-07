@@ -28,8 +28,8 @@ pub(super) fn lower_strict_eq(
 ) -> Result<()> {
     let lhs = expect_operand(inst, 0)?;
     let rhs = expect_operand(inst, 1)?;
-    let lhs_ty = ctx.value_php_type(lhs)?;
-    let rhs_ty = ctx.value_php_type(rhs)?;
+    let lhs_ty = ctx.value_php_type(lhs)?.codegen_repr();
+    let rhs_ty = ctx.value_php_type(rhs)?.codegen_repr();
     if is_mixed_like(&lhs_ty) || is_mixed_like(&rhs_ty) {
         emit_mixed_strict_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
         return store_if_result(ctx, inst);
@@ -434,7 +434,10 @@ pub(super) fn lower_spaceship(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 
 /// Returns true for scalar values that can participate in the current loose integer path.
 fn intish_or_null(ty: &PhpType) -> bool {
-    matches!(ty, PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never)
+    matches!(
+        ty,
+        PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never | PhpType::Mixed
+    )
 }
 
 /// Returns true for the scalar loose-equality subset that can normalize through integer slots.
@@ -458,7 +461,9 @@ fn emit_numeric_int_compare(
     };
     let rhs_reg = abi::int_result_reg(ctx.emitter);
     load_intish_value(ctx, lhs, lhs_reg, false)?;
+    abi::emit_push_reg(ctx.emitter, lhs_reg);
     load_intish_value(ctx, rhs, rhs_reg, false)?;
+    abi::emit_pop_reg(ctx.emitter, lhs_reg);
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.instruction("cmp x1, x0");                              // compare left and right integer operands for spaceship ordering
@@ -525,6 +530,11 @@ fn load_numeric_to_float_reg(
                 }
             }
         }
+        PhpType::Mixed => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
+            move_float_result_to_reg(ctx, float_reg);
+        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "float spaceship for PHP type {:?}",
@@ -533,6 +543,22 @@ fn load_numeric_to_float_reg(
         }
     }
     Ok(())
+}
+
+/// Moves the current float result into the requested comparison register.
+fn move_float_result_to_reg(ctx: &mut FunctionContext<'_>, reg: &str) {
+    let result_reg = abi::float_result_reg(ctx.emitter);
+    if reg == result_reg {
+        return;
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("fmov {}, {}", reg, result_reg));  // preserve the normalized mixed float comparison operand
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("movapd {}, {}", reg, result_reg)); // preserve the normalized mixed float comparison operand
+        }
+    }
 }
 
 /// Materializes the result of the most recent compare as a spaceship integer.
