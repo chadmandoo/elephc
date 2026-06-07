@@ -163,64 +163,83 @@ impl Checker {
                 elseif_clauses,
                 else_body,
             } => {
-                self.infer_type_with_assignment_effects(condition, env)?;
                 let mut errors = Vec::new();
 
-                // Flow-sensitive type narrowing applies only to the simple `if` / `if`-`else`
-                // shape (no `elseif`), where the then/else complement is unambiguous.
-                let guard = if elseif_clauses.is_empty() {
-                    self.type_guard_narrowing(condition, env)
-                } else {
-                    None
-                };
+                // Flow-sensitive type narrowing across the if / elseif* / else chain.
+                //
+                // Each recognized guard narrows its variable to the guarded type while checking
+                // that branch's body. The fallthrough env for the remaining clauses (and the final
+                // else) accumulates the complement, which is sound because reaching a later clause
+                // means every earlier condition was false.
+                //
+                // After the whole construct we restore every variable we narrowed, so code after
+                // the `if` sees the joined view. The single exception is an exhaustively divergent
+                // chain (no else and *every* clause body diverges): there the only way to fall
+                // through is with all conditions false, so the accumulated complement is sound for
+                // the statements after the `if`.
+                let mut clauses: Vec<(&Expr, &Vec<Stmt>)> = vec![(condition, then_body)];
+                clauses.extend(elseif_clauses.iter().map(|(c, b)| (c, b)));
 
-                if let Some(guard) = &guard {
-                    // -- then-branch sees the guarded type --
-                    let saved = env.get(&guard.var).cloned();
-                    env.insert(guard.var.clone(), guard.then_ty.clone());
-                    for s in then_body {
-                        if let Err(error) = self.check_stmt(s, env) {
-                            errors.extend(error.flatten());
+                // Pre-`if` type of every variable we narrow, captured the first time we touch it,
+                // so each one can be restored after the construct.
+                let mut saved_vars: Vec<(String, Option<PhpType>)> = Vec::new();
+                let mut applied_any_guard = false;
+
+                for (cond, body) in &clauses {
+                    self.infer_type_with_assignment_effects(cond, env)?;
+
+                    if let Some(guard) = self.type_guard_narrowing(cond, env) {
+                        applied_any_guard = true;
+                        // Remember the variable's pre-`if` type the first time we narrow it.
+                        if !saved_vars.iter().any(|(v, _)| v == &guard.var) {
+                            saved_vars.push((guard.var.clone(), env.get(&guard.var).cloned()));
                         }
-                    }
-                    restore_narrowed_var(env, &guard.var, &saved);
 
-                    // -- else-branch sees the complement type --
-                    env.insert(guard.var.clone(), guard.else_ty.clone());
-                    if let Some(body) = else_body {
-                        for s in body {
+                        // Check the guarded body with the "then" type.
+                        let saved = env.get(&guard.var).cloned();
+                        env.insert(guard.var.clone(), guard.then_ty.clone());
+                        for s in *body {
                             if let Err(error) = self.check_stmt(s, env) {
                                 errors.extend(error.flatten());
                             }
                         }
-                    }
-                    restore_narrowed_var(env, &guard.var, &saved);
+                        restore_narrowed_var(env, &guard.var, &saved);
 
-                    // -- early-return idiom: `if (guard) { ...; return; }` with no `else` narrows
-                    //    the statements after the `if` to the complement type --
-                    if else_body.is_none() && super::narrowing::body_always_diverges(then_body) {
+                        // The fallthrough env for the rest of the chain (next elseif or else)
+                        // sees the complement.
                         env.insert(guard.var.clone(), guard.else_ty.clone());
+                    } else {
+                        // No narrowing for this clause — check the body with the current env.
+                        for s in *body {
+                            if let Err(error) = self.check_stmt(s, env) {
+                                errors.extend(error.flatten());
+                            }
+                        }
                     }
-                } else {
-                    for s in then_body {
+                }
+
+                // Final else body (if present) is checked with the accumulated complement.
+                if let Some(body) = else_body {
+                    for s in body {
                         if let Err(error) = self.check_stmt(s, env) {
                             errors.extend(error.flatten());
                         }
                     }
-                    for (cond, body) in elseif_clauses {
-                        self.infer_type_with_assignment_effects(cond, env)?;
-                        for s in body {
-                            if let Err(error) = self.check_stmt(s, env) {
-                                errors.extend(error.flatten());
-                            }
-                        }
-                    }
-                    if let Some(body) = else_body {
-                        for s in body {
-                            if let Err(error) = self.check_stmt(s, env) {
-                                errors.extend(error.flatten());
-                            }
-                        }
+                }
+
+                // Keep the accumulated complement for the statements after the `if` only when the
+                // chain is exhaustive by divergence: no else and every clause body diverges, so a
+                // fallthrough implies all conditions were false. Otherwise a taken non-diverging
+                // branch could reach the following code without the complement holding, so restore
+                // every narrowed variable to its pre-`if` type.
+                let keep_complement_after_if = applied_any_guard
+                    && else_body.is_none()
+                    && clauses
+                        .iter()
+                        .all(|(_, body)| self.body_always_diverges(body));
+                if !keep_complement_after_if {
+                    for (var, original) in &saved_vars {
+                        restore_narrowed_var(env, var, original);
                     }
                 }
 

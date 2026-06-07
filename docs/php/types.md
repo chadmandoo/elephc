@@ -161,7 +161,7 @@ Aliases: `(integer)`, `(double)`, `(real)`, `(boolean)`.
 
 ### Type narrowing
 
-Inside an `if` guarded by a type predicate on a variable, that variable is narrowed to the tested type within the branch, so it can be used as that type without an explicit cast. `is_int()`, `is_float()`, `is_string()`, and `is_bool()` (and their aliases) narrow to the matching scalar, and `$x instanceof SomeClass` narrows to that class — including calling its methods. The `else` branch — and the statements after a guard whose body always `return`s or `throw`s — sees the complementary type; a leading `!` flips the branches.
+Inside an `if` (or `if`/`elseif`*/`else` chain) guarded by a type predicate on a variable, that variable is narrowed to the tested type within the matching branch(es), so it can be used as that type without an explicit cast. `is_int()`, `is_float()`, `is_string()`, and `is_bool()` (and their aliases) narrow to the matching scalar, and `$x instanceof SomeClass` narrows to that class — including calling its methods. Each subsequent `elseif`, and the `else` branch, see the complement of all previous guards. The statements *after* the whole construct also see the complement when the chain is exhaustive by divergence — there is no `else` and *every* clause body always diverges (`return`, `throw`, `exit()`, `die()`, or a call to a `: never` function) — because reaching them means every guard was false. A leading `!` flips the then/else branches.
 
 ```php
 function describe($x): string {        // $x may be int or a Point across call sites

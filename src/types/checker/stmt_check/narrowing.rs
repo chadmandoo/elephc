@@ -7,9 +7,11 @@
 //!
 //! Key details:
 //! - Recognizes `is_int`/`is_float`/`is_string`/`is_bool($var)` (and aliases) and `$var instanceof
-//!   Class` guards, optionally negated with a leading `!`. The then-branch sees the guarded type and
-//!   the else-branch sees the complement; for a guard with no `else` whose then-branch always
-//!   diverges (`return`/`throw`), the complement is applied to the statements after the `if`.
+//!   Class` guards, optionally negated with a leading `!`. Narrowing is applied to each clause in an
+//!   if/elseif*/else chain (each subsequent clause, and the else, see the accumulated complement
+//!   from previous guards). For a chain with no else where *every* clause body always diverges
+//!   (return/throw/exit/die/never-function), the accumulated complement is applied to the statements
+//!   after the entire if construct.
 //! - Conservative: a concrete (non-union, non-mixed) type is left unchanged, and an empty narrowing
 //!   result falls back to the original type, so valid code is never narrowed away to `Never`.
 
@@ -93,6 +95,45 @@ impl Checker {
             _ => current.clone(),
         }
     }
+
+    /// Returns true when a statement body always diverges.
+    ///
+    /// A body is considered diverging if its last statement is:
+    /// - `return` or `throw`
+    /// - a call to `exit()` or `die()`
+    /// - a call to a user function whose declared return type is `never`
+    ///
+    /// This is used by type narrowing so that an `if (guard) { ... diverging ... }` (with no else)
+    /// allows the statements *after* the if to be narrowed to the complement type.
+    pub(crate) fn body_always_diverges(&self, body: &[Stmt]) -> bool {
+        let Some(last) = body.last() else {
+            return false;
+        };
+
+        match &last.kind {
+            StmtKind::Return(_) | StmtKind::Throw(_) => true,
+            StmtKind::ExprStmt(expr) => self.expr_always_diverges(expr),
+            _ => false,
+        }
+    }
+
+    /// Returns true if the expression is known to never return normally: a call to `exit()` or
+    /// `die()` (recognized by name), or a call to a user function whose declared return type is
+    /// `never`. The function name is resolved case-insensitively against the checker's function
+    /// table, matching PHP's call semantics.
+    fn expr_always_diverges(&self, expr: &Expr) -> bool {
+        let ExprKind::FunctionCall { name, .. } = &expr.kind else {
+            return false;
+        };
+        let lowered = name.to_ascii_lowercase();
+        if lowered == "exit" || lowered == "die" {
+            return true;
+        }
+        self.canonical_function_name_folded(name)
+            .and_then(|canonical| self.functions.get(&canonical))
+            .map(|sig| sig.return_type == PhpType::Never)
+            .unwrap_or(false)
+    }
 }
 
 /// Extracts the guarded variable name and the target type from a (non-negated) guard expression.
@@ -134,13 +175,4 @@ fn guard_matches(member: &PhpType, target: &PhpType) -> bool {
         (PhpType::Object(member_class), PhpType::Object(target_class)) => member_class == target_class,
         _ => member == target,
     }
-}
-
-/// Returns true when a statement body always diverges — its last statement is a `return` or
-/// `throw` — so an `if` guard with no `else` can apply its complement to the following statements.
-pub(crate) fn body_always_diverges(body: &[Stmt]) -> bool {
-    matches!(
-        body.last().map(|s| &s.kind),
-        Some(StmtKind::Return(_) | StmtKind::Throw(_))
-    )
 }

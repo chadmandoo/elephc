@@ -6,9 +6,10 @@
 //!
 //! Key details:
 //! - Fixtures exercise scalar narrowing (functions and methods), negated guards, the early-return
-//!   idiom, and `instanceof` narrowing with method dispatch on a runtime-Mixed receiver. The
-//!   guarded variables are untyped parameters that are unions at runtime (heterogeneous calls), so
-//!   these tests depend on both the union parameter inference and the narrowing. Outputs match PHP.
+//!   idiom, `instanceof` narrowing with method dispatch on a runtime-Mixed receiver, `if`/`elseif`
+//!   chains, and `: never`-function divergence that keeps the complement after an exhaustive chain.
+//!   The guarded variables are untyped parameters that are unions at runtime (heterogeneous calls),
+//!   so these tests depend on both the union parameter inference and the narrowing. Outputs match PHP.
 
 use super::*;
 
@@ -134,4 +135,58 @@ fn test_overload_pattern_int_or_object() {
         "#,
     );
     assert_eq!(out, "5|42");
+}
+
+/// Tests flow-sensitive narrowing across an `if` / `elseif` / `else` chain.
+/// Each clause should see the appropriate narrowed (or complement) type.
+#[test]
+fn test_elseif_narrowing_chain() {
+    let out = compile_and_run(
+        r#"<?php
+        function describe($x): string {
+            if (is_int($x)) {
+                return "int:" . ($x + 1);
+            } elseif (is_string($x)) {
+                return "str:" . $x;
+            }
+            return "other";
+        }
+        echo describe(41), "|", describe("hi"), "|", describe(3.14);
+        "#,
+    );
+    assert_eq!(out, "int:42|str:hi|other");
+}
+
+/// Tests that a branch ending in a `: never` function call lets the code after an
+/// if/elseif chain (with no final else) keep the complement type. The trailing
+/// `$x->speak()` only type-checks if the `fail()` clause is recognized as diverging and
+/// `$x` is therefore narrowed to `Animal`; without `never` detection `$x` would still be
+/// the `int|Cat|Dog` union and the method call on a multi-class union would be rejected.
+#[test]
+fn test_elseif_chain_with_never_divergence() {
+    let out = compile_and_run(
+        r#"<?php
+        interface Animal { function speak(): string; }
+        class Cat implements Animal { function speak(): string { return "meow"; } }
+        class Dog implements Animal { function speak(): string { return "woof"; } }
+
+        function fail(): never {
+            throw new \Exception("boom");
+        }
+
+        function describe($x): string {
+            if (is_int($x)) {
+                return "int:" . $x;
+            } elseif (!($x instanceof Animal)) {
+                fail();
+            }
+            // All clauses diverge and there is no else, so reaching here means every guard
+            // was false => $x must be an Animal.
+            return $x->speak();
+        }
+
+        echo describe(7), "|", describe(new Cat()), "|", describe(new Dog());
+        "#,
+    );
+    assert_eq!(out, "int:7|meow|woof");
 }
