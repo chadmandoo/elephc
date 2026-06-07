@@ -4749,6 +4749,7 @@ fn pointer_builtin_return_type(
     operands: &[crate::ir::ValueId],
 ) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "ptr" => Some(PhpType::Pointer(None)),
         "ptr_null" => Some(PhpType::Pointer(None)),
         "ptr_is_null" => Some(PhpType::Bool),
         "ptr_get" | "ptr_read8" | "ptr_read16" | "ptr_read32" | "ptr_sizeof" => {
@@ -4877,6 +4878,7 @@ fn array_builtin_return_type(
         "array_combine" => array_combine_builtin_return_type(ctx, operands),
         "array_column" => array_column_builtin_return_type(ctx, operands),
         "array_flip" => array_flip_builtin_return_type(ctx, operands),
+        "array_fill" => array_fill_builtin_return_type(ctx, operands),
         "array_fill_keys" => array_fill_keys_builtin_return_type(ctx, operands),
         "array_merge" => array_merge_builtin_return_type(ctx, operands),
         "array_splice" | "array_filter" | "array_diff" | "array_intersect" | "array_diff_key"
@@ -4907,6 +4909,17 @@ fn array_builtin_return_type(
         }
         _ => None,
     }
+}
+
+/// Returns precise return metadata for `array_fill(start, count, value)`.
+fn array_fill_builtin_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    operands: &[crate::ir::ValueId],
+) -> Option<PhpType> {
+    let value = operands.get(2)?;
+    Some(PhpType::Array(Box::new(
+        ctx.builder.value_php_type(*value).codegen_repr(),
+    )))
 }
 
 /// Returns the extracted column element type for `array_column()`.

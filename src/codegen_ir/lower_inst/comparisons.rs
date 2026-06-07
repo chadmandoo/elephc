@@ -36,7 +36,9 @@ pub(super) fn lower_strict_eq(
     }
     if matches!(
         (&lhs_ty, &rhs_ty),
-        (PhpType::Object(_), PhpType::Object(_)) | (PhpType::Iterable, PhpType::Iterable)
+        (PhpType::Object(_), PhpType::Object(_))
+            | (PhpType::Iterable, PhpType::Iterable)
+            | (PhpType::Pointer(_), PhpType::Pointer(_))
     ) {
         emit_pointer_compare(ctx, lhs, rhs, is_equal)?;
         return store_if_result(ctx, inst);
@@ -66,7 +68,7 @@ pub(super) fn lower_strict_eq(
     store_if_result(ctx, inst)
 }
 
-/// Emits a pointer identity comparison for object strict equality.
+/// Emits a pointer-like identity comparison for strict equality.
 fn emit_pointer_compare(
     ctx: &mut FunctionContext<'_>,
     lhs: ValueId,
@@ -79,13 +81,13 @@ fn emit_pointer_compare(
     ctx.load_value_to_reg(rhs, rhs_reg)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, rhs_reg));  // compare object pointers for PHP strict identity
-            ctx.emitter.instruction(&format!("cset x0, {}", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize object identity as a boolean
+            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, rhs_reg));  // compare pointer-like payloads for PHP strict identity
+            ctx.emitter.instruction(&format!("cset x0, {}", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize pointer identity as a boolean
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, rhs_reg));  // compare object pointers for PHP strict identity
-            ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize object identity in the low byte
-            ctx.emitter.instruction("movzx rax, al");                           // widen the object identity byte into the integer result register
+            ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, rhs_reg));  // compare pointer-like payloads for PHP strict identity
+            ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize pointer identity in the low byte
+            ctx.emitter.instruction("movzx rax, al");                           // widen the pointer identity byte into the integer result register
         }
     }
     Ok(())

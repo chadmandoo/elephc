@@ -76,6 +76,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "count" => lower_count(ctx, inst),
         "buffer_len" => buffers::lower_buffer_len(ctx, inst),
         "buffer_free" => buffers::lower_buffer_free(ctx, inst),
+        "ptr" => pointers::lower_ptr(ctx, inst),
         "ptr_null" => pointers::lower_ptr_null(ctx, inst),
         "ptr_is_null" => pointers::lower_ptr_is_null(ctx, inst),
         "ptr_sizeof" => pointers::lower_ptr_sizeof(ctx, inst),
@@ -924,7 +925,7 @@ fn lower_empty(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> 
     ensure_arg_count(inst, "empty", 1)?;
     let value = expect_operand(inst, 0)?;
     match ctx.raw_value_php_type(value)? {
-        PhpType::Int | PhpType::Bool => {
+        PhpType::Int | PhpType::Bool | PhpType::Pointer(_) => {
             ctx.load_value_to_result(value)?;
             emit_int_result_zero_bool(ctx);
         }

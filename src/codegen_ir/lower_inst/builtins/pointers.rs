@@ -14,11 +14,36 @@
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen_ir::{CodegenIrError, Result};
-use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
+use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
+use crate::names::ir_global_symbol;
 use crate::types::PhpType;
 
 use super::super::super::context::FunctionContext;
 use super::{expect_operand, store_if_result};
+
+/// Lowers `ptr(value)` by materializing the address of addressable local/global storage.
+pub(super) fn lower_ptr(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count(inst, "ptr", 1)?;
+    let value = expect_operand(inst, 0)?;
+    match pointer_source(ctx, value)? {
+        PointerSource::Local { slot, is_ref_cell } => {
+            let offset = ctx.local_offset(slot)?;
+            if is_ref_cell || ctx.local_stores_ref_cell_pointer(slot) {
+                abi::load_at_offset(ctx.emitter, abi::int_result_reg(ctx.emitter), offset);
+            } else {
+                abi::emit_frame_slot_address(ctx.emitter, abi::int_result_reg(ctx.emitter), offset);
+            }
+        }
+        PointerSource::Global { symbol, bytes } => {
+            ctx.data.add_comm(symbol.clone(), bytes);
+            abi::emit_symbol_address(ctx.emitter, abi::int_result_reg(ctx.emitter), &symbol);
+        }
+        PointerSource::Null => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
+    }
+    store_if_result(ctx, inst)
+}
 
 /// Lowers `ptr_null()` by materializing the raw null pointer sentinel.
 pub(super) fn lower_ptr_null(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
@@ -31,7 +56,7 @@ pub(super) fn lower_ptr_null(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 pub(super) fn lower_ptr_is_null(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "ptr_is_null", 1)?;
     let pointer = expect_operand(inst, 0)?;
-    require_pointer(ctx.load_value_to_result(pointer)?, "ptr_is_null")?;
+    load_pointer_payload(ctx, pointer, "ptr_is_null")?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.instruction("cmp x0, #0");                              // compare the raw pointer payload against the null address
@@ -62,7 +87,7 @@ pub(super) fn lower_ptr_offset(ctx: &mut FunctionContext<'_>, inst: &Instruction
     ensure_arg_count(inst, "ptr_offset", 2)?;
     let pointer = expect_operand(inst, 0)?;
     let offset = expect_operand(inst, 1)?;
-    require_pointer(ctx.load_value_to_result(pointer)?, "ptr_offset")?;
+    load_pointer_payload(ctx, pointer, "ptr_offset")?;
     abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
     require_integer_offset(ctx.load_value_to_result(offset)?, "ptr_offset")?;
     match ctx.emitter.target.arch {
@@ -196,6 +221,52 @@ fn const_string_operand(ctx: &FunctionContext<'_>, value: ValueId) -> Result<Str
         .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
 }
 
+/// Addressable storage source accepted by the `ptr()` builtin.
+enum PointerSource {
+    Local { slot: LocalSlotId, is_ref_cell: bool },
+    Global { symbol: String, bytes: usize },
+    Null,
+}
+
+/// Resolves the lowered `ptr()` operand back to addressable storage metadata.
+fn pointer_source(ctx: &FunctionContext<'_>, value: ValueId) -> Result<PointerSource> {
+    let Some(value_ref) = ctx.function.value(value) else {
+        return Err(CodegenIrError::missing_entry("value", value.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(PointerSource::Null);
+    };
+    let inst_ref = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    match inst_ref.op {
+        Op::LoadLocal | Op::LoadRefCell => {
+            let Some(Immediate::LocalSlot(slot)) = inst_ref.immediate else {
+                return Err(CodegenIrError::invalid_module(
+                    "ptr() local load has no local slot",
+                ));
+            };
+            Ok(PointerSource::Local {
+                slot,
+                is_ref_cell: inst_ref.op == Op::LoadRefCell,
+            })
+        }
+        Op::LoadGlobal => {
+            let Some(Immediate::GlobalName(data)) = inst_ref.immediate else {
+                return Err(CodegenIrError::invalid_module(
+                    "ptr() global load has no global name",
+                ));
+            };
+            let name = ctx.global_name_data(data)?;
+            let symbol = ir_global_symbol(name);
+            let bytes = ctx.value_php_type(value)?.codegen_repr().stack_size().max(8);
+            Ok(PointerSource::Global { symbol, bytes })
+        }
+        _ => Ok(PointerSource::Null),
+    }
+}
+
 /// Computes the byte size for a checked pointer target type name.
 fn pointer_target_size(ctx: &FunctionContext<'_>, type_name: &str) -> Option<usize> {
     match type_name {
@@ -282,9 +353,42 @@ fn load_checked_pointer(
     value: crate::ir::ValueId,
     name: &str,
 ) -> Result<()> {
-    require_pointer(ctx.load_value_to_result(value)?, name)?;
+    load_pointer_payload(ctx, value, name)?;
     abi::emit_call_label(ctx.emitter, "__rt_ptr_check_nonnull");
     Ok(())
+}
+
+/// Loads a pointer operand into the canonical integer result register.
+fn load_pointer_payload(
+    ctx: &mut FunctionContext<'_>,
+    value: crate::ir::ValueId,
+    name: &str,
+) -> Result<()> {
+    match ctx.load_value_to_result(value)?.codegen_repr() {
+        PhpType::Pointer(_) => Ok(()),
+        PhpType::Mixed | PhpType::Union(_) => {
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            emit_mixed_payload_to_result(ctx);
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "{} for pointer PHP type {:?}",
+            name,
+            other
+        ))),
+    }
+}
+
+/// Moves the low payload word returned by `__rt_mixed_unbox` into the pointer result register.
+fn emit_mixed_payload_to_result(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, x1");                              // use the unboxed Mixed low word as the raw pointer payload
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rax, rdi");                            // use the unboxed Mixed low word as the raw pointer payload
+        }
+    }
 }
 
 /// Materializes an EIR value as the raw word payload for a pointer store.
@@ -411,18 +515,6 @@ fn ensure_arg_count(inst: &Instruction, name: &str, expected: usize) -> Result<(
         expected,
         inst.operands.len()
     )))
-}
-
-/// Verifies a pointer builtin operand has a pointer representation.
-fn require_pointer(ty: PhpType, name: &str) -> Result<()> {
-    match ty.codegen_repr() {
-        PhpType::Pointer(_) => Ok(()),
-        other => Err(CodegenIrError::unsupported(format!(
-            "{} for pointer PHP type {:?}",
-            name,
-            other
-        ))),
-    }
 }
 
 /// Verifies `ptr_offset()` received an integer-like byte offset operand.

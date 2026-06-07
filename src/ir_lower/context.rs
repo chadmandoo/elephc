@@ -947,7 +947,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
     matches!(
         php_symbol_key(name.trim_start_matches('\\')).as_str(),
-        "array_column" | "explode" | "iterator_to_array" | "strpos" | "strrpos"
+        "array_column"
+            | "array_fill"
+            | "array_fill_keys"
+            | "explode"
+            | "iterator_to_array"
+            | "ptr_read_string"
+            | "strpos"
+            | "strrpos"
     )
 }
 
