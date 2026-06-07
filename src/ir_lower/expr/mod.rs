@@ -2649,22 +2649,74 @@ fn first_class_builtin_signature(name: &str) -> Option<FunctionSig> {
     crate::types::first_class_callable_builtin_sig(&php_symbol_key(name.trim_start_matches('\\')))
 }
 
-/// Lowers `unset($local, ...)` by storing PHP null into each local slot.
+/// Lowers supported `unset(...)` targets without evaluating them as ordinary call args.
 fn lower_unset_locals(
     ctx: &mut LoweringContext<'_, '_>,
     args: &[Expr],
     expr: &Expr,
 ) -> Option<LoweredValue> {
-    if !args.iter().all(|arg| matches!(arg.kind, ExprKind::Variable(_))) {
+    if !args.iter().all(|arg| unset_target_supported(ctx, arg)) {
         return None;
     }
     let null = lower_null(ctx, expr);
     for arg in args {
-        if let ExprKind::Variable(name) = &arg.kind {
-            ctx.unset_local(name, null, Some(arg.span));
+        match &arg.kind {
+            ExprKind::Variable(name) => {
+                ctx.unset_local(name, null, Some(arg.span));
+            }
+            ExprKind::ArrayAccess { array, index } => {
+                lower_unset_array_access(ctx, array, index, arg);
+            }
+            _ => {}
         }
     }
     Some(null)
+}
+
+/// Returns true when an `unset(...)` target has direct EIR lowering.
+fn unset_target_supported(ctx: &LoweringContext<'_, '_>, arg: &Expr) -> bool {
+    match &arg.kind {
+        ExprKind::Variable(_) => true,
+        ExprKind::ArrayAccess { array, .. } => unset_array_access_has_object_receiver(ctx, array),
+        _ => false,
+    }
+}
+
+/// Returns true when an array-access unset receiver is a static ArrayAccess object.
+fn unset_array_access_has_object_receiver(
+    ctx: &LoweringContext<'_, '_>,
+    array: &Expr,
+) -> bool {
+    let ty = match &array.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| infer_expr_type_syntactic(array)),
+        _ => infer_expr_type_syntactic(array),
+    };
+    matches!(
+        ty.codegen_repr(),
+        PhpType::Object(class_name) if class_implements_interface_for_ir(ctx, &class_name, "ArrayAccess")
+    )
+}
+
+/// Lowers `unset($object[$key])` as `ArrayAccess::offsetUnset($key)`.
+fn lower_unset_array_access(
+    ctx: &mut LoweringContext<'_, '_>,
+    array: &Expr,
+    index: &Expr,
+    expr: &Expr,
+) {
+    let synthetic = Expr::new(
+        ExprKind::MethodCall {
+            object: Box::new(array.clone()),
+            method: "offsetUnset".to_string(),
+            args: vec![index.clone()],
+        },
+        expr.span,
+    );
+    lower_expr(ctx, &synthetic);
 }
 
 /// Lowers `array_push($local, $value)` as a direct indexed-array mutation.
@@ -5084,11 +5136,104 @@ fn array_access_result_type(
             PhpType::Buffer(elem_ty) => normalize_value_php_type(*elem_ty),
             _ => fallback_expr_type(expr),
         },
+        Op::RuntimeCall => array_access_runtime_call_result_type(ctx, array, expr),
         _ => match ctx.builder.value_php_type(array).codegen_repr() {
             PhpType::Mixed | PhpType::Union(_) => PhpType::Mixed,
             _ => fallback_expr_type(expr),
         },
     }
+}
+
+/// Returns the EIR result type for object indexing routed through `ArrayAccess::offsetGet`.
+fn array_access_runtime_call_result_type(
+    ctx: &LoweringContext<'_, '_>,
+    array: crate::ir::ValueId,
+    expr: &Expr,
+) -> PhpType {
+    match ctx.builder.value_php_type(array).codegen_repr() {
+        PhpType::Object(class_name) => array_access_offset_get_return_type(ctx, &class_name)
+            .unwrap_or_else(|| fallback_expr_type(expr)),
+        PhpType::Mixed | PhpType::Union(_) => PhpType::Mixed,
+        _ => fallback_expr_type(expr),
+    }
+}
+
+/// Looks up the effective `offsetGet` return type for an ArrayAccess class.
+fn array_access_offset_get_return_type(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+) -> Option<PhpType> {
+    if !class_implements_interface_for_ir(ctx, class_name, "ArrayAccess") {
+        return None;
+    }
+    let method_key = php_symbol_key("offsetGet");
+    class_method_return_type_for_ir(ctx, class_name, &method_key)
+        .or_else(|| interface_method_return_type_for_ir(ctx, "ArrayAccess", &method_key))
+        .map(normalize_value_php_type)
+}
+
+/// Returns whether a lowered class implements an interface, following parents.
+fn class_implements_interface_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    interface_name: &str,
+) -> bool {
+    let interface_key = php_symbol_key(interface_name.trim_start_matches('\\'));
+    let mut current = Some(class_name.trim_start_matches('\\'));
+    while let Some(candidate) = current {
+        let Some(info) = ctx.classes.get(candidate) else {
+            return false;
+        };
+        if info
+            .interfaces
+            .iter()
+            .any(|interface| php_symbol_key(interface.trim_start_matches('\\')) == interface_key)
+        {
+            return true;
+        }
+        current = info.parent.as_deref();
+    }
+    false
+}
+
+/// Returns a method return type from class metadata, following parent classes.
+fn class_method_return_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    method_key: &str,
+) -> Option<PhpType> {
+    let mut current = Some(class_name.trim_start_matches('\\'));
+    while let Some(candidate) = current {
+        let info = ctx.classes.get(candidate)?;
+        if let Some(sig) = info.methods.get(method_key) {
+            return Some(sig.return_type.clone());
+        }
+        current = info.parent.as_deref();
+    }
+    None
+}
+
+/// Returns a method return type from interface metadata, following interface parents.
+fn interface_method_return_type_for_ir(
+    ctx: &LoweringContext<'_, '_>,
+    interface_name: &str,
+    method_key: &str,
+) -> Option<PhpType> {
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = vec![interface_name.trim_start_matches('\\').to_string()];
+    while let Some(name) = queue.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let Some(info) = ctx.interfaces.get(&name) else {
+            continue;
+        };
+        if let Some(sig) = info.methods.get(method_key) {
+            return Some(sig.return_type.clone());
+        }
+        queue.extend(info.parents.iter().cloned());
+    }
+    None
 }
 
 /// Lowers a ternary expression with lazy branch evaluation.

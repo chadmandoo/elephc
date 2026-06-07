@@ -592,6 +592,21 @@ fn required_builtin_spl_metadata_methods(class_name: &str) -> &'static [&'static
             "getInnerIterator",
         ],
         "CallbackFilterIterator" => &["accept"],
+        "CachingIterator" => &[
+            "current",
+            "key",
+            "next",
+            "rewind",
+            "valid",
+            "hasNext",
+            "__toString",
+            "offsetExists",
+            "offsetGet",
+            "offsetSet",
+            "offsetUnset",
+            "getCache",
+            "count",
+        ],
         "AppendIterator" => &[
             "current",
             "key",
@@ -758,6 +773,26 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
         "InfiniteIterator" => matches!(method_key, "__construct" | "next"),
         "FilterIterator" => matches!(method_key, "__construct" | "rewind" | "next"),
         "CallbackFilterIterator" => matches!(method_key, "accept"),
+        "CachingIterator" => matches!(
+            method_key,
+            "__construct"
+                | "rewind"
+                | "valid"
+                | "next"
+                | "current"
+                | "key"
+                | "hasnext"
+                | "__tostring"
+                | "getflags"
+                | "setflags"
+                | "offsetget"
+                | "offsetset"
+                | "offsetunset"
+                | "offsetexists"
+                | "getcache"
+                | "count"
+                | "__elephccapturecurrent"
+        ),
         "AppendIterator" => matches!(
             method_key,
             "__construct"
