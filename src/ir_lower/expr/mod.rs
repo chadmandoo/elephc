@@ -7459,9 +7459,7 @@ fn store_value_into_temp(
     let source = value;
     let stored = crate::ir_lower::ownership::acquire_if_refcounted(ctx, value, Some(span));
     ctx.store_local(temp_name, stored, temp_type, Some(span));
-    if stored.value != source.value
-        && crate::ir_lower::ownership::may_require_release(ctx.builder.value_ownership(source.value))
-    {
+    if stored.value != source.value && ctx.value_is_owning_temporary(source) {
         crate::ir_lower::ownership::release_if_owned(ctx, source, Some(span));
     }
 }

@@ -53,6 +53,20 @@ fn parity_scalar_control_and_builtin_baseline() {
     );
 }
 
+/// Verifies non-local `??=` expression lowering snapshots RHS containers before writes.
+#[test]
+fn parity_null_coalesce_assignment_snapshots_array_rhs() {
+    assert_backend_parity(
+        "null_coalesce_assignment_array_rhs_snapshot",
+        r#"<?php
+$items = [];
+$result = ($items[0] ??= $items);
+echo count($result) . ":" . count($items[0]);
+"#,
+        &[],
+    );
+}
+
 /// Verifies later indexed-array foreach states do not clobber source pointers at large frame offsets.
 #[test]
 fn parity_repeated_indexed_foreach() {
