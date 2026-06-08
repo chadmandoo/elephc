@@ -115,8 +115,8 @@ fn coerce_to_string_inner(
             // -- mixed strings dispatch on the boxed payload at runtime --
             abi::emit_call_label(emitter, "__rt_mixed_cast_string");            // cast the boxed mixed payload to string in the ABI string result registers
         }
-        PhpType::Iterable => {
-            // -- iterable values stringify to the literal "Array", matching PHP --
+        PhpType::Iterable | PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            // -- iterable and array values stringify to the literal "Array", matching PHP --
             let (label, len) = data.add_string(b"Array");
             let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
             abi::emit_symbol_address(emitter, ptr_reg, &label);                 // materialize the literal "Array" address in the active string-pointer result register
@@ -154,8 +154,6 @@ fn coerce_to_string_inner(
             }
         }
         PhpType::Str
-        | PhpType::Array(_)
-        | PhpType::AssocArray { .. }
         | PhpType::Callable
         | PhpType::Buffer(_)
         | PhpType::Packed(_)
