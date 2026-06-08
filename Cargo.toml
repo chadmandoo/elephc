@@ -50,3 +50,11 @@ flate2 = "1"
 # success coverage does not depend on outbound network access.
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 rustls-pemfile = "2"
+
+# Local test-speed tuning. The dev profile (which `test` inherits) keeps full
+# `debug = 2` info by default, which inflates both rustc codegen and the link of
+# the six test binaries. `line-tables-only` keeps file:line in panic backtraces
+# (so test failures stay legible) while cutting the debug info the assembler and
+# linker chew through on every edit -> `cargo test` cycle.
+[profile.dev]
+debug = "line-tables-only"
