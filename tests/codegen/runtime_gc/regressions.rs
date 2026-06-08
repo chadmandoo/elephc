@@ -851,3 +851,21 @@ run();
         out.stderr
     );
 }
+
+/// Regression test for the array-to-string echo fix: echoing an owned temporary array
+/// stringifies to "Array" and releases the temporary, keeping GC allocs and frees balanced
+/// (no leak from the discarded array, no premature/double free).
+#[test]
+fn test_echo_owned_temp_array_balances_gc_stats() {
+    let baseline = compile_and_run_with_gc_stats("<?php");
+    let out = compile_and_run_with_gc_stats("<?php echo [1, 2, 3];");
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "Array");
+    let (baseline_allocs, baseline_frees) = parse_gc_stats(&baseline.stderr);
+    let (allocs, frees) = parse_gc_stats(&out.stderr);
+    assert!(
+        allocs - baseline_allocs >= 1,
+        "expected the temporary array to allocate at least once"
+    );
+    assert_eq!(allocs - baseline_allocs, frees - baseline_frees);
+}

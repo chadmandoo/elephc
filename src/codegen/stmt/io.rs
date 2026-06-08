@@ -88,6 +88,22 @@ pub(crate) fn emit_expr_to_stdout(
             coerce_to_string_releasing_owned(emitter, ctx, data, &ty, release_object);
             emit_string_to_stdout_and_release_if_needed(emitter, true);
         }
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            // Arrays stringify to the literal "Array" (matching PHP). The array pointer is
+            // preserved across the write so an owned temporary can be released afterward; a
+            // borrowed array (e.g. a plain variable) is left for its owner to release.
+            let release_array = expr_result_heap_ownership(expr) == HeapOwnership::Owned;
+            if release_array {
+                abi::emit_push_reg(emitter, abi::int_result_reg(emitter));
+            }
+            coerce_to_string_releasing_owned(emitter, ctx, data, &ty, false);
+            abi::emit_write_stdout(emitter, &PhpType::Str);
+            if release_array {
+                abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 0);
+                abi::emit_decref_if_refcounted(emitter, &ty);
+                abi::emit_release_temporary_stack(emitter, 16);
+            }
+        }
         _ => {
             abi::emit_write_stdout(emitter, &ty);
         }
