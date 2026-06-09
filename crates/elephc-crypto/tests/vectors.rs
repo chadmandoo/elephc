@@ -53,6 +53,57 @@ fn crypto_one_shot_known_vectors() {
     assert_eq!(hash_hex("ripemd160", b"abc").unwrap(), "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc");
 }
 
+/// Verifies known-answer digests (PHP 8.4 golden values for "abc") for every
+/// crypto algorithm not already covered by `crypto_one_shot_known_vectors`.
+/// This catches name->type mismappings the length-only coverage test cannot —
+/// notably md2/md4/md5 and ripemd128, which are all 16 bytes.
+#[test]
+fn crypto_one_shot_remaining_algorithms_match_php() {
+    assert_eq!(hash_hex("md2", b"abc").unwrap(), "da853b0d3f88d99b30283a69e6ded6bb");
+    assert_eq!(hash_hex("md4", b"abc").unwrap(), "a448017aaf21d8525fc10ae87aa6729d");
+    assert_eq!(
+        hash_hex("sha224", b"abc").unwrap(),
+        "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7"
+    );
+    assert_eq!(
+        hash_hex("sha384", b"abc").unwrap(),
+        "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
+    );
+    assert_eq!(
+        hash_hex("sha512/224", b"abc").unwrap(),
+        "4634270f707b6a54daae7530460842e20e37ed265ceee9a43e8924aa"
+    );
+    assert_eq!(
+        hash_hex("sha512/256", b"abc").unwrap(),
+        "53048e2681941ef99b2e29b76b4c7dabe4c2d0c634fc6d46e0e2f13107e7af23"
+    );
+    assert_eq!(
+        hash_hex("sha3-224", b"abc").unwrap(),
+        "e642824c3f8cf24ad09234ee7d3c766fc9a3a5168d0c94ad73b46fdf"
+    );
+    assert_eq!(
+        hash_hex("sha3-384", b"abc").unwrap(),
+        "ec01498288516fc926459f58e2c6ad8df9b473cb0fc08c2596da7cf0e49be4b298d88cea927ac7f539f1edf228376d25"
+    );
+    assert_eq!(
+        hash_hex("sha3-512", b"abc").unwrap(),
+        "b751850b1a57168a5693cd924b6b096e08f621827444f70d884f5d0240d2712e10e116e9192af3c91a7ec57647e3934057340b4cf408d5a56592f8274eec53f0"
+    );
+    assert_eq!(hash_hex("ripemd128", b"abc").unwrap(), "c14a12199c66e4ba84636b0f69144c77");
+    assert_eq!(
+        hash_hex("ripemd256", b"abc").unwrap(),
+        "afbd6e228b9d8cbbcef5ca2d03e6dba10ac0bc7dcbe4680e1e42d2e975459b65"
+    );
+    assert_eq!(
+        hash_hex("ripemd320", b"abc").unwrap(),
+        "de4c01b3054f8930a79d09ae738e92301e5a17085beffdc1b8d116713e74f82fa942d64cdbc4682d"
+    );
+    assert_eq!(
+        hash_hex("whirlpool", b"abc").unwrap(),
+        "4e2448a4c6f486bb16b6562c73b4020bf3043e3a731bce721ae1b303d97e6d4c7181eebdb6c57e277d0e34957114cbd6c797fc9d95d8b582d225292076d4eef5"
+    );
+}
+
 /// Verifies that an unrecognized algorithm name causes the ABI to return -1 (PHP ValueError path).
 #[test]
 fn unknown_algorithm_returns_negative() {
