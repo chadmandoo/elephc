@@ -328,3 +328,43 @@ fn hmac_clone_produces_independent_state() {
     assert_eq!(h2, hmac_hex("sha256", key, b"what do ya DIFFERENT").unwrap());
     assert_ne!(h1, h2);
 }
+
+/// Verifies a 1000-byte input (spanning many hash blocks) both as a one-shot
+/// digest against PHP 8.4 golden values and fed incrementally in uneven chunks
+/// across block boundaries — the chunked result must equal the one-shot.
+#[test]
+fn multi_block_input_one_shot_and_incremental() {
+    let big = vec![b'a'; 1000];
+    assert_eq!(
+        hash_hex("sha256", &big).unwrap(),
+        "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3"
+    );
+    assert_eq!(
+        hash_hex("sha512", &big).unwrap(),
+        "67ba5535a46e3f86dbfbed8cbbaf0125c76ed549ff8b0b9e03e0c88cf90fa634fa7b12b47d77b694de488ace8d9a65967dc96df599727d3292a8d9d447709c97"
+    );
+    // Feed the same input incrementally in uneven chunks (7+64+128+1+300+500 == 1000)
+    // so updates land mid-block; the result must match the one-shot digest.
+    let ctx = unsafe { elephc_crypto_init(b"sha256".as_ptr(), 6) };
+    let mut off = 0usize;
+    for chunk in [7usize, 64, 128, 1, 300, 500] {
+        let end = off + chunk;
+        unsafe { elephc_crypto_update(ctx, big[off..end].as_ptr(), chunk) };
+        off = end;
+    }
+    assert_eq!(off, 1000);
+    assert_eq!(finalize_hex(ctx), hash_hex("sha256", &big).unwrap());
+}
+
+/// Verifies a non-crypto checksum fed across multiple `update` calls (exercising
+/// BufChecksum's accumulate-then-compute path) equals the one-shot digest.
+#[test]
+fn checksum_incremental_matches_one_shot() {
+    let ctx = unsafe { elephc_crypto_init(b"crc32b".as_ptr(), 6) };
+    assert!(!ctx.is_null());
+    unsafe {
+        elephc_crypto_update(ctx, b"ab".as_ptr(), 2);
+        elephc_crypto_update(ctx, b"c".as_ptr(), 1);
+    }
+    assert_eq!(finalize_hex(ctx), hash_hex("crc32b", b"abc").unwrap());
+}
