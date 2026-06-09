@@ -173,8 +173,8 @@ Read-only. Negative indices count from end. Out-of-bounds returns empty string.
 | `ip2long()` | `ip2long($ip): int\|false` | Parse a decimal dotted-quad IPv4 string into an integer, or `false` if invalid |
 | `inet_pton()` | `inet_pton($ip): string\|false` | Pack a dotted-quad IPv4 address into a 4-byte binary string, or `false` if invalid |
 | `inet_ntop()` | `inet_ntop($binary): string\|false` | Render a 4-byte IPv4 binary string as a dotted-quad address, or `false` if the length is not 4 |
-| `md5()` | `md5($str): string` | MD5 hash (32-char hex) |
-| `sha1()` | `sha1($str): string` | SHA1 hash (40-char hex) |
+| `md5()` | `md5($str, $binary = false): string` | MD5 hash — 32-char lowercase hex by default, or the raw 16 digest bytes when `$binary` is `true` |
+| `sha1()` | `sha1($str, $binary = false): string` | SHA1 hash — 40-char lowercase hex by default, or the raw 20 digest bytes when `$binary` is `true` |
 | `crc32()` | `crc32($str): int` | CRC-32 checksum (standard zlib/PHP polynomial), returned as a non-negative 32-bit integer |
 | `hash()` | `hash($algo, $data, $binary = false): string` | Hash `$data` with the named algorithm (md5, sha1, sha2 family, sha3 family, ripemd, crc32/crc32b, and more). Returns lowercase hex by default, or the raw digest bytes when `$binary` is `true`. An unknown algorithm throws `\ValueError`. |
 | `htmlspecialchars()` | `htmlspecialchars($str): string` | Escape HTML special chars |

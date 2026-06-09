@@ -80,6 +80,13 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize) -> String {
         ".globl _hash_unknown_algo_msg\n_hash_unknown_algo_msg:\n    .ascii {:?}\n",
         HASH_UNKNOWN_ALGO_MSG
     ));
+    // Fixed algorithm-name constants for md5()/sha1(): both route through the
+    // same elephc_crypto_hash entry point as hash(), so __rt_md5 / __rt_sha1
+    // load these literal names into the algorithm-name register pair before
+    // reaching __rt_hash. NUL-terminated for safety, but the runtime passes the
+    // explicit byte length (3 / 4) so elephc_crypto_hash never reads the NUL.
+    out.push_str(".globl _md5_algo_name\n_md5_algo_name:\n    .asciz \"md5\"\n");
+    out.push_str(".globl _sha1_algo_name\n_sha1_algo_name:\n    .asciz \"sha1\"\n");
     for (label, message) in [
         ("_spl_dll_pop_empty_msg", "Can't pop from an empty datastructure"),
         ("_spl_dll_shift_empty_msg", "Can't shift from an empty datastructure"),

@@ -231,4 +231,19 @@ fn hash_is_case_insensitive_and_namespaced() {
         "900150983cd24fb0d6963f7d28e17f72");
 }
 
+/// Verifies `md5()` and `sha1()` keep byte-for-byte hex parity after routing
+/// through the elephc-crypto path, and that the optional `$binary` flag now
+/// returns the raw digest bytes (16 for md5, 20 for sha1) instead of being
+/// silently ignored.
+#[test]
+fn md5_sha1_parity_and_binary() {
+    assert_eq!(compile_and_run(r#"<?php echo md5("abc");"#), "900150983cd24fb0d6963f7d28e17f72");
+    assert_eq!(compile_and_run(r#"<?php echo sha1("abc");"#), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert_eq!(compile_and_run(r#"<?php echo md5("");"#), "d41d8cd98f00b204e9800998ecf8427e");
+    assert_eq!(compile_and_run(r#"<?php echo bin2hex(md5("abc",true));"#), "900150983cd24fb0d6963f7d28e17f72");
+    assert_eq!(compile_and_run(r#"<?php echo strlen(md5("abc",true));"#), "16");
+    assert_eq!(compile_and_run(r#"<?php echo bin2hex(sha1("abc",true));"#), "a9993e364706816aba3e25717850c26c9cd0d89d");
+    assert_eq!(compile_and_run(r#"<?php echo strlen(sha1("abc",true));"#), "20");
+}
+
 // --- sscanf() ---

@@ -55,7 +55,7 @@ pub fn emit(
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("stp x1, x2, [sp, #-16]!");                     // preserve the algorithm string while evaluating the binary flag and data string
-            emit_binary_flag(args, emitter, ctx, data);
+            emit_binary_flag(args, 2, emitter, ctx, data);
             emitter.instruction("str x0, [sp, #-16]!");                         // preserve the 0/1 binary flag while evaluating the data string expression
             emit_expr(&args[1], emitter, ctx, data);
             emitter.instruction("mov x3, x1");                                  // move the data string pointer into the secondary runtime argument register pair on AArch64
@@ -65,7 +65,7 @@ pub fn emit(
         }
         Arch::X86_64 => {
             abi::emit_push_reg_pair(emitter, "rax", "rdx");                     // preserve the algorithm string ptr/len while evaluating the binary flag and data string on x86_64
-            emit_binary_flag(args, emitter, ctx, data);
+            emit_binary_flag(args, 2, emitter, ctx, data);
             abi::emit_push_reg(emitter, "rax");                                 // preserve the 0/1 binary flag while evaluating the data string expression
             emit_expr(&args[1], emitter, ctx, data);
             emitter.instruction("mov rdi, rax");                                // move the data string pointer into the secondary x86_64 runtime argument register
@@ -79,16 +79,20 @@ pub fn emit(
     Some(PhpType::Str)
 }
 
-/// Materialises the optional `$binary` flag as a 0/1 integer in the int result
-/// register, defaulting to `0` (PHP `false`) when the third argument is omitted.
-fn emit_binary_flag(
+/// Materialises a `$binary` flag as a 0/1 integer in the int result register,
+/// defaulting to `0` (PHP `false`) when `args` has no argument at `flag_index`.
+///
+/// Shared by `hash()` (flag at index 2) and `md5()`/`sha1()` (flag at index 1)
+/// so all three honour the same truthiness coercion for their `$binary` argument.
+pub(super) fn emit_binary_flag(
     args: &[Expr],
+    flag_index: usize,
     emitter: &mut Emitter,
     ctx: &mut Context,
     data: &mut DataSection,
 ) {
-    if args.len() >= 3 {
-        let ty = emit_expr(&args[2], emitter, ctx, data);
+    if args.len() > flag_index {
+        let ty = emit_expr(&args[flag_index], emitter, ctx, data);
         coerce_to_truthiness(emitter, ctx, &ty);
     } else {
         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0); // default $binary to false (hex output) when omitted

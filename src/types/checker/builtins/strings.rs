@@ -320,14 +320,19 @@ pub(super) fn check_builtin(
             Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
         }
         "md5" | "sha1" => {
-            if args.len() != 1 {
+            if args.is_empty() || args.len() > 2 {
                 return Err(CompileError::new(
                     span,
-                    &format!("{}() takes exactly 1 argument", name),
+                    &format!("{}() takes 1 or 2 arguments", name),
                 ));
             }
-            checker.infer_type(&args[0], env)?;
-            checker.require_linux_builtin_library("crypto");
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            // md5()/sha1() route through the elephc-crypto staticlib (same path as
+            // hash()), so they honor the $binary flag and no longer depend on the
+            // system crypto library.
+            checker.require_builtin_library("elephc_crypto");
             Ok(Some(PhpType::Str))
         }
         "crc32" => {

@@ -148,15 +148,17 @@ fn test_error_str_pad_wrong_args() {
 }
 
 /// Verifies that `md5()` with no arguments produces the correct arity error.
+/// md5() accepts an optional `$binary` flag, so the message reports 1 or 2 args.
 #[test]
 fn test_error_md5_wrong_args() {
-    expect_error("<?php md5();", "md5() takes exactly 1 argument");
+    expect_error("<?php md5();", "md5() takes 1 or 2 arguments");
 }
 
 /// Verifies that `sha1()` with no arguments produces the correct arity error.
+/// sha1() accepts an optional `$binary` flag, so the message reports 1 or 2 args.
 #[test]
 fn test_error_sha1_wrong_args() {
-    expect_error("<?php sha1();", "sha1() takes exactly 1 argument");
+    expect_error("<?php sha1();", "sha1() takes 1 or 2 arguments");
 }
 
 /// Verifies that `htmlspecialchars()` with no arguments produces the correct arity error.
