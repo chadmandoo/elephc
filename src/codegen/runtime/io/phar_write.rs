@@ -117,7 +117,7 @@ pub fn emit_phar_write(emitter: &mut Emitter) {
     emitter.instruction("blr x9");                                              // compute the raw 20-byte SHA1 digest in place
     abi::emit_symbol_address(emitter, "x10", "_phar_write_out");
     abi::emit_symbol_address(emitter, "x9", "_phar_write_len");
-    emitter.instruction("ldr x11, [x9]");                                       // reload length (CC_SHA1 clobbered caller-saved regs)
+    emitter.instruction("ldr x11, [x9]");                                       // reload length (the hash call clobbered caller-saved regs)
     emitter.instruction("add x12, x10, x11");                                   // trailer base = buffer + length (raw digest occupies +0..+20)
     emitter.instruction("mov w13, #2");                                         // signature type 0x0002 = Phar::SHA1
     emitter.instruction("str w13, [x12, #20]");                                 // little-endian signature type after the 20 digest bytes
@@ -230,7 +230,7 @@ fn emit_phar_write_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov r9, QWORD PTR [rip + _elephc_crypto_hash_fn]");    // load the elephc-crypto hash entry pointer
     emitter.instruction("call r9");                                             // compute the raw 20-byte SHA1 digest in place
     emitter.instruction("lea r8, [rip + _phar_write_len]");                     // buffer length slot
-    emitter.instruction("mov rcx, QWORD PTR [r8]");                             // reload length (CC_SHA1 clobbered caller-saved regs)
+    emitter.instruction("mov rcx, QWORD PTR [r8]");                             // reload length (the hash call clobbered caller-saved regs)
     emitter.instruction("lea r9, [rip + _phar_write_out]");                     // buffer base
     emitter.instruction("add r9, rcx");                                         // trailer base = buffer + length (raw digest occupies +0..+20)
     emitter.instruction("mov DWORD PTR [r9 + 20], 2");                          // little-endian signature type 0x0002 = Phar::SHA1
