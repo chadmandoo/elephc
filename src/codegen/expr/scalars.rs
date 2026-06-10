@@ -95,6 +95,10 @@ pub(super) fn emit_negate(
 ) -> PhpType {
     let ty = super::emit_expr(inner, emitter, ctx, data);
     emitter.comment("negate");
+    if ty == PhpType::TaggedScalar {
+        // narrow a tagged scalar (null -> 0) before the two's-complement negate
+        crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(emitter);
+    }
     if ty == PhpType::Float {
         match emitter.target.arch {
             Arch::AArch64 => {

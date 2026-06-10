@@ -185,6 +185,44 @@ fn test_tagged_empty_on_array_reads() {
     );
 }
 
+
+/// array_pop on an empty int array yields a real tagged null (NULL, is_null true, ?? falls
+/// back) instead of the sentinel integer.
+#[test]
+fn test_tagged_array_pop_empty_is_null() {
+    let out = compile_and_run_tagged(
+        "<?php $e = [1]; array_pop($e); var_dump(array_pop($e)); var_dump(is_null(array_pop($e))); echo array_pop($e) ?? -5;",
+    );
+    assert_eq!(out, "NULL\nbool(true)\n-5");
+}
+
+/// array_shift on an empty int array yields a real tagged null.
+#[test]
+fn test_tagged_array_shift_empty_is_null() {
+    let out = compile_and_run_tagged(
+        "<?php $s = [2]; array_shift($s); var_dump(array_shift($s));",
+    );
+    assert_eq!(out, "NULL\n");
+}
+
+/// array_pop and array_shift still return real values from non-empty int arrays.
+#[test]
+fn test_tagged_array_pop_shift_values_roundtrip() {
+    let out = compile_and_run_tagged(
+        "<?php $a = [10, 20, 30]; echo array_pop($a), \"|\", array_shift($a), \"|\"; var_dump(array_pop($a));",
+    );
+    assert_eq!(out, "30|10|int(20)\n");
+}
+
+/// Unary minus and abs() coerce a null array read to zero (PHP -null == 0, abs(null) == 0).
+#[test]
+fn test_tagged_unary_minus_and_abs_narrow_null() {
+    let out = compile_and_run_tagged(
+        "<?php $a = [3]; echo -$a[9], \"|\", abs($a[9]), \"|\", -$a[0], \"|\", abs(-$a[0]);",
+    );
+    assert_eq!(out, "0|0|-3|3");
+}
+
 /// The legacy in-band behavior is preserved under the default sentinel representation:
 /// the same fixture still misreads PHP_INT_MAX-1 as null (guards the default until Phase 4).
 #[test]
