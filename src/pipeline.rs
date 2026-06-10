@@ -37,6 +37,7 @@ pub(crate) fn compile(config: CliConfig) {
         heap_size,
         gc_stats,
         heap_debug,
+        null_repr,
         emit_asm,
         check_only,
         emit_timings,
@@ -222,6 +223,7 @@ pub(crate) fn compile(config: CliConfig) {
         heap_debug,
         target,
         requires_elephc_tls,
+        null_repr,
     );
     timings.record_since("codegen", phase_started);
 

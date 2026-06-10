@@ -58,6 +58,22 @@ pub fn emit(
                 emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
             }
         }
+    } else if matches!(ty, PhpType::TaggedScalar) {
+        // Tagged scalars carry a runtime tag word — null means tag 8
+        match emitter.target.arch {
+            Arch::AArch64 => {
+                emitter.instruction("cmp x1, #8");                              // runtime tag 8 means the tagged scalar is PHP null
+                emitter.instruction("cset x0, eq");                             // x0 = 1 if the tagged scalar is null, 0 otherwise
+            }
+            Arch::X86_64 => {
+                emitter.instruction("cmp rdx, 8");                              // runtime tag 8 means the tagged scalar is PHP null
+                emitter.instruction("sete al");                                 // set al when the tagged scalar is null
+                emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+            }
+        }
+    } else if matches!(ty, PhpType::Int) && crate::codegen::sentinels::null_repr_is_tagged() {
+        // Under the tagged representation a plain Int can never hold null
+        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
     } else {
         // Scalar types — check directly against the null sentinel
         match emitter.target.arch {

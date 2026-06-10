@@ -238,6 +238,9 @@ pub(super) fn emit_new_object_core(
                     abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
                     abi::emit_store_zero_to_address(emitter, object_reg, offset + 8);
                 }
+                PhpType::TaggedScalar => {
+                    unreachable!("nullable scalar properties use the boxed Mixed representation")
+                }
                 PhpType::Resource(_) => {
                     abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
                     let tag_reg = abi::temp_int_reg(emitter.target);

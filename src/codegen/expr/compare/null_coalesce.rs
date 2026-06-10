@@ -51,9 +51,16 @@ pub(in crate::codegen::expr) fn emit_null_coalesce(
     let default_ty = crate::codegen::functions::infer_contextual_type(default, ctx);
     let result_ty = widen_codegen_type(&val_ty, &default_ty);
 
+    if matches!(val_ty, PhpType::Int) && crate::codegen::sentinels::null_repr_is_tagged() {
+        // Under the tagged representation a plain Int is never null: ?? always keeps it.
+        return val_ty;
+    }
+
     let use_value_label = ctx.next_label("nc_keep");
     let end_label = ctx.next_label("nc_end");
-    if matches!(val_ty, PhpType::Mixed | PhpType::Union(_)) {
+    if matches!(val_ty, PhpType::TaggedScalar) {
+        crate::codegen::sentinels::emit_branch_if_tagged_scalar_not_null(emitter, &use_value_label);
+    } else if matches!(val_ty, PhpType::Mixed | PhpType::Union(_)) {
         abi::emit_push_reg(emitter, abi::int_result_reg(emitter));              // save the boxed mixed/union value across the null check and fallback evaluation
         abi::emit_call_label(emitter, "__rt_mixed_unbox");                      // inspect the boxed payload tag before deciding whether ?? should fall back
         match emitter.target.arch {

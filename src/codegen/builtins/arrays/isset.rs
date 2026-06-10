@@ -124,6 +124,10 @@ fn emit_loaded_result_isset(ty: &PhpType, emitter: &mut Emitter) {
     match ty.codegen_repr() {
         PhpType::Void | PhpType::Never => emit_bool_result(false, emitter),
         PhpType::Mixed => emit_mixed_result_not_null(emitter),
+        PhpType::TaggedScalar => emit_tagged_scalar_result_not_null(emitter),
+        PhpType::Int | PhpType::Bool if crate::codegen::sentinels::null_repr_is_tagged() => {
+            emit_bool_result(true, emitter)
+        }
         PhpType::Int | PhpType::Bool => emit_scalar_result_not_null(emitter),
         _ => emit_bool_result(true, emitter),
     }
@@ -303,6 +307,22 @@ fn emit_mixed_result_not_null(emitter: &mut Emitter) {
             emitter.instruction("cmp rax, 8");                                  // runtime tag 8 means the Mixed payload is PHP null
             emitter.instruction("setne al");                                    // set the low result byte when the Mixed payload is not null
             emitter.instruction("movzx rax, al");                               // widen the Mixed null-check result into the integer result register
+        }
+    }
+}
+
+/// Emits the result of an `isset` check on a tagged scalar runtime value: true unless
+/// the runtime tag word marks the value as PHP null.
+fn emit_tagged_scalar_result_not_null(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("cmp x1, #8");                                  // runtime tag 8 means the tagged scalar is PHP null
+            emitter.instruction("cset x0, ne");                                 // return true only when the tagged scalar is not null
+        }
+        Arch::X86_64 => {
+            emitter.instruction("cmp rdx, 8");                                  // runtime tag 8 means the tagged scalar is PHP null
+            emitter.instruction("setne al");                                    // set the low result byte when the tagged scalar is not null
+            emitter.instruction("movzx rax, al");                               // widen the tagged null-check result into the integer result register
         }
     }
 }

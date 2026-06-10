@@ -59,8 +59,44 @@ Unrelated pre-existing quirk found while locking repros: `var_dump(isset(...))` 
 
 6. **Flag.** `NullRepr::{Sentinel, Tagged}` lives in `CliConfig` → pipeline → codegen `Context`. Default `Sentinel` until Phase 4. CLI/env opt-in: `ELEPHC_NULL_REPR=tagged`. Tests force `Tagged` per-compile through an explicit parameter on the test-support compile helpers (no process-global mutation — tests run in parallel threads).
 
-7. **Rejected alternatives.**
+7. **Scope refinement (Phase 2, validated empirically).** elephc's checker is flow-sensitive
+   for locals, and `?int` params/returns/properties already lower to boxed Mixed (null-safe).
+   The §0 bugs therefore need TaggedScalar **producers** only for: int-element array reads
+   (indexed + assoc, miss-capable), and later `array_pop`/`array_shift`/`?->`-int/globals.
+   Params, returns, and properties keep their Mixed boxing — for them only the **consumers**
+   needed fixing (the shared int formatter / sentinel checks). Null-then-int locals are
+   handled by flow typing today and stay as they are.
+
+8. **Null payload canonicalization.** A tagged null carries `NULL_SENTINEL` as its payload
+   word (not zero), so boxing it into a Mixed cell produces exactly the legacy
+   `{tag 8, sentinel}` words — `__rt_mixed_strict_eq` compares payload words even for the
+   null tag, and un-audited consumers that ignore the tag see precisely the legacy encoding
+   (graceful degradation instead of new corruption).
+
+9. **Rejected alternatives.**
    - *(a) rarer sentinel value:* still collides — every i64 is a valid int.
    - *(c) box null-capable scalars as Mixed:* already today's repr for `?int` returns yet still broken (consumer-side sentinel re-check), and boxing every `array<int>` read would heap-allocate per access.
    - *Re-repr `Union([Int,Void])` without a new variant:* every existing `Union(_) => /* boxed pointer */` match arm becomes a silent hazard under the flag; a new variant turns missed paths into compile errors (exhaustive matches) or loud crashes instead of silent miscompilation.
    - *Uninit-property sentinel (`0x...fffd`):* not a value collision (separate metadata word); in scope only for the Phase 1 constant unification.
+
+### Phase 2 status & follow-ups
+
+Done under `NullRepr::Tagged` (default `Sentinel` unchanged, suite green): TaggedScalar
+variant + ABI (slots, args, returns, spills mirror `Str`), `NullRepr` flag
+(`--null-repr=` / `ELEPHC_NULL_REPR`), tag-aware consumers (echo, var_dump + generator dup,
+is_null, `??`, `??=` both copies, isset, empty, gettype, casts, string coercion, truthiness,
+numeric binops, strict `===` via the Mixed boxing path), and the int-array read producers
+(indexed + assoc, hit→tag int / miss→tag null). All §0 repros pass under `Tagged` and are
+covered by `tests/codegen/null_sentinel/tagged.rs` (macOS ARM64 + Linux x86_64 + Linux ARM64).
+
+Discovered during Phase 2 — pre-existing null-read bugs (broken in BOTH modes; Tagged fixes
+most): under the legacy sentinel repr, `$a[miss] + 1`, `$a[miss] . "s"`, `"{$a[miss]}"`,
+`$a[miss] * 3` all leak the sentinel digits; Tagged narrows them correctly.
+
+Remaining follow-ups (not blockers; behavior matches the legacy mode):
+- unary minus / `abs()` (and other int-builtin args) on a tagged null leak the sentinel
+  payload — needs narrowing in unary ops and builtin argument materialization.
+- `array_pop`/`array_shift` empty results on int arrays still return a plain-Int sentinel.
+- `?->` over int members and int globals still use the sentinel encoding.
+- `$a[$i][...]` nested reads, foreach value bindings, and by-ref interactions need an audit
+  pass with tagged reads.

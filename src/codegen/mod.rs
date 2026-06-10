@@ -124,6 +124,7 @@ pub(crate) use driver_support::{
     runtime_value_tag,
 };
 pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
+pub use sentinels::NullRepr;
 #[allow(unused_imports)]
 pub use driver_support::{generate_runtime, generate_runtime_with_features};
 pub use runtime_features::{
@@ -165,7 +166,9 @@ pub fn generate_user_asm(
     heap_debug: bool,
     target: Target,
     requires_elephc_tls: bool,
+    null_repr: NullRepr,
 ) -> String {
+    sentinels::set_null_repr(null_repr);
     let mut emitter = Emitter::new(target);
     if target.arch == platform::Arch::X86_64 {
         emitter.emit_text_prelude();
@@ -939,6 +942,7 @@ pub fn generate(
     heap_debug: bool,
     target: Target,
     requires_elephc_tls: bool,
+    null_repr: NullRepr,
 ) -> (String, String) {
     let user_asm = generate_user_asm(
         program,
@@ -959,6 +963,7 @@ pub fn generate(
         heap_debug,
         target,
         requires_elephc_tls,
+        null_repr,
     );
     let runtime_features = runtime_features_for_program_and_classes(program, classes);
     let runtime_asm = generate_runtime_with_features(heap_size, target, runtime_features);

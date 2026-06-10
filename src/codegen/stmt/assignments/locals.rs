@@ -856,6 +856,14 @@ fn emit_null_coalesce_assign_stmt(
 /// sentinel. ARM64 and x86_64 produce architecturally appropriate comparison + branch
 /// sequences.
 fn emit_branch_if_result_non_null(ty: &PhpType, keep_label: &str, emitter: &mut Emitter) {
+    if matches!(ty, PhpType::TaggedScalar) {
+        crate::codegen::sentinels::emit_branch_if_tagged_scalar_not_null(emitter, keep_label);
+        return;
+    }
+    if matches!(ty, PhpType::Int) && crate::codegen::sentinels::null_repr_is_tagged() {
+        abi::emit_jump(emitter, keep_label);                                    // a plain Int is never null under the tagged representation; always keep it
+        return;
+    }
     if matches!(ty, PhpType::Mixed | PhpType::Union(_)) {
         abi::emit_call_label(emitter, "__rt_mixed_unbox");                      // inspect the boxed value tag before deciding whether ??= should store
         match emitter.target.arch {

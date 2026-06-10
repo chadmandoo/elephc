@@ -14,3 +14,5 @@ use crate::support::*;
 mod benches;
 #[path = "null_sentinel/repros.rs"]
 mod repros;
+#[path = "null_sentinel/tagged.rs"]
+mod tagged;

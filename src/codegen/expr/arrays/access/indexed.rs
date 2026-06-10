@@ -249,6 +249,10 @@ pub(crate) fn emit_array_access_with_loaded_base(
                     abi::emit_release_temporary_stack(emitter, 32);             // discard the saved key and boxed base before returning the null-like fallback
                     if boxed_assoc_fallback {
                         objects_boxed_null_for_array_access(emitter);
+                    } else if crate::codegen::sentinels::null_repr_is_tagged()
+                        && matches!(val_ty, PhpType::Int)
+                    {
+                        crate::codegen::sentinels::emit_tagged_scalar_null(emitter);
                     } else {
                         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), NULL_SENTINEL);
                     }
@@ -266,6 +270,10 @@ pub(crate) fn emit_array_access_with_loaded_base(
                     abi::emit_release_temporary_stack(emitter, 32);             // discard the saved key and boxed base before returning the null-like fallback
                     if boxed_assoc_fallback {
                         objects_boxed_null_for_array_access(emitter);
+                    } else if crate::codegen::sentinels::null_repr_is_tagged()
+                        && matches!(val_ty, PhpType::Int)
+                    {
+                        crate::codegen::sentinels::emit_tagged_scalar_null(emitter);
                     } else {
                         abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), NULL_SENTINEL);
                     }
@@ -293,6 +301,9 @@ pub(crate) fn emit_array_access_with_loaded_base(
                 }
             }
         }
+        let tagged_int_result = crate::codegen::sentinels::null_repr_is_tagged()
+            && matches!(val_ty, PhpType::Int)
+            && !box_assoc_result;
         emitter.comment("assoc array access");
         abi::emit_call_label(emitter, "__rt_hash_get");                            // lookup key and return found-flag plus borrowed payload words through the target runtime ABI
 
@@ -355,15 +366,23 @@ pub(crate) fn emit_array_access_with_loaded_base(
         if box_assoc_result {
             crate::codegen::emit_box_current_value_as_mixed(emitter, &val_ty);
         }
+        if tagged_int_result {
+            crate::codegen::sentinels::emit_tagged_scalar_from_int_result(emitter);
+        }
         abi::emit_jump(emitter, &done);                                           // skip the not-found fallback after materializing the successful lookup result
 
         emitter.label(&not_found);
         if boxed_assoc_fallback {
             objects_boxed_null_for_array_access(emitter);
+        } else if tagged_int_result {
+            crate::codegen::sentinels::emit_tagged_scalar_null(emitter);
         } else {
             emit_typed_null_fallback(emitter, &val_ty); // type-aware null: empty Str / 0.0 Float / int sentinel (no stale ptr/len/fp regs)
         }
         emitter.label(&done);
+        if tagged_int_result {
+            return PhpType::TaggedScalar;
+        }
         return if box_assoc_result { PhpType::Mixed } else { val_ty };
     }
 
@@ -376,6 +395,9 @@ pub(crate) fn emit_array_access_with_loaded_base(
     abi::emit_pop_reg(emitter, array_reg);                                      // restore the array pointer into a scratch register
     emitter.comment("array access");
     let (elem_ty, boxed_indexed_base) = indexed_array_element_type(arr_ty, box_nullable_base);
+    let tagged_int_result = crate::codegen::sentinels::null_repr_is_tagged()
+        && matches!(elem_ty, PhpType::Int)
+        && !boxed_indexed_base;
 
     let null_label = ctx.next_label("arr_null");
     let ok_label = ctx.next_label("arr_ok");
@@ -485,6 +507,9 @@ pub(crate) fn emit_array_access_with_loaded_base(
     if boxed_indexed_base {
         crate::codegen::emit_box_current_value_as_mixed(emitter, &elem_ty);
     }
+    if tagged_int_result {
+        crate::codegen::sentinels::emit_tagged_scalar_from_int_result(emitter);
+    }
     match emitter.target.arch {
         Arch::AArch64 => emitter.instruction(&format!("b {ok_label}")),         // skip null sentinel fallback
         Arch::X86_64 => emitter.instruction(&format!("jmp {ok_label}")),        // skip null sentinel fallback
@@ -494,11 +519,16 @@ pub(crate) fn emit_array_access_with_loaded_base(
     emit_undefined_index_warning(emitter);
     if boxed_indexed_base || matches!(elem_ty, PhpType::Mixed | PhpType::Union(_)) {
         objects_boxed_null_for_array_access(emitter);
+    } else if tagged_int_result {
+        crate::codegen::sentinels::emit_tagged_scalar_null(emitter);
     } else {
         emit_typed_null_fallback(emitter, &elem_ty); // type-aware null: empty Str / 0.0 Float / int sentinel (no stale ptr/len/fp regs)
     }
     emitter.label(&ok_label);
 
+    if tagged_int_result {
+        return PhpType::TaggedScalar;
+    }
     if boxed_indexed_base { PhpType::Mixed } else { elem_ty }
 }
 

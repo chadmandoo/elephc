@@ -112,6 +112,24 @@ fn coerce_to_string_inner(
                 }
             }
         }
+        PhpType::TaggedScalar => {
+            // -- tagged scalar: null -> empty string, int payload -> decimal text --
+            let null_label = ctx.next_label("tagged_to_str_null");
+            let done_label = ctx.next_label("tagged_to_str_done");
+            crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(emitter, &null_label);
+            abi::emit_call_label(emitter, "__rt_itoa");                         // convert the non-null tagged scalar payload to decimal text
+            abi::emit_jump(emitter, &done_label);                               // skip the empty-string fallback after conversion
+            emitter.label(&null_label);
+            match emitter.target.arch {
+                Arch::AArch64 => {
+                    emitter.instruction("mov x2, #0");                          // null produces empty string (length = 0)
+                }
+                Arch::X86_64 => {
+                    emitter.instruction("mov rdx, 0");                          // null produces empty string (length = 0)
+                }
+            }
+            emitter.label(&done_label);
+        }
         PhpType::Mixed | PhpType::Union(_) => {
             // -- mixed strings dispatch on the boxed payload at runtime --
             abi::emit_call_label(emitter, "__rt_mixed_cast_string");            // cast the boxed mixed payload to string in the ABI string result registers
@@ -233,6 +251,10 @@ pub fn coerce_null_to_zero(emitter: &mut Emitter, ty: &PhpType) {
         // Bool is already 0/1 in x0, compatible with Int arithmetic
     } else if *ty == PhpType::Float {
         // Float is already in d0, no null sentinel to check
+    } else if *ty == PhpType::TaggedScalar {
+        crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(emitter);
+    } else if *ty == PhpType::Int && crate::codegen::sentinels::null_repr_is_tagged() {
+        // Under the tagged representation a plain Int can never hold the null sentinel
     } else if *ty == PhpType::Int {
         match emitter.target.arch {
             Arch::AArch64 => {

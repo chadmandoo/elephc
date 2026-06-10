@@ -371,6 +371,9 @@ pub(crate) fn runtime_value_tag(ty: &PhpType) -> u8 {
         PhpType::Void => 8,
         PhpType::Resource(_) => 9,
         PhpType::Callable | PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) | PhpType::Never => 0,
+        PhpType::TaggedScalar => {
+            unreachable!("TaggedScalar carries its runtime tag in the tag register, not a static tag")
+        }
     }
 }
 
@@ -405,6 +408,21 @@ pub(crate) fn emit_box_current_value_as_mixed(emitter: &mut Emitter, ty: &PhpTyp
     match ty {
         PhpType::Mixed | PhpType::Union(_) => {}
         PhpType::Iterable => emit_box_iterable_as_mixed(emitter),
+        PhpType::TaggedScalar => match emitter.target.arch {
+            Arch::AArch64 => {
+                emitter.instruction("mov x9, x0");                              // stage the tagged scalar payload while the tag moves into the helper tag register
+                emitter.instruction("mov x0, x1");                              // pass the dynamic runtime tag as the mixed boxing helper tag argument
+                emitter.instruction("mov x1, x9");                              // pass the tagged scalar payload as the mixed boxing helper low word
+                emitter.instruction("mov x2, xzr");                             // tagged scalar payloads do not use a second word
+                emitter.instruction("bl __rt_mixed_from_value");                // box the tagged scalar payload into a mixed cell
+            }
+            Arch::X86_64 => {
+                emitter.instruction("mov rdi, rax");                            // pass the tagged scalar payload as the mixed boxing helper low word
+                emitter.instruction("mov rax, rdx");                            // pass the dynamic runtime tag as the mixed boxing helper tag argument
+                emitter.instruction("xor rsi, rsi");                            // tagged scalar payloads do not use a second word
+                emitter.instruction("call __rt_mixed_from_value");              // box the tagged scalar payload into a mixed cell
+            }
+        },
         PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never | PhpType::Resource(_) => match emitter.target.arch {
             Arch::AArch64 => {
                 emitter.instruction("mov x1, x0");                              // move the current scalar payload into the mixed helper argument register
