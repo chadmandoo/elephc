@@ -32,8 +32,7 @@ pub(crate) const UNINITIALIZED_TYPED_PROPERTY_SENTINEL: i64 = 0x7fff_ffff_ffff_f
 pub(super) fn emit_write_literal_stderr(emitter: &mut Emitter, label: &str, len: usize) {
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.adrp("x1", label);                                          // load the page address of the stderr literal on AArch64
-            emitter.add_lo12("x1", "x1", label);                                // resolve the exact stderr literal address on AArch64
+            crate::codegen::abi::emit_symbol_address(emitter, "x1", label);     // load the page address of the stderr literal on AArch64
             emitter.instruction(&format!("mov x2, #{}", len));                  // materialize the stderr literal byte length in the AArch64 write-length register
             emitter.instruction("mov x0, #2");                                  // target the stderr file descriptor on AArch64
             emitter.syscall(4);
@@ -102,6 +101,16 @@ pub fn generate_runtime_with_features_pic(
     let mut output = emitter.output();
     output.push('\n');
     output.push_str(&runtime::emit_runtime_data_fixed(heap_size));
+    // The PIC runtime object only ever links into an ELF cdylib, where every
+    // runtime global must bind locally: hidden visibility prevents dynamic
+    // preemption (two loaded elephc modules aliasing one runtime state) and
+    // keeps the .so's dynamic symbol table down to the public ABI.
+    if pic && target.platform == crate::codegen::platform::Platform::Linux {
+        output = crate::codegen::visibility::append_hidden_directives(
+            &output,
+            &std::collections::HashSet::new(),
+        );
+    }
     output
 }
 

@@ -37,6 +37,7 @@ mod reflection;
 mod runtime;
 mod runtime_features;
 mod stmt;
+mod visibility;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -343,7 +344,7 @@ pub fn generate_user_asm(
         cdylib::emit_cdylib_exports(&mut emitter, target, &sorted_exports);
     }
 
-    emit_main_and_finalize(
+    let user_asm = emit_main_and_finalize(
         emitter,
         data,
         program,
@@ -370,7 +371,29 @@ pub fn generate_user_asm(
         heap_debug,
         requires_elephc_tls,
         emit,
-    )
+    );
+
+    // ELF cdylibs hide every internal global so the artifact exports only its
+    // public ABI (lifecycle entry points + #[Export] trampolines). Without
+    // this, internal runtime state would be preemptible and two elephc modules
+    // loaded into one process would alias each other's globals. Mach-O uses
+    // two-level namespace binding, so macOS needs no directive.
+    if matches!(emit, Emit::Cdylib) && target.platform == platform::Platform::Linux {
+        let mut exported: std::collections::HashSet<String> = exported_functions
+            .keys()
+            .map(|name| target.extern_symbol(name))
+            .collect();
+        for lifecycle in [
+            "elephc_init",
+            "elephc_shutdown",
+            "elephc_last_error",
+            "elephc_free",
+        ] {
+            exported.insert(target.extern_symbol(lifecycle));
+        }
+        return visibility::append_hidden_directives(&user_asm, &exported);
+    }
+    user_asm
 }
 
 /// Collects user-declared class and enum names from the program AST, merges them
