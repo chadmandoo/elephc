@@ -39,6 +39,7 @@ pub(crate) fn compile(config: CliConfig) {
         heap_size,
         gc_stats,
         heap_debug,
+        null_repr,
         emit_asm,
         emit,
         check_only,
@@ -51,6 +52,7 @@ pub(crate) fn compile(config: CliConfig) {
         defines,
     } = config;
     let filename = filename.as_str();
+    codegen::set_null_repr(null_repr);
     let parent = Path::new(filename).parent().unwrap_or(Path::new("."));
     let output_paths = output_paths(filename, target, emit);
     let mut timings = CompileTimings::new(emit_timings);
@@ -243,6 +245,7 @@ pub(crate) fn compile(config: CliConfig) {
         heap_debug,
         target,
         requires_elephc_tls,
+        null_repr,
         emit,
         &exported_functions,
     );

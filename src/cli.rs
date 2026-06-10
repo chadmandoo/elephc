@@ -15,7 +15,7 @@ pub(crate) use crate::codegen::Emit;
 use crate::codegen::platform::Target;
 
 /// Usage string printed to stderr when command-line arguments are invalid or missing.
-pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-asm] [--emit KIND] [--check] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
+pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-asm] [--emit KIND] [--check] [--null-repr=sentinel|tagged] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
 
 /// Configuration derived from command-line arguments, passed to the compile pipeline.
 /// Controls heap allocation size, debug output, code generation options, and linking behavior.
@@ -24,6 +24,7 @@ pub(crate) struct CliConfig {
     pub(crate) heap_size: usize,
     pub(crate) gc_stats: bool,
     pub(crate) heap_debug: bool,
+    pub(crate) null_repr: crate::codegen::NullRepr,
     pub(crate) emit_asm: bool,
     pub(crate) emit: Emit,
     pub(crate) check_only: bool,
@@ -57,6 +58,11 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     let mut extra_link_paths: Vec<String> = Vec::new();
     let mut extra_frameworks: Vec<String> = Vec::new();
     let mut defines: HashSet<String> = HashSet::new();
+    let mut null_repr = match std::env::var("ELEPHC_NULL_REPR").as_deref() {
+        Ok("tagged") => crate::codegen::NullRepr::Tagged,
+        Ok("sentinel") => crate::codegen::NullRepr::Sentinel,
+        _ => crate::codegen::NullRepr::default(),
+    };
 
     let mut i = 1;
     while i < args.len() {
@@ -85,6 +91,8 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
             emit_timings = true;
         } else if arg == "--source-map" {
             emit_source_map = true;
+        } else if let Some(value) = arg.strip_prefix("--null-repr=") {
+            null_repr = parse_null_repr(value);
         } else if arg == "--define" {
             i += 1;
             let symbol = required_value(args, i, "Missing symbol after --define");
@@ -142,6 +150,7 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
         heap_size,
         gc_stats,
         heap_debug,
+        null_repr,
         emit_asm,
         emit,
         check_only,
@@ -190,6 +199,15 @@ fn parse_required_target(args: &[String], index: usize) -> Target {
         parse_target(&args[index])
     } else {
         fail("Missing target after --target")
+    }
+}
+
+/// Parse a `--null-repr=` value into a NullRepr, or fail with an error message.
+fn parse_null_repr(value: &str) -> crate::codegen::NullRepr {
+    match value {
+        "sentinel" => crate::codegen::NullRepr::Sentinel,
+        "tagged" => crate::codegen::NullRepr::Tagged,
+        other => fail(&format!("Unknown null representation: {}", other)),
     }
 }
 

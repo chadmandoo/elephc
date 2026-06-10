@@ -36,6 +36,7 @@ mod program_usage;
 mod reflection;
 mod runtime;
 mod runtime_features;
+pub(crate) mod sentinels;
 mod stmt;
 mod visibility;
 
@@ -122,8 +123,10 @@ pub(crate) use driver_support::{
     emit_box_current_expr_value_as_mixed_for_container, emit_box_current_value_as_mixed,
     emit_box_iterable_value_for_mixed_container, emit_box_runtime_payload_as_mixed,
     emit_normalized_hash_key, emit_release_pushed_refcounted_temp_after_array_push,
-    runtime_value_tag, UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+    runtime_value_tag,
 };
+pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
+pub use sentinels::{set_null_repr, NullRepr};
 #[allow(unused_imports)]
 pub use driver_support::{
     generate_runtime, generate_runtime_with_features, generate_runtime_with_features_pic,
@@ -184,9 +187,11 @@ pub fn generate_user_asm(
     heap_debug: bool,
     target: Target,
     requires_elephc_tls: bool,
+    null_repr: NullRepr,
     emit: Emit,
     exported_functions: &HashMap<String, crate::exports::ExportedFunction>,
 ) -> String {
+    sentinels::set_null_repr(null_repr);
     let mut emitter = match emit {
         Emit::Cdylib => Emitter::new_pic(target),
         Emit::Executable => Emitter::new(target),
@@ -996,6 +1001,7 @@ pub fn generate(
     heap_debug: bool,
     target: Target,
     requires_elephc_tls: bool,
+    null_repr: NullRepr,
 ) -> (String, String) {
     let user_asm = generate_user_asm(
         program,
@@ -1016,6 +1022,7 @@ pub fn generate(
         heap_debug,
         target,
         requires_elephc_tls,
+        null_repr,
         Emit::Executable,
         &HashMap::new(),
     );
