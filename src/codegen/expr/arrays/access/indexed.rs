@@ -9,6 +9,7 @@
 //! - Element layout and boxed Mixed handling must stay aligned with array runtime helpers.
 
 use crate::codegen::abi;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
@@ -249,7 +250,7 @@ pub(crate) fn emit_array_access_with_loaded_base(
                     if boxed_assoc_fallback {
                         objects_boxed_null_for_array_access(emitter);
                     } else {
-                        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), i64::MAX - 1);
+                        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), NULL_SENTINEL);
                     }
                     emitter.instruction(&format!("b {}", done));                // skip hash lookup when the boxed value is false/null
                     emitter.label(&hash_payload);
@@ -266,7 +267,7 @@ pub(crate) fn emit_array_access_with_loaded_base(
                     if boxed_assoc_fallback {
                         objects_boxed_null_for_array_access(emitter);
                     } else {
-                        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), i64::MAX - 1);
+                        abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), NULL_SENTINEL);
                     }
                     emitter.instruction(&format!("jmp {}", done));              // skip hash lookup when the boxed value is false/null
                     emitter.label(&hash_payload);
@@ -559,7 +560,7 @@ fn emit_typed_null_fallback(emitter: &mut Emitter, ty: &PhpType) {
         _ => abi::emit_load_int_immediate(
             emitter,
             abi::int_result_reg(emitter),
-            0x7fff_ffff_ffff_fffe,
+            NULL_SENTINEL,
         ), // integer/bool/resource/callable null sentinel
     }
 }
@@ -569,7 +570,7 @@ fn objects_boxed_null_for_array_access(emitter: &mut Emitter) {
     abi::emit_load_int_immediate(
         emitter,
         abi::int_result_reg(emitter),
-        0x7fff_ffff_ffff_fffe,
+        NULL_SENTINEL,
     );
     crate::codegen::emit_box_current_value_as_mixed(emitter, &PhpType::Void);
 }

@@ -20,11 +20,9 @@ use super::functions;
 use super::platform::{Arch, Target};
 use super::runtime;
 use super::runtime_features::RuntimeFeatures;
+use super::sentinels::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 
 const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
-/// Sentinel value written to typed static properties that have no initializer expression,
-/// signaling that the property has never been accessed at runtime.
-pub(crate) const UNINITIALIZED_TYPED_PROPERTY_SENTINEL: i64 = 0x7fff_ffff_ffff_fffd;
 
 /// Emits a write syscall for a labeled literal string to stderr, using the given
 /// label (from the data section) and its byte length. Handles target-specific

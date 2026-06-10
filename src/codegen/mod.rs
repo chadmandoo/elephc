@@ -35,6 +35,7 @@ mod program_usage;
 mod reflection;
 mod runtime;
 mod runtime_features;
+mod sentinels;
 mod stmt;
 
 use std::cell::{Cell, RefCell};
@@ -120,8 +121,9 @@ pub(crate) use driver_support::{
     emit_box_current_expr_value_as_mixed_for_container, emit_box_current_value_as_mixed,
     emit_box_iterable_value_for_mixed_container, emit_box_runtime_payload_as_mixed,
     emit_normalized_hash_key, emit_release_pushed_refcounted_temp_after_array_push,
-    runtime_value_tag, UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+    runtime_value_tag,
 };
+pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
 #[allow(unused_imports)]
 pub use driver_support::{generate_runtime, generate_runtime_with_features};
 pub use runtime_features::{

@@ -9,6 +9,7 @@
 //! - String temporaries must stay alive through the write and be released only when this path owns them.
 
 use super::super::abi;
+use super::super::NULL_SENTINEL;
 use super::super::context::Context;
 use super::super::data_section::DataSection;
 use super::super::emit::Emitter;
@@ -60,7 +61,7 @@ pub(crate) fn emit_expr_to_stdout(
         PhpType::Int => {
             let skip_label = ctx.next_label("echo_skip_null");
             let sentinel_reg = abi::symbol_scratch_reg(emitter);
-            abi::emit_load_int_immediate(emitter, sentinel_reg, 0x7fff_ffff_ffff_fffe);
+            abi::emit_load_int_immediate(emitter, sentinel_reg, NULL_SENTINEL);
             match emitter.target.arch {
                 Arch::AArch64 => {
                     emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare integer value against the runtime null sentinel

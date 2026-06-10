@@ -13,6 +13,7 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::emit_expr;
 use crate::codegen::{abi, platform::Arch};
+use crate::codegen::NULL_SENTINEL;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
@@ -20,7 +21,6 @@ use crate::types::PhpType;
 ///
 /// This value is distinct from all valid PHP scalar values (integers, booleans, floats)
 /// and is used by the runtime to distinguish a loaded null from false, zero, or empty.
-const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 
 /// Emits PHP `isset(...)` for one or more arguments.
 ///

@@ -11,6 +11,7 @@
 use super::ensure_unique_arg::emit_ensure_unique_arg;
 use super::store_mutating_arg::emit_store_mutating_arg;
 use crate::codegen::abi;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
@@ -81,7 +82,7 @@ pub fn emit(
         emitter.instruction(&format!("jmp {}", end_label));                     // skip the empty-array null sentinel path after loading the removed payload
 
         emitter.label(&empty_label);
-        abi::emit_load_int_immediate(emitter, "rax", i64::MAX - 1);            // materialize the shared null sentinel as the empty-array result on x86_64
+        abi::emit_load_int_immediate(emitter, "rax", NULL_SENTINEL);           // materialize the shared null sentinel as the empty-array result on x86_64
         emitter.label(&end_label);
 
         return Some(elem_ty);
@@ -114,10 +115,11 @@ pub fn emit(
 
     // -- empty array: return null sentinel --
     emitter.label(&empty_label);
-    emitter.instruction("movz x0, #0xFFFE");                                    // load null sentinel bits [15:0]
-    emitter.instruction("movk x0, #0xFFFF, lsl #16");                           // load null sentinel bits [31:16]
-    emitter.instruction("movk x0, #0xFFFF, lsl #32");                           // load null sentinel bits [47:32]
-    emitter.instruction("movk x0, #0x7FFF, lsl #48");                           // load null sentinel bits [63:48] = 0x7FFFFFFFFFFFFFFE
+    let sentinel = NULL_SENTINEL as u64;
+    emitter.instruction(&format!("movz x0, #0x{:X}", sentinel & 0xFFFF));       // load null sentinel bits [15:0]
+    emitter.instruction(&format!("movk x0, #0x{:X}, lsl #16", (sentinel >> 16) & 0xFFFF)); // load null sentinel bits [31:16]
+    emitter.instruction(&format!("movk x0, #0x{:X}, lsl #32", (sentinel >> 32) & 0xFFFF)); // load null sentinel bits [47:32]
+    emitter.instruction(&format!("movk x0, #0x{:X}, lsl #48", (sentinel >> 48) & 0xFFFF)); // load null sentinel bits [63:48] = 0x7FFFFFFFFFFFFFFE
 
     emitter.label(&end_label);
 

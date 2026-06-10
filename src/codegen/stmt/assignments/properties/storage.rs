@@ -9,10 +9,10 @@
 //! - Property writes must respect declared types, visibility checks, and runtime object layout.
 
 use crate::codegen::abi;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::emit::Emitter;
 use crate::types::PhpType;
 
-const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 /// Sentinel value stored in a property slot's first word to represent `Void`
 /// when the upper word is also zeroed. Chosen to be an invalid pointer
 /// representation that avoids confusing null pointers with uninitialized slots.

@@ -9,6 +9,7 @@
 //! - Local writes must release replaced heap values only when the frame owns the previous value.
 
 use super::super::super::abi;
+use super::super::super::NULL_SENTINEL;
 use super::super::super::callable_descriptor;
 use super::super::super::context::{Context, HeapOwnership};
 use super::super::super::data_section::DataSection;
@@ -871,7 +872,7 @@ fn emit_branch_if_result_non_null(ty: &PhpType, keep_label: &str, emitter: &mut 
     }
 
     let null_reg = abi::symbol_scratch_reg(emitter);
-    abi::emit_load_int_immediate(emitter, null_reg, 0x7fff_ffff_ffff_fffe_u64 as i64);
+    abi::emit_load_int_immediate(emitter, null_reg, NULL_SENTINEL);
     if ty == &PhpType::Float {
         match emitter.target.arch {
             crate::codegen::platform::Arch::AArch64 => {

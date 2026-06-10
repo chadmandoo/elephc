@@ -9,6 +9,7 @@
 //! - Null, type-tag, and string comparisons must follow PHP semantics before emitting boolean results.
 
 use crate::codegen::abi;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
@@ -67,7 +68,7 @@ pub(in crate::codegen::expr) fn emit_null_coalesce(
         }
     } else {
         let null_reg = abi::symbol_scratch_reg(emitter);
-        abi::emit_load_int_immediate(emitter, null_reg, 0x7fff_ffff_ffff_fffe_u64 as i64); // materialize the shared null sentinel for the direct null test
+        abi::emit_load_int_immediate(emitter, null_reg, NULL_SENTINEL); // materialize the shared null sentinel for the direct null test
         if val_ty == PhpType::Float {
             match emitter.target.arch {
                 crate::codegen::platform::Arch::AArch64 => {

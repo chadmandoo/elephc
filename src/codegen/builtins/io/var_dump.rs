@@ -9,6 +9,7 @@
 //! - Output is a side effect, and refcounted values must be inspected without consuming ownership.
 
 use crate::codegen::context::Context;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::emit_expr;
@@ -127,7 +128,7 @@ fn emit_var_dump_int(emitter: &mut Emitter, ctx: &mut Context, data: &mut DataSe
     let done = ctx.next_label("vd_done");
     let result_reg = abi::int_result_reg(emitter);
     let scratch_reg = abi::symbol_scratch_reg(emitter);
-    abi::emit_load_int_immediate(emitter, scratch_reg, 0x7fff_ffff_ffff_fffe_u64 as i64); // materialize the shared null sentinel used by int-valued locals
+    abi::emit_load_int_immediate(emitter, scratch_reg, NULL_SENTINEL); // materialize the shared null sentinel used by int-valued locals
     emitter.instruction(&format!("cmp {}, {}", result_reg, scratch_reg));       // compare the incoming integer payload against the null sentinel
     emit_branch_if_ne(emitter, &not_null);                                      // branch to the ordinary int path when the payload is not null
     emit_write_literal(emitter, data, b"NULL\n");

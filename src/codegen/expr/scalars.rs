@@ -9,6 +9,7 @@
 //! - Literal storage must match data-section labels and the result conventions expected by coercion helpers.
 
 use crate::codegen::platform::Arch;
+use crate::codegen::NULL_SENTINEL;
 
 use super::super::abi;
 use super::super::context::Context;
@@ -16,7 +17,6 @@ use super::super::data_section::DataSection;
 use super::super::emit::Emitter;
 use super::{Expr, PhpType};
 
-const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 
 /// Emits a boolean literal as an integer into the integer result register.
 /// `true` becomes 1, `false` becomes 0.
@@ -213,7 +213,7 @@ mod tests {
 
         let out = emitter.output();
         assert!(out.contains("    mov rax, 1\n"));
-        assert!(out.contains("    mov rax, 9223372036854775806\n"));
+        assert!(out.contains(&format!("    mov rax, {}\n", NULL_SENTINEL)));
         assert!(out.contains("    lea rax, [rip + "));
         assert!(out.contains("    mov rdx, 2\n"));
         assert!(out.contains("    mov rax, 42\n"));

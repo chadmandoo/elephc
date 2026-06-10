@@ -9,6 +9,7 @@
 //! - The left-hand side must be evaluated once and only assigned when the observed value is null.
 
 use super::super::abi;
+use super::super::NULL_SENTINEL;
 use super::super::emit::Emitter;
 use crate::parser::ast::{Expr, ExprKind, StaticReceiver};
 use crate::types::PhpType;
@@ -250,7 +251,7 @@ pub(crate) fn emit_branch_if_result_non_null(
     }
 
     let null_reg = abi::symbol_scratch_reg(emitter);
-    abi::emit_load_int_immediate(emitter, null_reg, 0x7fff_ffff_ffff_fffe_u64 as i64);
+    abi::emit_load_int_immediate(emitter, null_reg, NULL_SENTINEL);
     if ty == &PhpType::Float {
         match emitter.target.arch {
             crate::codegen::platform::Arch::AArch64 => {

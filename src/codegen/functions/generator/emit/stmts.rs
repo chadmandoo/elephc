@@ -27,6 +27,7 @@ use super::yields::{
 use super::{preserved_scratch_reg, slot_offset, LoopLabels, ResumeCtx};
 use super::super::model::*;
 use crate::codegen::abi;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
@@ -180,7 +181,7 @@ fn emit_var_dump_int(emitter: &mut Emitter, data: &mut DataSection, ctx: &mut Re
     let done = ctx.fresh_label("vd_done");
     let result_reg = abi::int_result_reg(emitter);
     let scratch_reg = abi::symbol_scratch_reg(emitter);
-    abi::emit_load_int_immediate(emitter, scratch_reg, 0x7fff_ffff_ffff_fffe_u64 as i64); // materialize the shared null sentinel used by int-valued locals
+    abi::emit_load_int_immediate(emitter, scratch_reg, NULL_SENTINEL); // materialize the shared null sentinel used by int-valued locals
     emitter.instruction(&format!("cmp {}, {}", result_reg, scratch_reg));       // compare the incoming integer payload against the null sentinel
     match emitter.target.arch {
         Arch::AArch64 => {
