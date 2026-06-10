@@ -14,7 +14,7 @@ use std::process;
 use std::time::Instant;
 
 use crate::cli::CliConfig;
-use crate::codegen::platform::{Arch, Platform, Target};
+use crate::codegen::platform::{Platform, Target};
 use crate::codegen::Emit;
 use crate::timings::CompileTimings;
 use crate::{
@@ -160,24 +160,6 @@ pub(crate) fn compile(config: CliConfig) {
         eprintln!(
             "Target '{}' is recognized, but it is outside the current supported target matrix",
             target
-        );
-        process::exit(1);
-    }
-
-    // `--emit cdylib` v1 is AArch64-only. The shared runtime object emits
-    // ~700 hand-written x86_64 instructions with direct RIP-relative
-    // addressing to its own globals (`_rt_diag_suppression`, `_socket_key_str`,
-    // ...), which the dynamic linker cannot resolve as cross-section
-    // `R_X86_64_PC32` relocations in a `.so`. AArch64 uses ADRP+ADD by default
-    // — naturally PIC — so the same runtime links cleanly into a `.so` there.
-    // x86_64 cdylib unblocks once the runtime is swept onto the GOT-routing
-    // helpers in `codegen::abi::symbols`.
-    if matches!(emit, Emit::Cdylib) && target.arch == Arch::X86_64 {
-        eprintln!(
-            "--emit cdylib is not yet supported on x86_64 targets (the runtime \
-             object emits direct RIP-relative references that cannot resolve in a \
-             shared library). Use --target macos-aarch64 or --target linux-aarch64 \
-             for v1, or stay on --emit executable for x86_64 targets."
         );
         process::exit(1);
     }
