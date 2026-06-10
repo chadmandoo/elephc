@@ -79,7 +79,24 @@ pub fn generate_runtime_with_features(
     target: Target,
     features: RuntimeFeatures,
 ) -> String {
-    let mut emitter = Emitter::new(target);
+    generate_runtime_with_features_pic(heap_size, target, features, false)
+}
+
+/// Same as `generate_runtime_with_features` but emits position-independent
+/// data references when `pic` is true. Required for the runtime object linked
+/// into a `--emit cdylib` artifact, where cross-section symbol references must
+/// resolve through the GOT instead of via direct PC-relative relocations.
+pub fn generate_runtime_with_features_pic(
+    heap_size: usize,
+    target: Target,
+    features: RuntimeFeatures,
+    pic: bool,
+) -> String {
+    let mut emitter = if pic {
+        Emitter::new_pic(target)
+    } else {
+        Emitter::new(target)
+    };
     emitter.emit_text_prelude();
     runtime::emit_runtime(&mut emitter, features);
     let mut output = emitter.output();

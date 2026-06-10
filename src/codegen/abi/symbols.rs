@@ -98,6 +98,10 @@ pub fn emit_load_symbol_to_local_slot(
 /// addressing on x86_64.  The symbol must be defined in the current module's
 /// data section.
 pub fn emit_symbol_address(emitter: &mut Emitter, dest: &str, symbol: &str) {
+    if emitter.pic_data_refs {
+        emit_extern_symbol_address(emitter, dest, symbol);
+        return;
+    }
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.adrp(dest, &format!("{}", symbol));                                  // load the page of the requested symbol storage
@@ -166,6 +170,10 @@ pub fn emit_load_symbol_to_reg(
     symbol: &str,
     byte_offset: usize,
 ) {
+    if emitter.pic_data_refs {
+        emit_load_extern_symbol_to_reg(emitter, reg, symbol, byte_offset);
+        return;
+    }
     match emitter.target.arch {
         Arch::AArch64 => {
             emit_symbol_address(emitter, "x9", symbol);
@@ -206,6 +214,10 @@ pub fn emit_store_reg_to_symbol(
     symbol: &str,
     byte_offset: usize,
 ) {
+    if emitter.pic_data_refs {
+        emit_store_reg_to_extern_symbol(emitter, reg, symbol, byte_offset);
+        return;
+    }
     match emitter.target.arch {
         Arch::AArch64 => {
             emit_symbol_address(emitter, "x9", symbol);
@@ -240,6 +252,19 @@ pub fn emit_store_reg_to_symbol(
 /// immediate zero.  Used to initialize symbol storage to null/zero without
 /// a separate load-from-register step.
 pub fn emit_store_zero_to_symbol(emitter: &mut Emitter, symbol: &str, byte_offset: usize) {
+    if emitter.pic_data_refs {
+        let scratch = symbol_scratch_reg(emitter);
+        let zero_reg = match emitter.target.arch {
+            Arch::AArch64 => "xzr",
+            Arch::X86_64 => "r11",
+        };
+        if matches!(emitter.target.arch, Arch::X86_64) {
+            emitter.instruction("xor r11d, r11d"); // produce architectural zero in the PIC scratch register
+        }
+        let _ = scratch;
+        emit_store_reg_to_extern_symbol(emitter, zero_reg, symbol, byte_offset);
+        return;
+    }
     match emitter.target.arch {
         Arch::AArch64 => {
             emit_store_reg_to_symbol(emitter, "xzr", symbol, byte_offset);              // store architectural zero directly into symbol-backed storage
