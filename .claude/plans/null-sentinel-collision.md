@@ -93,10 +93,22 @@ Discovered during Phase 2 — pre-existing null-read bugs (broken in BOTH modes;
 most): under the legacy sentinel repr, `$a[miss] + 1`, `$a[miss] . "s"`, `"{$a[miss]}"`,
 `$a[miss] * 3` all leak the sentinel digits; Tagged narrows them correctly.
 
-Remaining follow-ups (not blockers; behavior matches the legacy mode):
-- unary minus / `abs()` (and other int-builtin args) on a tagged null leak the sentinel
-  payload — needs narrowing in unary ops and builtin argument materialization.
-- `array_pop`/`array_shift` empty results on int arrays still return a plain-Int sentinel.
-- `?->` over int members and int globals still use the sentinel encoding.
-- `$a[$i][...]` nested reads, foreach value bindings, and by-ref interactions need an audit
-  pass with tagged reads.
+Phase 2.3 (full suite forced to Tagged) initially failed 9/3978; all four systematic causes
+fixed: local inference now mirrors emission (TaggedScalar for miss-capable int reads, so
+array literals box and === peeks stay runtime), untyped params widen to int|null on null
+call sites (flag installed before checking), array element stores/pushes narrow the payload
+word, and local assignments reinterpret into one-word slots instead of clobbering the
+neighboring slot with the tag word. `array_pop`/`array_shift` empty results, unary minus,
+and `abs()` are tagged/narrowed. Benches (noisy, same-load comparison): plain-int parity,
+array-read loop ~45% faster under Tagged (sentinel materialization disappears), nullable
+roundtrip +9%.
+
+Remaining follow-ups (not blockers; behavior matches the legacy mode in both representations):
+- storing a null-valued tagged read into an int array keeps the in-band payload (reads
+  back as the sentinel integer, like the legacy mode); a runtime tag-branch into the boxed
+  Mixed conversion would make it PHP-exact.
+- int-builtin argument narrowing beyond abs() (e.g. intdiv on a null read) follows legacy
+  semantics; a shared builtin-arg coercion gate would make them PHP-exact.
+- undefined globals read as int 0 in both modes (PHP: null + warning) — pre-existing.
+- `?->` over int members already prints correctly via the Mixed path; enum tryFrom keeps
+  its object-pointer sentinel scheme (no int collision).

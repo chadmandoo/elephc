@@ -223,6 +223,60 @@ fn test_tagged_unary_minus_and_abs_narrow_null() {
     assert_eq!(out, "0|0|-3|3");
 }
 
+
+/// Phase 3 narrowing proof: a plain non-nullable int emits no in-band sentinel material
+/// under the tagged representation — neither the 0x7fff_ffff_ffff_fffe immediate nor its
+/// decimal form appears anywhere in the user assembly for echo + var_dump of an int local.
+#[test]
+fn test_tagged_plain_int_emits_no_sentinel_check() {
+    let dir = make_cli_test_dir("elephc_tagged_plain_int_asm");
+    let (user_asm, _runtime_asm, _libs) = compile_source_to_asm_with_defines_repr(
+        "<?php $x = 5; echo $x; var_dump($x);",
+        &dir,
+        &std::collections::HashSet::new(),
+        8_388_608,
+        false,
+        false,
+        elephc::codegen::NullRepr::Tagged,
+    );
+    let main_start = user_asm.find("_main:").expect("user asm contains _main");
+    let main_body = &user_asm[main_start..];
+    let main_end = main_body.find("ret").map(|i| i + main_start).unwrap_or(user_asm.len());
+    let main_section = &user_asm[main_start..main_end];
+    let lower = main_section.to_lowercase();
+    assert!(
+        !lower.contains("0xfffe") && !main_section.contains("9223372036854775806"),
+        "plain-int echo/var_dump must not materialize the null sentinel under Tagged:\n{}",
+        main_section
+    );
+}
+
+/// Control for the narrowing proof: the same program under the sentinel representation
+/// does materialize the in-band sentinel for its echo/var_dump null checks.
+#[test]
+fn test_sentinel_plain_int_still_emits_sentinel_check() {
+    let dir = make_cli_test_dir("elephc_sentinel_plain_int_asm");
+    let (user_asm, _runtime_asm, _libs) = compile_source_to_asm_with_defines_repr(
+        "<?php $x = 5; echo $x; var_dump($x);",
+        &dir,
+        &std::collections::HashSet::new(),
+        8_388_608,
+        false,
+        false,
+        elephc::codegen::NullRepr::Sentinel,
+    );
+    let main_start = user_asm.find("_main:").expect("user asm contains _main");
+    let main_body = &user_asm[main_start..];
+    let main_end = main_body.find("ret").map(|i| i + main_start).unwrap_or(user_asm.len());
+    let main_section = &user_asm[main_start..main_end];
+    let lower = main_section.to_lowercase();
+    assert!(
+        lower.contains("0xfffe") || main_section.contains("9223372036854775806"),
+        "sentinel-mode echo/var_dump should still materialize the null sentinel:\n{}",
+        main_section
+    );
+}
+
 /// The legacy in-band behavior is preserved under the default sentinel representation:
 /// the same fixture still misreads PHP_INT_MAX-1 as null (guards the default until Phase 4).
 #[test]
