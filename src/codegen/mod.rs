@@ -10,6 +10,7 @@
 
 mod abi;
 mod builtins;
+mod cdylib;
 pub(crate) mod callable_descriptor;
 pub(crate) mod callable_dispatch;
 pub(crate) mod runtime_callable_invoker;
@@ -123,12 +124,31 @@ pub(crate) use driver_support::{
     runtime_value_tag, UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
 };
 #[allow(unused_imports)]
-pub use driver_support::{generate_runtime, generate_runtime_with_features};
+pub use driver_support::{
+    generate_runtime, generate_runtime_with_features, generate_runtime_with_features_pic,
+};
 pub use runtime_features::{
     required_libraries_for_runtime_features, runtime_features_for_program_and_classes,
 };
 pub use runtime_features::RuntimeFeatures;
 use platform::Target;
+
+/// Output artifact kind selected by the compiler's `--emit` flag.
+///
+/// `Executable` (default) produces a standalone native binary with a `_main`
+/// entry point and a process-exit call at the end of top-level statements.
+///
+/// `Cdylib` produces a position-independent shared library (`.so` on Linux,
+/// `.dylib` on macOS) loadable via `dlopen(3)` and friends. Cdylib output has
+/// no `_main` entry, no implicit top-level execution at load time, and exposes
+/// PHP functions marked with `#[Export]` under their unmangled PHP names plus
+/// the `elephc_init` / `elephc_shutdown` / `elephc_last_error` / `elephc_free`
+/// lifecycle entry points for embedding hosts.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum Emit {
+    Executable,
+    Cdylib,
+}
 use prescan::{collect_constants, collect_global_var_names, collect_static_vars};
 use program_usage::{
     collect_required_class_names, collect_required_class_names_in_stmts,
@@ -163,8 +183,13 @@ pub fn generate_user_asm(
     heap_debug: bool,
     target: Target,
     requires_elephc_tls: bool,
+    emit: Emit,
+    exported_functions: &HashMap<String, crate::exports::ExportedFunction>,
 ) -> String {
-    let mut emitter = Emitter::new(target);
+    let mut emitter = match emit {
+        Emit::Cdylib => Emitter::new_pic(target),
+        Emit::Executable => Emitter::new(target),
+    };
     if target.arch == platform::Arch::X86_64 {
         emitter.emit_text_prelude();
     }
@@ -308,6 +333,16 @@ pub fn generate_user_asm(
         emitted_class_names.as_ref(),
     );
 
+    // Cdylib emission appends C-ABI export trampolines and lifecycle symbols
+    // after user functions so each `_fn_<name>` target the trampolines branch
+    // into has already been emitted. Executable mode skips this step entirely.
+    if matches!(emit, Emit::Cdylib) {
+        let mut sorted_exports: Vec<&crate::exports::ExportedFunction> =
+            exported_functions.values().collect();
+        sorted_exports.sort_by(|a, b| a.name.cmp(&b.name));
+        cdylib::emit_cdylib_exports(&mut emitter, target, &sorted_exports);
+    }
+
     emit_main_and_finalize(
         emitter,
         data,
@@ -334,6 +369,7 @@ pub fn generate_user_asm(
         gc_stats,
         heap_debug,
         requires_elephc_tls,
+        emit,
     )
 }
 
@@ -957,6 +993,8 @@ pub fn generate(
         heap_debug,
         target,
         requires_elephc_tls,
+        Emit::Executable,
+        &HashMap::new(),
     );
     let runtime_features = runtime_features_for_program_and_classes(program, classes);
     let runtime_asm = generate_runtime_with_features(heap_size, target, runtime_features);
