@@ -11,6 +11,7 @@
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
 use crate::codegen::runtime::generators::frame as gen_frame;
+use crate::codegen::abi;
 
 const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
 
@@ -59,6 +60,13 @@ pub fn emit_object_free_deep(emitter: &mut Emitter) {
     crate::codegen::abi::emit_symbol_address(emitter, "x9", "_gc_release_suppressed");
     emitter.instruction("mov x10, #1");                                         // ordinary deep-free walks suppress nested collector runs
     emitter.instruction("str x10, [x9]");                                       // store release-suppressed = 1 for child cleanup
+
+    // -- run the class's PHP __destruct (if any) before releasing properties --
+    // The receiver is still fully constructed here; the helper resolves the
+    // destructor from the object's class_id and runs it with $this borrowed.
+    emitter.instruction("ldr x0, [sp, #0]");                                    // reload the object pointer for the destructor call
+    emitter.instruction("bl __rt_call_object_destructor");                      // run the class's __destruct hook if one is declared
+    emitter.instruction("ldr x0, [sp, #0]");                                    // reload the object pointer after the destructor returns
 
     // -- Fiber special case: release the per-fiber stack before the standard struct free path --
     // The Fiber object has zero declared PHP properties. Its payload past the class_id is made
@@ -288,6 +296,13 @@ fn emit_object_free_deep_linux_x86_64(emitter: &mut Emitter) {
     crate::codegen::abi::emit_symbol_address(emitter, "r10", "_gc_release_suppressed");
     emitter.instruction("mov QWORD PTR [r10], 1");                              // suppress nested collector runs while this object deep-free walk releases property payloads
 
+    // -- run the class's PHP __destruct (if any) before releasing properties --
+    // The receiver is still fully constructed here; the helper resolves the
+    // destructor from the object's class_id and runs it with $this borrowed.
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // load the object pointer as $this for the destructor call
+    emitter.instruction("call __rt_call_object_destructor");                    // run the class's __destruct hook if one is declared
+    emitter.instruction("mov rax, QWORD PTR [rbp - 8]");                        // reload the object pointer after the destructor returns
+
     // -- Fiber special case: release the per-fiber stack before the standard struct free path --
     emitter.instruction("mov r10, QWORD PTR [rax]");                            // r10 = receiver class_id
     crate::codegen::abi::emit_load_symbol_to_reg(emitter, "r11", "_fiber_class_id", 0); // r11 = compile-time class id of the built-in Fiber class
@@ -392,9 +407,9 @@ fn emit_object_free_deep_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("shr r10, 4");                                          // divide by 16 because every property slot occupies two qwords
     emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // save the total property count for the deep-free loop
     emitter.instruction("mov r10, QWORD PTR [rax]");                            // load the runtime class id from the object payload
-    emitter.instruction("cmp r10, QWORD PTR [rip + _class_gc_desc_count]");     // is the runtime class id within the emitted descriptor table?
+    abi::emit_cmp_reg_to_symbol(emitter, "r10", "_class_gc_desc_count");        // is the runtime class id within the emitted descriptor table?
     emitter.instruction("jae __rt_object_free_deep_struct");                    // invalid class ids fall back to a shallow object free on x86_64
-    emitter.instruction("lea r11, [rip + _class_gc_desc_ptrs]");                // materialize the base address of the class property-tag descriptor table
+    abi::emit_symbol_address(emitter, "r11", "_class_gc_desc_ptrs");            // materialize the base address of the class property-tag descriptor table
     emitter.instruction("mov r11, QWORD PTR [r11 + r10 * 8]");                  // load the property-tag descriptor pointer for this object class
     emitter.instruction("mov QWORD PTR [rbp - 16], r11");                       // save the descriptor pointer for the object-property cleanup loop
     emitter.instruction("mov QWORD PTR [rbp - 32], 0");                         // initialize the object-property loop index to zero

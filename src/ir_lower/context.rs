@@ -717,6 +717,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::ArrayToHash
                     | Op::ObjectNew
                     | Op::DynamicObjectNew
+                    | Op::DynamicObjectNewMixed
                     | Op::ClosureNew
                     | Op::FirstClassCallableNew
                     | Op::CallableArrayNew
@@ -968,7 +969,8 @@ fn closure_name_fragment(value: &str) -> String {
 
 /// Returns the EIR return storage type for a function signature.
 pub(crate) fn return_ir_type(php_type: &PhpType) -> IrType {
-    match php_type {
+    let php_type = php_type.codegen_repr();
+    match &php_type {
         PhpType::Void | PhpType::Never => IrType::Void,
         other => IrType::from_php(other),
     }
@@ -976,7 +978,8 @@ pub(crate) fn return_ir_type(php_type: &PhpType) -> IrType {
 
 /// Returns the EIR storage type for an expression value.
 pub(crate) fn value_ir_type(php_type: &PhpType) -> IrType {
-    match php_type {
+    let php_type = php_type.codegen_repr();
+    match &php_type {
         PhpType::Void | PhpType::Never => IrType::I64,
         other => IrType::from_php(other),
     }

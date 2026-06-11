@@ -11,11 +11,25 @@
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
 use crate::codegen_ir::{CodegenIrError, Result};
-use crate::ir::{Instruction, ValueId};
+use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
 use crate::types::PhpType;
 
 use super::super::super::context::FunctionContext;
+use super::super::predicates;
 use super::{expect_operand, load_value_to_first_int_arg, store_if_result};
+
+const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
+
+/// Runtime payload category consumed by one printf-family conversion specifier.
+#[derive(Clone, Copy)]
+pub(super) enum SprintfSpecCat {
+    /// Integer-like printf specifiers such as `%d`, `%x`, and the runtime default.
+    Int,
+    /// Floating-point printf specifiers such as `%f`, `%e`, and `%g`.
+    Float,
+    /// String printf specifier `%s`.
+    Str,
+}
 
 /// Lowers a one-argument string builtin that directly delegates to a runtime helper.
 pub(super) fn lower_unary_string_runtime(
@@ -68,10 +82,9 @@ pub(super) fn lower_trim_like(
             inst.operands.len()
         )));
     }
-    let source = expect_operand(inst, 0)?;
     let ptr_reg = string_ptr_reg(ctx);
     let len_reg = string_len_reg(ctx);
-    ctx.load_string_value_to_regs(source, ptr_reg, len_reg)?;
+    load_string_arg_to_regs(ctx, inst, 0, name, ptr_reg, len_reg)?;
     if inst.operands.len() == 1 {
         abi::emit_call_label(ctx.emitter, default_runtime_label);
     } else {
@@ -146,11 +159,11 @@ pub(super) fn lower_implode(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     store_if_result(ctx, inst)
 }
 
-/// Lowers `hash(algo, data)` through the shared runtime digest dispatcher.
+/// Lowers `hash(algo, data, binary?)` through the shared runtime digest dispatcher.
 pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    if inst.operands.len() != 2 {
+    if inst.operands.len() < 2 || inst.operands.len() > 3 {
         return Err(CodegenIrError::invalid_module(format!(
-            "hash expected 2 args, got {}",
+            "hash expected 2 or 3 args, got {}",
             inst.operands.len()
         )));
     }
@@ -158,7 +171,293 @@ pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
         Arch::AArch64 => lower_hash_aarch64(ctx, inst)?,
         Arch::X86_64 => lower_hash_x86_64(ctx, inst)?,
     }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
     abi::emit_call_label(ctx.emitter, "__rt_hash");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_hmac(algo, data, key, binary?)` through the shared HMAC runtime dispatcher.
+pub(super) fn lower_hash_hmac(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() < 3 || inst.operands.len() > 4 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "hash_hmac expected 3 or 4 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_hash_hmac_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_hash_hmac_x86_64(ctx, inst)?,
+    }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, "__rt_hash_hmac");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_equals(known, user)` through the timing-safe runtime compare helper.
+pub(super) fn lower_hash_equals(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_binary_string_args(ctx, inst, "hash_equals")?;
+    abi::emit_call_label(ctx.emitter, "__rt_hash_equals");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_algos()` through the runtime algorithm-list builder.
+pub(super) fn lower_hash_algos(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if !inst.operands.is_empty() {
+        return Err(CodegenIrError::invalid_module(format!(
+            "hash_algos expected 0 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_hash_algos_list");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_init(algo)` and returns a boxed HashContext resource.
+pub(super) fn lower_hash_init(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "hash_init", 1)?;
+    load_string_arg_to_regs(ctx, inst, 0, "hash_init", string_ptr_reg(ctx), string_len_reg(ctx))?;
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, "__rt_hash_init");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_update(context, data)` through the incremental hash runtime helper.
+pub(super) fn lower_hash_update(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "hash_update", 2)?;
+    let context = expect_operand(inst, 0)?;
+    super::io::load_stream_fd_to_result(ctx, context, "hash_update")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg(ctx.emitter, "x0");
+            load_string_arg_to_regs(ctx, inst, 1, "hash_update", "x1", "x2")?;
+            abi::emit_pop_reg(ctx.emitter, "x0");
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg(ctx.emitter, "rax");
+            load_string_arg_to_regs(ctx, inst, 1, "hash_update", "rax", "rdx")?;
+            ctx.emitter.instruction("mov rsi, rax");                            // pass the hash_update data pointer to the C ABI helper
+            abi::emit_pop_reg(ctx.emitter, "rdi");
+        }
+    }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, "__rt_hash_update");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_final(context, binary?)` through the incremental hash finalizer.
+pub(super) fn lower_hash_final(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "hash_final expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    let context = expect_operand(inst, 0)?;
+    super::io::load_stream_fd_to_result(ctx, context, "hash_final")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_push_reg(ctx.emitter, "x0");
+            materialize_truthy_flag(ctx, inst, 1, "hash_final")?;
+            ctx.emitter.instruction("mov x5, x0");                              // pass the raw-output flag to the hash finalizer
+            abi::emit_pop_reg(ctx.emitter, "x0");
+        }
+        Arch::X86_64 => {
+            abi::emit_push_reg(ctx.emitter, "rax");
+            materialize_truthy_flag(ctx, inst, 1, "hash_final")?;
+            ctx.emitter.instruction("mov r10, rax");                            // pass the raw-output flag to the hash finalizer
+            abi::emit_pop_reg(ctx.emitter, "rdi");
+        }
+    }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, "__rt_hash_final");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `hash_copy(context)` through the incremental hash clone helper.
+pub(super) fn lower_hash_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "hash_copy", 1)?;
+    let context = expect_operand(inst, 0)?;
+    super::io::load_stream_fd_to_result(ctx, context, "hash_copy")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the hash context handle to the C ABI helper
+    }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, "__rt_hash_copy");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `crc32(string)` through the shared checksum runtime helper.
+pub(super) fn lower_crc32(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_single_string_arg(ctx, inst, "crc32")?;
+    abi::emit_call_label(ctx.emitter, "__rt_crc32");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `md5(data, binary?)` through the shared crypto-backed runtime helper.
+pub(super) fn lower_md5(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_fixed_hash(ctx, inst, "md5", "__rt_md5")
+}
+
+/// Lowers `sha1(data, binary?)` through the shared crypto-backed runtime helper.
+pub(super) fn lower_sha1(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_fixed_hash(ctx, inst, "sha1", "__rt_sha1")
+}
+
+/// Lowers fixed-algorithm hash builtins that share the `__rt_hash` contract.
+fn lower_fixed_hash(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expected 1 or 2 args, got {}",
+            name,
+            inst.operands.len()
+        )));
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_arg_to_regs(ctx, inst, 0, name, "x1", "x2")?;
+            ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                 // preserve the hash data while materializing the raw-output flag
+            materialize_truthy_flag(ctx, inst, 1, name)?;
+            ctx.emitter.instruction("mov x5, x0");                              // pass the raw-output flag as the fixed-hash helper's extra argument
+            ctx.emitter.instruction("ldp x1, x2, [sp], #16");                   // restore the hash data into the fixed-hash input registers
+        }
+        Arch::X86_64 => {
+            load_string_arg_to_regs(ctx, inst, 0, name, "rax", "rdx")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            materialize_truthy_flag(ctx, inst, 1, name)?;
+            ctx.emitter.instruction("mov r10, rax");                            // pass the raw-output flag as the fixed-hash helper's extra argument
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+        }
+    }
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+        ctx.emitter,
+    );
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `gzcompress(data, level?)` through inline zlib `compress2` calls.
+pub(super) fn lower_gzcompress(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "gzcompress expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    load_single_gz_string_arg(ctx, inst, "gzcompress")?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_gzcompress_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_gzcompress_x86_64(ctx, inst)?,
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `gzdeflate(data, level?)` through inline raw-DEFLATE zlib calls.
+pub(super) fn lower_gzdeflate(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "gzdeflate expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    load_single_gz_string_arg(ctx, inst, "gzdeflate")?;
+    let zero = ctx.next_label("gzdeflate_zero");
+    let zeroed = ctx.next_label("gzdeflate_zeroed");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_gzdeflate_aarch64(ctx, inst, &zero, &zeroed)?,
+        Arch::X86_64 => lower_gzdeflate_x86_64(ctx, inst, &zero, &zeroed)?,
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `gzinflate(data, max_length?)` and boxes zlib failures as PHP false.
+pub(super) fn lower_gzinflate(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "gzinflate expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    load_single_gz_string_arg(ctx, inst, "gzinflate")?;
+    let zero = ctx.next_label("gzinflate_zero");
+    let zeroed = ctx.next_label("gzinflate_zeroed");
+    let fail = ctx.next_label("gzinflate_fail");
+    let done = ctx.next_label("gzinflate_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_gzinflate_aarch64(ctx, &zero, &zeroed, &fail, &done),
+        Arch::X86_64 => lower_gzinflate_x86_64(ctx, &zero, &zeroed, &fail, &done),
+    }
+    box_string_or_false_result(ctx, "gzinflate");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `gzuncompress(data, max_length?)` and boxes zlib failures as PHP false.
+pub(super) fn lower_gzuncompress(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.is_empty() || inst.operands.len() > 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "gzuncompress expected 1 or 2 args, got {}",
+            inst.operands.len()
+        )));
+    }
+    load_single_gz_string_arg(ctx, inst, "gzuncompress")?;
+    let ok = ctx.next_label("gzuncompress_ok");
+    let after = ctx.next_label("gzuncompress_after");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_gzuncompress_aarch64(ctx, &ok, &after),
+        Arch::X86_64 => lower_gzuncompress_x86_64(ctx, &ok, &after),
+    }
+    box_string_or_false_result(ctx, "gzuncompress");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `long2ip(value)` through the IPv4 formatting runtime helper.
+pub(super) fn lower_long2ip(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "long2ip", 1)?;
+    let value = expect_operand(inst, 0)?;
+    load_as_int(ctx, value, "long2ip")?;
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction("mov rdi, rax");                                // pass the IPv4 integer to the formatter helper
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_long2ip");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `ip2long(string)` and boxes invalid-address results as PHP false.
+pub(super) fn lower_ip2long(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_single_string_arg(ctx, inst, "ip2long")?;
+    move_string_result_to_c_abi_pair(ctx);
+    abi::emit_call_label(ctx.emitter, "__rt_ip2long");
+    box_ip2long_result(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `inet_ntop()` and `inet_pton()` and boxes invalid-address results as PHP false.
+pub(super) fn lower_inet(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    runtime_label: &str,
+) -> Result<()> {
+    load_single_string_arg(ctx, inst, name)?;
+    move_string_result_to_c_abi_pair(ctx);
+    abi::emit_call_label(ctx.emitter, runtime_label);
+    box_string_or_false_result(ctx, name);
     store_if_result(ctx, inst)
 }
 
@@ -175,6 +474,19 @@ pub(super) fn lower_printf(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     store_if_result(ctx, inst)
 }
 
+/// Lowers `vsprintf(format, values)` through the array-to-sprintf runtime bridge.
+pub(super) fn lower_vsprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    emit_vsprintf_runtime_call(ctx, inst, "vsprintf")?;
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `vprintf(format, values)` as `vsprintf()` followed by stdout emission.
+pub(super) fn lower_vprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    emit_vsprintf_runtime_call(ctx, inst, "vprintf")?;
+    emit_printf_write_result(ctx);
+    store_if_result(ctx, inst)
+}
+
 /// Packs sprintf-style operands and calls the shared `__rt_sprintf` formatter.
 fn emit_sprintf_runtime_call(
     ctx: &mut FunctionContext<'_>,
@@ -187,22 +499,136 @@ fn emit_sprintf_runtime_call(
             name
         )));
     }
+    let format = expect_operand(inst, 0)?;
+    let spec_cats = sprintf_spec_cats_for_format(ctx, format)?;
     for index in (1..inst.operands.len()).rev() {
         let value = expect_operand(inst, index)?;
-        pack_sprintf_arg(ctx, value)?;
+        let spec_cat = spec_cats.get(index - 1).copied();
+        pack_sprintf_like_arg(ctx, value, spec_cat, name)?;
     }
-    let format = expect_string_operand(ctx, inst, 0, name)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.load_string_value_to_regs(format, "x1", "x2")?;
+            load_value_as_string_to_regs(ctx, format, name, "x1", "x2")?;
             ctx.emitter.instruction(&format!("mov x0, #{}", inst.operands.len() - 1)); // pass the number of packed sprintf() variadic records
         }
         Arch::X86_64 => {
-            ctx.load_string_value_to_regs(format, "rax", "rdx")?;
+            load_value_as_string_to_regs(ctx, format, name, "rax", "rdx")?;
             abi::emit_load_int_immediate(ctx.emitter, "rdi", (inst.operands.len() - 1) as i64);
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_sprintf");
+    Ok(())
+}
+
+/// Returns printf-family specifier categories for a literal format value.
+pub(super) fn sprintf_spec_cats_for_format(
+    ctx: &FunctionContext<'_>,
+    format: ValueId,
+) -> Result<Vec<SprintfSpecCat>> {
+    let Some(value_ref) = ctx.function.value(format) else {
+        return Err(CodegenIrError::missing_entry("value", format.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(Vec::new());
+    };
+    let inst_ref = ctx
+        .function
+        .instruction(inst)
+        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    let (Op::ConstStr, Some(Immediate::Data(data))) = (inst_ref.op, inst_ref.immediate.as_ref()) else {
+        return Ok(Vec::new());
+    };
+    let raw = ctx
+        .module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))?;
+    let bytes = crate::string_bytes::literal_bytes(raw);
+    Ok(parse_sprintf_spec_cats(&bytes))
+}
+
+/// Parses the conversion categories consumed by the runtime sprintf scanner.
+fn parse_sprintf_spec_cats(format: &[u8]) -> Vec<SprintfSpecCat> {
+    let mut cats = Vec::new();
+    let mut index = 0;
+    while index < format.len() {
+        if format[index] != b'%' {
+            index += 1;
+            continue;
+        }
+        index += 1;
+        if index >= format.len() {
+            break;
+        }
+        if format[index] == b'%' {
+            index += 1;
+            continue;
+        }
+        while index < format.len()
+            && matches!(format[index], b'-' | b'+' | b'0' | b' ' | b'#')
+        {
+            index += 1;
+        }
+        while index < format.len() && format[index].is_ascii_digit() {
+            index += 1;
+        }
+        if index < format.len() && format[index] == b'.' {
+            index += 1;
+            while index < format.len() && format[index].is_ascii_digit() {
+                index += 1;
+            }
+        }
+        if index >= format.len() {
+            break;
+        }
+        cats.push(match format[index] {
+            b'f' | b'e' | b'g' => SprintfSpecCat::Float,
+            b's' => SprintfSpecCat::Str,
+            _ => SprintfSpecCat::Int,
+        });
+        index += 1;
+    }
+    cats
+}
+
+/// Preserves the format string, evaluates the values array, and calls `__rt_vsprintf`.
+fn emit_vsprintf_runtime_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    if inst.operands.len() != 2 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "{} expected exactly 2 args, got {}",
+            name,
+            inst.operands.len()
+        )));
+    }
+    let format = expect_operand(inst, 0)?;
+    let values = expect_operand(inst, 1)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_string_value_to_regs(format, "x1", "x2")?;
+            ctx.emitter.instruction("sub sp, sp, #16");                         // reserve scratch storage for the format string
+            ctx.emitter.instruction("stp x1, x2, [sp, #0]");                    // save the format pointer and length across array evaluation
+            ctx.load_value_to_result(values)?;
+            ctx.emitter.instruction("ldp x1, x2, [sp, #0]");                    // restore the format pointer and length for vsprintf
+            ctx.emitter.instruction("add sp, sp, #16");                         // release the format scratch storage
+        }
+        Arch::X86_64 => {
+            ctx.load_string_value_to_regs(format, "rax", "rdx")?;
+            ctx.emitter.instruction("sub rsp, 16");                             // reserve scratch storage for the format string
+            ctx.emitter.instruction("mov QWORD PTR [rsp], rax");                // save the format pointer across array evaluation
+            ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rdx");            // save the format byte length across array evaluation
+            ctx.load_value_to_result(values)?;
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the values array pointer to vsprintf
+            ctx.emitter.instruction("mov rax, QWORD PTR [rsp]");                // restore the format pointer for vsprintf
+            ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 8]");            // restore the format byte length for vsprintf
+            ctx.emitter.instruction("add rsp, 16");                             // release the format scratch storage
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_vsprintf");
     Ok(())
 }
 
@@ -463,25 +889,432 @@ fn load_single_string_arg(
     load_string_arg_to_regs(ctx, inst, 0, name, ptr_reg, len_reg)
 }
 
+/// Loads the first gzip/zlib string operand into the target string-result registers.
+fn load_single_gz_string_arg(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    let ptr_reg = string_ptr_reg(ctx);
+    let len_reg = string_len_reg(ctx);
+    load_string_arg_to_regs(ctx, inst, 0, name, ptr_reg, len_reg)
+}
+
+/// Materializes the optional zlib compression level for AArch64 gzip builtins.
+fn materialize_gz_level_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the source string while materializing the compression level
+    if inst.operands.len() >= 2 {
+        let level = expect_operand(inst, 1)?;
+        load_as_int(ctx, level, name)?;
+    } else {
+        ctx.emitter.instruction("mov x0, #-1");                                 // use zlib's default compression level when omitted
+    }
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the source string after materializing the level
+    Ok(())
+}
+
+/// Materializes the optional zlib compression level for x86_64 gzip builtins.
+fn materialize_gz_level_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    if inst.operands.len() >= 2 {
+        let level = expect_operand(inst, 1)?;
+        load_as_int(ctx, level, name)?;
+    } else {
+        ctx.emitter.instruction("mov eax, -1");                                 // use zlib's default compression level when omitted
+    }
+    ctx.emitter.instruction("mov rdi, rax");                                    // hold the compression level while restoring the source string
+    abi::emit_pop_reg_pair(ctx.emitter, "rsi", "rdx");
+    Ok(())
+}
+
+/// Emits AArch64 `gzcompress()` inline zlib calls.
+fn lower_gzcompress_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    materialize_gz_level_aarch64(ctx, inst, "gzcompress level")?;
+    ctx.emitter.instruction("sub sp, sp, #64");                                 // reserve scratch storage for zlib compress2 state
+    ctx.emitter.instruction("str x0, [sp, #0]");                                // save the compression level
+    ctx.emitter.instruction("str x1, [sp, #8]");                                // save the source pointer
+    ctx.emitter.instruction("str x2, [sp, #16]");                               // save the source length
+    ctx.emitter.instruction("mov x0, x2");                                      // pass the source length to compressBound
+    ctx.emitter.bl_c("compressBound");                                          // compute the worst-case compressed byte length
+    ctx.emitter.instruction("str x0, [sp, #24]");                               // seed destLen with the output capacity
+    ctx.emitter.instruction("bl __rt_heap_alloc");                              // allocate the compressed-data buffer
+    ctx.emitter.instruction("mov x9, #1");                                      // heap kind 1 = owned string
+    ctx.emitter.instruction("str x9, [x0, #-8]");                               // stamp the output buffer as a heap string
+    ctx.emitter.instruction("str x0, [sp, #32]");                               // save the destination buffer pointer
+    ctx.emitter.instruction("add x1, sp, #24");                                 // pass &destLen as the compress2 in/out length
+    ctx.emitter.instruction("ldr x2, [sp, #8]");                                // pass the source pointer
+    ctx.emitter.instruction("ldr x3, [sp, #16]");                               // pass the source length
+    ctx.emitter.instruction("ldr x4, [sp, #0]");                                // pass the requested compression level
+    ctx.emitter.bl_c("compress2");                                              // zlib-compress the source into the output buffer
+    ctx.emitter.instruction("ldr x1, [sp, #32]");                               // return the compressed string pointer
+    ctx.emitter.instruction("ldr x2, [sp, #24]");                               // return the compressed string length
+    ctx.emitter.instruction("add sp, sp, #64");                                 // release the zlib scratch storage
+    Ok(())
+}
+
+/// Emits x86_64 `gzcompress()` inline zlib calls.
+fn lower_gzcompress_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    materialize_gz_level_x86_64(ctx, inst, "gzcompress level")?;
+    ctx.emitter.instruction("sub rsp, 64");                                     // reserve scratch storage for zlib compress2 state
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 0], rdi");                    // save the compression level
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rsi");                    // save the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 16], rdx");                   // save the source length
+    ctx.emitter.instruction("mov rdi, rdx");                                    // pass the source length to compressBound
+    ctx.emitter.instruction("call compressBound");                              // compute the worst-case compressed byte length
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 24], rax");                   // seed destLen with the output capacity
+    ctx.emitter.instruction("call __rt_heap_alloc");                            // allocate the compressed-data buffer
+    ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 1)); // materialize the x86_64 string heap kind word
+    ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                    // stamp the output buffer as a heap string
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 32], rax");                   // save the destination buffer pointer
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the destination buffer pointer
+    ctx.emitter.instruction("lea rsi, [rsp + 24]");                             // pass &destLen as the compress2 in/out length
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 8]");                    // pass the source pointer
+    ctx.emitter.instruction("mov rcx, QWORD PTR [rsp + 16]");                   // pass the source length
+    ctx.emitter.instruction("mov r8, QWORD PTR [rsp + 0]");                     // pass the requested compression level
+    ctx.emitter.instruction("call compress2");                                  // zlib-compress the source into the output buffer
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 32]");                   // return the compressed string pointer
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 24]");                   // return the compressed string length
+    ctx.emitter.instruction("add rsp, 64");                                     // release the zlib scratch storage
+    Ok(())
+}
+
+/// Emits AArch64 `gzdeflate()` inline raw-deflate calls.
+fn lower_gzdeflate_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    zero: &str,
+    zeroed: &str,
+) -> Result<()> {
+    materialize_gz_level_aarch64(ctx, inst, "gzdeflate level")?;
+    ctx.emitter.instruction("sub sp, sp, #160");                                // reserve z_stream storage plus scratch slots
+    ctx.emitter.instruction("str x0, [sp, #136]");                              // save the compression level
+    ctx.emitter.instruction("str x1, [sp, #112]");                              // save the source pointer
+    ctx.emitter.instruction("str x2, [sp, #120]");                              // save the source length
+    ctx.emitter.instruction("mov x0, x2");                                      // pass the source length to compressBound
+    ctx.emitter.bl_c("compressBound");                                          // compute the worst-case compressed byte length
+    ctx.emitter.instruction("str x0, [sp, #144]");                              // save the output capacity
+    ctx.emitter.instruction("bl __rt_heap_alloc");                              // allocate the compressed-data buffer
+    ctx.emitter.instruction("mov x9, #1");                                      // heap kind 1 = owned string
+    ctx.emitter.instruction("str x9, [x0, #-8]");                               // stamp the output buffer as a heap string
+    ctx.emitter.instruction("str x0, [sp, #128]");                              // save the destination buffer pointer
+
+    ctx.emitter.instruction("mov x9, #0");                                      // initialize the z_stream clear index
+    ctx.emitter.label(zero);
+    ctx.emitter.instruction("cmp x9, #112");                                    // check whether every z_stream byte is cleared
+    ctx.emitter.instruction(&format!("b.ge {}", zeroed));                       // continue after the z_stream has been zeroed
+    ctx.emitter.instruction("strb wzr, [sp, x9]");                              // clear one z_stream byte
+    ctx.emitter.instruction("add x9, x9, #1");                                  // advance the z_stream clear index
+    ctx.emitter.instruction(&format!("b {}", zero));                            // keep clearing the z_stream
+    ctx.emitter.label(zeroed);
+
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer
+    ctx.emitter.instruction("ldr x1, [sp, #136]");                              // pass the compression level
+    ctx.emitter.instruction("mov x2, #8");                                      // pass Z_DEFLATED
+    ctx.emitter.instruction("mov x3, #-15");                                    // request raw deflate with negative window bits
+    ctx.emitter.instruction("mov x4, #8");                                      // pass zlib's default memory level
+    ctx.emitter.instruction("mov x5, #0");                                      // pass Z_DEFAULT_STRATEGY
+    abi::emit_symbol_address(ctx.emitter, "x6", "_zlib_version");
+    ctx.emitter.instruction("mov x7, #112");                                    // pass sizeof(z_stream)
+    ctx.emitter.bl_c("deflateInit2_");                                          // initialize the raw-deflate zlib stream
+    ctx.emitter.instruction("ldr x9, [sp, #112]");                              // reload the source pointer
+    ctx.emitter.instruction("str x9, [sp, #0]");                                // set z_stream.next_in
+    ctx.emitter.instruction("ldr x9, [sp, #120]");                              // reload the source length
+    ctx.emitter.instruction("str w9, [sp, #8]");                                // set z_stream.avail_in
+    ctx.emitter.instruction("ldr x9, [sp, #128]");                              // reload the destination pointer
+    ctx.emitter.instruction("str x9, [sp, #24]");                               // set z_stream.next_out
+    ctx.emitter.instruction("ldr x9, [sp, #144]");                              // reload the destination capacity
+    ctx.emitter.instruction("str w9, [sp, #32]");                               // set z_stream.avail_out
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer to deflate
+    ctx.emitter.instruction("mov x1, #4");                                      // request a final deflate pass
+    ctx.emitter.bl_c("deflate");                                                // compress the full input
+    ctx.emitter.instruction("ldr x2, [sp, #40]");                               // read z_stream.total_out
+    ctx.emitter.instruction("str x2, [sp, #152]");                              // save the compressed length across deflateEnd
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer to deflateEnd
+    ctx.emitter.bl_c("deflateEnd");                                             // release zlib's internal deflate state
+    ctx.emitter.instruction("ldr x1, [sp, #128]");                              // return the compressed string pointer
+    ctx.emitter.instruction("ldr x2, [sp, #152]");                              // return the compressed string length
+    ctx.emitter.instruction("add sp, sp, #160");                                // release z_stream scratch storage
+    Ok(())
+}
+
+/// Emits x86_64 `gzdeflate()` inline raw-deflate calls.
+fn lower_gzdeflate_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    zero: &str,
+    zeroed: &str,
+) -> Result<()> {
+    materialize_gz_level_x86_64(ctx, inst, "gzdeflate level")?;
+    ctx.emitter.instruction("sub rsp, 160");                                    // reserve z_stream storage plus scratch slots
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 136], rdi");                  // save the compression level
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 112], rsi");                  // save the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 120], rdx");                  // save the source length
+    ctx.emitter.instruction("mov rdi, rdx");                                    // pass the source length to compressBound
+    ctx.emitter.instruction("call compressBound");                              // compute the worst-case compressed byte length
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 144], rax");                  // save the output capacity
+    ctx.emitter.instruction("call __rt_heap_alloc");                            // allocate the compressed-data buffer
+    ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 1)); // materialize the x86_64 string heap kind word
+    ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                    // stamp the output buffer as a heap string
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 128], rax");                  // save the destination buffer pointer
+
+    ctx.emitter.instruction("xor r9, r9");                                      // initialize the z_stream clear index
+    ctx.emitter.label(zero);
+    ctx.emitter.instruction("cmp r9, 112");                                     // check whether every z_stream byte is cleared
+    ctx.emitter.instruction(&format!("jge {}", zeroed));                        // continue after the z_stream has been zeroed
+    ctx.emitter.instruction("mov BYTE PTR [rsp + r9], 0");                      // clear one z_stream byte
+    ctx.emitter.instruction("inc r9");                                          // advance the z_stream clear index
+    ctx.emitter.instruction(&format!("jmp {}", zero));                          // keep clearing the z_stream
+    ctx.emitter.label(zeroed);
+
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer
+    ctx.emitter.instruction("mov rsi, QWORD PTR [rsp + 136]");                  // pass the compression level
+    ctx.emitter.instruction("mov edx, 8");                                      // pass Z_DEFLATED
+    ctx.emitter.instruction("mov ecx, -15");                                    // request raw deflate with negative window bits
+    ctx.emitter.instruction("mov r8d, 8");                                      // pass zlib's default memory level
+    ctx.emitter.instruction("xor r9d, r9d");                                    // pass Z_DEFAULT_STRATEGY
+    ctx.emitter.instruction("sub rsp, 16");                                     // reserve stack slots for the last deflateInit2_ args
+    abi::emit_symbol_address(ctx.emitter, "rax", "_zlib_version");
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 0], rax");                    // pass the zlib version string on the stack
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 8], 112");                    // pass sizeof(z_stream) on the stack
+    ctx.emitter.instruction("call deflateInit2_");                              // initialize the raw-deflate zlib stream
+    ctx.emitter.instruction("add rsp, 16");                                     // release deflateInit2_ stack arguments
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 112]");                   // reload the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 0], r9");                     // set z_stream.next_in
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 120]");                   // reload the source length
+    ctx.emitter.instruction("mov DWORD PTR [rsp + 8], r9d");                    // set z_stream.avail_in
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 128]");                   // reload the destination pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 24], r9");                    // set z_stream.next_out
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 144]");                   // reload the destination capacity
+    ctx.emitter.instruction("mov DWORD PTR [rsp + 32], r9d");                   // set z_stream.avail_out
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer to deflate
+    ctx.emitter.instruction("mov esi, 4");                                      // request a final deflate pass
+    ctx.emitter.instruction("call deflate");                                    // compress the full input
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 40]");                   // read z_stream.total_out
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 152], rax");                  // save the compressed length across deflateEnd
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer to deflateEnd
+    ctx.emitter.instruction("call deflateEnd");                                 // release zlib's internal deflate state
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 128]");                  // return the compressed string pointer
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 152]");                  // return the compressed string length
+    ctx.emitter.instruction("add rsp, 160");                                    // release z_stream scratch storage
+    Ok(())
+}
+
+/// Emits AArch64 `gzinflate()` inline raw-inflate calls.
+fn lower_gzinflate_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    zero: &str,
+    zeroed: &str,
+    fail: &str,
+    done: &str,
+) {
+    ctx.emitter.instruction("sub sp, sp, #160");                                // reserve z_stream storage plus scratch slots
+    ctx.emitter.instruction("str x1, [sp, #112]");                              // save the source pointer
+    ctx.emitter.instruction("str x2, [sp, #120]");                              // save the source length
+    ctx.emitter.instruction("lsl x9, x2, #8");                                  // budget 256x the compressed byte length
+    ctx.emitter.instruction("mov x10, #65536");                                 // materialize the minimum inflate buffer size
+    ctx.emitter.instruction("cmp x9, x10");                                     // compare the scaled budget against the minimum
+    ctx.emitter.instruction("csel x9, x9, x10, gt");                            // choose the larger output buffer size
+    ctx.emitter.instruction("str x9, [sp, #144]");                              // save the output capacity
+    ctx.emitter.instruction("mov x0, x9");                                      // pass the output capacity to the heap allocator
+    ctx.emitter.instruction("bl __rt_heap_alloc");                              // allocate the decompressed-data buffer
+    ctx.emitter.instruction("mov x9, #1");                                      // heap kind 1 = owned string
+    ctx.emitter.instruction("str x9, [x0, #-8]");                               // stamp the output buffer as a heap string
+    ctx.emitter.instruction("str x0, [sp, #128]");                              // save the destination buffer pointer
+
+    ctx.emitter.instruction("mov x9, #0");                                      // initialize the z_stream clear index
+    ctx.emitter.label(zero);
+    ctx.emitter.instruction("cmp x9, #112");                                    // check whether every z_stream byte is cleared
+    ctx.emitter.instruction(&format!("b.ge {}", zeroed));                       // continue after the z_stream has been zeroed
+    ctx.emitter.instruction("strb wzr, [sp, x9]");                              // clear one z_stream byte
+    ctx.emitter.instruction("add x9, x9, #1");                                  // advance the z_stream clear index
+    ctx.emitter.instruction(&format!("b {}", zero));                            // keep clearing the z_stream
+    ctx.emitter.label(zeroed);
+
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer
+    ctx.emitter.instruction("mov x1, #-15");                                    // request raw inflate with negative window bits
+    abi::emit_symbol_address(ctx.emitter, "x2", "_zlib_version");
+    ctx.emitter.instruction("mov x3, #112");                                    // pass sizeof(z_stream)
+    ctx.emitter.bl_c("inflateInit2_");                                          // initialize the raw-inflate zlib stream
+    ctx.emitter.instruction("ldr x9, [sp, #112]");                              // reload the source pointer
+    ctx.emitter.instruction("str x9, [sp, #0]");                                // set z_stream.next_in
+    ctx.emitter.instruction("ldr x9, [sp, #120]");                              // reload the source length
+    ctx.emitter.instruction("str w9, [sp, #8]");                                // set z_stream.avail_in
+    ctx.emitter.instruction("ldr x9, [sp, #128]");                              // reload the destination pointer
+    ctx.emitter.instruction("str x9, [sp, #24]");                               // set z_stream.next_out
+    ctx.emitter.instruction("ldr x9, [sp, #144]");                              // reload the destination capacity
+    ctx.emitter.instruction("str w9, [sp, #32]");                               // set z_stream.avail_out
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer to inflate
+    ctx.emitter.instruction("mov x1, #4");                                      // request a final inflate pass
+    ctx.emitter.bl_c("inflate");                                                // decompress the full input
+    ctx.emitter.instruction("str x0, [sp, #136]");                              // save the inflate status code
+    ctx.emitter.instruction("ldr x2, [sp, #40]");                               // read z_stream.total_out
+    ctx.emitter.instruction("str x2, [sp, #152]");                              // save the inflated length across inflateEnd
+    ctx.emitter.instruction("mov x0, sp");                                      // pass the z_stream pointer to inflateEnd
+    ctx.emitter.bl_c("inflateEnd");                                             // release zlib's internal inflate state
+    ctx.emitter.instruction("ldr x9, [sp, #136]");                              // reload the inflate status code
+    ctx.emitter.instruction("cmp x9, #1");                                      // check for Z_STREAM_END success
+    ctx.emitter.instruction(&format!("b.ne {}", fail));                         // return false for zlib inflate failures
+    ctx.emitter.instruction("ldr x1, [sp, #128]");                              // return the decompressed string pointer
+    ctx.emitter.instruction("ldr x2, [sp, #152]");                              // return the decompressed string length
+    ctx.emitter.instruction(&format!("b {}", done));                            // skip the failure sentinel after success
+    ctx.emitter.label(fail);
+    ctx.emitter.instruction("mov x1, #0");                                      // use a null pointer as the failure sentinel
+    ctx.emitter.instruction("mov x2, #0");                                      // clear the failure string length
+    ctx.emitter.label(done);
+    ctx.emitter.instruction("add sp, sp, #160");                                // release z_stream scratch storage
+}
+
+/// Emits x86_64 `gzinflate()` inline raw-inflate calls.
+fn lower_gzinflate_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    zero: &str,
+    zeroed: &str,
+    fail: &str,
+    done: &str,
+) {
+    let sized = format!("{}_sized", zero);
+    ctx.emitter.instruction("sub rsp, 160");                                    // reserve z_stream storage plus scratch slots
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 112], rax");                  // save the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 120], rdx");                  // save the source length
+    ctx.emitter.instruction("mov r9, rdx");                                     // copy the compressed byte length
+    ctx.emitter.instruction("shl r9, 8");                                       // budget 256x the compressed byte length
+    ctx.emitter.instruction("cmp r9, 65536");                                   // compare the scaled budget against the minimum
+    ctx.emitter.instruction(&format!("jge {}", sized));                         // keep the scaled size when it is large enough
+    ctx.emitter.instruction("mov r9, 65536");                                   // otherwise use the minimum inflate buffer size
+    ctx.emitter.label(&sized);
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 144], r9");                   // save the output capacity
+    ctx.emitter.instruction("mov rax, r9");                                     // pass the output capacity to the heap allocator
+    ctx.emitter.instruction("call __rt_heap_alloc");                            // allocate the decompressed-data buffer
+    ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 1)); // materialize the x86_64 string heap kind word
+    ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                    // stamp the output buffer as a heap string
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 128], rax");                  // save the destination buffer pointer
+
+    ctx.emitter.instruction("xor r9, r9");                                      // initialize the z_stream clear index
+    ctx.emitter.label(zero);
+    ctx.emitter.instruction("cmp r9, 112");                                     // check whether every z_stream byte is cleared
+    ctx.emitter.instruction(&format!("jge {}", zeroed));                        // continue after the z_stream has been zeroed
+    ctx.emitter.instruction("mov BYTE PTR [rsp + r9], 0");                      // clear one z_stream byte
+    ctx.emitter.instruction("inc r9");                                          // advance the z_stream clear index
+    ctx.emitter.instruction(&format!("jmp {}", zero));                          // keep clearing the z_stream
+    ctx.emitter.label(zeroed);
+
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer
+    ctx.emitter.instruction("mov esi, -15");                                    // request raw inflate with negative window bits
+    abi::emit_symbol_address(ctx.emitter, "rdx", "_zlib_version");
+    ctx.emitter.instruction("mov ecx, 112");                                    // pass sizeof(z_stream)
+    ctx.emitter.instruction("call inflateInit2_");                              // initialize the raw-inflate zlib stream
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 112]");                   // reload the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 0], r9");                     // set z_stream.next_in
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 120]");                   // reload the source length
+    ctx.emitter.instruction("mov DWORD PTR [rsp + 8], r9d");                    // set z_stream.avail_in
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 128]");                   // reload the destination pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 24], r9");                    // set z_stream.next_out
+    ctx.emitter.instruction("mov r9, QWORD PTR [rsp + 144]");                   // reload the destination capacity
+    ctx.emitter.instruction("mov DWORD PTR [rsp + 32], r9d");                   // set z_stream.avail_out
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer to inflate
+    ctx.emitter.instruction("mov esi, 4");                                      // request a final inflate pass
+    ctx.emitter.instruction("call inflate");                                    // decompress the full input
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 136], rax");                  // save the inflate status code
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 40]");                   // read z_stream.total_out
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 152], rax");                  // save the inflated length across inflateEnd
+    ctx.emitter.instruction("mov rdi, rsp");                                    // pass the z_stream pointer to inflateEnd
+    ctx.emitter.instruction("call inflateEnd");                                 // release zlib's internal inflate state
+    ctx.emitter.instruction("cmp QWORD PTR [rsp + 136], 1");                    // check for Z_STREAM_END success
+    ctx.emitter.instruction(&format!("jne {}", fail));                          // return false for zlib inflate failures
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 128]");                  // return the decompressed string pointer
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 152]");                  // return the decompressed string length
+    ctx.emitter.instruction(&format!("jmp {}", done));                          // skip the failure sentinel after success
+    ctx.emitter.label(fail);
+    ctx.emitter.instruction("xor eax, eax");                                    // use a null pointer as the failure sentinel
+    ctx.emitter.instruction("xor edx, edx");                                    // clear the failure string length
+    ctx.emitter.label(done);
+    ctx.emitter.instruction("add rsp, 160");                                    // release z_stream scratch storage
+}
+
+/// Emits AArch64 `gzuncompress()` inline zlib-wrapped inflate calls.
+fn lower_gzuncompress_aarch64(ctx: &mut FunctionContext<'_>, ok: &str, after: &str) {
+    ctx.emitter.instruction("sub sp, sp, #48");                                 // reserve scratch storage for zlib uncompress state
+    ctx.emitter.instruction("str x1, [sp, #0]");                                // save the source pointer
+    ctx.emitter.instruction("str x2, [sp, #8]");                                // save the source length
+    ctx.emitter.instruction("lsl x9, x2, #8");                                  // budget 256x the compressed byte length
+    ctx.emitter.instruction("mov x10, #65536");                                 // materialize the minimum uncompress buffer size
+    ctx.emitter.instruction("cmp x9, x10");                                     // compare the scaled budget against the minimum
+    ctx.emitter.instruction("csel x9, x9, x10, gt");                            // choose the larger output buffer size
+    ctx.emitter.instruction("str x9, [sp, #16]");                               // seed destLen with the output capacity
+    ctx.emitter.instruction("mov x0, x9");                                      // pass the output capacity to the heap allocator
+    ctx.emitter.instruction("bl __rt_heap_alloc");                              // allocate the decompressed-data buffer
+    ctx.emitter.instruction("mov x9, #1");                                      // heap kind 1 = owned string
+    ctx.emitter.instruction("str x9, [x0, #-8]");                               // stamp the output buffer as a heap string
+    ctx.emitter.instruction("str x0, [sp, #24]");                               // save the destination buffer pointer
+    ctx.emitter.instruction("add x1, sp, #16");                                 // pass &destLen as the uncompress in/out length
+    ctx.emitter.instruction("ldr x2, [sp, #0]");                                // pass the source pointer
+    ctx.emitter.instruction("ldr x3, [sp, #8]");                                // pass the source length
+    ctx.emitter.bl_c("uncompress");                                             // zlib-uncompress the source
+    ctx.emitter.instruction(&format!("cbz x0, {}", ok));                        // zero zlib status means success
+    ctx.emitter.instruction("mov x1, #0");                                      // use a null pointer as the failure sentinel
+    ctx.emitter.instruction("mov x2, #0");                                      // clear the failure string length
+    ctx.emitter.instruction(&format!("b {}", after));                           // skip the success result after failure
+    ctx.emitter.label(ok);
+    ctx.emitter.instruction("ldr x1, [sp, #24]");                               // return the decompressed string pointer
+    ctx.emitter.instruction("ldr x2, [sp, #16]");                               // return the decompressed string length
+    ctx.emitter.label(after);
+    ctx.emitter.instruction("add sp, sp, #48");                                 // release the zlib scratch storage
+}
+
+/// Emits x86_64 `gzuncompress()` inline zlib-wrapped inflate calls.
+fn lower_gzuncompress_x86_64(ctx: &mut FunctionContext<'_>, ok: &str, after: &str) {
+    let sized = ctx.next_label("gzuncompress_sized");
+    ctx.emitter.instruction("sub rsp, 48");                                     // reserve scratch storage for zlib uncompress state
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 0], rax");                    // save the source pointer
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rdx");                    // save the source length
+    ctx.emitter.instruction("mov r9, rdx");                                     // copy the compressed byte length
+    ctx.emitter.instruction("shl r9, 8");                                       // budget 256x the compressed byte length
+    ctx.emitter.instruction("cmp r9, 65536");                                   // compare the scaled budget against the minimum
+    ctx.emitter.instruction(&format!("jge {}", sized));                         // keep the scaled size when it is large enough
+    ctx.emitter.instruction("mov r9, 65536");                                   // otherwise use the minimum uncompress buffer size
+    ctx.emitter.label(&sized);
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 16], r9");                    // seed destLen with the output capacity
+    ctx.emitter.instruction("mov rax, r9");                                     // pass the output capacity to the heap allocator
+    ctx.emitter.instruction("call __rt_heap_alloc");                            // allocate the decompressed-data buffer
+    ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 1)); // materialize the x86_64 string heap kind word
+    ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                    // stamp the output buffer as a heap string
+    ctx.emitter.instruction("mov QWORD PTR [rsp + 24], rax");                   // save the destination buffer pointer
+    ctx.emitter.instruction("mov rdi, rax");                                    // pass the destination buffer pointer
+    ctx.emitter.instruction("lea rsi, [rsp + 16]");                             // pass &destLen as the uncompress in/out length
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 0]");                    // pass the source pointer
+    ctx.emitter.instruction("mov rcx, QWORD PTR [rsp + 8]");                    // pass the source length
+    ctx.emitter.instruction("call uncompress");                                 // zlib-uncompress the source
+    ctx.emitter.instruction("test rax, rax");                                   // zero zlib status means success
+    ctx.emitter.instruction(&format!("jz {}", ok));                             // load the success result for zero status
+    ctx.emitter.instruction("xor eax, eax");                                    // use a null pointer as the failure sentinel
+    ctx.emitter.instruction("xor edx, edx");                                    // clear the failure string length
+    ctx.emitter.instruction(&format!("jmp {}", after));                         // skip the success result after failure
+    ctx.emitter.label(ok);
+    ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 24]");                   // return the decompressed string pointer
+    ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 16]");                   // return the decompressed string length
+    ctx.emitter.label(after);
+    ctx.emitter.instruction("add rsp, 48");                                     // release the zlib scratch storage
+}
+
 /// Preserves the trim source string while loading the explicit character mask.
 fn lower_trim_mask_arg(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
 ) -> Result<()> {
-    let mask = expect_operand(inst, 1)?;
-    if ctx.value_php_type(mask)? != PhpType::Str {
-        return Err(CodegenIrError::unsupported(format!(
-            "{} mask for PHP type {:?}",
-            name,
-            ctx.value_php_type(mask)?
-        )));
-    }
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.instruction("str x1, [sp, #-16]!");                     // preserve the source string pointer while loading the trim mask
             ctx.emitter.instruction("str x2, [sp, #-16]!");                     // preserve the source string length while loading the trim mask
-            ctx.load_string_value_to_regs(mask, "x1", "x2")?;
+            load_string_arg_to_regs(ctx, inst, 1, name, "x1", "x2")?;
             ctx.emitter.instruction("mov x3, x1");                              // pass the trim-mask pointer as the secondary string argument
             ctx.emitter.instruction("mov x4, x2");                              // pass the trim-mask length as the secondary string argument
             ctx.emitter.instruction("ldr x2, [sp], #16");                       // restore the source string length after loading the mask
@@ -489,7 +1322,7 @@ fn lower_trim_mask_arg(
         }
         Arch::X86_64 => {
             abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
-            ctx.load_string_value_to_regs(mask, "rax", "rdx")?;
+            load_string_arg_to_regs(ctx, inst, 1, name, "rax", "rdx")?;
             ctx.emitter.instruction("mov rdi, rax");                            // pass the trim-mask pointer as the secondary string argument
             ctx.emitter.instruction("mov rsi, rdx");                            // pass the trim-mask length as the secondary string argument
             abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
@@ -687,11 +1520,9 @@ fn lower_strstr_aarch64(
     found_label: &str,
     end_label: &str,
 ) -> Result<()> {
-    let haystack = expect_string_operand(ctx, inst, 0, "strstr")?;
-    let needle = expect_string_operand(ctx, inst, 1, "strstr")?;
-    ctx.load_string_value_to_regs(haystack, "x1", "x2")?;
+    load_string_arg_to_regs(ctx, inst, 0, "strstr", "x1", "x2")?;
     ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the haystack while materializing the needle string
-    ctx.load_string_value_to_regs(needle, "x1", "x2")?;
+    load_string_arg_to_regs(ctx, inst, 1, "strstr", "x1", "x2")?;
     ctx.emitter.instruction("mov x3, x1");                                      // pass the needle pointer as the secondary string argument
     ctx.emitter.instruction("mov x4, x2");                                      // pass the needle length as the secondary string argument
     ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the haystack into primary string argument registers
@@ -716,11 +1547,9 @@ fn lower_strstr_x86_64(
     found_label: &str,
     end_label: &str,
 ) -> Result<()> {
-    let haystack = expect_string_operand(ctx, inst, 0, "strstr")?;
-    let needle = expect_string_operand(ctx, inst, 1, "strstr")?;
-    ctx.load_string_value_to_regs(haystack, "rax", "rdx")?;
+    load_string_arg_to_regs(ctx, inst, 0, "strstr", "rax", "rdx")?;
     abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
-    ctx.load_string_value_to_regs(needle, "rax", "rdx")?;
+    load_string_arg_to_regs(ctx, inst, 1, "strstr", "rax", "rdx")?;
     ctx.emitter.instruction("mov r8, rax");                                     // preserve the needle pointer while restoring the haystack
     ctx.emitter.instruction("mov r9, rdx");                                     // preserve the needle length while restoring the haystack
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
@@ -745,26 +1574,58 @@ fn lower_strstr_x86_64(
 
 /// Materializes AArch64 `hash()` runtime arguments.
 fn lower_hash_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    let algorithm = expect_string_operand(ctx, inst, 0, "hash")?;
-    let data = expect_string_operand(ctx, inst, 1, "hash")?;
-    ctx.load_string_value_to_regs(algorithm, "x1", "x2")?;
+    load_string_arg_to_regs(ctx, inst, 0, "hash", "x1", "x2")?;
     ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the algorithm string while materializing the data string
-    ctx.load_string_value_to_regs(data, "x1", "x2")?;
-    ctx.emitter.instruction("mov x3, x1");                                      // pass the data string pointer as the secondary hash argument
-    ctx.emitter.instruction("mov x4, x2");                                      // pass the data string length as the secondary hash argument
+    load_string_arg_to_regs(ctx, inst, 1, "hash", "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the data string while materializing the binary flag
+    materialize_truthy_flag(ctx, inst, 2, "hash")?;
+    ctx.emitter.instruction("mov x5, x0");                                      // pass the raw-output flag as the fifth hash argument
+    ctx.emitter.instruction("ldp x3, x4, [sp], #16");                           // restore the data string into secondary hash argument registers
     ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the algorithm string into primary hash argument registers
     Ok(())
 }
 
 /// Materializes x86_64 `hash()` runtime arguments.
 fn lower_hash_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    let algorithm = expect_string_operand(ctx, inst, 0, "hash")?;
-    let data = expect_string_operand(ctx, inst, 1, "hash")?;
-    ctx.load_string_value_to_regs(algorithm, "rax", "rdx")?;
+    load_string_arg_to_regs(ctx, inst, 0, "hash", "rax", "rdx")?;
     abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
-    ctx.load_string_value_to_regs(data, "rax", "rdx")?;
-    ctx.emitter.instruction("mov rdi, rax");                                    // pass the data string pointer as the secondary hash argument
-    ctx.emitter.instruction("mov rsi, rdx");                                    // pass the data string length as the secondary hash argument
+    load_string_arg_to_regs(ctx, inst, 1, "hash", "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    materialize_truthy_flag(ctx, inst, 2, "hash")?;
+    ctx.emitter.instruction("mov r10, rax");                                    // pass the raw-output flag as the hash helper's extra argument
+    abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
+    abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    Ok(())
+}
+
+/// Materializes AArch64 `hash_hmac()` runtime arguments.
+fn lower_hash_hmac_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_string_arg_to_regs(ctx, inst, 0, "hash_hmac", "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the algorithm string while materializing HMAC data
+    load_string_arg_to_regs(ctx, inst, 1, "hash_hmac", "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the HMAC data string while materializing the key
+    load_string_arg_to_regs(ctx, inst, 2, "hash_hmac", "x1", "x2")?;
+    ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the HMAC key string while materializing the binary flag
+    materialize_truthy_flag(ctx, inst, 3, "hash_hmac")?;
+    ctx.emitter.instruction("mov x7, x0");                                      // pass the raw-output flag to the HMAC helper
+    ctx.emitter.instruction("ldp x5, x6, [sp], #16");                           // restore the HMAC key string into key argument registers
+    ctx.emitter.instruction("ldp x3, x4, [sp], #16");                           // restore the HMAC data string into data argument registers
+    ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the algorithm string into algorithm argument registers
+    Ok(())
+}
+
+/// Materializes x86_64 `hash_hmac()` runtime arguments.
+fn lower_hash_hmac_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_string_arg_to_regs(ctx, inst, 0, "hash_hmac", "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    load_string_arg_to_regs(ctx, inst, 1, "hash_hmac", "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    load_string_arg_to_regs(ctx, inst, 2, "hash_hmac", "rax", "rdx")?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    materialize_truthy_flag(ctx, inst, 3, "hash_hmac")?;
+    ctx.emitter.instruction("mov rcx, rax");                                    // pass the raw-output flag to the HMAC helper
+    abi::emit_pop_reg_pair(ctx.emitter, "r10", "r11");
+    abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");
     abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
     Ok(())
 }
@@ -815,7 +1676,7 @@ fn load_split_pair_args_x86_64(
 }
 
 /// Materializes a builtin argument as a PHP string in caller-selected registers.
-fn load_string_arg_to_regs(
+pub(super) fn load_string_arg_to_regs(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     index: usize,
@@ -824,9 +1685,56 @@ fn load_string_arg_to_regs(
     len_reg: &str,
 ) -> Result<()> {
     let value = expect_operand(inst, index)?;
-    let ty = ctx.value_php_type(value)?.codegen_repr();
+    load_value_as_string_to_regs(ctx, value, name, ptr_reg, len_reg)
+}
+
+/// Materializes an arbitrary EIR value as a PHP string in caller-selected registers.
+pub(super) fn load_value_as_string_to_regs(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    name: &str,
+    ptr_reg: &str,
+    len_reg: &str,
+) -> Result<()> {
+    let raw_ty = ctx.value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
+        move_string_result_to_regs(ctx, ptr_reg, len_reg);
+        return Ok(());
+    }
+    let ty = raw_ty.codegen_repr();
     match ty {
         PhpType::Str => ctx.load_string_value_to_regs(value, ptr_reg, len_reg),
+        PhpType::Int => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_itoa");
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
+        PhpType::Float => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_ftoa");
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
+        PhpType::Bool => {
+            ctx.load_value_to_result(value)?;
+            emit_loaded_bool_string_result(ctx)?;
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
+        PhpType::Void | PhpType::Never => {
+            emit_empty_string_result(ctx);
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
+        PhpType::TaggedScalar => {
+            ctx.load_value_to_result(value)?;
+            emit_loaded_tagged_scalar_string_result(ctx)?;
+            move_string_result_to_regs(ctx, ptr_reg, len_reg);
+            Ok(())
+        }
         PhpType::Mixed | PhpType::Union(_) => {
             load_value_to_first_int_arg(ctx, value)?;
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
@@ -834,12 +1742,54 @@ fn load_string_arg_to_regs(
             Ok(())
         }
         other => Err(CodegenIrError::unsupported(format!(
-            "{} arg {} for PHP type {:?}",
-            name,
-            index + 1,
-            other
+            "{} string coercion for PHP type {:?}",
+            name, other
         ))),
     }
+}
+
+/// Converts the loaded boolean result to PHP string ABI registers.
+fn emit_loaded_bool_string_result(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    let false_label = ctx.next_label("bool_arg_to_str_false");
+    let done_label = ctx.next_label("bool_arg_to_str_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz x0, {}", false_label));       // false stringifies to an empty string
+            abi::emit_call_label(ctx.emitter, "__rt_itoa");
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip the empty-string fallback after true conversion
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // test whether the boolean payload is false
+            ctx.emitter.instruction(&format!("je {}", false_label));            // false stringifies to an empty string
+            abi::emit_call_label(ctx.emitter, "__rt_itoa");
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip the empty-string fallback after true conversion
+        }
+    }
+    ctx.emitter.label(&false_label);
+    emit_empty_string_result(ctx);
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Converts the loaded tagged scalar result to PHP string ABI registers.
+fn emit_loaded_tagged_scalar_string_result(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    let null_label = ctx.next_label("tagged_arg_to_str_null");
+    let done_label = ctx.next_label("tagged_arg_to_str_done");
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &null_label);
+    abi::emit_call_label(ctx.emitter, "__rt_itoa");
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&null_label);
+    emit_empty_string_result(ctx);
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Materializes a valid empty PHP string in the target ABI string-result registers.
+fn emit_empty_string_result(ctx: &mut FunctionContext<'_>) {
+    let (label, _) = ctx.data.add_string(b"");
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
+    abi::emit_load_int_immediate(ctx.emitter, len_reg, 0);
 }
 
 /// Moves the target ABI string result pair into caller-selected registers when needed.
@@ -850,6 +1800,139 @@ fn move_string_result_to_regs(ctx: &mut FunctionContext<'_>, ptr_reg: &str, len_
     }
     if len_reg != result_len_reg {
         ctx.emitter.instruction(&format!("mov {}, {}", len_reg, result_len_reg)); // move the cast string length into the requested argument register
+    }
+}
+
+/// Materializes an optional PHP truthiness flag into the integer result register.
+pub(super) fn materialize_truthy_flag(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    index: usize,
+    name: &str,
+) -> Result<()> {
+    if inst.operands.len() <= index {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        return Ok(());
+    }
+    let value = expect_operand(inst, index)?;
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+        return Ok(());
+    }
+    match raw_ty.codegen_repr() {
+        PhpType::Bool | PhpType::Int | PhpType::Pointer(_) => {
+            ctx.load_value_to_result(value)?;
+            predicates::emit_int_result_nonzero_bool(ctx);
+        }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
+        PhpType::Float => {
+            ctx.load_value_to_result(value)?;
+            predicates::emit_float_result_nonzero_bool(ctx);
+        }
+        PhpType::Str => {
+            predicates::emit_string_truthiness(ctx, value)?;
+        }
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            predicates::emit_array_truthiness(ctx, value)?;
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} truthiness flag for PHP type {:?}",
+                name,
+                other
+            )))
+        }
+    }
+    Ok(())
+}
+
+/// Moves the standard string result pair into the C-style pointer/length argument pair.
+fn move_string_result_to_c_abi_pair(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, x1");                              // pass the string pointer as the first C ABI argument
+            ctx.emitter.instruction("mov x1, x2");                              // pass the string length as the second C ABI argument
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the string pointer as the first SysV argument
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass the string length as the second SysV argument
+        }
+    }
+}
+
+/// Boxes an `ip2long()` integer result or invalid-address sentinel into Mixed form.
+fn box_ip2long_result(ctx: &mut FunctionContext<'_>) {
+    let false_label = ctx.next_label("ip2long_false");
+    let done_label = ctx.next_label("ip2long_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // test whether ip2long() returned the invalid-address sentinel
+            ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false for invalid addresses
+            ctx.emitter.instruction("mov x1, x0");                              // pass the parsed IPv4 integer as the Mixed payload
+            ctx.emitter.instruction("mov x2, #0");                              // integer Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov x0, #0");                              // runtime tag 0 = integer
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip false boxing after a valid parse
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("mov x1, #0");                              // false payload = 0 for invalid addresses
+            ctx.emitter.instruction("mov x2, #0");                              // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov x0, #3");                              // runtime tag 3 = boolean
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // test whether ip2long() returned the invalid-address sentinel
+            ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false for invalid addresses
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the parsed IPv4 integer as the Mixed payload
+            ctx.emitter.instruction("xor esi, esi");                            // integer Mixed payloads do not use a high word
+            ctx.emitter.instruction("xor eax, eax");                            // runtime tag 0 = integer
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip false boxing after a valid parse
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("xor edi, edi");                            // false payload = 0 for invalid addresses
+            ctx.emitter.instruction("xor esi, esi");                            // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov eax, 3");                              // runtime tag 3 = boolean
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
+    }
+}
+
+/// Boxes a string result or null-pointer failure sentinel into Mixed form.
+fn box_string_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &str) {
+    let false_label = ctx.next_label(&format!("{}_false", label_prefix));
+    let done_label = ctx.next_label(&format!("{}_done", label_prefix));
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz x1, {}", false_label));       // a null string pointer means the conversion failed
+            crate::codegen::emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Str);
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip false boxing after a valid string result
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("mov x1, #0");                              // false payload = 0 for failed conversion
+            ctx.emitter.instruction("mov x2, #0");                              // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov x0, #3");                              // runtime tag 3 = boolean
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // a null string pointer means the conversion failed
+            ctx.emitter.instruction(&format!("jz {}", false_label));            // box PHP false for failed conversions
+            crate::codegen::emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Str);
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip false boxing after a valid string result
+            ctx.emitter.label(&false_label);
+            ctx.emitter.instruction("xor edi, edi");                            // false payload = 0 for failed conversion
+            ctx.emitter.instruction("xor esi, esi");                            // bool Mixed payloads do not use a high word
+            ctx.emitter.instruction("mov eax, 3");                              // runtime tag 3 = boolean
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.label(&done_label);
+        }
     }
 }
 
@@ -1317,17 +2400,167 @@ fn materialize_wordwrap_break_x86_64(
     Ok(())
 }
 
-/// Packs one sprintf variadic operand into the runtime's 16-byte tagged record.
-fn pack_sprintf_arg(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
+/// Packs one printf-family variadic operand into the runtime's 16-byte tagged record.
+pub(super) fn pack_sprintf_like_arg(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    spec_cat: Option<SprintfSpecCat>,
+    owner: &str,
+) -> Result<()> {
+    match spec_cat {
+        Some(SprintfSpecCat::Int) => {
+            load_sprintf_arg_as_int(ctx, value, owner)?;
+            pack_sprintf_int_arg(ctx)
+        }
+        Some(SprintfSpecCat::Float) => {
+            load_sprintf_arg_as_float(ctx, value, owner)?;
+            pack_sprintf_float_arg(ctx)
+        }
+        Some(SprintfSpecCat::Str) => {
+            load_sprintf_arg_as_string(ctx, value, owner)?;
+            pack_sprintf_string_arg(ctx)
+        }
+        None => pack_static_sprintf_arg(ctx, value, owner),
+    }
+}
+
+/// Packs one sprintf variadic operand using its static PHP representation.
+fn pack_static_sprintf_arg(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    owner: &str,
+) -> Result<()> {
     let ty = ctx.load_value_to_result(value)?.codegen_repr();
     match ctx.emitter.target.arch {
-        Arch::AArch64 => pack_sprintf_arg_aarch64(ctx, &ty),
-        Arch::X86_64 => pack_sprintf_arg_x86_64(ctx, &ty),
+        Arch::AArch64 => pack_sprintf_arg_aarch64(ctx, &ty, owner),
+        Arch::X86_64 => pack_sprintf_arg_x86_64(ctx, &ty, owner),
+    }
+}
+
+/// Loads an operand as the integer payload consumed by integer printf specifiers.
+fn load_sprintf_arg_as_int(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    owner: &str,
+) -> Result<()> {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    match raw_ty.codegen_repr() {
+        PhpType::Int | PhpType::Bool => {
+            ctx.load_value_to_result(value)?;
+        }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+        }
+        PhpType::Float => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_float_result_to_int_result(ctx.emitter);
+        }
+        PhpType::Str => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_str_to_int");
+        }
+        PhpType::TaggedScalar => {
+            ctx.load_value_to_result(value)?;
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} integer format argument PHP type {:?}",
+                owner, other
+            )))
+        }
+    }
+    Ok(())
+}
+
+/// Loads an operand as the floating payload consumed by float printf specifiers.
+fn load_sprintf_arg_as_float(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    owner: &str,
+) -> Result<()> {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    match raw_ty.codegen_repr() {
+        PhpType::Float => {
+            ctx.load_value_to_result(value)?;
+        }
+        PhpType::Int | PhpType::Bool => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_int_result_to_float_result(ctx.emitter);
+        }
+        PhpType::Void | PhpType::Never => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+            abi::emit_int_result_to_float_result(ctx.emitter);
+        }
+        PhpType::Str => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_str_to_number");
+        }
+        PhpType::TaggedScalar => {
+            ctx.load_value_to_result(value)?;
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
+            abi::emit_int_result_to_float_result(ctx.emitter);
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} float format argument PHP type {:?}",
+                owner, other
+            )))
+        }
+    }
+    Ok(())
+}
+
+/// Loads an operand as the pointer/length payload consumed by string printf specifiers.
+fn load_sprintf_arg_as_string(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    owner: &str,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => load_value_as_string_to_regs(ctx, value, owner, "x1", "x2"),
+        Arch::X86_64 => load_value_as_string_to_regs(ctx, value, owner, "rax", "rdx"),
+    }
+}
+
+/// Packs the loaded integer result as a printf-family record.
+fn pack_sprintf_int_arg(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => pack_sprintf_arg_aarch64(ctx, &PhpType::Int, "sprintf"),
+        Arch::X86_64 => pack_sprintf_arg_x86_64(ctx, &PhpType::Int, "sprintf"),
+    }
+}
+
+/// Packs the loaded floating result as a printf-family record.
+fn pack_sprintf_float_arg(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => pack_sprintf_arg_aarch64(ctx, &PhpType::Float, "sprintf"),
+        Arch::X86_64 => pack_sprintf_arg_x86_64(ctx, &PhpType::Float, "sprintf"),
+    }
+}
+
+/// Packs the loaded string result as a printf-family record.
+fn pack_sprintf_string_arg(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => pack_sprintf_arg_aarch64(ctx, &PhpType::Str, "sprintf"),
+        Arch::X86_64 => pack_sprintf_arg_x86_64(ctx, &PhpType::Str, "sprintf"),
     }
 }
 
 /// Packs one AArch64 sprintf operand from result registers into `[value, tag]`.
-fn pack_sprintf_arg_aarch64(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Result<()> {
+fn pack_sprintf_arg_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    ty: &PhpType,
+    owner: &str,
+) -> Result<()> {
     match ty {
         PhpType::Int => {
             ctx.emitter.instruction("str x0, [sp, #-16]!");                     // push the integer sprintf operand payload
@@ -1350,18 +2583,21 @@ fn pack_sprintf_arg_aarch64(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Resu
             ctx.emitter.instruction("orr x0, x0, #1");                          // mark the sprintf operand metadata as a string
             ctx.emitter.instruction("str x0, [sp, #8]");                        // store the packed string length and type tag
         }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "sprintf argument PHP type {:?}",
-                other
-            )));
+        _other => {
+            ctx.emitter.instruction("str xzr, [sp, #-16]!");                    // push a zero payload for an unsupported sprintf operand
+            ctx.emitter.instruction("str xzr, [sp, #8]");                       // tag the unsupported sprintf operand as integer zero
         }
     }
+    let _ = owner;
     Ok(())
 }
 
 /// Packs one x86_64 sprintf operand from result registers into `[value, tag]`.
-fn pack_sprintf_arg_x86_64(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Result<()> {
+fn pack_sprintf_arg_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    ty: &PhpType,
+    owner: &str,
+) -> Result<()> {
     match ty {
         PhpType::Int => {
             ctx.emitter.instruction("sub rsp, 16");                             // reserve one packed sprintf operand record
@@ -1386,13 +2622,13 @@ fn pack_sprintf_arg_x86_64(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Resul
             ctx.emitter.instruction("or rcx, 1");                               // mark the sprintf operand metadata as a string
             ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rcx");            // store the packed string length and type tag
         }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "sprintf argument PHP type {:?}",
-                other
-            )));
+        _other => {
+            ctx.emitter.instruction("sub rsp, 16");                             // reserve one packed sprintf operand record
+            ctx.emitter.instruction("mov QWORD PTR [rsp], 0");                  // store a zero payload for an unsupported sprintf operand
+            ctx.emitter.instruction("mov QWORD PTR [rsp + 8], 0");              // tag the unsupported sprintf operand as integer zero
         }
     }
+    let _ = owner;
     Ok(())
 }
 

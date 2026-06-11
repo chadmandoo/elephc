@@ -9,6 +9,32 @@
 
 use super::*;
 
+/// Verifies that PHP 8 semi-reserved keywords are usable as member names end-to-end: an
+/// instance method (`self`), a static method (`new`), an instance method via `->parent()`,
+/// a property accessed as `->list`, and a class constant `FN` accessed via `::`. Mirrors PHP,
+/// which outputs "3|7|9|11|5".
+#[test]
+fn test_keyword_named_members() {
+    let out = compile_and_run(
+        r#"<?php
+class Widget {
+    public $list = 7;
+    const FN = 5;
+    public function self() { return 3; }
+    public function parent() { return 9; }
+    public static function new() { return 11; }
+}
+$w = new Widget();
+echo $w->self(), "|";
+echo $w->list, "|";
+echo $w->parent(), "|";
+echo Widget::new(), "|";
+echo Widget::FN;
+"#,
+    );
+    assert_eq!(out, "3|7|9|11|5");
+}
+
 /// Verifies that an empty class (no properties or methods) can be instantiated and
 /// emits the expected "ok" output, confirming object allocation works for minimal classes.
 #[test]
@@ -25,6 +51,123 @@ echo "ok";
 
 /// Verifies that assigning an object to a second variable shares the same instance.
 /// Both variables reference the same heap object, so mutating via one is visible via the other.
+#[test]
+fn test_class_dynamic_instantiation() {
+    // `new $variable()` dispatches known class names through the same AOT
+    // allocation path as `new ClassName()`. A known name yields an object
+    // Mixed cell; an unknown name currently preserves the legacy PHP null
+    // fallback until the missing-class fatal path is tightened.
+    let out = compile_and_run(
+        r#"<?php
+class Foo {}
+class Bar {}
+$cls = "Foo";
+$obj = new $cls();
+$cls2 = "Bar";
+$obj2 = new $cls2();
+$missing = "NoSuchClass";
+$bad = new $missing();
+echo gettype($obj) . "|" . gettype($obj2) . "|" . gettype($bad);
+"#,
+    );
+    assert_eq!(out, "object|object|NULL");
+}
+
+/// Verifies compiled PHP output for class dynamic instantiation runs property defaults.
+#[test]
+fn test_class_dynamic_instantiation_runs_property_defaults() {
+    // `new $var()` must apply declared property defaults through the same
+    // allocation path as `new ClassName()`. Previously these read back as
+    // 0/null.
+    let out = compile_and_run(
+        r#"<?php
+class C {
+    public int $n = 7;
+    public string $s = "hi";
+    public float $f = 1.5;
+    public bool $b = true;
+    public array $a = [1, 2, 3];
+}
+$cls = "C";
+$o = new $cls();
+echo $o->n . "|" . $o->s . "|" . $o->f . "|" . ($o->b ? "T" : "F") . "|" . count($o->a);
+"#,
+    );
+    assert_eq!(out, "7|hi|1.5|T|3");
+}
+
+/// Verifies that dynamic instantiation forwards constructor arguments.
+#[test]
+fn test_class_dynamic_instantiation_runs_constructor_args() {
+    let out = compile_and_run(
+        r#"<?php
+class C {
+    public int $x = 1;
+    public function __construct(int $x) { $this->x = $x; }
+}
+$cls = "C";
+$o = new $cls(7);
+echo $o->x;
+"#,
+    );
+    assert_eq!(out, "7");
+}
+
+/// Verifies that dynamic instantiation uses SPL-specific runtime storage initialization.
+#[test]
+fn test_class_dynamic_instantiation_uses_spl_storage() {
+    let out = compile_and_run(
+        r#"<?php
+$cls = "SplFixedArray";
+$a = new $cls(2);
+$a[0] = "x";
+echo count($a) . ":" . $a[0];
+"#,
+    );
+    assert_eq!(out, "2:x");
+}
+
+/// Verifies that dynamic class-string lookup follows PHP's case-insensitive class rules.
+#[test]
+fn test_class_dynamic_instantiation_is_case_insensitive() {
+    let out = compile_and_run(
+        r#"<?php
+function pick_class(): string {
+    return "mixedcase";
+}
+class MixedCase {
+    public int $x = 0;
+    public function __construct(int $x) { $this->x = $x; }
+}
+$cls = pick_class();
+$o = new $cls(12);
+echo gettype($o) . ":" . $o->x;
+"#,
+    );
+    assert_eq!(out, "object:12");
+}
+
+/// Verifies compiled PHP output for dynamic instantiation missing class skips propinit.
+#[test]
+fn test_dynamic_instantiation_missing_class_skips_propinit() {
+    // An unknown class name must still return null and must NOT dispatch a
+    // property-init thunk for a missing class_id (regression for the
+    // _class_propinit_ptrs miss path).
+    let out = compile_and_run(
+        r#"<?php
+class Has { public int $x = 9; }
+$missing = "Nope";
+$bad = new $missing();
+echo gettype($bad);
+$ok = "Has";
+$o = new $ok();
+echo "|" . $o->x;
+"#,
+    );
+    assert_eq!(out, "NULL|9");
+}
+
+/// Verifies compiled PHP output for class object aliasing.
 #[test]
 fn test_class_object_aliasing() {
     let out = compile_and_run(

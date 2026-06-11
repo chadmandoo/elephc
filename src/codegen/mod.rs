@@ -10,11 +10,13 @@
 
 pub(crate) mod abi;
 pub(crate) mod builtins;
+pub(crate) mod cdylib;
 pub(crate) mod callable_descriptor;
 pub(crate) mod callable_dispatch;
 pub(crate) mod runtime_callable_invoker;
 mod callables;
 mod class_methods;
+mod property_init_thunks;
 /// Codegen context module.
 pub mod context;
 pub(crate) mod data_section;
@@ -34,7 +36,9 @@ mod program_usage;
 pub(crate) mod reflection;
 pub(crate) mod runtime;
 mod runtime_features;
+pub(crate) mod sentinels;
 mod stmt;
+pub(crate) mod visibility;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -126,6 +130,7 @@ use crate::types::{
     PackedClassInfo, PhpType, TypeEnv,
 };
 use class_methods::emit_class_methods;
+use property_init_thunks::emit_property_init_thunk;
 use data_section::DataSection;
 use driver_support::align16;
 use emit::Emitter;
@@ -137,18 +142,39 @@ pub(crate) use driver_support::{
     emit_box_runtime_payload_as_mixed, emit_deferred_closures,
     emit_write_current_string_stderr, emit_write_literal_stderr,
     emit_normalized_hash_key, emit_release_pushed_refcounted_temp_after_array_push,
-    runtime_value_tag, UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+    runtime_value_tag,
 };
 pub(crate) use expr::arrays::emit_array_value_type_stamp;
 pub(crate) use functions::{emit_fiber_wrapper, emit_generator_with_label};
+pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
+pub use sentinels::{set_null_repr, NullRepr};
 #[allow(unused_imports)]
-pub use driver_support::{generate_runtime, generate_runtime_with_features};
+pub use driver_support::{
+    generate_runtime, generate_runtime_with_features, generate_runtime_with_features_pic,
+};
 pub use runtime_features::{
     required_libraries_for_runtime_features, runtime_features_for_program_and_classes,
 };
 pub use runtime_features::RuntimeFeatures;
 use platform::Target;
 pub(crate) use prescan::collect_constants;
+
+/// Output artifact kind selected by the compiler's `--emit` flag.
+///
+/// `Executable` (default) produces a standalone native binary with a `_main`
+/// entry point and a process-exit call at the end of top-level statements.
+///
+/// `Cdylib` produces a position-independent shared library (`.so` on Linux,
+/// `.dylib` on macOS) loadable via `dlopen(3)` and friends. Cdylib output has
+/// no `_main` entry, no implicit top-level execution at load time, and exposes
+/// PHP functions marked with `#[Export]` under their unmangled PHP names plus
+/// the `elephc_init` / `elephc_shutdown` / `elephc_last_error` / `elephc_free`
+/// lifecycle entry points for embedding hosts.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum Emit {
+    Executable,
+    Cdylib,
+}
 use prescan::{collect_global_var_names, collect_static_vars};
 use program_usage::{
     collect_required_class_names, collect_required_class_names_in_stmts,
@@ -157,6 +183,13 @@ use program_usage::{
 
 /// Generates user-code assembly for the target.
 /// Returns the raw assembly string.
+/// Generates the user assembly object for a checked and optimized program.
+///
+/// The returned assembly contains user functions, class metadata, `_main`, and
+/// user-specific data, but not the shared cached runtime object. When
+/// `requires_elephc_tls` is true, `_main` publishes the TLS staticlib entry
+/// points before user code runs so dynamic URL helpers can call through them.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_user_asm(
     program: &Program,
     global_env: &TypeEnv,
@@ -175,8 +208,16 @@ pub fn generate_user_asm(
     gc_stats: bool,
     heap_debug: bool,
     target: Target,
+    requires_elephc_tls: bool,
+    null_repr: NullRepr,
+    emit: Emit,
+    exported_functions: &HashMap<String, crate::exports::ExportedFunction>,
 ) -> String {
-    let mut emitter = Emitter::new(target);
+    sentinels::set_null_repr(null_repr);
+    let mut emitter = match emit {
+        Emit::Cdylib => Emitter::new_pic(target),
+        Emit::Executable => Emitter::new(target),
+    };
     if target.arch == platform::Arch::X86_64 {
         emitter.emit_text_prelude();
     }
@@ -288,6 +329,29 @@ pub fn generate_user_asm(
             extern_classes,
             extern_globals,
         );
+        // Per-class property-default thunk (_class_propinit_<id>), invoked by
+        // __rt_new_by_name so new $var() / registered wrappers + filters get
+        // their declared property defaults. Same filtered/sorted class set as
+        // the method emission above and the _class_propinit_ptrs table.
+        emit_property_init_thunk(
+            &mut emitter,
+            &mut data,
+            class_name,
+            class_info,
+            functions,
+            callable_param_sigs,
+            callable_return_sigs,
+            &function_variant_group_names,
+            &global_constants,
+            interfaces,
+            &declared_traits,
+            classes,
+            enums,
+            packed_classes,
+            extern_functions,
+            extern_classes,
+            extern_globals,
+        );
     }
 
     emit_interface_return_wrappers(
@@ -297,7 +361,17 @@ pub fn generate_user_asm(
         emitted_class_names.as_ref(),
     );
 
-    emit_main_and_finalize(
+    // Cdylib emission appends C-ABI export trampolines and lifecycle symbols
+    // after user functions so each `_fn_<name>` target the trampolines branch
+    // into has already been emitted. Executable mode skips this step entirely.
+    if matches!(emit, Emit::Cdylib) {
+        let mut sorted_exports: Vec<&crate::exports::ExportedFunction> =
+            exported_functions.values().collect();
+        sorted_exports.sort_by(|a, b| a.name.cmp(&b.name));
+        cdylib::emit_cdylib_exports(&mut emitter, target, &sorted_exports);
+    }
+
+    let user_asm = emit_main_and_finalize(
         emitter,
         data,
         program,
@@ -322,7 +396,31 @@ pub fn generate_user_asm(
         emitted_class_names.as_ref(),
         gc_stats,
         heap_debug,
-    )
+        requires_elephc_tls,
+        emit,
+    );
+
+    // ELF cdylibs hide every internal global so the artifact exports only its
+    // public ABI (lifecycle entry points + #[Export] trampolines). Without
+    // this, internal runtime state would be preemptible and two elephc modules
+    // loaded into one process would alias each other's globals. Mach-O uses
+    // two-level namespace binding, so macOS needs no directive.
+    if matches!(emit, Emit::Cdylib) && target.platform == platform::Platform::Linux {
+        let mut exported: std::collections::HashSet<String> = exported_functions
+            .keys()
+            .map(|name| target.extern_symbol(name))
+            .collect();
+        for lifecycle in [
+            "elephc_init",
+            "elephc_shutdown",
+            "elephc_last_error",
+            "elephc_free",
+        ] {
+            exported.insert(target.extern_symbol(lifecycle));
+        }
+        return visibility::append_hidden_directives(&user_asm, &exported);
+    }
+    user_asm
 }
 
 /// Collects user-declared class and enum names from the program AST, merges them
@@ -522,6 +620,7 @@ fn collect_emitted_class_names(
     for factory in reflection::collect_attribute_factories(classes) {
         names.insert(factory.class_name);
     }
+    collect_dynamic_object_factory_classes(program, classes, &mut names);
     expand_emitted_class_dependencies(&mut names, classes);
     names
 }
@@ -775,6 +874,17 @@ fn collect_dynamic_object_factory_classes_in_expr(
                 collect_dynamic_object_factory_classes_in_expr(arg, classes, names);
             }
         }
+        ExprKind::NewDynamic { name_expr, args } => {
+            for class_name in expr::objects::supported_dynamic_new_builtin_class_names() {
+                if classes.contains_key(*class_name) {
+                    names.insert((*class_name).to_string());
+                }
+            }
+            collect_dynamic_object_factory_classes_in_expr(name_expr, classes, names);
+            for arg in args {
+                collect_dynamic_object_factory_classes_in_expr(arg, classes, names);
+            }
+        }
         ExprKind::ExprCall { callee, args } => {
             collect_dynamic_object_factory_classes_in_expr(callee, classes, names);
             for arg in args {
@@ -897,6 +1007,7 @@ fn emitted_class_descends_from(
 /// Generates complete target assembly including runtime.
 /// Returns tuple of (user_asm, full_asm_with_runtime).
 #[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
 pub fn generate(
     program: &Program,
     global_env: &TypeEnv,
@@ -915,6 +1026,8 @@ pub fn generate(
     gc_stats: bool,
     heap_debug: bool,
     target: Target,
+    requires_elephc_tls: bool,
+    null_repr: NullRepr,
 ) -> (String, String) {
     let user_asm = generate_user_asm(
         program,
@@ -934,6 +1047,10 @@ pub fn generate(
         gc_stats,
         heap_debug,
         target,
+        requires_elephc_tls,
+        null_repr,
+        Emit::Executable,
+        &HashMap::new(),
     );
     let runtime_features = runtime_features_for_program_and_classes(program, classes);
     let runtime_asm = generate_runtime_with_features(heap_size, target, runtime_features);

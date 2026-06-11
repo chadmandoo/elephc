@@ -63,10 +63,11 @@ pub enum Ownership {
 impl Ownership {
     /// Returns the default ownership state for a value produced from a PHP type.
     pub fn for_php_type(ty: &PhpType) -> Self {
+        let ty = ty.codegen_repr();
         if matches!(ty, PhpType::Packed(_)) {
             return Ownership::Borrowed;
         }
-        if Self::php_type_needs_lifetime_tracking(ty) {
+        if Self::php_type_needs_lifetime_tracking(&ty) {
             Ownership::MaybeOwned
         } else {
             Ownership::NonHeap
@@ -75,6 +76,7 @@ impl Ownership {
 
     /// Returns true when the PHP type can carry cleanup or retain responsibility.
     pub fn php_type_needs_lifetime_tracking(ty: &PhpType) -> bool {
+        let ty = ty.codegen_repr();
         matches!(ty, PhpType::Str | PhpType::Callable | PhpType::Buffer(_)) || ty.is_refcounted()
     }
 

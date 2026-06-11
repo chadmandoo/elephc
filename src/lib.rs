@@ -17,6 +17,8 @@ pub mod codegen_ir;
 pub mod conditional;
 /// Error and warning reporting.
 pub mod errors;
+/// `#[Export]` attribute scan for cdylib emission.
+pub mod exports;
 /// Intrinsic call handling.
 pub mod intrinsics;
 /// Intermediate representation used by the EIR backend track.
@@ -35,6 +37,8 @@ pub mod name_resolver;
 pub mod optimize;
 /// Parser for PHP syntax.
 pub mod parser;
+/// PDO (SQLite) standard-library prelude injection.
+pub mod pdo_prelude;
 /// Resolution of includes.
 pub mod resolver;
 /// Source span tracking.

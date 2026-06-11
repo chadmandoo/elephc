@@ -35,14 +35,20 @@ pub(super) fn infer_function_call_type(
         "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "ucwords" | "trim"
         | "ltrim" | "rtrim" | "chop" | "substr" | "str_repeat" | "strrev" | "str_replace"
         | "str_ireplace" | "substr_replace" | "str_pad" | "chr" | "implode" | "join"
-        | "sprintf" | "number_format" | "nl2br" | "wordwrap" | "addslashes"
+        | "sprintf" | "vsprintf" | "number_format" | "nl2br" | "wordwrap" | "addslashes"
         | "stripslashes" | "htmlspecialchars" | "html_entity_decode" | "htmlentities"
         | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode" | "base64_encode"
-        | "base64_decode" | "bin2hex" | "hex2bin" | "md5" | "sha1" | "hash" | "gettype"
+        | "base64_decode" | "bin2hex" | "hex2bin" | "md5" | "sha1" | "hash" | "hash_hmac"
+        | "gettype"
         | "strstr" | "readline" | "date"
         | "json_last_error_msg" | "php_uname" | "phpversion"
         | "tempnam" | "getcwd" | "shell_exec" | "preg_replace_callback"
-        | "ptr_read_string" | "fread" | "fgets" => PhpType::Str,
+        | "ptr_read_string"
+        | "fread" | "fgets" | "stream_get_line"
+        | "gethostname" | "gethostbyname"
+        | "basename" | "sys_get_temp_dir"
+        | "get_class" | "get_parent_class" | "get_resource_type"
+        | "exec" | "system" | "preg_replace" => PhpType::Str,
         "json_decode" => PhpType::Mixed,
         "call_user_func" | "call_user_func_array" => {
             infer_dynamic_callback_builtin_type(args, ctx).unwrap_or(PhpType::Mixed)
@@ -119,6 +125,25 @@ pub(super) fn infer_function_call_type(
             .map(|arg| infer_local_type(arg, sig, ctx))
             .unwrap_or_else(|| PhpType::Array(Box::new(PhpType::Int))),
         "array_merge" => infer_array_merge_type(args, sig, ctx),
+        "array_fill" => {
+            // Mirrors the emitter dispatch: a non-literal-zero start, or a string value,
+            // produces a keyed Mixed-valued hash (`__rt_array_fill_assoc`); otherwise a
+            // 0-based indexed array of the value type.
+            let value_ty = args
+                .get(2)
+                .map(|arg| infer_local_type(arg, sig, ctx))
+                .unwrap_or(PhpType::Int);
+            let start_is_literal_zero =
+                matches!(args.first().map(|arg| &arg.kind), Some(ExprKind::IntLiteral(0)));
+            if !start_is_literal_zero || matches!(value_ty.codegen_repr(), PhpType::Str) {
+                PhpType::AssocArray {
+                    key: Box::new(PhpType::Int),
+                    value: Box::new(PhpType::Mixed),
+                }
+            } else {
+                PhpType::Array(Box::new(value_ty))
+            }
+        }
         "explode"
         | "str_split"
         | "file"
@@ -129,7 +154,6 @@ pub(super) fn infer_function_call_type(
         | "array_unique"
         | "array_chunk"
         | "array_pad"
-        | "array_fill"
         | "array_diff"
         | "array_intersect"
         | "array_splice"
@@ -139,6 +163,7 @@ pub(super) fn infer_function_call_type(
         | "range"
         | "array_rand"
         | "sscanf"
+        | "fscanf"
         | "fgetcsv"
         | "preg_split" => {
             if name == "preg_split" && args.len() >= 4 {
@@ -149,6 +174,7 @@ pub(super) fn infer_function_call_type(
                 || name == "scandir"
                 || name == "glob"
                 || name == "fgetcsv"
+                || name == "fscanf"
                 || name == "preg_split"
             {
                 PhpType::Array(Box::new(PhpType::Str))
@@ -178,24 +204,44 @@ pub(super) fn infer_function_call_type(
             PhpType::Bool
         }
         "define" => PhpType::Bool,
-        "umask" | "fpassthru" | "linkinfo" | "fseek" | "ftell" | "fwrite"
-        | "fputcsv" => PhpType::Int,
+        "umask" | "fpassthru" | "linkinfo" | "fprintf" | "vprintf" | "vfprintf"
+        | "fseek" | "ftell" | "fwrite" | "fputcsv" => PhpType::Int,
         "strpos" | "strrpos" | "array_search" | "file_get_contents" | "json_encode"
         | "grapheme_strrev" | "fileatime" | "filectime" | "fileperms" | "fileowner"
         | "filegroup" | "fileinode" | "filetype" | "stat" | "lstat" | "fstat"
-        | "fgetc" | "readfile" | "readlink" => PhpType::Mixed,
+        | "fgetc" | "readfile" | "readlink" | "stream_get_contents"
+        | "stream_copy_to_stream" => PhpType::Mixed,
         "fopen" | "tmpfile" => merge_union_members(vec![PhpType::stream_resource(), PhpType::Bool]),
         "pathinfo" => infer_pathinfo_type(args),
         "abs" => {
             if !args.is_empty() {
                 let t = infer_local_type(&args[0], sig, ctx);
-                if t == PhpType::Float {
+                if matches!(t, PhpType::Mixed | PhpType::Union(_)) {
+                    // A boxed Mixed operand keeps its int/float tag at runtime, so the
+                    // result type must stay Mixed to match the `__rt_abs_mixed` emitter.
+                    PhpType::Mixed
+                } else if t == PhpType::Float {
                     PhpType::Float
                 } else {
                     PhpType::Int
                 }
             } else {
                 PhpType::Int
+            }
+        }
+        "array_pop" | "array_shift" => {
+            // mirror the emitters: int-element pops/shifts evaluate to a tagged scalar
+            // under the tagged null representation (empty array -> tagged null)
+            let elem_ty = match args.first().map(|arg| infer_local_type(arg, sig, ctx)) {
+                Some(PhpType::Array(elem)) => *elem,
+                _ => PhpType::Int,
+            };
+            if matches!(elem_ty, PhpType::Int)
+                && crate::codegen::sentinels::null_repr_is_tagged()
+            {
+                PhpType::TaggedScalar
+            } else {
+                elem_ty
             }
         }
         "min" | "max" => {
@@ -284,6 +330,8 @@ pub(super) fn infer_function_call_type(
                 ])
             }
         }
+        "stream_bucket_new" | "stream_bucket_make_writeable" => PhpType::Mixed,
+        "stream_resolve_include_path" => PhpType::Mixed,
         _ => {
             if let Some(c) = ctx {
                 if let Some(fn_sig) = c.functions.get(name) {

@@ -273,6 +273,7 @@ pub enum Op {
     SplRuntimeCall,
     ObjectNew,
     DynamicObjectNew,
+    DynamicObjectNewMixed,
     PropGet,
     PropSet,
     DynamicPropGet,
@@ -400,7 +401,7 @@ impl Op {
                 E::READS_HEAP | E::ALLOC_HEAP | E::REFCOUNT_OP
             }
             IterStart | IterCurrentKey | IterCurrentValue | IteratorMethodCall
-            | SplRuntimeCall | DynamicObjectNew | DynamicPropGet | NullsafePropGet
+            | SplRuntimeCall | DynamicObjectNew | DynamicObjectNewMixed | DynamicPropGet | NullsafePropGet
             | NullsafeMethodCall | MethodLookup | MethodCall | StaticMethodCall
             | InstanceOfDynamic | MixedNumericBinop | LooseEq | LooseNotEq | Spaceship => {
                 E::READS_HEAP | E::MAY_DEOPT
@@ -569,6 +570,7 @@ impl Op {
             SplRuntimeCall => "spl_runtime_call",
             ObjectNew => "object_new",
             DynamicObjectNew => "dynamic_object_new",
+            DynamicObjectNewMixed => "dynamic_object_new_mixed",
             PropGet => "prop_get",
             PropSet => "prop_set",
             DynamicPropGet => "dynamic_prop_get",

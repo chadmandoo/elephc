@@ -36,10 +36,30 @@ echo 'It\'s here';   // prints: It's here
 
 ## String interpolation
 
+Double-quoted strings and heredocs interpolate variables. Both the simple and complex
+syntaxes are supported:
+
 ```php
 <?php
 $name = "World";
-echo "Hello, $name\n";
+echo "Hello, $name\n";          // simple: $variable
+
+$user = ["name" => "Ada", "age" => 36];
+echo "Name: $user[name]\n";     // simple: one $var[offset] (bareword key, no quotes)
+
+class Point { public int $x = 1; }
+$p = new Point();
+echo "x = $p->x\n";             // simple: one $var->prop
+
+echo "Sum: {$user['age']}\n";   // complex: {$expr} allows full expressions
+```
+
+Variable and identifier names may contain non-ASCII letters, matching PHP:
+
+```php
+<?php
+$café = "espresso";
+echo "Order: $café\n";
 ```
 
 ## Heredoc strings
@@ -52,6 +72,30 @@ echo <<<EOT
 Hello World
 This is line 2
 EOT;
+```
+
+The closing label closes the heredoc when it is at the start of a line and followed by any
+non-identifier character, so a heredoc can be used as an expression — for example as a
+function argument or in a concatenation:
+
+```php
+<?php
+echo strtoupper(<<<EOT
+hello
+EOT) . "!";
+```
+
+PHP 7.3+ flexible (indented) heredocs are supported: the closing marker may be indented,
+and that indentation is stripped from every body line.
+
+```php
+<?php
+function describe(): string {
+    return <<<EOT
+        line one
+        line two
+        EOT;   // -> "line one\nline two"
+}
 ```
 
 ## Nowdoc strings
@@ -116,16 +160,31 @@ Read-only. Negative indices count from end. Out-of-bounds returns empty string.
 | `number_format()` | `number_format($n [, $dec [, $dec_point, $thou_sep]]): string` | Format number |
 | `sprintf()` | `sprintf($fmt, ...): string` | Format string (%s, %d, %f, %x, %e, %g, %o, %c, %%) |
 | `printf()` | `printf($fmt, ...): int` | Format and print |
-| `sscanf()` | `sscanf($str, $fmt): array` | Parse string with format (%d, %s) |
+| `vsprintf()` | `vsprintf($fmt, array $values): string` | Like `sprintf()`, with the arguments supplied as an array. Each element becomes one format argument — int/float/bool/string, including the elements of a mixed array. |
+| `vprintf()` | `vprintf($fmt, array $values): int` | Like `printf()`, with the arguments supplied as an array; prints the result and returns the byte count. |
+| `sscanf()` | `sscanf($str, $fmt): array` | Parse string with format (%d, %f, %s, %%). Matched fields are returned as substrings (e.g. `%f` yields `"3.14"`), mirroring the existing `%d` behavior. |
 | `addslashes()` | `addslashes($str): string` | Escape quotes and backslashes |
 | `stripslashes()` | `stripslashes($str): string` | Remove escape backslashes |
 | `nl2br()` | `nl2br($str): string` | Insert `<br />` before newlines |
-| `wordwrap()` | `wordwrap($str [, $width [, $break [, $cut]]]): string` | Wrap text at width |
+| `wordwrap()` | `wordwrap($str [, $width [, $break [, $cut]]]): string` | Wrap text at word boundaries; set `$cut` to break over-long words |
 | `bin2hex()` | `bin2hex($str): string` | Convert binary to hex |
 | `hex2bin()` | `hex2bin($str): string` | Convert hex to binary |
-| `md5()` | `md5($str): string` | MD5 hash (32-char hex) |
-| `sha1()` | `sha1($str): string` | SHA1 hash (40-char hex) |
-| `hash()` | `hash($algo, $data): string` | Hash with algorithm (md5, sha1, sha256) |
+| `long2ip()` | `long2ip($ip): string` | Format a 32-bit integer as a dotted-quad IPv4 address |
+| `ip2long()` | `ip2long($ip): int\|false` | Parse a decimal dotted-quad IPv4 string into an integer, or `false` if invalid |
+| `inet_pton()` | `inet_pton($ip): string\|false` | Pack a dotted-quad IPv4 address into a 4-byte binary string, or `false` if invalid |
+| `inet_ntop()` | `inet_ntop($binary): string\|false` | Render a 4-byte IPv4 binary string as a dotted-quad address, or `false` if the length is not 4 |
+| `md5()` | `md5($str, $binary = false): string` | MD5 hash — 32-char lowercase hex by default, or the raw 16 digest bytes when `$binary` is `true` |
+| `sha1()` | `sha1($str, $binary = false): string` | SHA1 hash — 40-char lowercase hex by default, or the raw 20 digest bytes when `$binary` is `true` |
+| `crc32()` | `crc32($str): int` | CRC-32 checksum (standard zlib/PHP polynomial), returned as a non-negative 32-bit integer |
+| `hash()` | `hash($algo, $data, $binary = false): string` | Hash `$data` with the named algorithm (md5, sha1, sha2 family, sha3 family, ripemd, crc32/crc32b, and more). Returns lowercase hex by default, or the raw digest bytes when `$binary` is `true`. An unknown algorithm throws `\ValueError`. |
+| `hash_hmac()` | `hash_hmac($algo, $data, $key, $binary = false): string` | Keyed-hash message authentication code of `$data` under `$key` using the named cryptographic algorithm. Returns lowercase hex by default, or the raw digest bytes when `$binary` is `true`. An unknown algorithm, or a non-cryptographic checksum (crc32/adler/fnv/joaat), throws `\ValueError`. |
+| `hash_file()` | `hash_file($algo, $filename, $binary = false): string\|false` | Hash a file's contents with the named algorithm; returns the digest (hex, or raw bytes when `$binary`), or `false` if the file cannot be read. |
+| `hash_equals()` | `hash_equals($known, $user): bool` | Timing-safe string comparison — constant-time for equal-length strings, returns `false` immediately on a length mismatch. |
+| `hash_algos()` | `hash_algos(): array` | Return the list of supported hash algorithm names. |
+| `hash_init()` | `hash_init($algo): HashContext` | Open an incremental hashing context. An unknown algorithm throws `\ValueError`. (The `HASH_HMAC` flag form is not supported — use `hash_hmac()`.) |
+| `hash_update()` | `hash_update($context, $data): bool` | Feed data into an incremental hashing context. |
+| `hash_final()` | `hash_final($context, $binary = false): string` | Finalize a context and return the digest (hex, or raw bytes when `$binary`). |
+| `hash_copy()` | `hash_copy($context): HashContext` | Clone an incremental hashing context so the original and copy can diverge. |
 | `htmlspecialchars()` | `htmlspecialchars($str): string` | Escape HTML special chars |
 | `htmlentities()` | `htmlentities($str): string` | Alias for htmlspecialchars |
 | `html_entity_decode()` | `html_entity_decode($str): string` | Decode HTML entities |
@@ -135,6 +194,10 @@ Read-only. Negative indices count from end. Out-of-bounds returns empty string.
 | `rawurldecode()` | `rawurldecode($str): string` | URL-decode (RFC 3986) |
 | `base64_encode()` | `base64_encode($str): string` | Base64 encode |
 | `base64_decode()` | `base64_decode($str): string` | Base64 decode |
+| `gzcompress()` | `gzcompress(string $data, int $level = -1): string` | Compress a string with zlib (system `libz`); `$level` is `-1` (default) or `0`–`9` |
+| `gzuncompress()` | `gzuncompress(string $data): string\|false` | Decompress a `gzcompress()`-produced string; `false` on a zlib error |
+| `gzdeflate()` | `gzdeflate(string $data, int $level = -1): string` | Compress a string into raw DEFLATE — no zlib header or trailer; `$level` is `-1` (default) or `0`–`9` |
+| `gzinflate()` | `gzinflate(string $data): string\|false` | Decompress a raw DEFLATE string from `gzdeflate()` or the `zlib.deflate` stream filter; `false` on a zlib error |
 | `ctype_alpha()` | `ctype_alpha($str): bool` | All chars are A-Z/a-z |
 | `ctype_digit()` | `ctype_digit($str): bool` | All chars are 0-9 |
 | `ctype_alnum()` | `ctype_alnum($str): bool` | All chars are alphanumeric |

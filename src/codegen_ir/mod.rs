@@ -26,11 +26,13 @@ use std::fmt;
 
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
-use crate::codegen::platform::Arch;
+use crate::codegen::platform::{Arch, Platform};
+use crate::codegen::Emit;
+use crate::exports::ExportedFunction;
 use crate::codegen::runtime;
 use crate::intrinsics::IntrinsicCall;
-use crate::ir::{Function, Immediate, Module, Op};
-use crate::names::{method_symbol, static_method_symbol};
+use crate::ir::{Function, Immediate, Module, Op, ValueDef};
+use crate::names::{method_symbol, php_symbol_key, static_method_symbol};
 use crate::types::{ClassInfo, FunctionSig, InterfaceInfo, PhpType};
 
 /// Error returned by the Phase 04 IR backend while a required lowering path is missing.
@@ -78,22 +80,60 @@ pub type Result<T> = std::result::Result<T, CodegenIrError>;
 ///
 /// The Phase 04 backend currently supports straight-line scalar main programs and
 /// returns explicit unsupported-feature errors for paths that are not lowered yet.
+#[allow(dead_code)]
 pub fn generate_user_asm_from_ir(
     module: &Module,
     gc_stats: bool,
     heap_debug: bool,
 ) -> Result<String> {
-    let mut emitter = Emitter::new(module.target);
+    let exported_functions: HashMap<String, ExportedFunction> = HashMap::new();
+    generate_user_asm_from_ir_with_options(
+        module,
+        gc_stats,
+        heap_debug,
+        false,
+        Emit::Executable,
+        &exported_functions,
+    )
+}
+
+/// Generates user-code assembly from EIR using the same artifact options as the CLI pipeline.
+pub fn generate_user_asm_from_ir_with_options(
+    module: &Module,
+    gc_stats: bool,
+    heap_debug: bool,
+    requires_elephc_tls: bool,
+    emit: Emit,
+    exported_functions: &HashMap<String, ExportedFunction>,
+) -> Result<String> {
+    let mut emitter = match emit {
+        Emit::Cdylib => Emitter::new_pic(module.target),
+        Emit::Executable => Emitter::new(module.target),
+    };
     if module.target.arch == Arch::X86_64 {
         emitter.emit_text_prelude();
     }
     let mut data = DataSection::new();
-    block_emit::emit_module(module, &mut emitter, &mut data, gc_stats, heap_debug)?;
-    Ok(finalize_user_asm(module, emitter, data))
+    block_emit::emit_module(
+        module,
+        &mut emitter,
+        &mut data,
+        gc_stats,
+        heap_debug,
+        requires_elephc_tls,
+        emit,
+    )?;
+    Ok(finalize_user_asm(module, emitter, data, emit, exported_functions))
 }
 
 /// Appends literal data and the minimal user-runtime metadata needed by linked helpers.
-fn finalize_user_asm(module: &Module, mut emitter: Emitter, data: DataSection) -> String {
+fn finalize_user_asm(
+    module: &Module,
+    mut emitter: Emitter,
+    data: DataSection,
+    emit: Emit,
+    exported_functions: &HashMap<String, ExportedFunction>,
+) -> String {
     let data_output = data.emit();
     let empty_globals = HashSet::<String>::new();
     let empty_static_vars = HashMap::<(String, String), PhpType>::new();
@@ -112,6 +152,15 @@ fn finalize_user_asm(module: &Module, mut emitter: Emitter, data: DataSection) -
         Some(&allowed_class_names),
     );
     emit_intrinsic_method_wrappers(module, &mut emitter);
+    if matches!(emit, Emit::Cdylib) {
+        let mut sorted_exports: Vec<&ExportedFunction> = exported_functions.values().collect();
+        sorted_exports.sort_by(|a, b| a.name.cmp(&b.name));
+        crate::codegen::cdylib::emit_cdylib_exports(
+            &mut emitter,
+            module.target,
+            &sorted_exports,
+        );
+    }
     let user_data = runtime::emit_runtime_data_user(
         &empty_globals,
         &empty_static_vars,
@@ -130,6 +179,21 @@ fn finalize_user_asm(module: &Module, mut emitter: Emitter, data: DataSection) -
     }
     user_asm.push('\n');
     user_asm.push_str(&user_data);
+    if matches!(emit, Emit::Cdylib) && module.target.platform == Platform::Linux {
+        let mut exported: HashSet<String> = exported_functions
+            .values()
+            .map(|export| module.target.extern_symbol(&export.name))
+            .collect();
+        for lifecycle in [
+            "elephc_init",
+            "elephc_shutdown",
+            "elephc_last_error",
+            "elephc_free",
+        ] {
+            exported.insert(module.target.extern_symbol(lifecycle));
+        }
+        return crate::codegen::visibility::append_hidden_directives(&user_asm, &exported);
+    }
     user_asm
 }
 
@@ -138,6 +202,7 @@ fn runtime_user_function_sigs(module: &Module) -> HashMap<String, FunctionSig> {
     let mut functions = module
         .functions
         .iter()
+        .filter(|function| !is_property_init_thunk_function(function))
         .map(|function| (function.name.clone(), ir_function_sig(function)))
         .collect::<HashMap<_, _>>();
     for group in function_variants::collect_dispatch_groups(module) {
@@ -148,6 +213,11 @@ fn runtime_user_function_sigs(module: &Module) -> HashMap<String, FunctionSig> {
         }
     }
     functions
+}
+
+/// Returns true for synthetic property-default init thunks, which are not PHP callables.
+fn is_property_init_thunk_function(function: &Function) -> bool {
+    function.name.starts_with("_class_propinit_")
 }
 
 /// Reconstructs callable metadata from an EIR function when no source signature is attached.
@@ -368,6 +438,11 @@ fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
     for class_name in referenced_class_name_lookup_builtin_names(module) {
         if module.class_infos.contains_key(&class_name) {
             names.insert(class_name);
+        }
+    }
+    for class_name in referenced_stream_registration_class_names(module) {
+        if let Some(canonical) = canonical_module_class_name(module, &class_name) {
+            names.insert(canonical);
         }
     }
     for class_name in referenced_scoped_constant_class_names(module) {
@@ -824,6 +899,10 @@ fn referenced_dynamic_object_new_class_names(module: &Module) -> HashSet<String>
         .chain(module.runtime_callable_invokers.iter())
     {
         for inst in &function.instructions {
+            if matches!(inst.op, Op::DynamicObjectNewMixed) {
+                names.extend(module.class_infos.keys().cloned());
+                continue;
+            }
             if !matches!(inst.op, Op::DynamicObjectNew) {
                 continue;
             }
@@ -913,6 +992,82 @@ fn is_class_name_lookup_builtin(module: &Module, inst: &crate::ir::Instruction) 
         crate::names::php_symbol_key(name.trim_start_matches('\\')).as_str(),
         "get_class" | "get_parent_class"
     )
+}
+
+/// Returns class names passed as literals to stream wrapper/filter registration builtins.
+fn referenced_stream_registration_class_names(module: &Module) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        for inst in &function.instructions {
+            if !matches!(inst.op, Op::BuiltinCall)
+                || !is_stream_registration_builtin(module, inst)
+                || inst.operands.len() < 2
+            {
+                continue;
+            }
+            if let Some(class_name) = const_string_value(module, function, inst.operands[1]) {
+                names.insert(class_name.trim_start_matches('\\').to_string());
+            }
+        }
+    }
+    names
+}
+
+/// Resolves a class name against module metadata using PHP case-insensitive class rules.
+fn canonical_module_class_name(module: &Module, class_name: &str) -> Option<String> {
+    let wanted = php_symbol_key(class_name.trim_start_matches('\\'));
+    module
+        .class_infos
+        .keys()
+        .find(|candidate| php_symbol_key(candidate.trim_start_matches('\\')) == wanted)
+        .cloned()
+}
+
+/// Returns true for builtins whose literal class argument is consumed by runtime metadata.
+fn is_stream_registration_builtin(module: &Module, inst: &crate::ir::Instruction) -> bool {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return false;
+    };
+    let Some(name) = module.data.function_names.get(data.as_raw() as usize) else {
+        return false;
+    };
+    matches!(
+        crate::names::php_symbol_key(name.trim_start_matches('\\')).as_str(),
+        "stream_wrapper_register" | "stream_filter_register"
+    )
+}
+
+/// Returns the literal string payload produced by a `ConstStr` value.
+fn const_string_value<'a>(
+    module: &'a Module,
+    function: &'a Function,
+    value: crate::ir::ValueId,
+) -> Option<&'a str> {
+    let value_ref = function.value(value)?;
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return None;
+    };
+    let inst_ref = function.instruction(inst)?;
+    if inst_ref.op != Op::ConstStr {
+        return None;
+    }
+    let Some(Immediate::Data(data)) = inst_ref.immediate else {
+        return None;
+    };
+    module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .map(String::as_str)
 }
 
 /// Returns class-like receiver names encoded in scoped constant immediates.

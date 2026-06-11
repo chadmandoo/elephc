@@ -68,9 +68,19 @@ pub(super) fn lower_cast(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 /// Lowers an explicit cast to PHP int for concrete scalar operands.
 fn lower_cast_to_int(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
-    match ctx.raw_value_php_type(value)? {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        emit_resource_display_id_to_int(ctx);
+        return store_if_result(ctx, inst);
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Int | PhpType::Bool => {
             ctx.load_value_to_result(value)?;
+        }
+        PhpType::TaggedScalar => {
+            ctx.load_value_to_result(value)?;
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
         }
         PhpType::Void | PhpType::Never => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
@@ -82,10 +92,6 @@ fn lower_cast_to_int(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
         PhpType::Str => {
             ctx.load_value_to_result(value)?;
             abi::emit_call_label(ctx.emitter, "__rt_str_to_int");
-        }
-        PhpType::Resource(_) => {
-            ctx.load_value_to_result(value)?;
-            emit_resource_display_id_to_int(ctx);
         }
         PhpType::Mixed | PhpType::Union(_) => {
             load_value_to_first_int_arg(ctx, value)?;
@@ -107,7 +113,14 @@ fn lower_cast_to_int(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
 /// Lowers an explicit cast to PHP float for concrete scalar operands.
 fn lower_cast_to_float(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
-    match ctx.raw_value_php_type(value)? {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        emit_resource_display_id_to_int(ctx);
+        abi::emit_int_result_to_float_result(ctx.emitter);
+        return store_if_result(ctx, inst);
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Float => {
             ctx.load_value_to_result(value)?;
         }
@@ -115,9 +128,9 @@ fn lower_cast_to_float(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Res
             ctx.load_value_to_result(value)?;
             abi::emit_int_result_to_float_result(ctx.emitter);
         }
-        PhpType::Resource(_) => {
+        PhpType::TaggedScalar => {
             ctx.load_value_to_result(value)?;
-            emit_resource_display_id_to_int(ctx);
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
             abi::emit_int_result_to_float_result(ctx.emitter);
         }
         PhpType::Void | PhpType::Never => {
@@ -149,19 +162,20 @@ fn lower_cast_to_float(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Res
 /// Lowers an explicit cast to PHP string for concrete scalar operands.
 fn lower_cast_to_string(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
-    match ctx.raw_value_php_type(value)? {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
+        return store_if_result(ctx, inst);
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Str => {
             ctx.load_value_to_result(value)?;
             store_if_result(ctx, inst)
         }
         PhpType::Float => strings::lower_float_to_string(ctx, inst),
-        PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never => {
+        PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never | PhpType::TaggedScalar => {
             strings::lower_int_like_to_string(ctx, inst)
-        }
-        PhpType::Resource(_) => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
-            store_if_result(ctx, inst)
         }
         PhpType::Mixed | PhpType::Union(_) => {
             load_value_to_first_int_arg(ctx, value)?;

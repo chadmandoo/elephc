@@ -43,6 +43,65 @@ fn test_echo_string() {
     );
 }
 
+/// Verifies complex `{$var}` interpolation lexes the braced expression as a parenthesized
+/// operand rather than emitting the braces as literal text.
+#[test]
+fn test_interpolation_complex_braces() {
+    let t = tokens("<?php \"a{$b}c\";");
+    assert_eq!(
+        &t[1..t.len() - 2],
+        &[
+            Token::LParen,
+            Token::StringLiteral("a".into()),
+            Token::Dot,
+            Token::LParen,
+            Token::Variable("b".into()),
+            Token::RParen,
+            Token::Dot,
+            Token::StringLiteral("c".into()),
+            Token::RParen,
+        ]
+    );
+}
+
+/// Verifies simple `$arr[key]` interpolation lexes a bareword offset as a string-keyed
+/// array access on the variable.
+#[test]
+fn test_interpolation_simple_offset_bareword() {
+    let t = tokens("<?php \"$a[k]\";");
+    assert_eq!(
+        &t[1..t.len() - 2],
+        &[
+            Token::LParen,
+            Token::StringLiteral(String::new()),
+            Token::Dot,
+            Token::Variable("a".into()),
+            Token::LBracket,
+            Token::StringLiteral("k".into()),
+            Token::RBracket,
+            Token::RParen,
+        ]
+    );
+}
+
+/// Verifies simple `$obj->prop` interpolation lexes a single property access on the variable.
+#[test]
+fn test_interpolation_simple_property() {
+    let t = tokens("<?php \"$o->x\";");
+    assert_eq!(
+        &t[1..t.len() - 2],
+        &[
+            Token::LParen,
+            Token::StringLiteral(String::new()),
+            Token::Dot,
+            Token::Variable("o".into()),
+            Token::Arrow,
+            Token::Identifier("x".into()),
+            Token::RParen,
+        ]
+    );
+}
+
 /// Verifies double-quoted string `"hello\nworld\t!"` produces `StringLiteral`
 /// with actual newline (`\n`) and tab (`\t`) characters — confirming escape sequence
 /// interpretation, not raw literal text.
@@ -77,6 +136,18 @@ fn test_double_quoted_escape_digit_bounds_and_fallbacks() {
 }
 
 /// Verifies bare decimal integer `42` tokenizes as `IntLiteral(42)`, not float.
+#[test]
+fn test_string_control_escape_sequences() {
+    // \r, \v, \e, \f map to the matching ASCII control characters, matching
+    // PHP double-quoted string semantics.
+    let t = tokens("<?php \"\\r\\v\\e\\f\"");
+    assert_eq!(
+        t[1],
+        Token::StringLiteral("\r\u{0B}\u{1B}\u{0C}".into()),
+    );
+}
+
+/// Verifies lexer tokenization for integer literal.
 #[test]
 fn test_integer_literal() {
     let t = tokens("<?php 42");
@@ -159,6 +230,21 @@ fn test_scientific_notation_negative_exponent() {
 fn test_integer_not_mistaken_for_float() {
     let t = tokens("<?php 42");
     assert_eq!(t[1], Token::IntLiteral(42));
+}
+
+/// Verifies that an empty radix literal (`0x`/`0o`/`0b` with no digits) reports its error at the
+/// start of the literal (the `0`, column 7 in `<?php 0x;`), not one column past the consumed prefix.
+#[test]
+fn test_empty_radix_literal_errors_point_at_literal_start() {
+    for (src, msg) in [
+        ("<?php 0x;", "Expected hex digits"),
+        ("<?php 0o;", "Expected octal digits"),
+        ("<?php 0b;", "Expected binary digits"),
+    ] {
+        let err = tokenize(src).unwrap_err();
+        assert!(err.message.contains(msg), "{src}: got {:?}", err.message);
+        assert_eq!(err.span.col, 7, "{src} should point at the literal start");
+    }
 }
 
 /// Verifies `const NAME = "test";` produces `OpenTag`, `Const`, `Identifier`,

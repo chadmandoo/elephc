@@ -46,6 +46,12 @@ fn test_error_grapheme_strrev_non_string_argument() {
 }
 
 expect_builtin_arity_error!(
+    test_error_crc32_wrong_args,
+    "<?php crc32();",
+    "crc32() takes exactly 1 argument"
+);
+
+expect_builtin_arity_error!(
     test_error_ctype_digit_wrong_args,
     "<?php ctype_digit();",
     "ctype_digit() takes exactly 1 argument"
@@ -142,15 +148,17 @@ fn test_error_str_pad_wrong_args() {
 }
 
 /// Verifies that `md5()` with no arguments produces the correct arity error.
+/// md5() accepts an optional `$binary` flag, so the message reports 1 or 2 args.
 #[test]
 fn test_error_md5_wrong_args() {
-    expect_error("<?php md5();", "md5() takes exactly 1 argument");
+    expect_error("<?php md5();", "md5() takes 1 or 2 arguments");
 }
 
 /// Verifies that `sha1()` with no arguments produces the correct arity error.
+/// sha1() accepts an optional `$binary` flag, so the message reports 1 or 2 args.
 #[test]
 fn test_error_sha1_wrong_args() {
-    expect_error("<?php sha1();", "sha1() takes exactly 1 argument");
+    expect_error("<?php sha1();", "sha1() takes 1 or 2 arguments");
 }
 
 /// Verifies that `htmlspecialchars()` with no arguments produces the correct arity error.
@@ -187,9 +195,11 @@ fn test_error_ctype_alpha_wrong_args() {
 }
 
 /// Verifies that `hash()` with only one argument produces the correct arity error.
+/// `hash()` now accepts an optional third `$binary` argument, so the message
+/// reports the 2-or-3 arity instead of the legacy fixed-2 wording.
 #[test]
 fn test_error_hash_wrong_args() {
-    expect_error(r#"<?php hash("md5");"#, "hash() takes exactly 2 arguments");
+    expect_error(r#"<?php hash("md5");"#, "hash() takes 2 or 3 arguments");
 }
 
 /// Verifies that `sscanf()` with only one argument produces the correct arity error.
@@ -210,5 +220,71 @@ fn test_error_ptr_set_requires_word_value() {
     expect_error(
         "<?php $p = ptr_null(); ptr_set($p, \"hello\");",
         "ptr_set() value must be int, bool, null, or pointer",
+    );
+}
+
+/// Verifies the invalid-call diagnostic for error long2ip wrong args.
+#[test]
+fn test_error_long2ip_wrong_args() {
+    expect_error("<?php long2ip();", "long2ip() takes exactly 1 argument");
+}
+
+/// Verifies the invalid-call diagnostic for error ip2long wrong args.
+#[test]
+fn test_error_ip2long_wrong_args() {
+    expect_error("<?php ip2long();", "ip2long() takes exactly 1 argument");
+}
+
+/// Verifies the invalid-call diagnostic for error inet ntop wrong args.
+#[test]
+fn test_error_inet_ntop_wrong_args() {
+    expect_error("<?php inet_ntop();", "inet_ntop() takes exactly 1 argument");
+}
+
+/// Verifies the invalid-call diagnostic for error inet pton wrong args.
+#[test]
+fn test_error_inet_pton_wrong_args() {
+    expect_error("<?php inet_pton();", "inet_pton() takes exactly 1 argument");
+}
+
+/// Verifies the invalid-call diagnostic for error gzcompress wrong args.
+#[test]
+fn test_error_gzcompress_wrong_args() {
+    expect_error("<?php gzcompress();", "gzcompress() expects 1 or 2 arguments");
+}
+
+/// Verifies the invalid-call diagnostic for error gzuncompress wrong args.
+#[test]
+fn test_error_gzuncompress_wrong_args() {
+    expect_error("<?php gzuncompress();", "gzuncompress() expects 1 or 2 arguments");
+}
+
+/// Verifies the invalid-call diagnostic for error gzdeflate wrong args.
+#[test]
+fn test_error_gzdeflate_wrong_args() {
+    expect_error("<?php gzdeflate();", "gzdeflate() expects 1 or 2 arguments");
+}
+
+/// Verifies the invalid-call diagnostic for error gzinflate wrong args.
+#[test]
+fn test_error_gzinflate_wrong_args() {
+    expect_error("<?php gzinflate();", "gzinflate() expects 1 or 2 arguments");
+}
+
+/// Verifies the invalid-call diagnostic for error vsprintf wrong args.
+#[test]
+fn test_error_vsprintf_wrong_args() {
+    expect_error(
+        "<?php vsprintf(\"%d\");",
+        "vsprintf() takes exactly 2 arguments",
+    );
+}
+
+/// Verifies the invalid-call diagnostic for error vprintf wrong args.
+#[test]
+fn test_error_vprintf_wrong_args() {
+    expect_error(
+        "<?php vprintf(\"%d\", [1], 3);",
+        "vprintf() takes exactly 2 arguments",
     );
 }

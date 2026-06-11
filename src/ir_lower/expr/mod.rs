@@ -114,6 +114,9 @@ pub(crate) fn lower_expr(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> Lowe
         ExprKind::ExprCall { callee, args } => lower_expr_call(ctx, callee, args, expr),
         ExprKind::ConstRef(name) => constants::lower_const_ref(ctx, name, expr),
         ExprKind::NewObject { class_name, args } => lower_new_object(ctx, class_name, args, expr),
+        ExprKind::NewDynamic { name_expr, args } => {
+            lower_new_dynamic(ctx, name_expr, args, expr)
+        }
         ExprKind::NewDynamicObject { class_name, fallback_class, required_parent, args } => {
             lower_new_dynamic_object(ctx, class_name, fallback_class, required_parent, args, expr)
         }
@@ -597,6 +600,7 @@ fn expr_can_reset_concat_storage(expr: &Expr) -> bool {
         | ExprKind::NullsafeMethodCall { .. }
         | ExprKind::StaticMethodCall { .. }
         | ExprKind::NewObject { .. }
+        | ExprKind::NewDynamic { .. }
         | ExprKind::NewDynamicObject { .. }
         | ExprKind::NewScopedObject { .. }
         | ExprKind::Pipe { .. }
@@ -790,6 +794,10 @@ fn lower_numeric_unary(
     match value.ir_type {
         IrType::F64 => ctx.emit_value(float_op, vec![value.value], None, PhpType::Float, float_op.default_effects(), Some(expr.span)),
         IrType::I64 => ctx.emit_value(int_op, vec![value.value], None, PhpType::Int, int_op.default_effects(), Some(expr.span)),
+        IrType::TaggedScalar => {
+            let narrowed = lower_tagged_scalar_to_int(ctx, value, Some(expr.span));
+            ctx.emit_value(int_op, vec![narrowed.value], None, PhpType::Int, int_op.default_effects(), Some(expr.span))
+        }
         _ if int_op == Op::INeg => {
             let zero = lower_int_literal(ctx, 0, expr);
             lower_mixed_numeric_binary(ctx, zero, value, MixedNumericOp::Sub, expr)
@@ -803,9 +811,28 @@ fn lower_int_unary(ctx: &mut LoweringContext<'_, '_>, inner: &Expr, op: Op, expr
     let value = lower_expr(ctx, inner);
     if value.ir_type == IrType::I64 {
         ctx.emit_value(op, vec![value.value], None, PhpType::Int, op.default_effects(), Some(expr.span))
+    } else if value.ir_type == IrType::TaggedScalar {
+        let narrowed = lower_tagged_scalar_to_int(ctx, value, Some(expr.span));
+        ctx.emit_value(op, vec![narrowed.value], None, PhpType::Int, op.default_effects(), Some(expr.span))
     } else {
         ctx.emit_value(Op::RuntimeCall, vec![value.value], None, PhpType::Mixed, Effects::all(), Some(expr.span))
     }
+}
+
+/// Lowers a tagged scalar into PHP int semantics, coercing null to zero.
+fn lower_tagged_scalar_to_int(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Option<Span>,
+) -> LoweredValue {
+    ctx.emit_value(
+        Op::Cast,
+        vec![value.value],
+        Some(Immediate::CastTarget(IrType::I64)),
+        PhpType::Int,
+        Op::Cast.default_effects(),
+        span,
+    )
 }
 
 /// Lowers logical negation.
@@ -5048,37 +5075,67 @@ fn is_scalar_merge_element_type(ty: &PhpType) -> bool {
 /// Returns precise builtin return types needed by EIR value materialization.
 fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "chdir" | "chgrp" | "chmod" | "chown" | "class_exists" | "copy" | "define" | "defined"
+        "chdir" | "chgrp" | "chmod" | "chown" | "class_alias" | "class_exists" | "copy" | "define" | "defined"
         | "empty" | "file_exists" | "fnmatch" | "function_exists" | "is_a" | "is_callable"
         | "fdatasync" | "fflush" | "flock" | "fsync" | "ftruncate" | "interface_exists" | "is_dir"
         | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link" | "mkdir" | "rename"
         | "enum_exists" | "trait_exists" | "putenv" | "rmdir" | "is_readable"
         | "is_subclass_of" | "is_writeable" | "is_writable" | "settype"
-        | "spl_autoload_register" | "spl_autoload_unregister" | "symlink" | "touch" | "unlink" => {
+        | "is_resource" | "hash_equals" | "hash_update" | "spl_autoload_register"
+        | "spl_autoload_unregister" | "stream_context_set_option" | "stream_context_set_params"
+        | "stream_filter_register" | "stream_filter_remove"
+        | "stream_wrapper_register" | "stream_wrapper_restore" | "stream_wrapper_unregister"
+        | "stream_isatty" | "stream_is_local" | "stream_set_blocking" | "stream_set_timeout"
+        | "stream_socket_enable_crypto" | "stream_socket_shutdown" | "stream_supports_lock" | "symlink" | "touch"
+        | "unlink" => {
             Some(PhpType::Bool)
         }
-        "basename" | "date" | "dirname" | "exec" | "fgets" | "get_class" | "get_parent_class"
-        | "getcwd" | "getenv" | "php_uname" | "readline" | "shell_exec" | "sys_get_temp_dir"
-        | "fread" | "system" | "spl_autoload_extensions" | "tempnam" => Some(PhpType::Str),
-        "microtime" => Some(PhpType::Float),
-        "clearstatcache" | "exit" | "die" | "passthru" => Some(PhpType::Void),
+        "basename" | "date" | "dirname" | "exec" | "get_class" | "get_parent_class"
+        | "getcwd" | "getenv" | "gethostname" | "gethostbyname" | "php_uname"
+        | "readline" | "shell_exec" | "sys_get_temp_dir"
+        | "fread" | "get_resource_type" | "gzcompress" | "gzdeflate" | "hash" | "hash_final" | "hash_hmac" | "long2ip"
+        | "stream_get_line" | "system" | "spl_autoload_extensions" | "tempnam" | "vsprintf" => {
+            Some(PhpType::Str)
+        }
+        "disk_free_space" | "disk_total_space" | "microtime" => Some(PhpType::Float),
+        "clearstatcache" | "closedir" | "exit" | "die" | "passthru" | "rewinddir"
+        | "stream_bucket_append" | "stream_bucket_prepend" | "unset" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
-        | "filesize" | "fpassthru" | "fputcsv" | "fseek" | "ftell" | "fwrite"
-        | "isset" | "linkinfo" | "mktime" | "sleep" | "spl_object_id" | "strtotime" | "time" | "umask" => {
+        | "filesize" | "fprintf" | "fpassthru" | "fputcsv" | "fseek" | "ftell" | "fwrite"
+        | "crc32" | "get_resource_id" | "isset" | "linkinfo" | "mktime" | "sleep"
+        | "pclose" | "spl_object_id" | "stream_select" | "stream_set_chunk_size"
+        | "stream_set_read_buffer" | "stream_set_write_buffer" | "strtotime" | "time"
+        | "umask" | "vfprintf" | "vprintf" => {
             Some(PhpType::Int)
         }
         "spl_object_hash" => Some(PhpType::Str),
         "spl_autoload" | "spl_autoload_call" | "usleep" => Some(PhpType::Void),
+        "stream_context_create" | "stream_context_get_default" | "stream_context_set_default" => {
+            Some(PhpType::stream_resource())
+        }
+        "stream_context_get_options" | "stream_context_get_params" | "stream_get_meta_data" => Some(PhpType::AssocArray {
+            key: Box::new(PhpType::Str),
+            value: Box::new(PhpType::Mixed),
+        }),
         "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
-        | "fgetc" | "fopen" | "fstat" | "stat" | "lstat" | "tmpfile" | "strpos" | "strrpos" => {
+        | "fgetc" | "fgets" | "fopen" | "fstat" | "hash_copy" | "hash_file" | "hash_init"
+        | "gethostbyaddr" | "getprotobyname" | "getprotobynumber" | "getservbyname"
+        | "getservbyport" | "fsockopen" | "inet_ntop" | "inet_pton" | "ip2long" | "opendir"
+        | "pfsockopen" | "readdir" | "popen" | "stat" | "lstat" | "stream_get_contents"
+        | "stream_bucket_make_writeable" | "stream_bucket_new" | "stream_filter_append"
+        | "stream_filter_prepend" | "stream_resolve_include_path" | "stream_socket_accept"
+        | "stream_socket_client" | "stream_socket_pair" | "stream_copy_to_stream"
+        | "stream_socket_get_name" | "stream_socket_recvfrom" | "stream_socket_sendto"
+        | "stream_socket_server" | "tmpfile" | "gzinflate" | "gzuncompress" | "strpos" | "strrpos" => {
             Some(PhpType::Mixed)
         }
         "spl_autoload_functions" => Some(PhpType::Array(Box::new(PhpType::Int))),
         "class_attribute_names" | "explode" | "fgetcsv" | "file" | "get_declared_classes"
-        | "get_declared_interfaces" | "get_declared_traits" | "glob" | "scandir"
-        | "spl_classes" | "str_split" | "sscanf" => {
+        | "fscanf" | "get_declared_interfaces" | "get_declared_traits" | "glob" | "hash_algos"
+        | "scandir" | "spl_classes" | "str_split" | "stream_get_filters" | "stream_get_transports"
+        | "stream_get_wrappers" | "sscanf" => {
             Some(PhpType::Array(Box::new(PhpType::Str)))
         }
         "class_attribute_args" => Some(PhpType::Array(Box::new(PhpType::Mixed))),
@@ -5267,23 +5324,37 @@ fn array_literal_element_type_for_ir(
         },
         ExprKind::ArrayLiteral(items) => array_literal_type_for_ir(ctx, items, item).codegen_repr(),
         ExprKind::ArrayLiteralAssoc(pairs) => assoc_array_literal_type_for_ir(ctx, pairs, item),
-        ExprKind::Variable(name) => ctx
-            .local_types
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| infer_expr_type_syntactic(item))
-            .codegen_repr(),
+        ExprKind::ConstRef(name) => ctx
+            .constant_value(name.as_str())
+            .map(|(_, ty)| ir_array_storage_type(ty))
+            .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item))),
+        ExprKind::Variable(name) => ir_array_storage_type(
+            ctx.local_types
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| infer_expr_type_syntactic(item)),
+        ),
         ExprKind::FunctionCall { name, .. } => {
             let canonical = name.as_str();
             if let Some(sig) = ctx.functions.get(canonical) {
-                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+                return ir_array_storage_type(sig.return_type.clone());
             }
             if let Some(sig) = ctx.extern_functions.get(canonical) {
-                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+                return ir_array_storage_type(sig.return_type.clone());
             }
-            infer_expr_type_syntactic(item).codegen_repr()
+            ir_array_storage_type(infer_expr_type_syntactic(item))
         }
-        _ => infer_expr_type_syntactic(item).codegen_repr(),
+        _ => ir_array_storage_type(infer_expr_type_syntactic(item)),
+    }
+}
+
+/// Returns the EIR array storage metadata type, preserving PHP resources.
+fn ir_array_storage_type(php_type: PhpType) -> PhpType {
+    let php_type = normalize_value_php_type(php_type);
+    if matches!(php_type, PhpType::Resource(_)) {
+        php_type
+    } else {
+        php_type.codegen_repr()
     }
 }
 
@@ -5356,31 +5427,35 @@ fn assoc_array_literal_value_type_for_ir(
 ) -> PhpType {
     match &value.kind {
         ExprKind::Null => PhpType::Mixed,
-        ExprKind::Variable(name) => ctx
-            .local_types
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| infer_expr_type_syntactic(value))
-            .codegen_repr(),
+        ExprKind::ConstRef(name) => ctx
+            .constant_value(name.as_str())
+            .map(|(_, ty)| ir_array_storage_type(ty))
+            .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(value))),
+        ExprKind::Variable(name) => ir_array_storage_type(
+            ctx.local_types
+                .get(name)
+                .cloned()
+                .unwrap_or_else(|| infer_expr_type_syntactic(value)),
+        ),
         ExprKind::FunctionCall { name, .. } => {
             let canonical = name.as_str();
             if let Some(sig) = ctx.functions.get(canonical) {
-                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+                return ir_array_storage_type(sig.return_type.clone());
             }
             if let Some(sig) = ctx.extern_functions.get(canonical) {
-                return normalize_value_php_type(sig.return_type.clone()).codegen_repr();
+                return ir_array_storage_type(sig.return_type.clone());
             }
-            infer_expr_type_syntactic(value).codegen_repr()
+            ir_array_storage_type(infer_expr_type_syntactic(value))
         }
         ExprKind::ArrayAccess { array, .. } => array_access_expr_value_type_for_ir(ctx, array)
-            .unwrap_or_else(|| infer_expr_type_syntactic(value).codegen_repr()),
+            .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(value))),
         ExprKind::PropertyAccess { object, property } => property_access_expr_type_for_ir(
             ctx,
             object,
             property,
         )
-        .unwrap_or_else(|| infer_expr_type_syntactic(value).codegen_repr()),
-        _ => infer_expr_type_syntactic(value).codegen_repr(),
+        .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(value))),
+        _ => ir_array_storage_type(infer_expr_type_syntactic(value)),
     }
 }
 
@@ -5400,8 +5475,12 @@ fn array_access_expr_value_type_for_ir(
     }?
     .codegen_repr();
     match array_ty {
-        PhpType::Array(elem_ty) => Some(normalize_value_php_type(*elem_ty).codegen_repr()),
-        PhpType::AssocArray { value, .. } => Some(normalize_value_php_type(*value).codegen_repr()),
+        PhpType::Array(elem_ty) => {
+            Some(array_access_element_result_type(normalize_value_php_type(*elem_ty).codegen_repr()))
+        }
+        PhpType::AssocArray { value, .. } => {
+            Some(array_access_element_result_type(normalize_value_php_type(*value).codegen_repr()))
+        }
         PhpType::Str => Some(PhpType::Str),
         PhpType::Mixed | PhpType::Union(_) => Some(PhpType::Mixed),
         _ => None,
@@ -5592,11 +5671,15 @@ fn array_access_result_type(
     match op {
         Op::StrCharAt => PhpType::Str,
         Op::ArrayGet => match ctx.builder.value_php_type(array).codegen_repr() {
-            PhpType::Array(elem_ty) => normalize_value_php_type(*elem_ty),
+            PhpType::Array(elem_ty) => {
+                array_access_element_result_type(normalize_value_php_type(*elem_ty))
+            }
             _ => fallback_expr_type(expr),
         },
         Op::HashGet => match ctx.builder.value_php_type(array).codegen_repr() {
-            PhpType::AssocArray { value, .. } => normalize_value_php_type(*value),
+            PhpType::AssocArray { value, .. } => {
+                array_access_element_result_type(normalize_value_php_type(*value))
+            }
             _ => fallback_expr_type(expr),
         },
         Op::BufferGet => match ctx.builder.value_php_type(array).codegen_repr() {
@@ -5608,6 +5691,15 @@ fn array_access_result_type(
             PhpType::Mixed | PhpType::Union(_) => PhpType::Mixed,
             _ => fallback_expr_type(expr),
         },
+    }
+}
+
+/// Returns the materialized result type for a PHP array read, including miss-capable int reads.
+fn array_access_element_result_type(element_ty: PhpType) -> PhpType {
+    if crate::codegen::sentinels::null_repr_is_tagged() && matches!(element_ty, PhpType::Int) {
+        PhpType::TaggedScalar
+    } else {
+        element_ty
     }
 }
 
@@ -6463,6 +6555,25 @@ fn lower_new_object(ctx: &mut LoweringContext<'_, '_>, class_name: &Name, args: 
         Some(Immediate::Data(data)),
         php_type,
         Op::ObjectNew.default_effects(),
+        Some(expr.span),
+    )
+}
+
+/// Lowers PHP `new $class(...)` into the generic dynamic-new EIR opcode.
+fn lower_new_dynamic(
+    ctx: &mut LoweringContext<'_, '_>,
+    name_expr: &Expr,
+    args: &[Expr],
+    expr: &Expr,
+) -> LoweredValue {
+    let mut operands = vec![lower_expr(ctx, name_expr).value];
+    operands.extend(lower_args(ctx, args));
+    ctx.emit_value(
+        Op::DynamicObjectNewMixed,
+        operands,
+        None,
+        PhpType::Mixed,
+        Op::DynamicObjectNewMixed.default_effects(),
         Some(expr.span),
     )
 }
@@ -7640,7 +7751,7 @@ fn coerce_to_string_at_span(
     }
     match value.ir_type {
         IrType::Str => value,
-        IrType::I64 => ctx.emit_value(Op::IToStr, vec![value.value], None, PhpType::Str, Op::IToStr.default_effects(), span),
+        IrType::I64 | IrType::TaggedScalar => ctx.emit_value(Op::IToStr, vec![value.value], None, PhpType::Str, Op::IToStr.default_effects(), span),
         IrType::F64 => ctx.emit_value(Op::FToStr, vec![value.value], None, PhpType::Str, Op::FToStr.default_effects(), span),
         _ => ctx.emit_value(Op::RuntimeCall, vec![value.value], None, PhpType::Str, Effects::all(), span),
     }

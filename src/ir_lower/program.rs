@@ -12,8 +12,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::codegen::platform::Target;
+use crate::codegen::RuntimeFeatures;
+use crate::intrinsics::IntrinsicCall;
 use crate::ir::{
-    validate_module, ExternDecl, ExternParamDecl, Immediate, IrType, Module, Op,
+    validate_module, ExternDecl, ExternParamDecl, Function, Immediate, IrType, Module, Op,
 };
 use crate::ir_lower::{function, LoweringError};
 use crate::parser::ast::{ClassMethod, ExprKind, Program, Stmt, StmtKind};
@@ -31,9 +33,11 @@ pub(crate) fn lower(
     populate_metadata(&mut module, program, check_result);
     lower_function_declarations(program, &mut module, check_result, &constants, &fiber_return_sigs);
     lower_class_like_methods(program, &mut module, check_result, &constants, &fiber_return_sigs);
+    lower_property_init_thunks(&mut module, check_result, &constants, &fiber_return_sigs);
     lower_builtin_reflection_methods(&mut module, check_result, &constants, &fiber_return_sigs);
     function::lower_main(program, &mut module, check_result, &constants, &fiber_return_sigs);
     lower_referenced_builtin_spl_methods(&mut module, check_result, &constants, &fiber_return_sigs);
+    include_lowered_runtime_features(&mut module);
     validate_module(&module)?;
     Ok(module)
 }
@@ -77,6 +81,85 @@ fn populate_metadata(module: &mut Module, program: &Program, check_result: &Chec
         .collect();
     module.required_runtime_features =
         crate::codegen::runtime_features_for_program_and_classes(program, &check_result.classes);
+}
+
+/// Adds optional runtime features referenced by synthetic or lowered EIR functions.
+fn include_lowered_runtime_features(module: &mut Module) {
+    let features = lowered_runtime_features(module);
+    module.required_runtime_features.regex |= features.regex;
+    module.required_runtime_features.descriptor_invoker |= features.descriptor_invoker;
+}
+
+/// Derives optional runtime features from the actual EIR instruction stream.
+fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
+    let mut features = RuntimeFeatures::none();
+    for function in all_lowered_functions(module) {
+        for inst in &function.instructions {
+            match inst.op {
+                Op::BuiltinCall if builtin_call_requires_regex(module, inst) => {
+                    features.regex = true;
+                }
+                Op::ExprCall | Op::CallableDescriptorInvoke => {
+                    features.descriptor_invoker = true;
+                }
+                _ => {}
+            }
+        }
+    }
+    features
+}
+
+/// Iterates every function-like body already materialized into the EIR module.
+fn all_lowered_functions(module: &Module) -> impl Iterator<Item = &Function> {
+    module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+}
+
+/// Returns true when a lowered builtin call references the optional regex runtime family.
+fn builtin_call_requires_regex(module: &Module, inst: &crate::ir::Instruction) -> bool {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return false;
+    };
+    let Some(name) = module.data.function_names.get(data.as_raw() as usize) else {
+        return false;
+    };
+    is_regex_builtin_name(name)
+}
+
+/// Returns true when a builtin name is lowered through the regex runtime helpers.
+fn is_regex_builtin_name(name: &str) -> bool {
+    matches!(
+        crate::names::php_symbol_key(name.trim_start_matches('\\')).as_str(),
+        "preg_match" | "preg_match_all" | "preg_replace" | "preg_replace_callback" | "preg_split"
+    )
+}
+
+/// Lowers per-class property-default thunks referenced by `_class_propinit_ptrs`.
+fn lower_property_init_thunks(
+    module: &mut Module,
+    check_result: &CheckResult,
+    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
+    fiber_return_sigs: &std::collections::HashMap<String, crate::types::FunctionSig>,
+) {
+    let mut classes = check_result.classes.iter().collect::<Vec<_>>();
+    classes.sort_by_key(|(_, class_info)| class_info.class_id);
+    for (class_name, class_info) in classes {
+        function::lower_property_init_thunk(
+            class_name,
+            class_info,
+            module,
+            check_result,
+            constants,
+            fiber_return_sigs,
+        );
+    }
 }
 
 /// Returns deterministic sorted keys for metadata placeholder tables.
@@ -501,6 +584,7 @@ fn lower_referenced_builtin_spl_methods(
         methods.dedup();
         methods.retain(|(class_name, method_key)| {
             !class_method_already_lowered(module, class_name, method_key, false)
+                && !runtime_intrinsic_method_has_wrapper(class_name, method_key, false)
         });
         if methods.is_empty() {
             break;
@@ -556,6 +640,18 @@ fn referenced_builtin_spl_methods(module: &Module) -> Vec<(String, String)> {
                         }
                         push_builtin_spl_metadata_methods(&mut methods, module, fallback_class);
                         push_builtin_spl_metadata_methods(&mut methods, module, required_parent);
+                    }
+                }
+                Op::DynamicObjectNewMixed => {
+                    let construct_key = php_method_key("__construct");
+                    for class_name in module.class_infos.keys() {
+                        push_supported_builtin_spl_method_for_receiver(
+                            &mut methods,
+                            module,
+                            class_name,
+                            &construct_key,
+                        );
+                        push_builtin_spl_metadata_methods(&mut methods, module, class_name);
                     }
                 }
                 Op::MethodCall | Op::NullsafeMethodCall => {
@@ -1225,6 +1321,16 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
     }
 }
 
+/// Returns true when this SPL method is implemented by an intrinsic runtime wrapper.
+fn runtime_intrinsic_method_has_wrapper(class_name: &str, method_key: &str, is_static: bool) -> bool {
+    let intrinsic = if is_static {
+        IntrinsicCall::static_method(class_name, method_key)
+    } else {
+        IntrinsicCall::instance_method(class_name, method_key)
+    };
+    intrinsic.is_some_and(|intrinsic| intrinsic.runtime_helper().is_some())
+}
+
 /// Lowers one supported builtin SPL method body if it has not already been emitted.
 fn lower_builtin_spl_method(
     class_name: &str,
@@ -1236,6 +1342,7 @@ fn lower_builtin_spl_method(
 ) {
     if class_method_already_lowered(module, class_name, method_key, false)
         || !is_supported_builtin_spl_method(class_name, method_key)
+        || runtime_intrinsic_method_has_wrapper(class_name, method_key, false)
     {
         return;
     }

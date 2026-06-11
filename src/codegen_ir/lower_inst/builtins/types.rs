@@ -18,6 +18,7 @@ use crate::names::php_symbol_key;
 use crate::types::{ClassInfo, PhpType};
 
 use super::super::super::context::FunctionContext;
+use super::super::predicates;
 use super::{expect_operand, load_value_to_first_int_arg, store_if_result};
 
 /// Lowers `settype($local, "type")` by mutating the resolved local slot and returning true.
@@ -34,6 +35,24 @@ pub(super) fn lower_settype(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     store_settype_local_result(ctx, slot, &target_ty)?;
     emit_bool_result(ctx, true);
     store_if_result(ctx, inst)
+}
+
+/// Lowers the defensive `class_alias()` fallback that remains after AOT alias extraction.
+pub(super) fn lower_class_alias(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count_between(inst, "class_alias", 2, 3)?;
+    emit_bool_result(ctx, false);
+    store_if_result(ctx, inst)
+}
+
+/// Rejects `unset()` calls that were not converted into direct EIR unbind operations.
+pub(super) fn lower_unset_builtin(
+    _ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    Err(CodegenIrError::unsupported(format!(
+        "unset target shape with {} lowered operands",
+        inst.operands.len()
+    )))
 }
 
 /// Returns the concrete PHP type requested by a supported `settype()` type name.
@@ -67,7 +86,13 @@ fn emit_settype_conversion(
 
 /// Emits PHP integer conversion for a `settype(..., "int"|"integer")` mutation.
 fn emit_settype_int_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
-    match ctx.raw_value_php_type(value)?.codegen_repr() {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        emit_resource_display_id_to_int(ctx);
+        return Ok(());
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Int | PhpType::Bool => {
             ctx.load_value_to_result(value)?;
         }
@@ -89,10 +114,6 @@ fn emit_settype_int_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) ->
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             super::super::predicates::emit_array_truthiness(ctx, value)?;
         }
-        PhpType::Resource(_) => {
-            ctx.load_value_to_result(value)?;
-            emit_resource_display_id_to_int(ctx);
-        }
         _ => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
         }
@@ -102,7 +123,14 @@ fn emit_settype_int_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) ->
 
 /// Emits PHP float conversion for a `settype(..., "float"|"double")` mutation.
 fn emit_settype_float_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
-    match ctx.raw_value_php_type(value)?.codegen_repr() {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        emit_resource_display_id_to_int(ctx);
+        abi::emit_int_result_to_float_result(ctx.emitter);
+        return Ok(());
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Float => {
             ctx.load_value_to_result(value)?;
         }
@@ -126,11 +154,6 @@ fn emit_settype_float_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) 
             super::super::predicates::emit_array_truthiness(ctx, value)?;
             abi::emit_int_result_to_float_result(ctx.emitter);
         }
-        PhpType::Resource(_) => {
-            ctx.load_value_to_result(value)?;
-            emit_resource_display_id_to_int(ctx);
-            abi::emit_int_result_to_float_result(ctx.emitter);
-        }
         _ => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
             abi::emit_int_result_to_float_result(ctx.emitter);
@@ -141,7 +164,13 @@ fn emit_settype_float_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) 
 
 /// Emits PHP string conversion for a `settype(..., "string")` mutation.
 fn emit_settype_string_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
-    match ctx.raw_value_php_type(value)?.codegen_repr() {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        ctx.load_value_to_result(value)?;
+        abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
+        return Ok(());
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Str => {
             ctx.load_value_to_result(value)?;
         }
@@ -167,10 +196,6 @@ fn emit_settype_string_conversion(ctx: &mut FunctionContext<'_>, value: ValueId)
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             emit_string_result(ctx, b"Array");
         }
-        PhpType::Resource(_) => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_resource_to_string");
-        }
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "settype string conversion from PHP type {:?}",
@@ -183,7 +208,12 @@ fn emit_settype_string_conversion(ctx: &mut FunctionContext<'_>, value: ValueId)
 
 /// Emits PHP boolean conversion for a `settype(..., "bool"|"boolean")` mutation.
 fn emit_settype_bool_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
-    match ctx.raw_value_php_type(value)?.codegen_repr() {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if matches!(raw_ty, PhpType::Resource(_)) {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+        return Ok(());
+    }
+    match raw_ty.codegen_repr() {
         PhpType::Bool | PhpType::Int => {
             ctx.load_value_to_result(value)?;
             emit_int_result_nonzero_bool(ctx);
@@ -204,9 +234,6 @@ fn emit_settype_bool_conversion(ctx: &mut FunctionContext<'_>, value: ValueId) -
         }
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             super::super::predicates::emit_array_truthiness(ctx, value)?;
-        }
-        PhpType::Resource(_) => {
-            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
         }
         _ => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
@@ -366,6 +393,42 @@ pub(super) fn lower_get_declared_names(
     super::ensure_arg_count(inst, name, 0)?;
     let names = declared_names(ctx, name)?;
     emit_string_array(ctx, &names)?;
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `is_resource(value)` for static resources and boxed Mixed resource cells.
+pub(super) fn lower_is_resource(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    super::ensure_arg_count(inst, "is_resource", 1)?;
+    let value = expect_operand(inst, 0)?;
+    match ctx.raw_value_php_type(value)? {
+        PhpType::Resource(_) => emit_bool_result(ctx, true),
+        PhpType::Mixed | PhpType::Union(_) => predicates::emit_mixed_tag_eq(ctx, value, 9)?,
+        _ => emit_bool_result(ctx, false),
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `get_resource_type(resource)` to elephc's current resource type label.
+pub(super) fn lower_get_resource_type(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "get_resource_type", 1)?;
+    let value = expect_operand(inst, 0)?;
+    ctx.load_value_to_result(value)?;
+    emit_string_result(ctx, b"stream");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `get_resource_id(resource)` by unboxing the native handle and making it one-based.
+pub(super) fn lower_get_resource_id(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "get_resource_id", 1)?;
+    let value = expect_operand(inst, 0)?;
+    super::io::load_stream_fd_to_result(ctx, value, "get_resource_id")?;
+    emit_resource_display_id_to_int(ctx);
     store_if_result(ctx, inst)
 }
 

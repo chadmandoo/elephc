@@ -32,7 +32,10 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
             Ok(())
         }
         Terminator::Return { value: Some(value) } => {
-            ctx.load_value_to_result(*value)?;
+            let source_ty = ctx.load_value_to_result(*value)?;
+            if ctx.function.return_php_type.codegen_repr() == PhpType::TaggedScalar {
+                super::lower_inst::coerce_loaded_value_to_tagged_scalar(ctx, &source_ty)?;
+            }
             jump_to_function_epilogue(ctx)?;
             Ok(())
         }
@@ -317,6 +320,13 @@ fn pop_result_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        PhpType::TaggedScalar => {
+            abi::emit_pop_reg_pair(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+            );
         }
         PhpType::Void | PhpType::Never => {}
     }

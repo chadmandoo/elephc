@@ -54,8 +54,9 @@ Some tests are marked `#[ignore]` because they require external libraries (e.g.,
 The full test suite is slow because each codegen test spawns `as` + `ld` + runs the binary. To avoid waiting several minutes on every change:
 
 1. **While developing a feature**: run only the tests for that feature (`cargo test test_my_feature`)
-2. **When the feature is complete**: run the full suite once (`cargo test`) to check for regressions
-3. **PHP cross-check**: opt-in via `ELEPHC_PHP_CHECK=1 cargo test` — verifies output matches PHP interpreter
+2. **Scope to a single test binary**: prefer `cargo test --test codegen_tests <filter>` over a bare `cargo test <filter>`. A bare filter rebuilds and links all six test binaries every cycle (~2.5s of wasted link time); `--test <binary>` links only the one you need. Most codegen work lives in `codegen_tests`.
+3. **When the feature is complete**: run the full suite once (`cargo test`) to check for regressions
+4. **PHP cross-check**: opt-in via `ELEPHC_PHP_CHECK=1 cargo test` — verifies output matches PHP interpreter
 
 ### Pre-commit verification
 
@@ -335,7 +336,7 @@ Adding or updating function docblocks must not change code behavior. Do not alte
 
 ### Assembly comment policy
 
-**Every `emitter.instruction(...)` call MUST have an inline `//` comment** explaining what the assembly instruction does. This is mandatory — the codebase is educational and every assembly line must be understandable by someone learning how compilers work.
+**Every `emitter.instruction(...)` call MUST have an inline `//` comment** explaining what the assembly instruction does. This is mandatory — the generated assembly is meant to be read, and every assembly line must be understandable by someone learning how compilers work.
 
 Rules:
 

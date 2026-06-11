@@ -19,7 +19,6 @@ use crate::codegen::{
 use crate::codegen::context::TRY_HANDLER_SLOT_SIZE;
 use crate::codegen::platform::Arch;
 use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op, Terminator, ValueDef};
-use crate::names::function_symbol;
 use crate::types::PhpType;
 
 use super::context::FunctionContext;
@@ -98,12 +97,6 @@ pub(super) fn emit_main_prologue(ctx: &mut FunctionContext<'_>) {
     store_argv_local_if_present(ctx);
     zero_initialize_main_cleanup_locals(ctx);
     zero_initialize_ref_cell_owner_locals(ctx);
-}
-
-/// Emits a direct-callable user function prologue and stores incoming params.
-pub(super) fn emit_function_prologue(ctx: &mut FunctionContext<'_>) -> crate::codegen_ir::Result<()> {
-    let label = function_symbol(&ctx.function.name);
-    emit_function_prologue_with_label(ctx, &label)
 }
 
 /// Emits a callable function prologue using an already-resolved entry label.
@@ -489,6 +482,13 @@ fn push_return_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
         }
+        PhpType::TaggedScalar => {
+            abi::emit_push_reg_pair(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+            );
+        }
         _ => {
             abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
         }
@@ -504,6 +504,13 @@ fn pop_return_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
+        }
+        PhpType::TaggedScalar => {
+            abi::emit_pop_reg_pair(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+            );
         }
         _ => {
             abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));

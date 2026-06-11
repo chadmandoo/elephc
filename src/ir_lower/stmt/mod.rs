@@ -203,6 +203,7 @@ fn expr_statement_result_can_own_storage(
                 | Op::ArrayToHash
                 | Op::ObjectNew
                 | Op::DynamicObjectNew
+                | Op::DynamicObjectNewMixed
                 | Op::ClosureNew
                 | Op::FirstClassCallableNew
                 | Op::CallableArrayNew
@@ -2331,6 +2332,7 @@ fn coerce_to_return_type(
         IrType::I64 => coerce_to_int(ctx, value, span),
         IrType::F64 => coerce_to_float(ctx, value, span),
         IrType::Str => coerce_to_string(ctx, value, span),
+        IrType::TaggedScalar => coerce_to_tagged_scalar(ctx, value, span),
         IrType::Heap(_) if ctx.return_php_type.codegen_repr() == PhpType::Mixed => {
             ctx.emit_value(
                 Op::MixedBox,
@@ -2351,6 +2353,35 @@ fn coerce_to_return_type(
         ),
         IrType::Void => value,
     }
+}
+
+/// Coerces an integer-or-null value into the two-word tagged-scalar return shape.
+fn coerce_to_tagged_scalar(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Option<Span>,
+) -> LoweredValue {
+    if value.ir_type == IrType::TaggedScalar {
+        return value;
+    }
+    if matches!(ctx.builder.value_php_type(value.value).codegen_repr(), PhpType::Void) {
+        return ctx.emit_value(
+            Op::ConstNull,
+            Vec::new(),
+            None,
+            PhpType::TaggedScalar,
+            Op::ConstNull.default_effects(),
+            span,
+        );
+    }
+    ctx.emit_value(
+        Op::RuntimeCall,
+        vec![value.value],
+        None,
+        PhpType::TaggedScalar,
+        effects_lookup::runtime_effects(),
+        span,
+    )
 }
 
 /// Widens returned container payload storage to the current function return contract.
@@ -2466,7 +2497,7 @@ fn coerce_to_string(
 ) -> LoweredValue {
     match value.ir_type {
         IrType::Str => value,
-        IrType::I64 => ctx.emit_value(
+        IrType::I64 | IrType::TaggedScalar => ctx.emit_value(
             Op::IToStr,
             vec![value.value],
             None,

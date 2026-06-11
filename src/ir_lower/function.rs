@@ -18,8 +18,9 @@ use crate::ir_lower::context::{
     StaticCallableBinding,
 };
 use crate::ir_lower::effects_lookup;
-use crate::parser::ast::{ExprKind, Program, Stmt, StmtKind, TypeExpr};
-use crate::types::{CheckResult, FunctionSig, PackedClassInfo, PhpType, TypeEnv};
+use crate::parser::ast::{Expr, ExprKind, Program, Stmt, StmtKind, TypeExpr};
+use crate::span::Span;
+use crate::types::{CheckResult, ClassInfo, FunctionSig, PackedClassInfo, PhpType, TypeEnv};
 
 /// AST parameter tuple shape used by function, method, and closure declarations.
 type AstParams = [(String, Option<TypeExpr>, Option<crate::parser::ast::Expr>, bool)];
@@ -304,6 +305,103 @@ pub(crate) fn lower_class_method(
     );
     add_closures(module, closures);
     module.class_methods.push(function);
+}
+
+/// Lowers a synthetic `_class_propinit_<id>` function for dynamic by-name allocation.
+pub(crate) fn lower_property_init_thunk(
+    class_name: &str,
+    class_info: &ClassInfo,
+    module: &mut Module,
+    check_result: &CheckResult,
+    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
+    fiber_return_sigs: &std::collections::HashMap<String, FunctionSig>,
+) {
+    if !class_info.defaults.iter().any(|default| default.is_some()) {
+        return;
+    }
+    let body = property_init_body(class_info);
+    let function_name = format!("_class_propinit_{}", class_info.class_id);
+    let this_type = PhpType::Object(class_name.to_string());
+    let mut function = Function::new(function_name.clone(), IrType::Void, PhpType::Void);
+    function.params.push(FunctionParam {
+        name: "this".to_string(),
+        ir_type: value_ir_type(&this_type),
+        php_type: this_type.clone(),
+        by_ref: false,
+        variadic: false,
+    });
+    let sig = FunctionSig {
+        params: vec![("this".to_string(), this_type.clone())],
+        defaults: vec![None],
+        return_type: PhpType::Void,
+        declared_return: false,
+        ref_params: vec![false],
+        declared_params: vec![false],
+        variadic: None,
+        deprecation: None,
+    };
+    function.source_signature = Some(source_signature(&function_name, &sig));
+    function.signature = Some(eir_runtime_metadata_signature(&sig));
+    let mut env = TypeEnv::new();
+    env.insert("this".to_string(), this_type.clone());
+    let params = vec![("this".to_string(), this_type)];
+    let closures = lower_body_into_function(
+        &mut function,
+        &mut module.data,
+        &body,
+        env,
+        check_result.global_env.clone(),
+        &check_result.functions,
+        &check_result.extern_functions,
+        &check_result.callable_param_sigs,
+        fiber_return_sigs,
+        &check_result.classes,
+        &check_result.enums,
+        &check_result.interfaces,
+        &check_result.packed_classes,
+        constants,
+        Some(class_name.to_string()),
+        PhpType::Void,
+        &params,
+        None,
+        false,
+        std::collections::HashSet::new(),
+    );
+    add_closures(module, closures);
+    module.add_function(function);
+}
+
+/// Builds `$this->property = <default>;` statements for property-default initialization.
+fn property_init_body(class_info: &ClassInfo) -> Vec<Stmt> {
+    let span = Span::dummy();
+    class_info
+        .defaults
+        .iter()
+        .enumerate()
+        .filter_map(|(index, default)| {
+            let default = default.as_ref()?;
+            let property = class_info.properties.get(index)?.0.clone();
+            Some(Stmt::new(
+                StmtKind::ExprStmt(Expr::new(
+                    ExprKind::Assignment {
+                        target: Box::new(Expr::new(
+                            ExprKind::PropertyAccess {
+                                object: Box::new(Expr::new(ExprKind::This, span)),
+                                property,
+                            },
+                            span,
+                        )),
+                        value: Box::new(default.clone()),
+                        result_target: None,
+                        prelude: Vec::new(),
+                        conditional_value_temp: None,
+                    },
+                    span,
+                )),
+                span,
+            ))
+        })
+        .collect()
 }
 
 /// Lowers one closure literal into an EIR function plus any nested closure functions.
@@ -607,6 +705,19 @@ fn emit_default_return_value(ctx: &mut LoweringContext<'_, '_>) -> crate::ir::Va
                 )
                 .expect("const_str produces a value")
         }
+        IrType::TaggedScalar => ctx
+            .builder
+            .emit_with_effects(
+                Op::ConstNull,
+                Vec::new(),
+                None,
+                IrType::TaggedScalar,
+                PhpType::TaggedScalar,
+                Ownership::NonHeap,
+                Op::ConstNull.default_effects(),
+                None,
+            )
+            .expect("const_null produces a tagged scalar value"),
         IrType::Heap(_) => {
             let lowered = ctx.emit_value(
                 Op::RuntimeCall,

@@ -40,6 +40,7 @@ pub(super) fn lower_var_dump(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
     let ty = loaded_php_semantic_type(ctx, value)?;
     match &ty {
         PhpType::Int => emit_var_dump_int(ctx),
+        PhpType::TaggedScalar => emit_var_dump_tagged_scalar(ctx),
         PhpType::Float => emit_var_dump_float(ctx),
         PhpType::Str => emit_var_dump_string(ctx),
         PhpType::Bool => emit_var_dump_bool(ctx),
@@ -90,6 +91,7 @@ fn emit_print_r_loaded_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Res
             emit_write_literal(ctx, b"Array\n");
             Ok(())
         }
+        PhpType::TaggedScalar => emit_print_r_tagged_scalar(ctx),
         PhpType::Int
         | PhpType::Float
         | PhpType::Str
@@ -107,6 +109,15 @@ fn emit_print_r_loaded_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> Res
             other
         ))),
     }
+}
+
+/// Emits `print_r` output for a tagged scalar, matching PHP's empty output for null.
+fn emit_print_r_tagged_scalar(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    let skip_label = ctx.next_label("print_r_skip_tagged_null");
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &skip_label);
+    abi::emit_write_stdout(ctx.emitter, &PhpType::Int);
+    ctx.emitter.label(&skip_label);
+    Ok(())
 }
 
 /// Emits `var_dump` output for a boxed Mixed payload in the integer result register.
@@ -174,24 +185,47 @@ fn emit_var_dump_mixed(ctx: &mut FunctionContext<'_>) -> Result<()> {
 
 /// Emits `var_dump` output for an integer payload in the integer result register.
 fn emit_var_dump_int(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    if crate::codegen::sentinels::null_repr_is_tagged() {
+        emit_var_dump_int_payload(ctx);
+        return Ok(());
+    }
     let not_null = ctx.next_label("var_dump_not_null");
     let done = ctx.next_label("var_dump_done");
     let result_reg = abi::int_result_reg(ctx.emitter);
     let scratch_reg = abi::symbol_scratch_reg(ctx.emitter);
-    abi::emit_load_int_immediate(ctx.emitter, scratch_reg, 0x7fff_ffff_ffff_fffe_u64 as i64);
+    abi::emit_load_int_immediate(ctx.emitter, scratch_reg, crate::codegen::sentinels::NULL_SENTINEL);
     emit_compare_regs(ctx, result_reg, scratch_reg);
     emit_branch_if_ne(ctx, &not_null);
     emit_var_dump_null(ctx);
     abi::emit_jump(ctx.emitter, &done);
     ctx.emitter.label(&not_null);
+    emit_var_dump_int_payload(ctx);
+    ctx.emitter.label(&done);
+    Ok(())
+}
+
+/// Emits `var_dump` output for a tagged scalar payload/tag pair in the result registers.
+fn emit_var_dump_tagged_scalar(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    let null_case = ctx.next_label("var_dump_tagged_null");
+    let done = ctx.next_label("var_dump_tagged_done");
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &null_case);
+    emit_var_dump_int_payload(ctx);
+    abi::emit_jump(ctx.emitter, &done);
+    ctx.emitter.label(&null_case);
+    emit_var_dump_null(ctx);
+    ctx.emitter.label(&done);
+    Ok(())
+}
+
+/// Emits `int(N)` for the integer payload in the result register without a null check.
+fn emit_var_dump_int_payload(ctx: &mut FunctionContext<'_>) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
     abi::emit_push_reg(ctx.emitter, result_reg);
     emit_write_literal(ctx, b"int(");
     abi::emit_pop_reg(ctx.emitter, result_reg);
     abi::emit_call_label(ctx.emitter, "__rt_itoa");
     emit_write_current_string(ctx);
     emit_write_literal(ctx, b")\n");
-    ctx.emitter.label(&done);
-    Ok(())
 }
 
 /// Emits `var_dump` output for a float payload in the floating result register.

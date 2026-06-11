@@ -20,15 +20,32 @@ pub(super) fn map_syscall(macos_num: u32) -> u32 {
         10 => 35,
         12 => 49,
         15 => 52,
+        29 => 207,
+        30 => 202,
+        31 => 205,
+        32 => 204,
         33 => 48,
+        54 => 29,
+        92 => 25,
+        93 => 72,
+        97 => 198,
+        98 => 203,
+        104 => 200,
+        105 => 208,
+        106 => 201,
         116 => 169,
         128 => 38,
+        133 => 206,
+        134 => 210,
+        135 => 199,
         136 => 34,
         137 => 35,
+        160 => 160,
         199 => 62,
         338 => 79,
         339 => 80,
         340 => 79,
+        345 => 43,
         _ => panic!(
             "unknown macOS syscall number {} — cannot map to Linux",
             macos_num
@@ -322,21 +339,8 @@ pub(super) fn parse_syscall_mov(trimmed: &str) -> Option<u32> {
     num_str.parse::<u32>().ok()
 }
 
-/// Remaps macOS-specific CommonCrypto symbol names to their portable Linux equivalents.
-/// CC_MD5 → MD5, CC_SHA1 → SHA1, CC_SHA256 → SHA256.
-/// Other symbols are returned unchanged.
-#[allow(dead_code)]
-fn remap_symbol(name: &str) -> &str {
-    match name {
-        "CC_MD5" => "MD5",
-        "CC_SHA1" => "SHA1",
-        "CC_SHA256" => "SHA256",
-        _ => name,
-    }
-}
-
 /// Transforms a macOS `bl _Symbol` call to Linux syntax.
-/// Strips the leading underscore from known C symbols and remaps CryptoCommon symbols.
+/// Strips the leading underscore from known C symbols.
 /// Returns None if the line is not a macOS-style C function call.
 #[allow(dead_code)]
 pub(super) fn transform_c_call(trimmed: &str) -> Option<String> {
@@ -345,10 +349,6 @@ pub(super) fn transform_c_call(trimmed: &str) -> Option<String> {
         return None;
     }
     let func_name = rest.split_whitespace().next().unwrap_or(rest);
-    let remapped = remap_symbol(func_name);
-    if remapped != func_name {
-        return Some(format!("bl {}", remapped));
-    }
     if is_c_symbol(func_name) {
         return Some(format!("bl {}", rest));
     }

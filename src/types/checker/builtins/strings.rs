@@ -137,6 +137,36 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Str))
         }
+        "long2ip" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(span, "long2ip() takes exactly 1 argument"));
+            }
+            checker.infer_type(&args[0], env)?;
+            Ok(Some(PhpType::Str))
+        }
+        "ip2long" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(span, "ip2long() takes exactly 1 argument"));
+            }
+            checker.infer_type(&args[0], env)?;
+            Ok(Some(checker.normalize_union_type(vec![
+                PhpType::Int,
+                PhpType::Bool,
+            ])))
+        }
+        "inet_ntop" | "inet_pton" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() takes exactly 1 argument", name),
+                ));
+            }
+            checker.infer_type(&args[0], env)?;
+            Ok(Some(checker.normalize_union_type(vec![
+                PhpType::Str,
+                PhpType::Bool,
+            ])))
+        }
         "hex2bin" => {
             if args.len() != 1 {
                 return Err(CompileError::new(span, "hex2bin() takes exactly 1 argument"));
@@ -250,15 +280,108 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Int))
         }
-        "hash" => {
+        "vsprintf" | "vprintf" => {
             if args.len() != 2 {
-                return Err(CompileError::new(span, "hash() takes exactly 2 arguments"));
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() takes exactly 2 arguments (format, values)", name),
+                ));
             }
             for arg in args {
                 checker.infer_type(arg, env)?;
             }
-            checker.require_linux_builtin_library("crypto");
+            // vsprintf returns the formatted string; vprintf prints it and
+            // returns the number of bytes written.
+            Ok(Some(if name == "vsprintf" {
+                PhpType::Str
+            } else {
+                PhpType::Int
+            }))
+        }
+        "hash" => {
+            if args.len() < 2 || args.len() > 3 {
+                return Err(CompileError::new(span, "hash() takes 2 or 3 arguments"));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            // hash() routes through the elephc-crypto staticlib (full algorithm
+            // set, raw $binary output, catchable ValueError) on every target.
+            checker.require_builtin_library("elephc_crypto");
             Ok(Some(PhpType::Str))
+        }
+        "hash_hmac" => {
+            if args.len() < 3 || args.len() > 4 {
+                return Err(CompileError::new(span, "hash_hmac() takes 3 or 4 arguments"));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            // hash_hmac() routes through the elephc-crypto staticlib's
+            // elephc_crypto_hmac entry point (raw $binary output, catchable
+            // ValueError for unknown algo or non-crypto checksum) on every target.
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Str))
+        }
+        "hash_equals" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(
+                    span,
+                    "hash_equals() takes exactly 2 arguments",
+                ));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            // Pure timing-safe byte comparison — no crypto library required.
+            Ok(Some(PhpType::Bool))
+        }
+        "hash_algos" => {
+            if !args.is_empty() {
+                return Err(CompileError::new(span, "hash_algos() takes no arguments"));
+            }
+            // Returns the supported-algorithm name list; pure, no crypto library.
+            Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
+        }
+        "hash_init" => {
+            // HASH_HMAC streaming mode (flags/key) is not supported; use hash_hmac().
+            if args.len() != 1 {
+                return Err(CompileError::new(
+                    span,
+                    "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
+                ));
+            }
+            checker.infer_type(&args[0], env)?;
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Mixed))
+        }
+        "hash_update" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(span, "hash_update() takes exactly 2 arguments"));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Bool))
+        }
+        "hash_final" => {
+            if args.is_empty() || args.len() > 2 {
+                return Err(CompileError::new(span, "hash_final() takes 1 or 2 arguments"));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Str))
+        }
+        "hash_copy" => {
+            if args.len() != 1 {
+                return Err(CompileError::new(span, "hash_copy() takes exactly 1 argument"));
+            }
+            checker.infer_type(&args[0], env)?;
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Mixed))
         }
         "sscanf" => {
             if args.len() < 2 {
@@ -270,15 +393,32 @@ pub(super) fn check_builtin(
             Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
         }
         "md5" | "sha1" => {
+            if args.is_empty() || args.len() > 2 {
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() takes 1 or 2 arguments", name),
+                ));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            // md5()/sha1() route through the elephc-crypto staticlib (same path as
+            // hash()), so they honor the $binary flag and no longer depend on the
+            // system crypto library.
+            checker.require_builtin_library("elephc_crypto");
+            Ok(Some(PhpType::Str))
+        }
+        "crc32" => {
+            // crc32() is a pure table-free computation in __rt_crc32; unlike the
+            // md5/sha1 digests it needs no system crypto library and returns int.
             if args.len() != 1 {
                 return Err(CompileError::new(
                     span,
-                    &format!("{}() takes exactly 1 argument", name),
+                    "crc32() takes exactly 1 argument",
                 ));
             }
             checker.infer_type(&args[0], env)?;
-            checker.require_linux_builtin_library("crypto");
-            Ok(Some(PhpType::Str))
+            Ok(Some(PhpType::Int))
         }
         "htmlspecialchars" | "htmlentities" | "html_entity_decode" | "urlencode"
         | "urldecode" | "rawurlencode" | "rawurldecode" | "base64_encode"
@@ -291,6 +431,25 @@ pub(super) fn check_builtin(
             }
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Str))
+        }
+        "gzcompress" | "gzuncompress" | "gzdeflate" | "gzinflate" => {
+            if args.is_empty() || args.len() > 2 {
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() expects 1 or 2 arguments", name),
+                ));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            checker.require_builtin_library("z");
+            // gzcompress/gzdeflate always produce a string; the decompressors
+            // return false on a zlib error.
+            if name == "gzcompress" || name == "gzdeflate" {
+                Ok(Some(PhpType::Str))
+            } else {
+                Ok(Some(checker.normalize_union_type(vec![PhpType::Str, PhpType::Bool])))
+            }
         }
         "ctype_alpha" | "ctype_digit" | "ctype_alnum" | "ctype_space" => {
             if args.len() != 1 {

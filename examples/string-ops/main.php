@@ -41,6 +41,11 @@ echo "strrev: " . strrev("desserts") . "\n";
 echo "grapheme_strrev: " . grapheme_strrev("A\u{0065}\u{0301}\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB}") . "\n";
 echo "str_replace: " . str_replace("World", "PHP", $str) . "\n";
 
+// Wrapping (word-aware; cut_long_words breaks over-long words)
+echo "\n--- Wrap ---\n";
+echo "wordwrap(15):\n" . wordwrap("The quick brown fox jumped", 15) . "\n";
+echo "wordwrap(8, cut):\n" . wordwrap("A verylongword", 8, "\n", true) . "\n";
+
 // Split and join
 echo "\n--- Split/Join ---\n";
 $csv = "one,two,three";
@@ -69,11 +74,33 @@ echo "\n--- Formatting ---\n";
 echo sprintf("Name: %s, Age: %d", "Alice", 30) . "\n";
 echo sprintf("Hex: %x", 255) . "\n";
 
-// Hashing
+// Hashing — hash() exposes the full elephc-crypto algorithm set
 echo "\n--- Hashing ---\n";
 echo "md5('hello'): " . md5("hello") . "\n";
 echo "sha1('hello'): " . sha1("hello") . "\n";
 echo "hash('sha1', 'hello'): " . hash("sha1", "hello") . "\n";
+echo "hash('sha256', 'hello'): " . hash("sha256", "hello") . "\n";
+echo "hash('sha512', 'hello'): " . hash("sha512", "hello") . "\n";
+echo "hash('sha3-256', 'hello'): " . hash("sha3-256", "hello") . "\n";
+echo "hash('crc32b', 'hello'): " . hash("crc32b", "hello") . "\n";
+// $binary=true returns the raw digest bytes; bin2hex renders them readable
+echo "raw sha256 length: " . strlen(hash("sha256", "hello", true)) . "\n";
+echo "raw sha256 hex: " . bin2hex(hash("sha256", "hello", true)) . "\n";
+// hash_hmac() computes a keyed message authentication code
+echo "hmac sha256: " . hash_hmac("sha256", "what do ya want for nothing?", "Jefe") . "\n";
+echo "hmac sha1: " . hash_hmac("sha1", "hello", "key") . "\n";
+// An unknown algorithm throws a catchable \ValueError
+try {
+    hash("definitely-not-an-algo", "hello");
+} catch (\ValueError $e) {
+    echo "caught: " . $e->getMessage() . "\n";
+}
+// hash_hmac() additionally rejects non-cryptographic checksums with \ValueError
+try {
+    hash_hmac("crc32b", "hello", "key");
+} catch (\ValueError $e) {
+    echo "caught: " . $e->getMessage() . "\n";
+}
 
 // Encoding
 echo "\n--- Encoding ---\n";

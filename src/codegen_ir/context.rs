@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 use crate::codegen::{abi, emit_box_current_owned_value_as_mixed, emit_box_current_value_as_mixed};
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
+use crate::codegen::platform::Arch;
 use crate::ir::{BlockId, DataId, Function, LocalSlotId, Module, Op, Ownership, ValueDef, ValueId};
 use crate::types::PhpType;
 
@@ -208,7 +209,7 @@ impl<'a> FunctionContext<'a> {
     pub(super) fn load_value_to_result(&mut self, value: ValueId) -> Result<PhpType> {
         let ty = self.value_php_type(value)?;
         let offset = self.value_offset(value)?;
-        abi::emit_load(self.emitter, &ty, offset);
+        abi::emit_load(self.emitter, &ty.codegen_repr(), offset);
         Ok(ty)
     }
 
@@ -247,7 +248,7 @@ impl<'a> FunctionContext<'a> {
         }
         let ty = self.local_php_type(slot)?;
         let offset = self.local_offset(slot)?;
-        abi::emit_load(self.emitter, &ty, offset);
+        abi::emit_load(self.emitter, &ty.codegen_repr(), offset);
         Ok(ty)
     }
 
@@ -266,6 +267,15 @@ impl<'a> FunctionContext<'a> {
             }
             PhpType::Float => {
                 abi::emit_load_from_address(self.emitter, abi::float_result_reg(self.emitter), pointer_reg, 0);
+            }
+            PhpType::TaggedScalar => {
+                abi::emit_load_from_address(self.emitter, abi::int_result_reg(self.emitter), pointer_reg, 0);
+                abi::emit_load_from_address(
+                    self.emitter,
+                    crate::codegen::sentinels::tagged_scalar_tag_reg(self.emitter),
+                    pointer_reg,
+                    8,
+                );
             }
             _ => {
                 abi::emit_load_from_address(self.emitter, abi::int_result_reg(self.emitter), pointer_reg, 0);
@@ -296,6 +306,7 @@ impl<'a> FunctionContext<'a> {
                 emit_box_current_value_as_mixed(self.emitter, &source_ty);
             }
         }
+        coerce_current_result_for_target_store(self.emitter, &source_ty, &target_ty)?;
         let offset = self.local_offset(slot)?;
         self.store_current_result_at_offset(&target_ty, offset);
         Ok(())
@@ -313,6 +324,7 @@ impl<'a> FunctionContext<'a> {
                 emit_box_current_value_as_mixed(self.emitter, &source_ty);
             }
         }
+        coerce_current_result_for_target_store(self.emitter, &source_ty, &target_ty)?;
         let offset = self.local_offset(slot)?;
         let pointer_reg = abi::symbol_scratch_reg(self.emitter);
         abi::load_at_offset(self.emitter, pointer_reg, offset);
@@ -325,6 +337,15 @@ impl<'a> FunctionContext<'a> {
             PhpType::Float => {
                 abi::emit_store_to_address(self.emitter, abi::float_result_reg(self.emitter), pointer_reg, 0);
             }
+            PhpType::TaggedScalar => {
+                abi::emit_store_to_address(self.emitter, abi::int_result_reg(self.emitter), pointer_reg, 0);
+                abi::emit_store_to_address(
+                    self.emitter,
+                    crate::codegen::sentinels::tagged_scalar_tag_reg(self.emitter),
+                    pointer_reg,
+                    8,
+                );
+            }
             _ => {
                 abi::emit_store_to_address(self.emitter, abi::int_result_reg(self.emitter), pointer_reg, 0);
             }
@@ -334,11 +355,19 @@ impl<'a> FunctionContext<'a> {
 
     /// Stores the current result register(s) into a frame offset.
     fn store_current_result_at_offset(&mut self, ty: &PhpType, offset: usize) {
-        match &ty {
+        match &ty.codegen_repr() {
             PhpType::Str => {
                 let (ptr_reg, len_reg) = abi::string_result_regs(self.emitter);
                 abi::store_at_offset(self.emitter, ptr_reg, offset);
                 abi::store_at_offset(self.emitter, len_reg, offset - 8);
+            }
+            PhpType::TaggedScalar => {
+                abi::store_at_offset(self.emitter, abi::int_result_reg(self.emitter), offset);
+                abi::store_at_offset(
+                    self.emitter,
+                    crate::codegen::sentinels::tagged_scalar_tag_reg(self.emitter),
+                    offset - 8,
+                );
             }
             PhpType::Float => {
                 abi::store_at_offset(self.emitter, abi::float_result_reg(self.emitter), offset);
@@ -388,6 +417,7 @@ impl<'a> FunctionContext<'a> {
                 | Op::ArrayToHash
                 | Op::ObjectNew
                 | Op::DynamicObjectNew
+                | Op::DynamicObjectNewMixed
                 | Op::ClosureNew
                 | Op::FirstClassCallableNew
                 | Op::CallableArrayNew
@@ -496,6 +526,53 @@ impl<'a> FunctionContext<'a> {
 fn reject_multiword_ref_cell_local(ty: &PhpType, action: &str) -> Result<()> {
     let _ = (ty, action);
     Ok(())
+}
+
+/// Coerces the currently loaded result registers before storing into a typed local slot.
+fn coerce_current_result_for_target_store(
+    emitter: &mut Emitter,
+    source_ty: &PhpType,
+    target_ty: &PhpType,
+) -> Result<()> {
+    if target_ty.codegen_repr() != PhpType::TaggedScalar {
+        return Ok(());
+    }
+    match source_ty.codegen_repr() {
+        PhpType::TaggedScalar => Ok(()),
+        PhpType::Int | PhpType::Bool | PhpType::Callable => {
+            crate::codegen::sentinels::emit_tagged_scalar_from_int_result(emitter);
+            Ok(())
+        }
+        PhpType::Void | PhpType::Never => {
+            crate::codegen::sentinels::emit_tagged_scalar_null(emitter);
+            Ok(())
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            emit_mixed_result_as_tagged_scalar(emitter);
+            Ok(())
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "local store from PHP type {:?} to PHP type TaggedScalar",
+            other
+        ))),
+    }
+}
+
+/// Reorders `__rt_mixed_unbox` output into the EIR tagged-scalar result registers.
+fn emit_mixed_result_as_tagged_scalar(emitter: &mut Emitter) {
+    abi::emit_call_label(emitter, "__rt_mixed_unbox");
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x9, x0");                                  // preserve the unboxed Mixed tag before moving the payload
+            emitter.instruction("mov x0, x1");                                  // place the unboxed payload into the tagged-scalar payload register
+            emitter.instruction("mov x1, x9");                                  // place the unboxed Mixed tag into the tagged-scalar tag register
+        }
+        Arch::X86_64 => {
+            emitter.instruction("mov r10, rax");                                // preserve the unboxed Mixed tag before moving the payload
+            emitter.instruction("mov rax, rdi");                                // place the unboxed payload into the tagged-scalar payload register
+            emitter.instruction("mov rdx, r10");                                // place the unboxed Mixed tag into the tagged-scalar tag register
+        }
+    }
 }
 
 /// Converts arbitrary names into assembly-label-safe fragments.

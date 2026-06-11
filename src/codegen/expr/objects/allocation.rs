@@ -16,7 +16,7 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::calls::args as call_args;
 use crate::codegen::platform::Arch;
-use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
+use crate::codegen::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
 use crate::names::method_symbol;
 use crate::parser::ast::{CallableTarget, Expr, ExprKind};
 use crate::types::{FunctionSig, PhpType};
@@ -29,7 +29,6 @@ use super::super::{
 use super::dispatch::emit_dispatch_interface_method;
 
 const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
-const NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 const ITERATOR_ITERATOR_DOWNCAST_MESSAGE: &str =
     "Class to downcast to not found or not base class or does not implement Traversable";
 
@@ -193,14 +192,32 @@ pub(super) fn emit_new_object_core(
         if let Some(default_expr) = &class_info.defaults[i] {
             let default_expr = default_expr.clone();
             let offset = 8 + i * 16;
-            let actual_ty = emit_expr(&default_expr, emitter, ctx, data);
             let prop_name = &class_info.properties[i].0;
             let expected_ty = class_info.properties[i].1.clone();
-            let prop_ty = if class_info.declared_properties.contains(prop_name) {
-                coerce_result_to_type(emitter, ctx, data, &actual_ty, &expected_ty);
-                expected_ty
+            // An array-literal default whose refined property type is associative
+            // must be stored as hash storage (tag 5). `emit_expr` lowers `[]` (and
+            // positional literals) to an indexed-list array; later string-keyed
+            // writes then desync from that storage, so reads after the array is
+            // copied out or returned from a method miss the keys (they decode to the
+            // null sentinel). This mirrors the property-assignment path, where the
+            // same rewrite already runs.
+            let prop_ty = if let Some(assoc_ty) =
+                crate::codegen::expr::arrays::emit_array_literal_as_assoc_target(
+                    &default_expr,
+                    &expected_ty,
+                    emitter,
+                    ctx,
+                    data,
+                ) {
+                assoc_ty
             } else {
-                actual_ty
+                let actual_ty = emit_expr(&default_expr, emitter, ctx, data);
+                if class_info.declared_properties.contains(prop_name) {
+                    coerce_result_to_type(emitter, ctx, data, &actual_ty, &expected_ty);
+                    expected_ty
+                } else {
+                    actual_ty
+                }
             };
             let object_reg = abi::symbol_scratch_reg(emitter);
             match emitter.target.arch {
@@ -220,6 +237,9 @@ pub(super) fn emit_new_object_core(
                 | PhpType::Packed(_) => {
                     abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
                     abi::emit_store_zero_to_address(emitter, object_reg, offset + 8);
+                }
+                PhpType::TaggedScalar => {
+                    unreachable!("nullable scalar properties use the boxed Mixed representation")
                 }
                 PhpType::Resource(_) => {
                     abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
@@ -1228,13 +1248,13 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(emitter: &mut Emitter) 
             emitter.instruction("call __rt_heap_alloc");                        // allocate the LogicException object payload
             emitter.instruction("mov r10, 0x4548504c00000006");                 // x86_64 heap-kind word: HE LP magic + kind 6 object
             emitter.instruction("mov QWORD PTR [rax - 8], r10");                // stamp allocation as a runtime object
-            emitter.instruction("mov r10, QWORD PTR [rip + _spl_logic_exception_class_id]"); // load LogicException's runtime class id for this program
+            abi::emit_load_symbol_to_reg(emitter, "r10", "_spl_logic_exception_class_id", 0); // load LogicException's runtime class id for this program
             emitter.instruction("mov QWORD PTR [rax], r10");                    // store class id at object header
-            emitter.instruction("lea r10, [rip + _iterator_iterator_downcast_msg]"); // materialize static exception message pointer
+            abi::emit_symbol_address(emitter, "r10", "_iterator_iterator_downcast_msg"); // materialize static exception message pointer
             emitter.instruction("mov QWORD PTR [rax + 8], r10");                // store static exception message pointer
             emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len())); // store static exception message length
             emitter.instruction("mov QWORD PTR [rax + 24], 0");                 // exception code defaults to zero
-            emitter.instruction("mov QWORD PTR [rip + _exc_value], rax");       // publish the active exception object
+            abi::emit_store_reg_to_symbol(emitter, "rax", "_exc_value", 0);     // publish the active exception object
             emitter.instruction("mov rsp, rbp");                                // release helper frame before throwing
             emitter.instruction("pop rbp");                                     // restore caller frame pointer before throwing
             emitter.instruction("jmp __rt_throw_current");                      // enter the standard exception unwinder

@@ -96,6 +96,12 @@ The source-map file is intentionally simple. Today it stores a list of `(asm_lin
 
 The optimizer intentionally stays at the AST level. By the time codegen runs, constant expressions and some dead control-flow have already been removed, but codegen still sees a normal checked program shape rather than a target-specific IR. Assembly-level peephole cleanup is future work.
 
+## Emit modes: executable vs cdylib
+
+Codegen runs in one of two emit modes selected by the `--emit` flag. `executable` (the default) produces the standalone-binary shape described throughout this page: a `main` entry point, top-level statements, and a process-exit epilogue. `cdylib` produces a shared library instead: no `main` body is emitted, and after the user functions a set of C-ABI trampolines is appended for every `#[Export]`-marked function plus the four `elephc_*` lifecycle entry points (see [Shared Libraries](../beyond-php/cdylib.md)).
+
+Cdylib emission also switches the emitter into position-independent mode (`pic_data_refs`): global data references emitted through the `abi::symbols` helpers resolve through the GOT (`@GOTPCREL` on x86_64, `:got:`/`:got_lo12:` on AArch64) instead of direct PC-relative addressing, and the runtime object is generated and cached separately in a PIC variant. On ELF targets a final pass (`src/codegen/visibility.rs`) appends `.hidden` directives for every internal global so the `.so` exports only its public ABI and internal runtime state cannot be preempted across loaded modules.
+
 ## The Context
 
 **File:** `src/codegen/context.rs`
@@ -230,7 +236,7 @@ variant into one of the focused lowering paths below:
 | `ArrayLiteral`, `ArrayLiteralAssoc`, `ArrayAccess`, `Spread`, `Match` | Indexed-array, associative-array, unpacking, string-indexing, and match-expression helpers |
 | `FunctionCall`, `NamedArg`, `ClosureCall`, `ExprCall`, `Closure`, `FirstClassCallable` | Shared call-argument planner, closure wrappers, and callable dispatch helpers |
 | `ConstRef`, `ClassConstant`, `ScopedConstantAccess`, `MagicConstant` | Compile-time constant and class-constant loading. `MagicConstant` should already be lowered by the frontend before codegen. |
-| `NewObject`, `NewScopedObject`, `NewDynamicObject`, `PropertyAccess`, `DynamicPropertyAccess`, `NullsafePropertyAccess`, `NullsafeDynamicPropertyAccess`, `StaticPropertyAccess`, `MethodCall`, `NullsafeMethodCall`, `StaticMethodCall` | Object allocation (including the internal runtime-class-string factory `NewDynamicObject`), property/member access, nullsafe chain lowering, vtable dispatch, and late-static-binding helpers |
+| `NewObject`, `NewDynamic`, `NewScopedObject`, `NewDynamicObject`, `PropertyAccess`, `DynamicPropertyAccess`, `NullsafePropertyAccess`, `NullsafeDynamicPropertyAccess`, `StaticPropertyAccess`, `MethodCall`, `NullsafeMethodCall`, `StaticMethodCall` | Object allocation (including `new $var()` via `NewDynamic` and the internal runtime-class-string factory `NewDynamicObject`), property/member access, nullsafe chain lowering, vtable dispatch, and late-static-binding helpers |
 | `PtrCast`, `BufferNew`, `Yield`, `YieldFrom` | Pointer/buffer extensions and generator state-machine lowering |
 
 ### Intrinsic Calls
@@ -645,7 +651,7 @@ declaration, include, or extension paths:
 | Variants | Lowering path |
 |---|---|
 | `Echo`, `ExprStmt`, `Throw`, `Synthetic` | Direct statement helpers, expression dispatch, exception throw, or already-lowered statement sequences |
-| `Assign`, `TypedAssign`, `ArrayAssign`, `NestedArrayAssign`, `ArrayPush`, `ListUnpack`, `PropertyAssign`, `StaticPropertyAssign`, `PropertyArrayPush`, `PropertyArrayAssign`, `StaticPropertyArrayPush`, `StaticPropertyArrayAssign` | Local/global/static storage, array storage, destructuring, and property storage helpers |
+| `Assign`, `RefAssign`, `TypedAssign`, `ArrayAssign`, `NestedArrayAssign`, `ArrayPush`, `ListUnpack`, `PropertyAssign`, `StaticPropertyAssign`, `PropertyArrayPush`, `PropertyArrayAssign`, `StaticPropertyArrayPush`, `StaticPropertyArrayAssign` | Local/global/static storage, reference aliasing, array storage, destructuring, and property storage helpers |
 | `If`, `IfDef`, `While`, `DoWhile`, `For`, `Foreach`, `Switch`, `Try`, `Break`, `Continue`, `Return` | Branching, compile-time conditional lowering, loops, foreach dispatch, switch lowering, exception/finally control flow, loop exits, and return epilogues |
 | `Include`, `IncludeOnceMark`, `IncludeOnceGuard`, `FunctionVariantGroup`, `FunctionVariantMark` | Resolver-produced include guards and include-loaded function variant activation |
 | `NamespaceDecl`, `NamespaceBlock`, `UseDecl`, `ConstDecl` | Mostly frontend/name-resolution artifacts; constants remain available through the codegen context |

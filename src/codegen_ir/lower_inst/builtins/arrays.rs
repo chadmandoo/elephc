@@ -32,6 +32,19 @@ mod shift;
 mod unshift;
 pub(in crate::codegen_ir::lower_inst::builtins) mod values;
 
+/// Rejects `call_user_func*` calls that escaped the dedicated EIR callback lowering path.
+pub(super) fn lower_call_user_func_builtin_escape(
+    _ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+) -> Result<()> {
+    Err(CodegenIrError::unsupported(format!(
+        "{} builtin dispatcher escape with {} lowered operands",
+        name,
+        inst.operands.len()
+    )))
+}
+
 /// Lowers `array_sum()` over supported indexed-array payloads.
 pub(super) fn lower_array_sum(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_aggregate(ctx, inst, "array_sum", "__rt_array_sum")

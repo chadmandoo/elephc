@@ -88,13 +88,67 @@ fn test_nl2br() {
     assert_eq!(out, "line1<br />\nline2");
 }
 
-/// Verifies `wordwrap()` breaks a string at the specified column width (15) with "\n" delimiter.
+/// Verifies `wordwrap()` breaks at word boundaries (the last space at/after the width),
+/// matching PHP exactly rather than breaking mid-word at fixed column offsets.
 #[test]
 fn test_wordwrap() {
     let out = compile_and_run(
         r#"<?php echo wordwrap("The quick brown fox jumped over the lazy dog", 15, "\n");"#,
     );
-    assert!(out.contains('\n'));
+    assert_eq!(out, "The quick brown\nfox jumped over\nthe lazy dog");
+}
+
+/// Verifies `wordwrap()` with the default cut flag leaves a word longer than the width intact
+/// (PHP only breaks at spaces unless cut_long_words is set).
+#[test]
+fn test_wordwrap_long_word_not_cut() {
+    let out = compile_and_run(r#"<?php echo wordwrap("A verylongword here", 8, "\n");"#);
+    assert_eq!(out, "A\nverylongword\nhere");
+}
+
+/// Verifies `wordwrap()` with cut_long_words=true breaks an over-long word at the width.
+#[test]
+fn test_wordwrap_long_word_cut() {
+    let out = compile_and_run(r#"<?php echo wordwrap("A verylongword here", 8, "\n", true);"#);
+    assert_eq!(out, "A\nverylong\nword\nhere");
+}
+
+/// Verifies `wordwrap()` with cut_long_words=true chops a single space-free run into width-sized
+/// pieces (no trailing break on the final short piece).
+#[test]
+fn test_wordwrap_cut_single_run() {
+    let out = compile_and_run(r#"<?php echo wordwrap("abcdefghij", 4, "\n", true);"#);
+    assert_eq!(out, "abcd\nefgh\nij");
+}
+
+/// Verifies `wordwrap()` with cut_long_words=false (default) returns a space-free over-long word
+/// unchanged.
+#[test]
+fn test_wordwrap_no_cut_single_run() {
+    let out = compile_and_run(r#"<?php echo wordwrap("abcdefghij", 4, "\n");"#);
+    assert_eq!(out, "abcdefghij");
+}
+
+/// Verifies `wordwrap()` preserves existing newlines in the input and resets the line length at
+/// each one (a hard break does not count toward the next line's width).
+#[test]
+fn test_wordwrap_preserves_existing_newlines() {
+    let out = compile_and_run("<?php echo wordwrap(\"preserve\nnewlines here ok\", 10, \"\\n\");");
+    assert_eq!(out, "preserve\nnewlines\nhere ok");
+}
+
+/// Verifies `wordwrap()` accepts a multi-character break string and inserts it at each wrap point.
+#[test]
+fn test_wordwrap_multichar_break() {
+    let out = compile_and_run(r#"<?php echo wordwrap("aaa bbb ccc", 3, "<br>");"#);
+    assert_eq!(out, "aaa<br>bbb<br>ccc");
+}
+
+/// Verifies `wordwrap()` leaves a string shorter than the width untouched (no break inserted).
+#[test]
+fn test_wordwrap_under_width_unchanged() {
+    let out = compile_and_run(r#"<?php echo wordwrap("hello world", 20);"#);
+    assert_eq!(out, "hello world");
 }
 
 /// Verifies `bin2hex()` converts a binary string "AB" to its hexadecimal representation "4142".
@@ -204,6 +258,86 @@ fn test_base64_roundtrip() {
 
 /// Verifies `ctype_alpha()` returns `"1"` (truthy) for an all-alphabetic string "Hello".
 #[test]
+fn test_gzcompress_roundtrip() {
+    // gzcompress() / gzuncompress() round-trip a string through system zlib.
+    let out = compile_and_run(
+        r#"<?php
+$data = "repeat repeat repeat repeat repeat repeat";
+$packed = gzcompress($data);
+echo (strlen($packed) < strlen($data) ? "smaller" : "bigger");
+echo "|";
+echo (gzuncompress($packed) === $data ? "roundtrip-ok" : "roundtrip-fail");
+"#,
+    );
+    assert_eq!(out, "smaller|roundtrip-ok");
+}
+
+/// Verifies compiled PHP output for gzuncompress invalid is false.
+#[test]
+fn test_gzuncompress_invalid_is_false() {
+    // gzuncompress() of non-zlib data returns false.
+    let out = compile_and_run(
+        r#"<?php echo gzuncompress("this is not zlib data") === false ? "false" : "ok";"#,
+    );
+    assert_eq!(out, "false");
+}
+
+/// Verifies compiled PHP output for gzdeflate gzinflate roundtrip.
+#[test]
+fn test_gzdeflate_gzinflate_roundtrip() {
+    // gzdeflate() / gzinflate() round-trip a string through raw DEFLATE.
+    let out = compile_and_run(
+        r#"<?php
+$data = str_repeat("raw deflate raw deflate ", 16);
+$packed = gzdeflate($data);
+echo (strlen($packed) < strlen($data) ? "smaller" : "bigger");
+echo "|";
+echo (gzinflate($packed) === $data ? "roundtrip-ok" : "roundtrip-fail");
+"#,
+    );
+    assert_eq!(out, "smaller|roundtrip-ok");
+}
+
+/// Verifies compiled PHP output for gzinflate invalid is false.
+#[test]
+fn test_gzinflate_invalid_is_false() {
+    // gzinflate() of data that is not raw DEFLATE returns false.
+    let out = compile_and_run(
+        r#"<?php echo gzinflate("this is not deflate data") === false ? "false" : "ok";"#,
+    );
+    assert_eq!(out, "false");
+}
+
+/// Verifies compiled PHP output for gzinflate decodes zlib deflate filter.
+#[test]
+fn test_gzinflate_decodes_zlib_deflate_filter() {
+    // gzinflate() decodes the raw DEFLATE produced by the zlib.deflate stream
+    // filter — the two zlib features agree on the wire format.
+    let out = compile_and_run(
+        r#"<?php
+$data = str_repeat("filter and builtin agree. ", 20);
+$w = fopen("filtered.bin", "w");
+stream_filter_append($w, "zlib.deflate", STREAM_FILTER_WRITE);
+fwrite($w, $data);
+fclose($w);
+echo (gzinflate(file_get_contents("filtered.bin")) === $data ? "decoded-ok" : "FAIL");
+"#,
+    );
+    assert_eq!(out, "decoded-ok");
+}
+
+/// Verifies compiled PHP output for gz builtins case insensitive.
+#[test]
+fn test_gz_builtins_case_insensitive() {
+    // PHP builtin names are case-insensitive.
+    let out = compile_and_run(
+        r#"<?php $s = "case test case test"; echo GZINFLATE(GzDeflate($s)) === $s ? "ci-ok" : "FAIL";"#,
+    );
+    assert_eq!(out, "ci-ok");
+}
+
+/// Verifies compiled PHP output for ctype alpha true.
+#[test]
 fn test_ctype_alpha_true() {
     let out = compile_and_run(r#"<?php echo ctype_alpha("Hello");"#);
     assert_eq!(out, "1");
@@ -265,4 +399,87 @@ fn test_ctype_space_false() {
 fn test_sprintf_hex() {
     let out = compile_and_run(r#"<?php echo sprintf("%x", 255);"#);
     assert_eq!(out, "ff");
+}
+
+// --- long2ip ---
+
+/// Verifies compiled PHP output for long2ip private address.
+#[test]
+fn test_long2ip_private_address() {
+    let out = compile_and_run(r#"<?php echo long2ip(3232235777);"#);
+    assert_eq!(out, "192.168.1.1");
+}
+
+/// Verifies compiled PHP output for long2ip loopback.
+#[test]
+fn test_long2ip_loopback() {
+    let out = compile_and_run(r#"<?php echo long2ip(2130706433);"#);
+    assert_eq!(out, "127.0.0.1");
+}
+
+/// Verifies compiled PHP output for long2ip zero and broadcast.
+#[test]
+fn test_long2ip_zero_and_broadcast() {
+    let out = compile_and_run(r#"<?php echo long2ip(0) . "|" . long2ip(4294967295);"#);
+    assert_eq!(out, "0.0.0.0|255.255.255.255");
+}
+
+// --- ip2long ---
+
+/// Verifies compiled PHP output for ip2long valid addresses.
+#[test]
+fn test_ip2long_valid_addresses() {
+    let out = compile_and_run(
+        r#"<?php echo ip2long("192.168.1.1") . "|" . ip2long("0.0.0.0") . "|" . ip2long("255.255.255.255");"#,
+    );
+    assert_eq!(out, "3232235777|0|4294967295");
+}
+
+/// Verifies compiled PHP output for ip2long rejects invalid.
+#[test]
+fn test_ip2long_rejects_invalid() {
+    let out = compile_and_run(
+        r#"<?php
+echo ip2long("not.an.ip") === false ? "a" : "A";
+echo ip2long("1.2.3") === false ? "b" : "B";
+echo ip2long("256.0.0.1") === false ? "c" : "C";
+echo ip2long("1.2.3.4.5") === false ? "d" : "D";
+"#,
+    );
+    assert_eq!(out, "abcd");
+}
+
+// --- inet_ntop / inet_pton ---
+
+/// Verifies compiled PHP output for inet ntop ipv4.
+#[test]
+fn test_inet_ntop_ipv4() {
+    let out = compile_and_run(r#"<?php echo inet_ntop(chr(192) . chr(168) . chr(0) . chr(1));"#);
+    assert_eq!(out, "192.168.0.1");
+}
+
+/// Verifies compiled PHP output for inet ntop loopback.
+#[test]
+fn test_inet_ntop_loopback() {
+    let out = compile_and_run(r#"<?php echo inet_ntop(chr(127) . chr(0) . chr(0) . chr(1));"#);
+    assert_eq!(out, "127.0.0.1");
+}
+
+/// Verifies compiled PHP output for inet ntop rejects wrong length.
+#[test]
+fn test_inet_ntop_rejects_wrong_length() {
+    let out = compile_and_run(r#"<?php var_dump(inet_ntop("xx"));"#);
+    assert_eq!(out, "bool(false)\n");
+}
+
+/// Verifies compiled PHP output for inet pton valid and invalid.
+#[test]
+fn test_inet_pton_valid_and_invalid() {
+    let out = compile_and_run(
+        r#"<?php
+echo inet_pton("1.2.3.4") === false ? "F" : "S";
+echo inet_pton("nonsense") === false ? "F" : "S";
+"#,
+    );
+    assert_eq!(out, "SF");
 }

@@ -22,7 +22,6 @@ use super::spl;
 use super::strings;
 use super::system;
 use crate::codegen::emit::Emitter;
-use crate::codegen::platform::Platform;
 use crate::codegen::RuntimeFeatures;
 
 /// Emits all runtime helper labels in dependency order for supported targets.
@@ -33,7 +32,6 @@ use crate::codegen::RuntimeFeatures;
 /// Each category is emitted before any code that depends on it, ensuring labels
 /// are available when branches are assembled.
 pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
-    emit_optional_linux_crypto_decls(emitter);
     diagnostics::emit_diagnostics(emitter);
 
     // String runtime functions
@@ -79,6 +77,10 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     strings::emit_nl2br(emitter);
     strings::emit_wordwrap(emitter);
     strings::emit_bin2hex(emitter);
+    strings::emit_long2ip(emitter);
+    strings::emit_ip2long(emitter);
+    strings::emit_inet_ntop(emitter);
+    strings::emit_inet_pton(emitter);
     strings::emit_hex2bin(emitter);
     strings::emit_htmlspecialchars(emitter);
     strings::emit_html_entity_decode(emitter);
@@ -87,10 +89,17 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     strings::emit_rawurlencode(emitter);
     strings::emit_md5(emitter);
     strings::emit_sha1(emitter);
+    strings::emit_crc32(emitter);
     strings::emit_hash(emitter);
+    strings::emit_hash_hmac(emitter);
+    strings::emit_hash_equals(emitter);
+    strings::emit_hash_algos_list(emitter);
+    strings::emit_hash_context(emitter);
+    strings::emit_digest_to_string(emitter);
     strings::emit_base64_encode(emitter);
     strings::emit_base64_decode(emitter);
     strings::emit_sprintf(emitter);
+    strings::emit_vsprintf(emitter);
     strings::emit_sscanf(emitter);
     strings::emit_rtrim_mask(emitter);
     strings::emit_ltrim_mask(emitter);
@@ -177,6 +186,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_random_uniform(emitter);
     arrays::emit_sort_int(emitter, false);
     arrays::emit_sort_int(emitter, true);
+    arrays::emit_sort_str(emitter, false);
+    arrays::emit_sort_str(emitter, true);
     arrays::emit_hash_fnv1a(emitter);
     arrays::emit_hash_key_hash(emitter);
     arrays::emit_hash_key_eq(emitter);
@@ -214,6 +225,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_array_unique_refcounted(emitter);
     arrays::emit_array_rand(emitter);
     arrays::emit_array_fill(emitter);
+    arrays::emit_array_fill_assoc(emitter);
     arrays::emit_array_fill_refcounted(emitter);
     arrays::emit_array_pad(emitter);
     arrays::emit_array_pad_refcounted(emitter);
@@ -258,6 +270,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_gc_mark_reachable(emitter);
     arrays::emit_gc_collect_cycles(emitter);
     arrays::emit_mixed_from_value(emitter);
+    arrays::emit_mixed_abs(emitter);
     arrays::emit_mixed_instanceof(emitter);
     arrays::emit_iterable_unsupported_kind(emitter);
     arrays::emit_iterable_write_stdout(emitter);
@@ -288,6 +301,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     objects::emit_mixed_property_set(emitter);
     objects::emit_mixed_array_get(emitter);
     objects::emit_mixed_array_set(emitter);
+    objects::emit_new_by_name(emitter);
+    objects::emit_call_object_destructor(emitter);
     objects::emit_json_encode_stdclass(emitter);
 
     // Buffer runtime functions
@@ -298,10 +313,117 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
 
     // I/O runtime functions
     io::emit_cstr(emitter);
+    io::emit_disk_space(emitter);
     io::emit_fopen(emitter);
     io::emit_fgets(emitter);
     io::emit_feof(emitter);
+    io::emit_stream_isatty(emitter);
+    io::emit_stream_select(emitter);
+    io::emit_stream_set_blocking(emitter);
+    io::emit_stream_set_timeout(emitter);
+    io::emit_stream_get_contents(emitter);
+    io::emit_stream_get_line(emitter);
+    io::emit_addr_is_udp(emitter);
+    io::emit_resolve_host(emitter);
+    io::emit_resolve_host_v6(emitter);
+    io::emit_inet6_pton(emitter);
+    io::emit_stream_socket_client_v6(emitter);
+    io::emit_stream_socket_server_v6(emitter);
+    io::emit_build_sockaddr_in6(emitter);
+    io::emit_opendir_glob(emitter);
+    io::emit_inet_addr_parse(emitter);
+    io::emit_format_sockaddr_in(emitter);
+    io::emit_format_sockaddr_in6(emitter);
+    io::emit_format_sockaddr_unix(emitter);
+    io::emit_data_stream(emitter);
+    io::emit_apply_stream_filter(emitter);
+    io::emit_ftp(emitter);
+    io::emit_http(emitter);
+    io::emit_https(emitter);
+    io::emit_fsockopen(emitter);
+    io::emit_stream_wrapper_register(emitter);
+    io::emit_stream_wrapper_unregister(emitter);
+    io::emit_stream_socket_server(emitter);
+    io::emit_stream_socket_client(emitter);
+    io::emit_unix_socket_server(emitter);
+    io::emit_unix_socket_client(emitter);
+    io::emit_stream_socket_accept(emitter);
+    io::emit_stream_socket_shutdown(emitter);
+    io::emit_stream_socket_sendto(emitter);
+    io::emit_stream_socket_recvfrom(emitter);
+    io::emit_stream_socket_get_name(emitter);
+    io::emit_stream_socket_pair(emitter);
+    io::emit_popen(emitter);
+    io::emit_pclose(emitter);
+    io::emit_opendir(emitter);
+    io::emit_readdir(emitter);
+    io::emit_closedir(emitter);
+    io::emit_rewinddir(emitter);
+    io::emit_stream_get_meta_data(emitter);
+    io::emit_gethostname(emitter);
+    io::emit_gethostbyname(emitter);
+    io::emit_gethostbyaddr(emitter);
+    io::emit_protoent_load(emitter);
+    io::emit_getprotobyname(emitter);
+    io::emit_getprotobynumber(emitter);
+    io::emit_servent_load(emitter);
+    io::emit_getservbyname(emitter);
+    io::emit_getservbyport(emitter);
+    io::emit_stream_copy_to_stream(emitter);
+    io::emit_stream_context_set_option_4(emitter);
+    io::emit_get_string_context_option(emitter);
+    io::emit_get_int_context_option(emitter);
+    io::emit_apply_socket_client_opts(emitter);
+    io::emit_apply_socket_server_opts(emitter);
+    io::emit_socket_backlog(emitter);
+    io::emit_apply_socket_bindto(emitter);
+    io::emit_get_ssl_peer_name(emitter);
+    io::emit_http_build_request(emitter);
     io::emit_fread(emitter);
+    io::emit_fwrite(emitter);
+    io::emit_user_wrapper_fclose(emitter);
+    io::emit_user_wrapper_fread(emitter);
+    io::emit_user_wrapper_fwrite(emitter);
+    io::emit_user_wrapper_feof(emitter);
+    io::emit_user_wrapper_flock(emitter);
+    io::emit_user_wrapper_fseek(emitter);
+    io::emit_user_wrapper_ftell(emitter);
+    io::emit_user_wrapper_ftruncate(emitter);
+    io::emit_user_wrapper_fflush(emitter);
+    io::emit_box_wrapper_stat_result(emitter);
+    io::emit_user_wrapper_fstat(emitter);
+    io::emit_user_wrapper_url_stat(emitter);
+    io::emit_user_wrapper_url_stat_field(emitter);
+    io::emit_path_is_wrapper(emitter);
+    io::emit_readfile_wrapper(emitter);
+    io::emit_user_wrapper_path_op(emitter);
+    io::emit_user_wrapper_rename(emitter);
+    io::emit_user_wrapper_set_option(emitter);
+    io::emit_user_wrapper_opendir(emitter);
+    io::emit_user_wrapper_dir_readdir(emitter);
+    io::emit_user_wrapper_dir_closedir(emitter);
+    io::emit_user_wrapper_dir_rewinddir(emitter);
+    io::emit_touch_meta_array(emitter);
+    io::emit_stash_connect_host(emitter);
+    io::emit_fire_notification(emitter);
+    io::emit_user_wrapper_stream_cast(emitter);
+    io::emit_stream_filter_register(emitter);
+    io::emit_resolve_user_filter_id(emitter);
+    io::emit_stream_filter_attach_user(emitter);
+    io::emit_apply_user_stream_filter(emitter);
+    io::emit_user_filter_brigade_invoke(emitter);
+    io::emit_user_filter_release_fd(emitter);
+    io::emit_var_dump_array_int(emitter);
+    io::emit_var_dump_array_str(emitter);
+    io::emit_var_dump_array_bool(emitter);
+    io::emit_var_dump_array_float(emitter);
+    io::emit_var_dump_array_mixed(emitter);
+    io::emit_var_dump_emit_indexed_key(emitter);
+    io::emit_var_dump_emit_int_line(emitter);
+    io::emit_var_dump_emit_string_line(emitter);
+    io::emit_var_dump_emit_bool_line(emitter);
+    io::emit_var_dump_emit_float_line(emitter);
+    io::emit_var_dump_emit_null_line(emitter);
     io::emit_file_get_contents(emitter);
     io::emit_file_put_contents(emitter);
     io::emit_file(emitter);
@@ -314,6 +436,10 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     io::emit_glob(emitter);
     io::emit_tempnam(emitter);
     io::emit_fgetcsv(emitter);
+    io::emit_fd_write(emitter);
+    io::emit_phar_write(emitter);
+    io::emit_phar_read(emitter);
+    io::emit_file_get_contents_url(emitter);
     io::emit_fputcsv(emitter);
     io::emit_basename(emitter);
     io::emit_dirname(emitter);
@@ -350,36 +476,10 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     fibers::emit_fiber_state_getter(emitter);
 }
 
-/// Emits weak symbol declarations for MD5, SHA1, and SHA256 on Linux targets.
-///
-/// These weak declarations allow the linker to omit the symbols if no other object
-/// file provides them, preventing link errors when crypto features are unused.
-fn emit_optional_linux_crypto_decls(emitter: &mut Emitter) {
-    if emitter.target.platform == Platform::Linux {
-        emitter.raw(".weak MD5");
-        emitter.raw(".weak SHA1");
-        emitter.raw(".weak SHA256");
-        emitter.blank();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codegen::platform::{Arch, Target};
-
-    /// Verifies that linux runtime marks crypto symbols weak.
-    #[test]
-    fn test_linux_runtime_marks_crypto_symbols_weak() {
-        let mut emitter = Emitter::new(Target::new(Platform::Linux, Arch::AArch64));
-        emit_runtime(&mut emitter, RuntimeFeatures::all());
-        let asm = emitter.output();
-
-        assert!(asm.contains(".weak MD5\n"));
-        assert!(asm.contains(".weak SHA1\n"));
-        assert!(asm.contains(".weak SHA256\n"));
-        assert!(!asm.contains("arc4random_uniform"));
-    }
+    use crate::codegen::platform::{Arch, Platform, Target};
 
     /// Verifies that AArch64 runtime emits fiber routines.
     #[test]
@@ -444,6 +544,5 @@ mod tests {
                 sym
             );
         }
-        assert!(asm.contains(".weak MD5\n"));
     }
 }

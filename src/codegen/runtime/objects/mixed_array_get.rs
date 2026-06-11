@@ -161,11 +161,27 @@ fn emit_mixed_array_get_aarch64(emitter: &mut Emitter) {
     emitter.instruction("add sp, sp, #48");                                     // release the local frame
     emitter.instruction("ret");                                                 // return Mixed* in x0
 
-    // Object: only stdClass with string key.
+    // Object: SPL ArrayAccess containers or stdClass with string key.
     emitter.label("__rt_mixed_array_get_object");
     emitter.instruction("ldr x10, [x0, #8]");                                   // x10 = obj pointer
     emitter.instruction("cbz x10, __rt_mixed_array_get_null");                  // defensive null guard
     emitter.instruction("ldr x11, [x10]");                                      // x11 = class_id
+    abi::emit_symbol_address(emitter, "x12", "_spl_fixed_array_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // x12 = compile-time SplFixedArray class_id
+    emitter.instruction("cmp x11, x12");                                        // is the receiver a SplFixedArray instance?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_fixed");                 // dispatch mixed object indexing to SplFixedArray::offsetGet
+    abi::emit_symbol_address(emitter, "x12", "_spl_dll_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // x12 = compile-time SplDoublyLinkedList class_id
+    emitter.instruction("cmp x11, x12");                                        // is the receiver a SplDoublyLinkedList instance?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_dll");                   // dispatch mixed object indexing to the list ArrayAccess helper
+    abi::emit_symbol_address(emitter, "x12", "_spl_stack_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // x12 = compile-time SplStack class_id
+    emitter.instruction("cmp x11, x12");                                        // is the receiver a SplStack instance?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_dll");                   // SplStack shares the list ArrayAccess helper
+    abi::emit_symbol_address(emitter, "x12", "_spl_queue_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // x12 = compile-time SplQueue class id
+    emitter.instruction("cmp x11, x12");                                        // is the receiver a SplQueue instance?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_dll");                   // SplQueue shares the list ArrayAccess helper
     abi::emit_symbol_address(emitter, "x12", "_stdclass_class_id");
     emitter.instruction("ldr x12, [x12]");                                      // x12 = compile-time stdClass class_id
     emitter.instruction("cmp x11, x12");                                        // is the receiver a stdClass instance?
@@ -177,6 +193,48 @@ fn emit_mixed_array_get_aarch64(emitter: &mut Emitter) {
     emitter.instruction("ldr x1, [sp, #8]");                                    // x1 = key_lo (str ptr)
     emitter.instruction("ldr x2, [sp, #16]");                                   // x2 = key_hi (str len)
     emitter.instruction("bl __rt_stdclass_get");                                // delegate to the dynamic-property reader
+    emitter.instruction("ldp x29, x30, [sp, #24]");                             // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the local frame
+    emitter.instruction("ret");                                                 // return Mixed* in x0
+    emitter.label("__rt_mixed_array_get_spl_fixed");
+    emitter.instruction("str x10, [sp, #0]");                                   // save unboxed SplFixedArray receiver while boxing the key
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload normalized key high word
+    emitter.instruction("cmn x11, #1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_fixed_int_key");         // integer keys box as Mixed int
+    emitter.instruction("mov x0, #1");                                          // tag = string for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key string pointer
+    emitter.instruction("ldr x2, [sp, #16]");                                   // key string length
+    emitter.instruction("b __rt_mixed_array_get_spl_fixed_box_key");            // share the offsetGet call after key boxing
+    emitter.label("__rt_mixed_array_get_spl_fixed_int_key");
+    emitter.instruction("mov x0, #0");                                          // tag = int for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key integer payload
+    emitter.instruction("mov x2, #0");                                          // integer keys have no high payload
+    emitter.label("__rt_mixed_array_get_spl_fixed_box_key");
+    emitter.instruction("bl __rt_mixed_from_value");                            // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov x1, x0");                                          // pass boxed offset as argument 1
+    emitter.instruction("ldr x0, [sp, #0]");                                    // pass unboxed SplFixedArray receiver as argument 0
+    emitter.instruction("bl __rt_spl_fixed_offset_get");                        // read through SplFixedArray::offsetGet
+    emitter.instruction("ldp x29, x30, [sp, #24]");                             // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the local frame
+    emitter.instruction("ret");                                                 // return Mixed* in x0
+    emitter.label("__rt_mixed_array_get_spl_dll");
+    emitter.instruction("str x10, [sp, #0]");                                   // save unboxed SPL list receiver while boxing the key
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload normalized key high word
+    emitter.instruction("cmn x11, #1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("b.eq __rt_mixed_array_get_spl_dll_int_key");           // integer keys box as Mixed int
+    emitter.instruction("mov x0, #1");                                          // tag = string for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key string pointer
+    emitter.instruction("ldr x2, [sp, #16]");                                   // key string length
+    emitter.instruction("b __rt_mixed_array_get_spl_dll_box_key");              // share the offsetGet call after key boxing
+    emitter.label("__rt_mixed_array_get_spl_dll_int_key");
+    emitter.instruction("mov x0, #0");                                          // tag = int for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key integer payload
+    emitter.instruction("mov x2, #0");                                          // integer keys have no high payload
+    emitter.label("__rt_mixed_array_get_spl_dll_box_key");
+    emitter.instruction("bl __rt_mixed_from_value");                            // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov x1, x0");                                          // pass boxed offset as argument 1
+    emitter.instruction("ldr x0, [sp, #0]");                                    // pass unboxed SPL list receiver as argument 0
+    emitter.instruction("bl __rt_spl_dll_offset_get");                          // read through the shared SPL list offsetGet helper
     emitter.instruction("ldp x29, x30, [sp, #24]");                             // restore frame pointer and return address
     emitter.instruction("add sp, sp, #48");                                     // release the local frame
     emitter.instruction("ret");                                                 // return Mixed* in x0
@@ -327,7 +385,19 @@ fn emit_mixed_array_get_x86_64(emitter: &mut Emitter) {
     emitter.instruction("test r10, r10");                                       // defensive null guard
     emitter.instruction("je __rt_mixed_array_get_null");                        // branch on the current JSON decoder condition
     emitter.instruction("mov r11, QWORD PTR [r10]");                            // r11 = class_id
-    emitter.instruction("mov r12, QWORD PTR [rip + _stdclass_class_id]");       // r12 = compile-time stdClass class_id
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_fixed_array_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is the receiver a SplFixedArray instance?
+    emitter.instruction("je __rt_mixed_array_get_spl_fixed");                   // dispatch mixed object indexing to SplFixedArray::offsetGet
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_dll_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is the receiver a SplDoublyLinkedList instance?
+    emitter.instruction("je __rt_mixed_array_get_spl_dll");                     // dispatch mixed object indexing to the list ArrayAccess helper
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_stack_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is the receiver a SplStack instance?
+    emitter.instruction("je __rt_mixed_array_get_spl_dll");                     // SplStack shares the list ArrayAccess helper
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_queue_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is the receiver a SplQueue instance?
+    emitter.instruction("je __rt_mixed_array_get_spl_dll");                     // SplQueue shares the list ArrayAccess helper
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_stdclass_class_id", 0);      // r12 = compile-time stdClass class_id
     emitter.instruction("cmp r11, r12");                                        // is the receiver a stdClass instance?
     emitter.instruction("jne __rt_mixed_array_get_null");                       // unrelated class → null
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // load key_hi
@@ -337,6 +407,48 @@ fn emit_mixed_array_get_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rsi, QWORD PTR [rbp - 16]");                       // rsi = key_lo (str ptr)
     emitter.instruction("mov rdx, QWORD PTR [rbp - 24]");                       // rdx = key_hi (str len)
     emitter.instruction("call __rt_stdclass_get");                              // delegate to the dynamic-property reader
+    emitter.instruction("mov rsp, rbp");                                        // restore stack pointer
+    emitter.instruction("pop rbp");                                             // restore caller frame pointer
+    emitter.instruction("ret");                                                 // return Mixed* in rax
+    emitter.label("__rt_mixed_array_get_spl_fixed");
+    emitter.instruction("mov QWORD PTR [rbp - 8], r10");                        // save unboxed SplFixedArray receiver while boxing the key
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload normalized key high word
+    emitter.instruction("cmp r11, -1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("je __rt_mixed_array_get_spl_fixed_int_key");           // integer keys box as Mixed int
+    emitter.instruction("mov rax, 1");                                          // tag = string for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key string pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 24]");                       // key string length
+    emitter.instruction("jmp __rt_mixed_array_get_spl_fixed_box_key");          // share the offsetGet call after key boxing
+    emitter.label("__rt_mixed_array_get_spl_fixed_int_key");
+    emitter.instruction("mov rax, 0");                                          // tag = int for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key integer payload
+    emitter.instruction("xor esi, esi");                                        // integer keys have no high payload
+    emitter.label("__rt_mixed_array_get_spl_fixed_box_key");
+    emitter.instruction("call __rt_mixed_from_value");                          // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov rsi, rax");                                        // pass boxed offset as argument 1
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // pass unboxed SplFixedArray receiver as argument 0
+    emitter.instruction("call __rt_spl_fixed_offset_get");                      // read through SplFixedArray::offsetGet
+    emitter.instruction("mov rsp, rbp");                                        // restore stack pointer
+    emitter.instruction("pop rbp");                                             // restore caller frame pointer
+    emitter.instruction("ret");                                                 // return Mixed* in rax
+    emitter.label("__rt_mixed_array_get_spl_dll");
+    emitter.instruction("mov QWORD PTR [rbp - 8], r10");                        // save unboxed SPL list receiver while boxing the key
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload normalized key high word
+    emitter.instruction("cmp r11, -1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("je __rt_mixed_array_get_spl_dll_int_key");             // integer keys box as Mixed int
+    emitter.instruction("mov rax, 1");                                          // tag = string for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key string pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 24]");                       // key string length
+    emitter.instruction("jmp __rt_mixed_array_get_spl_dll_box_key");            // share the offsetGet call after key boxing
+    emitter.label("__rt_mixed_array_get_spl_dll_int_key");
+    emitter.instruction("mov rax, 0");                                          // tag = int for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key integer payload
+    emitter.instruction("xor esi, esi");                                        // integer keys have no high payload
+    emitter.label("__rt_mixed_array_get_spl_dll_box_key");
+    emitter.instruction("call __rt_mixed_from_value");                          // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov rsi, rax");                                        // pass boxed offset as argument 1
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // pass unboxed SPL list receiver as argument 0
+    emitter.instruction("call __rt_spl_dll_offset_get");                        // read through the shared SPL list offsetGet helper
     emitter.instruction("mov rsp, rbp");                                        // restore stack pointer
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
     emitter.instruction("ret");                                                 // return Mixed* in rax

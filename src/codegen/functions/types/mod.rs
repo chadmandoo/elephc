@@ -9,6 +9,7 @@
 //! - These helpers must stay consistent with type checker signatures and runtime value layouts.
 
 use crate::codegen::context::Context;
+use crate::names::php_symbol_key;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::{merge_array_key_types, normalized_array_key_type, FunctionSig, PhpType};
 
@@ -140,7 +141,20 @@ pub(super) fn infer_local_type(
         }
         ExprKind::ArrayAccess { array, .. } => match infer_local_type(array, sig, ctx) {
             PhpType::Str => PhpType::Str,
+            // Under the tagged null representation, int-element reads are miss-capable and
+            // evaluate to a TaggedScalar; the local inference must agree with emission.
+            PhpType::Array(t) if matches!(*t, PhpType::Int)
+                && crate::codegen::sentinels::null_repr_is_tagged() =>
+            {
+                PhpType::TaggedScalar
+            }
             PhpType::Array(t) => *t,
+            PhpType::AssocArray { value, .. }
+                if matches!(*value, PhpType::Int)
+                    && crate::codegen::sentinels::null_repr_is_tagged() =>
+            {
+                PhpType::TaggedScalar
+            }
             PhpType::AssocArray { value, .. } => *value,
             PhpType::Object(class_name) => ctx
                 .filter(|ctx| ctx.object_type_implements_interface(&class_name, "ArrayAccess"))
@@ -350,6 +364,9 @@ pub(super) fn infer_local_type(
         ExprKind::Spread(inner) => infer_local_type(inner, sig, ctx),
         ExprKind::NamedArg { value, .. } => infer_local_type(value, sig, ctx),
         ExprKind::NewObject { class_name, .. } => PhpType::Object(class_name.as_str().to_string()),
+        ExprKind::NewDynamic { name_expr, .. } => {
+            literal_dynamic_new_object_type(name_expr, ctx).unwrap_or(PhpType::Mixed)
+        }
         ExprKind::BufferNew { element_type, .. } => {
             if let Some(c) = ctx {
                 let elem_ty = resolve_buffer_element_type(element_type, c);
@@ -384,6 +401,19 @@ pub(super) fn infer_local_type(
         ExprKind::PtrCast { target_type, .. } => PhpType::Pointer(Some(target_type.clone())),
         _ => PhpType::Int,
     }
+}
+
+/// Resolves a literal `new $class` class-string to an object type for codegen-local inference.
+fn literal_dynamic_new_object_type(name_expr: &Expr, ctx: Option<&Context>) -> Option<PhpType> {
+    let ExprKind::StringLiteral(class_name) = &name_expr.kind else {
+        return None;
+    };
+    let ctx = ctx?;
+    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
+    ctx.classes
+        .keys()
+        .find(|existing| php_symbol_key(existing) == class_key)
+        .map(|class_name| PhpType::Object(class_name.clone()))
 }
 
 /// Infers the return type of a pipe (`|>`) expression given the callable at the pipe's RHS.

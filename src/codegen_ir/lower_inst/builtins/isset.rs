@@ -61,6 +61,11 @@ fn emit_loaded_isset_missing_result(ctx: &mut FunctionContext<'_>, value: ValueI
             Ok(())
         }
         PhpType::Mixed | PhpType::Union(_) => predicates::emit_mixed_tag_eq(ctx, value, 8),
+        PhpType::TaggedScalar => emit_tagged_scalar_value_is_null(ctx, value),
+        PhpType::Int | PhpType::Bool if crate::codegen::sentinels::null_repr_is_tagged() => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+            Ok(())
+        }
         PhpType::Int | PhpType::Bool => emit_scalar_value_is_null_sentinel(ctx, value),
         _ => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
@@ -388,6 +393,29 @@ fn emit_scalar_value_is_null_sentinel(ctx: &mut FunctionContext<'_>, value: Valu
             ctx.emitter.instruction("cmp rax, r10");                            // compare the scalar value against the shared null sentinel
             ctx.emitter.instruction("sete al");                                 // set the low byte when the scalar value is the null sentinel
             ctx.emitter.instruction("movzx rax, al");                           // widen the null-sentinel predicate into the integer result register
+        }
+    }
+    Ok(())
+}
+
+/// Emits 1 when a tagged scalar value carries PHP's null tag.
+fn emit_tagged_scalar_value_is_null(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
+    ctx.load_value_to_result(value)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp x1, #{}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // compare the tagged scalar tag against PHP null
+            ctx.emitter.instruction("cset x0, eq");                             // report the operand as missing when it is null
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp rdx, {}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // compare the tagged scalar tag against PHP null
+            ctx.emitter.instruction("sete al");                                 // set the low byte when the tagged scalar is null
+            ctx.emitter.instruction("movzx rax, al");                           // widen the null-check result into the integer result register
         }
     }
     Ok(())

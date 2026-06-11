@@ -17,6 +17,7 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit_fiber_wrapper;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
+use crate::codegen::Emit;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
 use crate::ir::{BasicBlock, Function, Module};
 use crate::names::{
@@ -33,7 +34,8 @@ use super::function_variants;
 use super::literal_defaults::{
     emit_array_literal_default_to_result, emit_boxed_null_literal_to_result,
     emit_boxed_string_literal_default_to_result, emit_empty_assoc_array_literal_to_result,
-    emit_string_literal_default_to_result, literal_default_value, LiteralDefaultValue,
+    emit_string_literal_default_to_result, emit_tagged_null_literal_to_result,
+    literal_default_value, LiteralDefaultValue,
 };
 use super::lower_inst;
 use super::lower_term;
@@ -48,6 +50,8 @@ pub(super) fn emit_module(
     data: &mut DataSection,
     gc_stats: bool,
     heap_debug: bool,
+    requires_elephc_tls: bool,
+    emit: Emit,
 ) -> Result<()> {
     function_variants::emit_dispatchers(module, emitter, data);
     for function in module.functions.iter().filter(|function| !is_main(function)) {
@@ -60,12 +64,23 @@ pub(super) fn emit_module(
         emit_user_function(module, closure, emitter, data)?;
     }
     emit_eir_fiber_wrappers(module, emitter);
+    if matches!(emit, Emit::Cdylib) {
+        return Ok(());
+    }
     let main = module
         .functions
         .iter()
         .find(|function| is_main(function))
         .ok_or_else(|| CodegenIrError::invalid_module("EIR module has no main function"))?;
-    emit_main_function(module, main, emitter, data, gc_stats, heap_debug)
+    emit_main_function(
+        module,
+        main,
+        emitter,
+        data,
+        gc_stats,
+        heap_debug,
+        requires_elephc_tls,
+    )
 }
 
 /// Emits the static EIR Fiber wrappers needed for closure callbacks.
@@ -124,11 +139,11 @@ fn emit_user_function(
     data: &mut DataSection,
 ) -> Result<()> {
     if function.flags.is_generator {
-        let entry_label = function_symbol(&function.name);
+        let entry_label = user_function_entry_symbol(function);
         return emit_generator_function(module, function, &entry_label, emitter, data);
     }
     let layout = frame::layout_for_function(function);
-    let epilogue_label = function_epilogue_symbol(&function.name);
+    let epilogue_label = user_function_epilogue_symbol(function);
     let mut ctx = FunctionContext::new(
         module,
         function,
@@ -140,10 +155,32 @@ fn emit_user_function(
         false,
         Some(epilogue_label),
     );
-    frame::emit_function_prologue(&mut ctx)?;
+    let entry_label = user_function_entry_symbol(function);
+    frame::emit_function_prologue_with_label(&mut ctx, &entry_label)?;
     emit_blocks(&mut ctx)?;
     frame::emit_function_epilogue(&mut ctx);
     Ok(())
+}
+
+/// Returns the assembly entry label for a user or synthetic EIR function.
+fn user_function_entry_symbol(function: &Function) -> String {
+    if is_property_init_thunk(function) {
+        return function.name.clone();
+    }
+    function_symbol(&function.name)
+}
+
+/// Returns the epilogue label paired with `user_function_entry_symbol()`.
+fn user_function_epilogue_symbol(function: &Function) -> String {
+    if is_property_init_thunk(function) {
+        return format!("{}_epilogue", function.name);
+    }
+    function_epilogue_symbol(&function.name)
+}
+
+/// Returns true for synthetic property-default init thunks referenced by runtime metadata.
+fn is_property_init_thunk(function: &Function) -> bool {
+    function.name.starts_with("_class_propinit_")
 }
 
 /// Emits a class method using the legacy runtime metadata symbol shape.
@@ -280,6 +317,7 @@ fn emit_main_function(
     data: &mut DataSection,
     gc_stats: bool,
     heap_debug: bool,
+    requires_elephc_tls: bool,
 ) -> Result<()> {
     let layout = frame::layout_for_function(function);
     let mut ctx = FunctionContext::new(
@@ -294,6 +332,9 @@ fn emit_main_function(
         None,
     );
     frame::emit_main_prologue(&mut ctx);
+    if requires_elephc_tls {
+        crate::codegen::builtins::publish_tls_function_pointers(ctx.emitter);
+    }
     emit_enum_singleton_initializers(&mut ctx);
     emit_static_property_initializers(&mut ctx)?;
     emit_blocks(&mut ctx)?;
@@ -544,6 +585,9 @@ fn emit_static_property_default_value(
                 0x7fff_ffff_ffff_fffe,
             );
         }
+        LiteralDefaultValue::TaggedNull => {
+            emit_tagged_null_literal_to_result(ctx);
+        }
         LiteralDefaultValue::BoxedNull => {
             emit_boxed_null_literal_to_result(ctx);
         }
@@ -562,7 +606,7 @@ fn emit_static_property_default_value(
     }
     let symbol = static_property_symbol(class_name, property);
     abi::emit_store_result_to_symbol(ctx.emitter, &symbol, php_type, false);
-    if !matches!(php_type.codegen_repr(), PhpType::Str) {
+    if !matches!(php_type.codegen_repr(), PhpType::Str | PhpType::TaggedScalar) {
         abi::emit_store_zero_to_symbol(ctx.emitter, &symbol, 8);
     }
     Ok(())

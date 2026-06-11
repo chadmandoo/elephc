@@ -14,6 +14,7 @@ mod codegen;
 mod codegen_ir;
 mod conditional;
 mod errors;
+mod exports;
 mod intrinsics;
 #[allow(dead_code, unused_imports)]
 mod ir;
@@ -26,6 +27,7 @@ mod name_resolver;
 mod names;
 mod optimize;
 mod parser;
+mod pdo_prelude;
 mod pipeline;
 mod resolver;
 mod runtime_cache;

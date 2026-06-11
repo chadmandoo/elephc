@@ -154,7 +154,7 @@ fn static_local_value_type_matches(value_ty: &PhpType, slot_ty: &PhpType) -> boo
 
 /// Clears the unused second word for non-string static-local storage.
 fn clear_static_local_high_word_if_needed(ctx: &mut FunctionContext<'_>, slot: &StaticLocalSlot) {
-    if !matches!(slot.php_type.codegen_repr(), PhpType::Str) {
+    if !matches!(slot.php_type.codegen_repr(), PhpType::Str | PhpType::TaggedScalar) {
         abi::emit_store_zero_to_symbol(ctx.emitter, &slot.symbol, 8);
     }
 }

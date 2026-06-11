@@ -13,14 +13,28 @@ mod args;
 mod base64_decode;
 mod base64_encode;
 mod bin2hex;
+mod gzcompress;
+mod gzdeflate;
+mod gzinflate;
+mod gzuncompress;
 mod chr;
+mod inet;
+mod ip2long;
+mod long2ip;
+mod crc32;
 mod ctype_alnum;
 mod ctype_alpha;
 mod ctype_digit;
 mod ctype_space;
 mod explode;
+mod format_args;
 mod grapheme_strrev;
 mod hash;
+mod hash_algos;
+mod hash_context;
+mod hash_equals;
+mod hash_hmac;
+pub(crate) mod hash_crypto;
 mod hex2bin;
 mod html_entity_decode;
 mod htmlentities;
@@ -35,6 +49,8 @@ mod number_format;
 mod ord;
 mod printf;
 mod sprintf;
+mod vprintf;
+mod vsprintf;
 mod rawurldecode;
 mod rawurlencode;
 mod rtrim;
@@ -124,6 +140,9 @@ pub fn emit(
         "nl2br" => nl2br::emit(name, args, emitter, ctx, data),
         "wordwrap" => wordwrap::emit(name, args, emitter, ctx, data),
         "bin2hex" => bin2hex::emit(name, args, emitter, ctx, data),
+        "ip2long" => ip2long::emit(name, args, emitter, ctx, data),
+        "inet_ntop" | "inet_pton" => inet::emit(name, args, emitter, ctx, data),
+        "long2ip" => long2ip::emit(name, args, emitter, ctx, data),
         "hex2bin" => hex2bin::emit(name, args, emitter, ctx, data),
         "htmlspecialchars" => htmlspecialchars::emit(name, args, emitter, ctx, data),
         "htmlentities" => htmlentities::emit(name, args, emitter, ctx, data),
@@ -134,15 +153,29 @@ pub fn emit(
         "rawurldecode" => rawurldecode::emit(name, args, emitter, ctx, data),
         "base64_encode" => base64_encode::emit(name, args, emitter, ctx, data),
         "base64_decode" => base64_decode::emit(name, args, emitter, ctx, data),
+        "gzcompress" => gzcompress::emit(name, args, emitter, ctx, data),
+        "gzdeflate" => gzdeflate::emit(name, args, emitter, ctx, data),
+        "gzinflate" => gzinflate::emit(name, args, emitter, ctx, data),
+        "gzuncompress" => gzuncompress::emit(name, args, emitter, ctx, data),
         "ctype_alpha" => ctype_alpha::emit(name, args, emitter, ctx, data),
         "ctype_digit" => ctype_digit::emit(name, args, emitter, ctx, data),
         "ctype_alnum" => ctype_alnum::emit(name, args, emitter, ctx, data),
         "ctype_space" => ctype_space::emit(name, args, emitter, ctx, data),
         "sprintf" => sprintf::emit(name, args, emitter, ctx, data),
+        "vsprintf" => vsprintf::emit(name, args, emitter, ctx, data),
         "md5" => md5::emit(name, args, emitter, ctx, data),
         "sha1" => sha1::emit(name, args, emitter, ctx, data),
+        "crc32" => crc32::emit(name, args, emitter, ctx, data),
         "printf" => printf::emit(name, args, emitter, ctx, data),
+        "vprintf" => vprintf::emit(name, args, emitter, ctx, data),
         "hash" => hash::emit(name, args, emitter, ctx, data),
+        "hash_algos" => hash_algos::emit(name, args, emitter, ctx, data),
+        "hash_equals" => hash_equals::emit(name, args, emitter, ctx, data),
+        "hash_hmac" => hash_hmac::emit(name, args, emitter, ctx, data),
+        "hash_init" => hash_context::emit_init(name, args, emitter, ctx, data),
+        "hash_update" => hash_context::emit_update(name, args, emitter, ctx, data),
+        "hash_final" => hash_context::emit_final(name, args, emitter, ctx, data),
+        "hash_copy" => hash_context::emit_copy(name, args, emitter, ctx, data),
         "sscanf" => sscanf::emit(name, args, emitter, ctx, data),
         _ => None,
     }

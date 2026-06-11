@@ -30,7 +30,7 @@ pub(super) fn lower_strict_eq(
     let rhs = expect_operand(inst, 1)?;
     let lhs_ty = ctx.value_php_type(lhs)?.codegen_repr();
     let rhs_ty = ctx.value_php_type(rhs)?.codegen_repr();
-    if is_mixed_like(&lhs_ty) || is_mixed_like(&rhs_ty) {
+    if needs_mixed_strict_compare(&lhs_ty) || needs_mixed_strict_compare(&rhs_ty) {
         emit_mixed_strict_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
         return store_if_result(ctx, inst);
     }
@@ -98,6 +98,11 @@ fn is_mixed_like(ty: &PhpType) -> bool {
     matches!(ty.codegen_repr(), PhpType::Mixed)
 }
 
+/// Returns true when strict equality needs runtime tag comparison through Mixed boxing.
+fn needs_mixed_strict_compare(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::Mixed | PhpType::TaggedScalar)
+}
+
 /// Compares a mixed operand against another mixed or concrete operand using runtime tags.
 fn emit_mixed_strict_compare(
     ctx: &mut FunctionContext<'_>,
@@ -156,7 +161,11 @@ fn materialize_value_as_mixed(
     }
     match ty {
         PhpType::Void | PhpType::Never => {
-            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                crate::codegen::sentinels::NULL_SENTINEL,
+            );
         }
         _ => {
             ctx.load_value_to_result(value)?;

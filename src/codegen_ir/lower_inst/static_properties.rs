@@ -297,7 +297,7 @@ fn clear_uninitialized_marker_after_static_store(
     symbol: &str,
     ty: &PhpType,
 ) {
-    if !matches!(ty.codegen_repr(), PhpType::Str) {
+    if !matches!(ty.codegen_repr(), PhpType::Str | PhpType::TaggedScalar) {
         abi::emit_store_zero_to_symbol(ctx.emitter, symbol, 8);
     }
 }

@@ -365,7 +365,14 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         FNeg => check_unary(function, inst_id, inst, IrType::F64, "F64"),
         ICmp => check_binary(function, inst_id, inst, IrType::I64, "I64"),
         FCmp => check_binary(function, inst_id, inst, IrType::F64, "F64"),
-        IToF | IToStr => check_unary(function, inst_id, inst, IrType::I64, "I64"),
+        IToF => check_unary(function, inst_id, inst, IrType::I64, "I64"),
+        IToStr => check_unary_any(
+            function,
+            inst_id,
+            inst,
+            &[IrType::I64, IrType::TaggedScalar],
+            "I64 or TaggedScalar",
+        ),
         ResourceToStr => check_unary(function, inst_id, inst, IrType::I64, "I64 resource"),
         FToI | FToStr => check_unary(function, inst_id, inst, IrType::F64, "F64"),
         BoolToStr => check_unary(function, inst_id, inst, IrType::I64, "I64 bool"),
@@ -490,6 +497,32 @@ fn check_unary(
 ) -> Result<(), ValidationError> {
     check_count(inst_id, inst, 1, "1")?;
     check_operand_type(function, inst_id, inst, 0, expected, expected_label)
+}
+
+/// Validates a unary operand type against a small set of accepted storage types.
+fn check_unary_any(
+    function: &Function,
+    inst_id: InstId,
+    inst: &Instruction,
+    expected: &[IrType],
+    expected_label: &'static str,
+) -> Result<(), ValidationError> {
+    check_count(inst_id, inst, 1, "1")?;
+    let operand = inst.operands[0];
+    let actual = function
+        .value(operand)
+        .ok_or(ValidationError::UnknownValue(operand))?
+        .ir_type;
+    if expected.contains(&actual) {
+        Ok(())
+    } else {
+        Err(ValidationError::OperandTypeMismatch {
+            inst: inst_id,
+            operand,
+            expected: expected_label,
+            actual,
+        })
+    }
 }
 
 /// Validates both operands of a binary operation share one type.
@@ -904,14 +937,16 @@ fn intersection_of_predecessors(
 
 /// Returns true when PHP type metadata can use the given EIR storage type.
 fn php_type_compatible(ir_type: IrType, php_type: &PhpType) -> bool {
-    IrType::from_php(php_type) == ir_type
+    let php_type = php_type.codegen_repr();
+    IrType::from_php(&php_type) == ir_type
         || matches!((ir_type, php_type), (IrType::I64, PhpType::Void))
 }
 
 /// Returns true when ownership is coherent with storage and PHP type metadata.
 fn ownership_compatible(ir_type: IrType, php_type: &PhpType, ownership: Ownership) -> bool {
+    let php_type = php_type.codegen_repr();
     let tracks_lifetime = ir_type.is_refcounted_storage()
-        || Ownership::php_type_needs_lifetime_tracking(php_type);
+        || Ownership::php_type_needs_lifetime_tracking(&php_type);
     if tracks_lifetime {
         !matches!(ownership, Ownership::NonHeap)
     } else {

@@ -11,10 +11,18 @@
 use std::collections::HashSet;
 use std::process;
 
+pub(crate) use crate::codegen::Emit;
 use crate::codegen::platform::Target;
 
 /// Usage string printed to stderr when command-line arguments are invalid or missing.
-pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-ir] [--ir-backend] [--emit-asm] [--check] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
+pub(crate) const USAGE: &str = "Usage: elephc [--target TARGET] [--heap-size=BYTES] [--gc-stats] [--heap-debug] [--emit-ir] [--ir-backend] [--ast-backend] [--emit-asm] [--emit KIND] [--check] [--null-repr=sentinel|tagged] [--timings] [--source-map] [--define SYMBOL] [--link LIB|-lLIB] [--link-path DIR|-LDIR] [--framework NAME] <source.php>";
+
+/// Backend selected for assembly generation after frontend and optimization passes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CodegenBackend {
+    Eir,
+    Ast,
+}
 
 /// Configuration derived from command-line arguments, passed to the compile pipeline.
 /// Controls heap allocation size, debug output, code generation options, and linking behavior.
@@ -24,8 +32,10 @@ pub(crate) struct CliConfig {
     pub(crate) gc_stats: bool,
     pub(crate) heap_debug: bool,
     pub(crate) emit_ir: bool,
-    pub(crate) ir_backend: bool,
+    pub(crate) backend: CodegenBackend,
+    pub(crate) null_repr: crate::codegen::NullRepr,
     pub(crate) emit_asm: bool,
+    pub(crate) emit: Emit,
     pub(crate) check_only: bool,
     pub(crate) emit_timings: bool,
     pub(crate) emit_source_map: bool,
@@ -47,8 +57,11 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     let mut gc_stats = false;
     let mut heap_debug = false;
     let mut emit_ir = false;
-    let mut ir_backend = false;
+    let mut backend = CodegenBackend::Eir;
+    let mut explicit_ir_backend = false;
+    let mut explicit_ast_backend = false;
     let mut emit_asm = false;
+    let mut emit = Emit::Executable;
     let mut check_only = false;
     let mut emit_timings = false;
     let mut emit_source_map = false;
@@ -58,6 +71,11 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     let mut extra_link_paths: Vec<String> = Vec::new();
     let mut extra_frameworks: Vec<String> = Vec::new();
     let mut defines: HashSet<String> = HashSet::new();
+    let mut null_repr = match std::env::var("ELEPHC_NULL_REPR").as_deref() {
+        Ok("tagged") => crate::codegen::NullRepr::Tagged,
+        Ok("sentinel") => crate::codegen::NullRepr::Sentinel,
+        _ => crate::codegen::NullRepr::default(),
+    };
 
     let mut i = 1;
     while i < args.len() {
@@ -76,21 +94,36 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
         } else if arg == "--emit-ir" {
             emit_ir = true;
         } else if arg == "--ir-backend" {
-            ir_backend = true;
+            explicit_ir_backend = true;
+            backend = CodegenBackend::Eir;
+        } else if arg == "--ast-backend" {
+            explicit_ast_backend = true;
+            backend = CodegenBackend::Ast;
         } else if arg == "--emit-asm" {
             emit_asm = true;
+        } else if arg == "--emit" {
+            i += 1;
+            emit = parse_required_emit(args, i);
+        } else if let Some(value) = arg.strip_prefix("--emit=") {
+            emit = parse_emit(value);
         } else if arg == "--check" {
             check_only = true;
         } else if arg == "--timings" {
             emit_timings = true;
         } else if arg == "--source-map" {
             emit_source_map = true;
+        } else if let Some(value) = arg.strip_prefix("--null-repr=") {
+            null_repr = parse_null_repr(value);
         } else if arg == "--define" {
             i += 1;
-            defines.insert(required_value(args, i, "Missing symbol after --define"));
+            let symbol = required_value(args, i, "Missing symbol after --define");
+            if let Err(message) = validate_define_symbol(&symbol) {
+                fail(message);
+            }
+            defines.insert(symbol);
         } else if let Some(symbol) = arg.strip_prefix("--define=") {
-            if symbol.is_empty() {
-                fail("Invalid --define: symbol cannot be empty");
+            if let Err(message) = validate_define_symbol(symbol) {
+                fail(message);
             }
             defines.insert(symbol.to_string());
         } else if arg == "--link" || arg == "-l" {
@@ -133,6 +166,14 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     if output_modes > 1 {
         fail("--emit-ir, --emit-asm, and --check are mutually exclusive");
     }
+    if explicit_ir_backend && explicit_ast_backend {
+        fail("cannot use --ir-backend and --ast-backend together");
+    }
+    if explicit_ast_backend {
+        eprintln!(
+            "warning: --ast-backend is deprecated and will be removed in v0.26.0. The EIR backend is now the default. See docs/internals/the-ir.md for details."
+        );
+    }
 
     CliConfig {
         filename,
@@ -140,8 +181,10 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
         gc_stats,
         heap_debug,
         emit_ir,
-        ir_backend,
+        backend,
+        null_repr,
         emit_asm,
+        emit,
         check_only,
         emit_timings,
         emit_source_map,
@@ -150,6 +193,27 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
         extra_link_paths,
         extra_frameworks,
         defines,
+    }
+}
+
+/// Parse the required emit-kind argument at the given index, or fail if missing.
+fn parse_required_emit(args: &[String], index: usize) -> Emit {
+    if index < args.len() {
+        parse_emit(&args[index])
+    } else {
+        fail("Missing emit kind after --emit (expected: executable, cdylib)")
+    }
+}
+
+/// Parse an emit-kind string into an `Emit` value, or fail with an error message.
+fn parse_emit(value: &str) -> Emit {
+    match value {
+        "executable" | "exe" | "bin" => Emit::Executable,
+        "cdylib" | "dylib" | "shared" => Emit::Cdylib,
+        other => fail(&format!(
+            "Invalid --emit kind '{}': expected one of: executable, cdylib",
+            other
+        )),
     }
 }
 
@@ -170,6 +234,15 @@ fn parse_required_target(args: &[String], index: usize) -> Target {
     }
 }
 
+/// Parse a `--null-repr=` value into a NullRepr, or fail with an error message.
+fn parse_null_repr(value: &str) -> crate::codegen::NullRepr {
+    match value {
+        "sentinel" => crate::codegen::NullRepr::Sentinel,
+        "tagged" => crate::codegen::NullRepr::Tagged,
+        other => fail(&format!("Unknown null representation: {}", other)),
+    }
+}
+
 /// Parse a target string to a Target enum, or fail with an error message.
 fn parse_target(value: &str) -> Target {
     match Target::parse(value) {
@@ -187,9 +260,55 @@ fn required_value(args: &[String], index: usize, message: &str) -> String {
     }
 }
 
+/// Validates an ifdef symbol supplied via `--define`, rejecting an empty symbol.
+///
+/// Kept pure (no IO/exit) so both the `--define SYMBOL` and `--define=SYMBOL` forms
+/// can share one consistent rule and the rejection can be unit-tested.
+fn validate_define_symbol(symbol: &str) -> Result<(), &'static str> {
+    if symbol.is_empty() {
+        return Err("Invalid --define: symbol cannot be empty");
+    }
+    Ok(())
+}
+
 /// Prints a message to stderr and exits the process with code 1.
 /// Never returns.
 fn fail(message: &str) -> ! {
     eprintln!("{}", message);
     process::exit(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verifies an empty `--define` symbol is rejected, matching the `--define=` form,
+    /// so the two spellings no longer behave inconsistently.
+    #[test]
+    fn empty_define_symbol_is_rejected() {
+        assert!(validate_define_symbol("").is_err());
+    }
+
+    /// Verifies a normal `--define` symbol is accepted.
+    #[test]
+    fn non_empty_define_symbol_is_accepted() {
+        assert!(validate_define_symbol("FEATURE").is_ok());
+    }
+
+    /// Verifies the canonical `--emit` spellings parse to the expected `Emit` variants.
+    #[test]
+    fn emit_kind_parses_canonical_spellings() {
+        assert_eq!(parse_emit("executable"), Emit::Executable);
+        assert_eq!(parse_emit("cdylib"), Emit::Cdylib);
+    }
+
+    /// Verifies the accepted aliases map to their canonical variants so users coming
+    /// from cargo (`cdylib`/`dylib`) and unix toolchains (`shared`, `bin`) all work.
+    #[test]
+    fn emit_kind_accepts_aliases() {
+        assert_eq!(parse_emit("exe"), Emit::Executable);
+        assert_eq!(parse_emit("bin"), Emit::Executable);
+        assert_eq!(parse_emit("dylib"), Emit::Cdylib);
+        assert_eq!(parse_emit("shared"), Emit::Cdylib);
+    }
 }

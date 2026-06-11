@@ -33,11 +33,19 @@ pub(crate) use callables::{
 };
 
 impl Checker {
-    /// Records that a Linux target requires the given shared library for this compilation.
+    /// Records an external link library required on every target.
+    fn require_builtin_library(&mut self, library: &str) {
+        if !self.required_libraries.iter().any(|lib| lib == library) {
+            self.required_libraries.push(library.to_string());
+        }
+    }
+
+    /// Records that a macOS target requires the given shared library.
     ///
-    /// No-op on non-Linux targets. Prevents duplicate entries in `required_libraries`.
-    fn require_linux_builtin_library(&mut self, library: &str) {
-        if self.target_platform == crate::codegen::platform::Platform::Linux
+    /// No-op on non-macOS targets. Used for libraries that live in libc on
+    /// Linux (glibc/musl) but need explicit linkage on macOS — e.g. `iconv`.
+    fn require_macos_builtin_library(&mut self, library: &str) {
+        if self.target_platform == crate::codegen::platform::Platform::MacOS
             && !self.required_libraries.iter().any(|lib| lib == library)
         {
             self.required_libraries.push(library.to_string());

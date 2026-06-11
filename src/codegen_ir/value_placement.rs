@@ -72,7 +72,7 @@ fn is_iter_start_value(func: &Function, value: ValueId) -> bool {
 pub fn bytes_for(ty: IrType) -> usize {
     match ty {
         IrType::I64 | IrType::F64 | IrType::Heap(_) => 8,
-        IrType::Str => 16,
+        IrType::Str | IrType::TaggedScalar => 16,
         IrType::Void => 0,
     }
 }

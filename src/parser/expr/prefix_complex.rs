@@ -351,6 +351,12 @@ fn collect_arrow_expr_captures(
                 collect_arrow_expr_captures(arg, bound, seen, captures);
             }
         }
+        ExprKind::NewDynamic { name_expr, args } => {
+            collect_arrow_expr_captures(name_expr, bound, seen, captures);
+            for arg in args {
+                collect_arrow_expr_captures(arg, bound, seen, captures);
+            }
+        }
         ExprKind::ClosureCall { var, args } => {
             push_arrow_capture(var, bound, seen, captures);
             for arg in args {
@@ -496,6 +502,10 @@ fn parse_closure_params(
                 ));
             }
             *pos += 1;
+            // Allow a trailing comma before the closing paren (PHP 8.0+).
+            if *pos < tokens.len() && tokens[*pos].0 == Token::RParen {
+                break;
+            }
         }
         // PHP 8.0 closure-parameter attributes (`fn(#[X] $a) => …`).
         crate::parser::consume_attribute_lists(tokens, pos)?;
@@ -670,6 +680,13 @@ pub(super) fn parse_named_expr(
                 *pos += 1;
                 "MATCH".to_string()
             }
+            // PHP 8 allows semi-reserved keywords as static method / class-constant names
+            // (e.g. `Foo::self()`, `Foo::print`); `class` and `$var` are handled above.
+            Some(t) if crate::parser::keyword_name::bareword_name_from_token(t).is_some() => {
+                let member = crate::parser::keyword_name::bareword_name_from_token(t).unwrap();
+                *pos += 1;
+                member
+            }
             _ => return Err(CompileError::new(span, "Expected member name after '::'")),
         };
         if *pos < tokens.len() && tokens[*pos].0 == Token::LParen {
@@ -741,6 +758,28 @@ pub(super) fn parse_new_object(
         let args = parse_args(tokens, pos, span)?;
         return Ok(Expr::new(
             ExprKind::NewScopedObject { receiver, args },
+            span,
+        ));
+    }
+
+    // `new $variable(args)` — the class name is held in a variable; we'll
+    // resolve it through the runtime class table at codegen time.
+    if let Some((Token::Variable(name), _)) = tokens.get(*pos) {
+        let var_name = name.clone();
+        *pos += 1;
+        if *pos >= tokens.len() || tokens[*pos].0 != Token::LParen {
+            return Err(CompileError::new(
+                span,
+                "Expected '(' after class-name variable in 'new $var('",
+            ));
+        }
+        *pos += 1;
+        let args = parse_args(tokens, pos, span)?;
+        return Ok(Expr::new(
+            ExprKind::NewDynamic {
+                name_expr: Box::new(Expr::new(ExprKind::Variable(var_name), span)),
+                args,
+            },
             span,
         ));
     }

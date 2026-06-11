@@ -29,6 +29,7 @@ pub(crate) enum LiteralDefaultValue {
     Str(String),
     Null,
     NullSentinel,
+    TaggedNull,
     BoxedNull,
     BoxedStr(String),
     Array {
@@ -76,6 +77,9 @@ pub(crate) fn literal_default_value(
         (PhpType::Str, ExprKind::StringLiteral(value)) => Ok(LiteralDefaultValue::Str(value.clone())),
         (PhpType::Mixed | PhpType::Union(_), ExprKind::StringLiteral(value)) => {
             Ok(LiteralDefaultValue::BoxedStr(value.clone()))
+        }
+        (php_type, ExprKind::Null) if php_type.codegen_repr() == PhpType::TaggedScalar => {
+            Ok(LiteralDefaultValue::TaggedNull)
         }
         (PhpType::Mixed | PhpType::Union(_), ExprKind::Null) => Ok(LiteralDefaultValue::BoxedNull),
         (PhpType::Void | PhpType::Never, ExprKind::Null) => Ok(LiteralDefaultValue::NullSentinel),
@@ -148,6 +152,11 @@ pub(crate) fn emit_boxed_null_literal_to_result(ctx: &mut FunctionContext<'_>) {
         0x7fff_ffff_ffff_fffe,
     );
     emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Void);
+}
+
+/// Emits PHP null as an inline tagged scalar literal default.
+pub(crate) fn emit_tagged_null_literal_to_result(ctx: &mut FunctionContext<'_>) {
+    crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
 }
 
 /// Emits an indexed-array literal default into the canonical result register.

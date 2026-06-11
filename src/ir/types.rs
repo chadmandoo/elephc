@@ -16,6 +16,7 @@ pub enum IrType {
     I64,
     F64,
     Str,
+    TaggedScalar,
     Heap(IrHeapKind),
     Void,
 }
@@ -43,6 +44,7 @@ impl IrType {
             | PhpType::Resource(_) => IrType::I64,
             PhpType::Float => IrType::F64,
             PhpType::Str => IrType::Str,
+            PhpType::TaggedScalar => IrType::TaggedScalar,
             PhpType::Void | PhpType::Never => IrType::Void,
             PhpType::Iterable => IrType::Heap(IrHeapKind::Iterable),
             PhpType::Mixed => IrType::Heap(IrHeapKind::Mixed),
@@ -58,7 +60,7 @@ impl IrType {
     pub fn register_count(self) -> usize {
         match self {
             IrType::I64 | IrType::F64 | IrType::Heap(_) => 1,
-            IrType::Str => 2,
+            IrType::Str | IrType::TaggedScalar => 2,
             IrType::Void => 0,
         }
     }
@@ -84,6 +86,7 @@ impl IrType {
             IrType::I64 => "I64".to_string(),
             IrType::F64 => "F64".to_string(),
             IrType::Str => "Str".to_string(),
+            IrType::TaggedScalar => "TaggedScalar".to_string(),
             IrType::Heap(kind) => format!("Heap({})", kind.as_eir()),
             IrType::Void => "Void".to_string(),
         }

@@ -9,10 +9,15 @@
 //! - String temporaries must stay alive through the write and be released only when this path owns them.
 
 use super::super::abi;
+use super::super::NULL_SENTINEL;
 use super::super::context::Context;
 use super::super::data_section::DataSection;
 use super::super::emit::Emitter;
-use super::super::expr::{coerce_to_string, emit_expr, string_result_is_owned_call_temp};
+use super::super::context::HeapOwnership;
+use super::super::expr::{
+    coerce_to_string_releasing_owned, emit_expr, expr_result_heap_ownership,
+    string_result_is_owned_call_temp,
+};
 use super::super::platform::Arch;
 use super::PhpType;
 use crate::parser::ast::Expr;
@@ -54,19 +59,31 @@ pub(crate) fn emit_expr_to_stdout(
             emitter.label(&skip_label);
         }
         PhpType::Int => {
-            let skip_label = ctx.next_label("echo_skip_null");
-            let sentinel_reg = abi::symbol_scratch_reg(emitter);
-            abi::emit_load_int_immediate(emitter, sentinel_reg, 0x7fff_ffff_ffff_fffe);
-            match emitter.target.arch {
-                Arch::AArch64 => {
-                    emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare integer value against the runtime null sentinel
-                    emitter.instruction(&format!("b.eq {}", skip_label));       // skip echo if value is the null sentinel
+            if crate::codegen::sentinels::null_repr_is_tagged() {
+                // Under the tagged representation a plain Int is never null, so the full
+                // i64 range (including PHP_INT_MAX - 1) is printable without a skip check.
+                abi::emit_write_stdout(emitter, &ty);
+            } else {
+                let skip_label = ctx.next_label("echo_skip_null");
+                let sentinel_reg = abi::symbol_scratch_reg(emitter);
+                abi::emit_load_int_immediate(emitter, sentinel_reg, NULL_SENTINEL);
+                match emitter.target.arch {
+                    Arch::AArch64 => {
+                        emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare integer value against the runtime null sentinel
+                        emitter.instruction(&format!("b.eq {}", skip_label));   // skip echo if value is the null sentinel
+                    }
+                    Arch::X86_64 => {
+                        emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare integer value against the runtime null sentinel
+                        emitter.instruction(&format!("je {}", skip_label));     // skip echo if value is the null sentinel
+                    }
                 }
-                Arch::X86_64 => {
-                    emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare integer value against the runtime null sentinel
-                    emitter.instruction(&format!("je {}", skip_label));         // skip echo if value is the null sentinel
-                }
+                abi::emit_write_stdout(emitter, &ty);
+                emitter.label(&skip_label);
             }
+        }
+        PhpType::TaggedScalar => {
+            let skip_label = ctx.next_label("echo_skip_null");
+            crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(emitter, &skip_label);
             abi::emit_write_stdout(emitter, &ty);
             emitter.label(&skip_label);
         }
@@ -80,8 +97,25 @@ pub(crate) fn emit_expr_to_stdout(
             );
         }
         PhpType::Object(_) => {
-            coerce_to_string(emitter, ctx, data, &ty);
+            let release_object = expr_result_heap_ownership(expr) == HeapOwnership::Owned;
+            coerce_to_string_releasing_owned(emitter, ctx, data, &ty, release_object);
             emit_string_to_stdout_and_release_if_needed(emitter, true);
+        }
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
+            // Arrays stringify to the literal "Array" (matching PHP). The array pointer is
+            // preserved across the write so an owned temporary can be released afterward; a
+            // borrowed array (e.g. a plain variable) is left for its owner to release.
+            let release_array = expr_result_heap_ownership(expr) == HeapOwnership::Owned;
+            if release_array {
+                abi::emit_push_reg(emitter, abi::int_result_reg(emitter));
+            }
+            coerce_to_string_releasing_owned(emitter, ctx, data, &ty, false);
+            abi::emit_write_stdout(emitter, &PhpType::Str);
+            if release_array {
+                abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 0);
+                abi::emit_decref_if_refcounted(emitter, &ty);
+                abi::emit_release_temporary_stack(emitter, 16);
+            }
         }
         _ => {
             abi::emit_write_stdout(emitter, &ty);
@@ -132,6 +166,11 @@ fn stabilize_x86_64_echo_result(emitter: &mut Emitter, ty: &PhpType) {
         PhpType::Float => {
             abi::emit_push_float_reg(emitter, abi::float_result_reg(emitter));  // spill floating-point x86_64 echo results through a temporary slot before helper calls consume them
             abi::emit_pop_float_reg(emitter, abi::float_result_reg(emitter));   // reload the stabilized x86_64 echo result back into the canonical floating-point result register
+        }
+        PhpType::TaggedScalar => {
+            let tag_reg = crate::codegen::sentinels::tagged_scalar_tag_reg(emitter);
+            abi::emit_push_reg_pair(emitter, abi::int_result_reg(emitter), tag_reg); // spill the tagged scalar payload/tag pair through a temporary slot before helper calls consume them
+            abi::emit_pop_reg_pair(emitter, abi::int_result_reg(emitter), tag_reg); // reload the stabilized tagged scalar payload/tag pair
         }
         PhpType::Str | PhpType::Void | PhpType::Never => {}
     }

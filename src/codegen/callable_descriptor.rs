@@ -599,6 +599,7 @@ fn type_tag(ty: &PhpType) -> u64 {
         PhpType::Buffer(_) => 13,
         PhpType::Packed(_) => 14,
         PhpType::Never => 15,
+        PhpType::TaggedScalar => 7,
     }
 }
 

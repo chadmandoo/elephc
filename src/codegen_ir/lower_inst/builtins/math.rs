@@ -46,6 +46,10 @@ pub(super) fn lower_abs(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Re
     match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Float => emit_float_abs(ctx),
         PhpType::Int | PhpType::Bool => emit_int_abs(ctx),
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
+            emit_int_abs(ctx);
+        }
         PhpType::Void | PhpType::Never => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
         }
@@ -819,6 +823,11 @@ fn load_numeric_as_float(
     match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Float => Ok(()),
         PhpType::Int | PhpType::Bool => {
+            abi::emit_int_result_to_float_result(ctx.emitter);
+            Ok(())
+        }
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
             abi::emit_int_result_to_float_result(ctx.emitter);
             Ok(())
         }

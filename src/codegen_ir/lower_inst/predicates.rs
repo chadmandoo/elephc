@@ -33,6 +33,7 @@ pub(super) fn lower_is_truthy(ctx: &mut FunctionContext<'_>, inst: &Instruction)
             emit_float_result_nonzero_bool(ctx);
         }
         PhpType::Str => emit_string_truthiness(ctx, value)?,
+        PhpType::TaggedScalar => emit_tagged_scalar_truthiness(ctx, value)?,
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             emit_array_truthiness(ctx, value)?;
         }
@@ -52,6 +53,20 @@ pub(super) fn lower_is_truthy(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         }
     }
     store_if_result(ctx, inst)
+}
+
+/// Emits PHP truthiness for a tagged scalar: null is false, otherwise integer truthiness.
+fn emit_tagged_scalar_truthiness(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
+    let null_label = ctx.next_label("tagged_truthy_null");
+    let done_label = ctx.next_label("tagged_truthy_done");
+    ctx.load_value_to_result(value)?;
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &null_label);
+    emit_int_result_nonzero_bool(ctx);
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&null_label);
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+    ctx.emitter.label(&done_label);
+    Ok(())
 }
 
 /// Emits PHP array truthiness by checking the runtime container length header.
@@ -78,7 +93,16 @@ pub(super) fn emit_is_null_result(ctx: &mut FunctionContext<'_>, value: ValueId)
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
             Ok(())
         }
+        PhpType::TaggedScalar => {
+            ctx.load_value_to_result(value)?;
+            emit_tagged_scalar_null_bool(ctx);
+            Ok(())
+        }
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
+            if crate::codegen::sentinels::null_repr_is_tagged() {
+                abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
+                return Ok(());
+            }
             ctx.load_value_to_result(value)?;
             emit_int_result_null_sentinel_bool(ctx);
             Ok(())
@@ -86,6 +110,27 @@ pub(super) fn emit_is_null_result(ctx: &mut FunctionContext<'_>, value: ValueId)
         _ => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
             Ok(())
+        }
+    }
+}
+
+/// Compares the loaded tagged-scalar tag register against PHP's null tag.
+fn emit_tagged_scalar_null_bool(ctx: &mut FunctionContext<'_>) {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp x1, #{}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // compare the tagged scalar tag against PHP null
+            ctx.emitter.instruction("cset x0, eq");                             // materialize true when the tagged scalar is null
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp rdx, {}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // compare the tagged scalar tag against PHP null
+            ctx.emitter.instruction("sete al");                                 // materialize true when the tagged scalar is null
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
         }
     }
 }

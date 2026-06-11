@@ -17,6 +17,12 @@ pub struct Emitter {
     buf: String,
     pub target: Target,
     pub platform: Platform,
+    /// When `true`, the `emit_*_symbol_*` helpers in `codegen::abi::symbols`
+    /// route global-symbol references through the GOT (`@GOTPCREL` on x86_64,
+    /// `:got:` + `:got_lo12:` on AArch64) instead of using direct PC-relative
+    /// addressing. Required for shared-library output, where the loader cannot
+    /// resolve cross-object `R_X86_64_PC32` relocations at dlopen time.
+    pub pic_data_refs: bool,
 }
 
 impl Emitter {
@@ -26,7 +32,17 @@ impl Emitter {
             buf: String::with_capacity(4096),
             target,
             platform: target.platform,
+            pic_data_refs: false,
         }
+    }
+
+    /// Returns a new emitter configured for position-independent data
+    /// references. Used by `--emit cdylib` so global symbol accesses survive
+    /// dynamic loading as a shared object.
+    pub fn new_pic(target: Target) -> Self {
+        let mut emitter = Self::new(target);
+        emitter.pic_data_refs = true;
+        emitter
     }
 
     /// Emits a single assembly instruction with standard indentation.
@@ -160,14 +176,8 @@ impl Emitter {
     pub fn bl_c(&mut self, func: &str) {
         match (self.platform, self.target.arch) {
             (Platform::MacOS, Arch::AArch64) => self.instruction(&format!("bl _{}", func)),
-            (Platform::Linux, Arch::AArch64) => {
-                let remapped = self.target.remap_c_symbol(func);
-                self.instruction(&format!("bl {}", remapped));
-            }
-            (Platform::Linux, Arch::X86_64) => {
-                let remapped = self.target.remap_c_symbol(func);
-                self.instruction(&format!("call {}", remapped));
-            }
+            (Platform::Linux, Arch::AArch64) => self.instruction(&format!("bl {}", func)),
+            (Platform::Linux, Arch::X86_64) => self.instruction(&format!("call {}", func)),
             (Platform::MacOS, Arch::X86_64) => {
                 panic!("C symbol calls are not implemented yet for target macos-x86_64");
             }

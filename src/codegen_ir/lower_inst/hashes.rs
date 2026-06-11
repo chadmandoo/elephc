@@ -76,9 +76,10 @@ pub(super) fn lower_hash_get(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
     let key = expect_operand(inst, 1)?;
     let value_ty = assoc_value_type(&ctx.value_php_type(hash)?, inst)?;
     require_hash_get_result(&value_ty, inst)?;
+    let result_ty = inst.result_php_type.codegen_repr();
     match ctx.emitter.target.arch {
-        Arch::AArch64 => lower_hash_get_aarch64(ctx, inst, hash, key, &value_ty),
-        Arch::X86_64 => lower_hash_get_x86_64(ctx, inst, hash, key, &value_ty),
+        Arch::AArch64 => lower_hash_get_aarch64(ctx, inst, hash, key, &value_ty, &result_ty),
+        Arch::X86_64 => lower_hash_get_x86_64(ctx, inst, hash, key, &value_ty, &result_ty),
     }
 }
 
@@ -174,6 +175,7 @@ fn lower_hash_get_aarch64(
     hash: ValueId,
     key: ValueId,
     value_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     materialize_hash_key_aarch64(ctx, key)?;
     ctx.load_value_to_reg(hash, "x0")?;
@@ -181,10 +183,10 @@ fn lower_hash_get_aarch64(
     let miss = ctx.next_label("hash_get_miss");
     let done = ctx.next_label("hash_get_done");
     ctx.emitter.instruction(&format!("cbz x0, {}", miss));                      // branch to the null fallback when the associative lookup misses
-    emit_hash_get_success_aarch64(ctx, value_ty)?;
+    emit_hash_get_success_aarch64(ctx, value_ty, result_ty)?;
     ctx.emitter.instruction(&format!("b {}", done));                            // skip the miss fallback after materializing the hash value
     ctx.emitter.label(&miss);
-    emit_hash_get_miss(ctx, value_ty);
+    emit_hash_get_miss(ctx, result_ty);
     ctx.emitter.label(&done);
     store_if_result(ctx, inst)
 }
@@ -196,6 +198,7 @@ fn lower_hash_get_x86_64(
     hash: ValueId,
     key: ValueId,
     value_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     materialize_hash_key_x86_64(ctx, key)?;
     ctx.load_value_to_reg(hash, "rdi")?;
@@ -204,10 +207,10 @@ fn lower_hash_get_x86_64(
     let done = ctx.next_label("hash_get_done");
     ctx.emitter.instruction("test rax, rax");                                   // check whether the associative lookup found a matching key
     ctx.emitter.instruction(&format!("jz {}", miss));                           // branch to the null fallback when the associative lookup misses
-    emit_hash_get_success_x86_64(ctx, value_ty)?;
+    emit_hash_get_success_x86_64(ctx, value_ty, result_ty)?;
     ctx.emitter.instruction(&format!("jmp {}", done));                          // skip the miss fallback after materializing the hash value
     ctx.emitter.label(&miss);
-    emit_hash_get_miss(ctx, value_ty);
+    emit_hash_get_miss(ctx, result_ty);
     ctx.emitter.label(&done);
     store_if_result(ctx, inst)
 }
@@ -718,10 +721,17 @@ fn materialize_hash_concrete_value_x86_64(
 }
 
 /// Moves a successful AArch64 hash lookup payload into the canonical result registers.
-fn emit_hash_get_success_aarch64(ctx: &mut FunctionContext<'_>, value_ty: &PhpType) -> Result<()> {
+fn emit_hash_get_success_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    value_ty: &PhpType,
+    result_ty: &PhpType,
+) -> Result<()> {
     match value_ty {
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.emitter.instruction("mov x0, x1");                              // move the borrowed hash scalar payload into the standard integer result
+            if matches!(result_ty, PhpType::TaggedScalar) {
+                crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+            }
         }
         PhpType::Float => {
             ctx.emitter.instruction("fmov d0, x1");                             // move the borrowed hash float bits into the standard float result
@@ -744,10 +754,17 @@ fn emit_hash_get_success_aarch64(ctx: &mut FunctionContext<'_>, value_ty: &PhpTy
 }
 
 /// Moves a successful x86_64 hash lookup payload into the canonical result registers.
-fn emit_hash_get_success_x86_64(ctx: &mut FunctionContext<'_>, value_ty: &PhpType) -> Result<()> {
+fn emit_hash_get_success_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    value_ty: &PhpType,
+    result_ty: &PhpType,
+) -> Result<()> {
     match value_ty {
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.emitter.instruction("mov rax, rdi");                            // move the borrowed hash scalar payload into the standard integer result
+            if matches!(result_ty, PhpType::TaggedScalar) {
+                crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+            }
         }
         PhpType::Float => {
             ctx.emitter.instruction("movq xmm0, rdi");                          // move the borrowed hash float bits into the standard float result
@@ -803,6 +820,9 @@ fn emit_hash_get_mixed_success_x86_64(ctx: &mut FunctionContext<'_>) {
 /// Emits the miss fallback in the result shape expected by the associative-array value type.
 fn emit_hash_get_miss(ctx: &mut FunctionContext<'_>, value_ty: &PhpType) {
     match value_ty {
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+        }
         PhpType::Float => match ctx.emitter.target.arch {
             Arch::AArch64 => {
                 ctx.emitter.instruction("fmov d0, xzr");                        // materialize a stable zero float for a missing associative-array read
@@ -880,6 +900,12 @@ fn require_hash(ty: PhpType, inst: &Instruction) -> Result<()> {
 /// Rejects hash-get result shapes that do not match the lowered hash value type.
 fn require_hash_get_result(value_ty: &PhpType, inst: &Instruction) -> Result<()> {
     let result_ty = inst.result_php_type.codegen_repr();
+    if crate::codegen::sentinels::null_repr_is_tagged()
+        && matches!(value_ty, PhpType::Int)
+        && result_ty == PhpType::TaggedScalar
+    {
+        return Ok(());
+    }
     if matches!(
         value_ty,
             PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str | PhpType::Mixed

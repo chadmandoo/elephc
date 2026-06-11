@@ -13,11 +13,14 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Instant;
 
-use crate::cli::CliConfig;
+use crate::cli::{CliConfig, CodegenBackend};
+use crate::codegen::platform::{Platform, Target};
+use crate::codegen::Emit;
 use crate::timings::CompileTimings;
 use crate::{
-    autoload, codegen, codegen_ir, conditional, errors, ir, ir_lower, lexer, linker, magic_constants,
-    name_resolver, optimize, parser, resolver, runtime_cache, source_map, types,
+    autoload, codegen, codegen_ir, conditional, errors, exports, ir, ir_lower, lexer, linker,
+    magic_constants, name_resolver, optimize, parser, pdo_prelude, resolver, runtime_cache,
+    source_map, types,
 };
 
 /// Holds the paths for all compilation output files (assembly, object, binary, source map).
@@ -38,8 +41,10 @@ pub(crate) fn compile(config: CliConfig) {
         gc_stats,
         heap_debug,
         emit_ir,
-        ir_backend,
+        backend,
+        null_repr,
         emit_asm,
+        emit,
         check_only,
         emit_timings,
         emit_source_map,
@@ -50,8 +55,9 @@ pub(crate) fn compile(config: CliConfig) {
         defines,
     } = config;
     let filename = filename.as_str();
+    codegen::set_null_repr(null_repr);
     let parent = Path::new(filename).parent().unwrap_or(Path::new("."));
-    let output_paths = output_paths(filename);
+    let output_paths = output_paths(filename, target, emit);
     let mut timings = CompileTimings::new(emit_timings);
 
     let phase_started = Instant::now();
@@ -110,6 +116,14 @@ pub(crate) fn compile(config: CliConfig) {
     let ast = autoload::collect_aliases(ast);
     timings.record_since("resolve", phase_started);
 
+    // Inject the PDO standard-library prelude (extern bridge + PDO classes,
+    // written in elephc-PHP) only when the program references PDO, so non-PDO
+    // binaries never declare the elephc_pdo externs or link the bridge.
+    // Runs after include resolution so PDO usage inside includes is detected.
+    let phase_started = Instant::now();
+    let ast = pdo_prelude::inject_if_used(ast);
+    timings.record_since("pdo-prelude", phase_started);
+
     let phase_started = Instant::now();
     let ast = match name_resolver::resolve(ast) {
         Ok(resolved) => resolved,
@@ -160,6 +174,23 @@ pub(crate) fn compile(config: CliConfig) {
         process::exit(1);
     }
 
+    let phase_started = Instant::now();
+    let exported_functions = match exports::collect(&ast, &check_result.functions) {
+        Ok(exports) => exports,
+        Err(e) => {
+            errors::report(&e.with_file(filename.to_string()));
+            process::exit(1);
+        }
+    };
+    timings.record_since("exports-scan", phase_started);
+    if matches!(emit, Emit::Executable) && !exported_functions.is_empty() {
+        let names: Vec<&str> = exported_functions.keys().map(String::as_str).collect();
+        eprintln!(
+            "warning: ignoring #[Export] on functions {:?} — --emit cdylib is required to expose them",
+            names
+        );
+    }
+
     if check_only {
         timings.report();
         println!("Checked '{}'", filename);
@@ -201,7 +232,7 @@ pub(crate) fn compile(config: CliConfig) {
         return;
     }
 
-    let ir_module = if ir_backend {
+    let ir_module = if matches!(backend, CodegenBackend::Eir) {
         let phase_started = Instant::now();
         let module = match ir_lower::lower_program(&ast, &check_result, target) {
             Ok(module) => module,
@@ -223,8 +254,15 @@ pub(crate) fn compile(config: CliConfig) {
             codegen::runtime_features_for_program_and_classes(&ast, &check_result.classes)
         });
 
+    let requires_elephc_tls = extra_link_libs.iter().any(|lib| lib == "elephc_tls")
+        || check_result
+            .required_libraries
+            .iter()
+            .any(|lib| lib == "elephc_tls");
+
     let phase_started = Instant::now();
-    let runtime_object = match runtime_cache::prepare_runtime_object(heap_size, target, runtime_features) {
+    let runtime_pic = matches!(emit, Emit::Cdylib);
+    let runtime_object = match runtime_cache::prepare_runtime_object(heap_size, target, runtime_features, runtime_pic) {
         Ok(runtime_object) => runtime_object,
         Err(err) => {
             eprintln!("Runtime cache error: {}", err);
@@ -241,7 +279,14 @@ pub(crate) fn compile(config: CliConfig) {
         "codegen"
     };
     let user_asm = if let Some(module) = &ir_module {
-        match codegen_ir::generate_user_asm_from_ir(module, gc_stats, heap_debug) {
+        match codegen_ir::generate_user_asm_from_ir_with_options(
+            module,
+            gc_stats,
+            heap_debug,
+            requires_elephc_tls,
+            emit,
+            &exported_functions,
+        ) {
             Ok(asm) => asm,
             Err(err) => {
                 eprintln!("EIR backend error: {}", err);
@@ -267,6 +312,10 @@ pub(crate) fn compile(config: CliConfig) {
             gc_stats,
             heap_debug,
             target,
+            requires_elephc_tls,
+            null_repr,
+            emit,
+            &exported_functions,
         )
     };
     timings.record_since(codegen_timing, phase_started);
@@ -317,6 +366,7 @@ pub(crate) fn compile(config: CliConfig) {
     let phase_started = Instant::now();
     linker::link(
         target,
+        emit,
         &output_paths.bin,
         &output_paths.obj,
         &runtime_object.path,
@@ -334,14 +384,25 @@ pub(crate) fn compile(config: CliConfig) {
 
 /// Computes output paths for .s (assembly), .o (object), binary, and .map (source map) files
 /// derived from the input filename.
-fn output_paths(filename: &str) -> OutputPaths {
+///
+/// Executable mode produces `<stem>` (no extension). Cdylib mode produces
+/// `lib<stem>.so` (Linux) or `lib<stem>.dylib` (macOS), matching the conventional
+/// shared-library naming that `dlopen(3)` and linker `-l` flags expect.
+fn output_paths(filename: &str, target: Target, emit: Emit) -> OutputPaths {
     let path = Path::new(filename);
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
     let parent = path.parent().unwrap_or(Path::new("."));
+    let bin_name = match emit {
+        Emit::Executable => stem.to_string(),
+        Emit::Cdylib => match target.platform {
+            Platform::MacOS => format!("lib{}.dylib", stem),
+            Platform::Linux => format!("lib{}.so", stem),
+        },
+    };
     OutputPaths {
         asm: parent.join(format!("{}.s", stem)),
         obj: parent.join(format!("{}.o", stem)),
-        bin: parent.join(stem),
+        bin: parent.join(bin_name),
         source_map: parent.join(format!("{}.map", stem)),
     }
 }

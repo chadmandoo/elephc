@@ -173,6 +173,10 @@ fn load_numeric_as_int(
 ) -> Result<()> {
     match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Int | PhpType::Bool => Ok(()),
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
+            Ok(())
+        }
         PhpType::Void | PhpType::Never => {
             abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
             Ok(())

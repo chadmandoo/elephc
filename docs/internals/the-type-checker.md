@@ -47,10 +47,11 @@ pub enum PhpType {
     Pointer(Option<String>),       // opaque ptr or typed ptr<Class>
     Resource(Option<String>),      // generic resource or typed resource such as resource<stream>
     Union(Vec<PhpType>),
+    TaggedScalar,                  // codegen-internal inline nullable scalar: {payload, tag} pair
 }
 ```
 
-This is still much smaller than full PHP's runtime type system, but it now includes user-written union and nullable annotations where the language subset supports them. `Union(...)` values are lowered to the same boxed runtime representation used by `Mixed`. The distinction between `Array` (indexed) and `AssocArray` (key-value) is determined at compile time from the literal syntax (`[1, 2]` vs `["a" => 1]`), and heterogeneous payloads in either representation widen to boxed `Mixed` elements.
+This is still much smaller than full PHP's runtime type system, but it now includes user-written union and nullable annotations where the language subset supports them. `Union(...)` values are lowered to the same boxed runtime representation used by `Mixed`. `TaggedScalar` is never produced by the checker itself: codegen funnels construct it from `int|null` unions under the tagged null representation (the default; see `--null-repr`), storing the value as an inline two-word `{payload, tag}` pair instead of a heap-boxed cell. The distinction between `Array` (indexed) and `AssocArray` (key-value) is determined at compile time from the literal syntax (`[1, 2]` vs `["a" => 1]`), and heterogeneous payloads in either representation widen to boxed `Mixed` elements.
 
 `Never` is a return-position-only marker: a function annotated `: never` must always diverge (throw, call `exit()`/`die()`, or loop forever). The type checker rejects any reachable `return value;` from such a function, and the runtime size is zero because the value is never materialized. `: never` is rejected as a parameter or local-variable type — same restriction as `: void`.
 
@@ -240,7 +241,26 @@ pub struct FunctionSig {
 - `variadic` holds the name of the variadic parameter (e.g., `$args` in `function foo(...$args)`). Extra arguments beyond the regular parameters are collected into an array.
 - `deprecation` carries PHP 8.4 `#[Deprecated]` metadata when present, so call sites can surface the warning consistently.
 
+### Call-site inference for untyped parameters
+
+Parameters without a type hint start from an `Int` fallback and are specialized from the actual argument types observed at call sites. The checker accumulates the argument types seen across *all* call sites for each undeclared parameter: a parameter called with a single type takes that type, while a parameter called with incompatible types (e.g. `int` at one site and `string` at another) widens to a `Union` so each argument keeps its own runtime representation instead of being coerced to the last-seen type. A union whose members are all `int`/`bool` collapses back to `Int` (preserving the int fallback for int- or bool-only calls), and a `void` argument never specializes a parameter. Because `Union` lowers to the same boxed runtime shape as `Mixed`, such arguments are boxed at the call site and unboxed where they are used.
+
+The same accumulation applies to instance-method and static-method parameters. Closure parameters specialize to the first observed argument type but do not widen to a union, so a closure invoked with incompatible argument types is rejected rather than coerced.
+
 This information is then used when checking calls to that function.
+
+### Type narrowing (`is_*` / `instanceof` guards)
+
+Inside an `if` guarded by a type predicate on a single variable, the checker narrows that variable's type for the guarded branch. `is_int`/`is_integer`/`is_long`, `is_float`/`is_double`, `is_string`, and `is_bool` narrow to the corresponding scalar; `$x instanceof Class` narrows to that class. The then-branch sees the guarded type and the else-branch sees the complement (a `Union` drops the matched members); a leading `!` swaps the two. A guard with no `else` whose body always diverges (`return`/`throw`) narrows the statements after the `if` to the complement. This is what makes the common "overload" shape type-check:
+
+```php
+function set($x): void {                 // $x inferred int|Foo from the call sites
+    if (is_int($x)) { $this->n = $x; }   // $x is int here -> stored into an int property
+    else { $this->o = $x->run(); }       // $x is Foo here -> method dispatched on its class
+}
+```
+
+Narrowing is purely a type-checker step: the variable keeps its boxed runtime (`Mixed`) representation, and codegen coerces it where the narrowed type is required — unboxing for scalar uses, and dispatching a method on a `Mixed`/union receiver by its runtime class id. Narrowing is not flow-sensitive across reassignment of the variable within a branch.
 
 ## Diagnostics and warnings
 
@@ -324,6 +344,7 @@ pub struct ClassInfo {
     pub method_attribute_args: HashMap<String, Vec<Option<Vec<AttrArgValue>>>>,
     pub property_attribute_names: HashMap<String, Vec<String>>,
     pub property_attribute_args: HashMap<String, Vec<Option<Vec<AttrArgValue>>>>,
+    pub used_traits: Vec<String>,
     pub properties: Vec<(String, PhpType)>,
     pub property_offsets: HashMap<String, usize>,
     pub property_declaring_classes: HashMap<String, String>,
@@ -344,6 +365,8 @@ pub struct ClassInfo {
     pub method_decls: Vec<ClassMethod>,
     pub methods: HashMap<String, FunctionSig>,
     pub static_methods: HashMap<String, FunctionSig>,
+    pub callable_method_return_sigs: HashMap<String, FunctionSig>,
+    pub callable_array_method_return_sigs: HashMap<String, FunctionSig>,
     pub method_visibilities: HashMap<String, Visibility>,
     pub final_methods: HashSet<String>,
     pub method_declaring_classes: HashMap<String, String>,
@@ -403,6 +426,8 @@ pub struct CheckResult {
     pub global_env: TypeEnv,                    // variable name → type
     pub functions: HashMap<String, FunctionSig>, // function name → signature
     pub callable_param_sigs: HashMap<(String, String), FunctionSig>, // (function, param) → callable signature
+    pub callable_return_sigs: HashMap<String, FunctionSig>, // function → returned callable signature
+    pub callable_array_return_sigs: HashMap<String, FunctionSig>, // function → returned callable-array element signature
     pub interfaces: HashMap<String, InterfaceInfo>, // interface name → interface info
     pub classes: HashMap<String, ClassInfo>,     // class name → class info
     pub enums: HashMap<String, EnumInfo>,

@@ -79,13 +79,17 @@ pub(crate) fn callable_wrapper_sig(sig: &FunctionSig) -> FunctionSig {
 pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
     match name {
         "time" | "phpversion" | "json_last_error" | "json_last_error_msg" | "pi"
-        | "ptr_null" | "getcwd" | "sys_get_temp_dir" | "tmpfile" => Some(fixed(&[])),
+        | "ptr_null" | "getcwd" | "sys_get_temp_dir" | "tmpfile" | "hash_algos" => Some(fixed(&[])),
 
         "strlen" | "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "strrev"
         | "grapheme_strrev" | "addslashes" | "stripslashes" | "nl2br" | "bin2hex"
         | "hex2bin" | "htmlspecialchars" | "htmlentities" | "html_entity_decode"
         | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
         | "base64_encode" | "base64_decode" => Some(fixed(&["string"])),
+        "gzcompress" => Some(optional(&["data", "level"], 1, vec![int_lit(-1)])),
+        "gzdeflate" => Some(optional(&["data", "level"], 1, vec![int_lit(-1)])),
+        "gzinflate" => Some(optional(&["data", "max_length"], 1, vec![int_lit(0)])),
+        "gzuncompress" => Some(optional(&["data", "max_length"], 1, vec![int_lit(0)])),
         "ord" => Some(fixed(&["character"])),
         "chr" => Some(fixed(&["codepoint"])),
 
@@ -152,6 +156,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             2,
             vec![bool_lit(true)],
         )),
+        "is_resource" => Some(fixed(&["value"])),
+        "get_resource_type" | "get_resource_id" => Some(fixed(&["resource"])),
         "class_attribute_names" | "class_get_attributes" => Some(fixed(&["class_name"])),
         "class_attribute_args" => Some(fixed(&["class_name", "attribute_name"])),
 
@@ -194,6 +200,7 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "str_contains" | "str_starts_with" | "str_ends_with" => {
             Some(fixed(&["haystack", "needle"]))
         }
+        "hash_equals" => Some(fixed(&["known_string", "user_string"])),
         "str_replace" | "str_ireplace" => Some(optional(
             &["search", "replace", "subject", "count"],
             3,
@@ -222,9 +229,24 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             vec![int_lit(75), string_lit("\n"), bool_lit(false)],
         )),
         "sprintf" | "printf" => Some(variadic(&["format"], "values")),
+        "fprintf" => Some(variadic(&["stream", "format"], "values")),
+        "vsprintf" | "vprintf" => Some(fixed(&["format", "values"])),
+        "vfprintf" => Some(fixed(&["stream", "format", "values"])),
         "sscanf" => Some(variadic(&["string", "format"], "vars")),
-        "hash" => Some(fixed(&["algo", "data"])),
+        "fscanf" => Some(variadic(&["stream", "format"], "vars")),
+        "hash" => Some(optional(&["algo", "data", "binary"], 2, vec![bool_lit(false)])),
+        "hash_hmac" => Some(optional(
+            &["algo", "data", "key", "binary"],
+            3,
+            vec![bool_lit(false)],
+        )),
+        "hash_file" => Some(optional(&["algo", "filename", "binary"], 2, vec![bool_lit(false)])),
+        "hash_init" => Some(optional(&["algo", "flags", "key"], 1, vec![int_lit(0), string_lit("")])),
+        "hash_update" => Some(fixed(&["context", "data"])),
+        "hash_final" => Some(optional(&["context", "binary"], 1, vec![bool_lit(false)])),
+        "hash_copy" => Some(fixed(&["context"])),
         "md5" | "sha1" => Some(optional(&["string", "binary"], 1, vec![bool_lit(false)])),
+        "crc32" => Some(fixed(&["string"])),
         "number_format" => Some(optional(
             &["num", "decimals", "decimal_separator", "thousands_separator"],
             1,
@@ -341,6 +363,7 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         | "is_link" | "filesize" | "filemtime" | "fileatime" | "filectime"
         | "fileperms" | "fileowner" | "filegroup" | "fileinode" | "filetype"
         | "stat" | "lstat" => Some(fixed(&["filename"])),
+        "disk_free_space" | "disk_total_space" => Some(fixed(&["directory"])),
         "file_put_contents" => Some(fixed(&["filename", "data"])),
         "copy" | "rename" => Some(fixed(&["from", "to"])),
         "unlink" => Some(fixed(&["filename"])),
@@ -360,7 +383,11 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "fnmatch" => Some(optional(&["pattern", "filename", "flags"], 2, vec![int_lit(0)])),
         "realpath" => Some(fixed(&["path"])),
         "pathinfo" => Some(optional(&["path", "flags"], 1, vec![int_lit(15)])),
-        "fopen" => Some(fixed(&["filename", "mode"])),
+        "fopen" => Some(optional(
+            &["filename", "mode", "use_include_path", "context"],
+            2,
+            vec![bool_lit(false), null_lit()],
+        )),
         "fclose" | "fgets" | "fgetc" | "fpassthru" | "feof" | "ftell" | "rewind"
         | "fstat" | "fsync" | "fflush" | "fdatasync" => Some(fixed(&["stream"])),
         "flock" => {
@@ -390,6 +417,141 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             0,
             vec![bool_lit(false), string_lit("")],
         )),
+        "stream_isatty" | "stream_is_local" | "stream_supports_lock" => {
+            Some(fixed(&["stream"]))
+        }
+        "stream_get_contents" => Some(optional(
+            &["stream", "length", "offset"],
+            1,
+            vec![null_lit(), int_lit(-1)],
+        )),
+        "stream_get_meta_data" => Some(fixed(&["stream"])),
+        "stream_copy_to_stream" => Some(optional(
+            &["from", "to", "length", "offset"],
+            2,
+            vec![null_lit(), int_lit(-1)],
+        )),
+        "stream_socket_server" => Some(fixed(&["address"])),
+        "stream_socket_client" => Some(fixed(&["address"])),
+        "stream_socket_accept" => {
+            let mut sig = optional(
+                &["socket", "timeout", "peer_name"],
+                1,
+                vec![null_lit(), null_lit()],
+            );
+            sig.ref_params[2] = true;
+            Some(sig)
+        }
+        "fsockopen" | "pfsockopen" => {
+            let mut sig = optional(
+                &["hostname", "port", "error_code", "error_message", "timeout"],
+                2,
+                vec![null_lit(), null_lit(), null_lit()],
+            );
+            sig.ref_params[2] = true;
+            sig.ref_params[3] = true;
+            Some(sig)
+        }
+        "stream_wrapper_register" => Some(optional(
+            &["protocol", "class", "flags"],
+            2,
+            vec![int_lit(0)],
+        )),
+        "stream_wrapper_unregister" => Some(fixed(&["protocol"])),
+        "stream_wrapper_restore" => Some(fixed(&["protocol"])),
+        "stream_socket_enable_crypto" => Some(optional(
+            &["stream", "enable", "crypto_method", "session_stream"],
+            2,
+            vec![null_lit(), null_lit()],
+        )),
+        "stream_context_create" => Some(optional(
+            &["options", "params"],
+            0,
+            vec![null_lit(), null_lit()],
+        )),
+        "stream_context_get_default" => {
+            Some(optional(&["options"], 0, vec![null_lit()]))
+        }
+        "stream_context_set_default" => Some(fixed(&["options"])),
+        "stream_context_set_option" => Some(optional(
+            &["context", "wrapper_or_options", "option_name", "value"],
+            2,
+            vec![null_lit(), null_lit()],
+        )),
+        "stream_context_set_params" => Some(fixed(&["context", "params"])),
+        "stream_context_get_options" => Some(fixed(&["context"])),
+        "stream_context_get_params" => Some(fixed(&["context"])),
+        "stream_resolve_include_path" => Some(fixed(&["filename"])),
+        "stream_filter_register" => Some(fixed(&["filter_name", "class"])),
+        "stream_bucket_make_writeable" => Some(fixed(&["brigade"])),
+        "stream_bucket_new" => Some(fixed(&["stream", "buffer"])),
+        "stream_bucket_append" => Some(fixed(&["brigade", "bucket"])),
+        "stream_bucket_prepend" => Some(fixed(&["brigade", "bucket"])),
+        "stream_set_chunk_size" => Some(fixed(&["stream", "size"])),
+        "stream_set_read_buffer" => Some(fixed(&["stream", "size"])),
+        "stream_set_write_buffer" => Some(fixed(&["stream", "size"])),
+        "stream_get_line" => Some(optional(
+            &["stream", "length", "ending"],
+            2,
+            vec![string_lit("")],
+        )),
+        "stream_select" => {
+            let mut sig = optional(
+                &["read", "write", "except", "seconds", "microseconds"],
+                4,
+                vec![int_lit(0)],
+            );
+            sig.ref_params[0] = true;
+            sig.ref_params[1] = true;
+            sig.ref_params[2] = true;
+            Some(sig)
+        }
+        "stream_set_blocking" => Some(fixed(&["stream", "enable"])),
+        "stream_set_timeout" => Some(optional(
+            &["stream", "seconds", "microseconds"],
+            2,
+            vec![int_lit(0)],
+        )),
+        "stream_socket_sendto" => Some(optional(
+            &["socket", "data", "flags", "address"],
+            2,
+            vec![int_lit(0), string_lit("")],
+        )),
+        "stream_socket_recvfrom" => {
+            let mut sig = optional(
+                &["socket", "length", "flags", "address"],
+                2,
+                vec![int_lit(0), string_lit("")],
+            );
+            sig.ref_params[3] = true;
+            Some(sig)
+        }
+        "stream_socket_get_name" => Some(fixed(&["socket", "remote"])),
+        "stream_socket_pair" => Some(fixed(&["domain", "type", "protocol"])),
+        "popen" => Some(fixed(&["command", "mode"])),
+        "pclose" => Some(fixed(&["handle"])),
+        "opendir" => Some(fixed(&["directory"])),
+        "readdir" | "closedir" | "rewinddir" => Some(fixed(&["dir_handle"])),
+        "stream_socket_shutdown" => Some(fixed(&["stream", "mode"])),
+        "gethostname" => Some(fixed(&[])),
+        "gethostbyname" => Some(fixed(&["hostname"])),
+        "gethostbyaddr" => Some(fixed(&["ip"])),
+        "getprotobyname" => Some(fixed(&["protocol"])),
+        "getprotobynumber" => Some(fixed(&["protocol"])),
+        "getservbyname" => Some(fixed(&["service", "protocol"])),
+        "getservbyport" => Some(fixed(&["port", "protocol"])),
+        "long2ip" => Some(fixed(&["ip"])),
+        "ip2long" => Some(fixed(&["ip"])),
+        "inet_ntop" | "inet_pton" => Some(fixed(&["ip"])),
+        "stream_get_transports" | "stream_get_wrappers" | "stream_get_filters" => {
+            Some(fixed(&[]))
+        }
+        "stream_filter_append" | "stream_filter_prepend" => Some(optional(
+            &["stream", "filtername", "read_write", "params"],
+            2,
+            vec![int_lit(3), null_lit()],
+        )),
+        "stream_filter_remove" => Some(fixed(&["stream_filter"])),
 
         "spl_autoload_register" => Some(optional(
             &["callback", "throw", "prepend"],
@@ -524,7 +686,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         | "base64_decode" | "trim" | "ltrim" | "rtrim" | "chop" | "ucwords" | "substr"
         | "str_repeat" | "strstr" | "str_replace" | "str_ireplace" | "explode"
         | "implode" | "substr_replace" | "str_pad" | "str_split" | "wordwrap"
-        | "sprintf" | "hash" | "md5" | "sha1" | "number_format" | "chr" => {
+        | "sprintf" | "hash" | "hash_hmac" | "md5" | "sha1" | "crc32" | "number_format" | "chr" => {
             Some(typed_first_class_builtin_sig(
                 name,
                 &[PhpType::Str],
@@ -536,23 +698,23 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             &[PhpType::Str],
             PhpType::Int,
         )),
-        "str_contains" | "str_starts_with" | "str_ends_with" => Some(typed_first_class_builtin_sig(
+        "str_contains" | "str_starts_with" | "str_ends_with" | "hash_equals" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Str, PhpType::Str],
             PhpType::Bool,
         )),
-        "array_keys" | "array_values" | "array_reverse" | "array_unique" => {
+        "hash_algos" => Some(typed_first_class_builtin_sig(
+            name,
+            &[],
+            PhpType::Array(Box::new(PhpType::Str)),
+        )),
+        "array_keys" | "array_values" | "array_reverse" | "array_unique" | "array_rand" => {
             Some(typed_first_class_builtin_sig(
                 name,
                 &[PhpType::Array(Box::new(PhpType::Mixed))],
                 PhpType::Array(Box::new(PhpType::Mixed)),
             ))
         }
-        "array_rand" => Some(typed_first_class_builtin_sig(
-            name,
-            &[PhpType::Array(Box::new(PhpType::Mixed))],
-            PhpType::Int,
-        )),
         "array_chunk" | "array_pad" | "array_fill" | "array_slice" | "array_diff"
         | "array_intersect" | "range" => return_typed_first_class_builtin_sig(
             name,
@@ -620,7 +782,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             &[PhpType::Str],
             PhpType::Bool,
         )),
-        "file_get_contents" | "file" | "filesize" | "filemtime" | "fileatime"
+        "file_get_contents" | "hash_file" | "file" | "filesize" | "filemtime" | "fileatime"
         | "filectime" | "fileperms" | "fileowner" | "filegroup" | "fileinode"
         | "filetype" | "stat" | "lstat" | "basename" | "dirname" | "realpath"
         | "pathinfo" | "readlink" | "linkinfo" | "tempnam" => {

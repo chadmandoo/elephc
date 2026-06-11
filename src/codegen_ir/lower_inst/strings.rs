@@ -255,13 +255,17 @@ pub(super) fn lower_int_like_to_string(
     inst: &Instruction,
 ) -> Result<()> {
     let value = expect_operand(inst, 0)?;
-    match ctx.load_value_to_result(value)? {
+    match ctx.load_value_to_result(value)?.codegen_repr() {
         PhpType::Bool => {
             lower_loaded_bool_to_string(ctx)?;
             store_if_result(ctx, inst)
         }
         PhpType::Int => {
             abi::emit_call_label(ctx.emitter, "__rt_itoa");
+            store_if_result(ctx, inst)
+        }
+        PhpType::TaggedScalar => {
+            lower_loaded_tagged_scalar_to_string(ctx)?;
             store_if_result(ctx, inst)
         }
         PhpType::Void | PhpType::Never => {
@@ -275,6 +279,20 @@ pub(super) fn lower_int_like_to_string(
             other
         ))),
     }
+}
+
+/// Converts the loaded tagged scalar result to PHP string ABI registers.
+fn lower_loaded_tagged_scalar_to_string(ctx: &mut FunctionContext<'_>) -> Result<()> {
+    let null_label = ctx.next_label("tagged_to_str_null");
+    let done_label = ctx.next_label("tagged_to_str_done");
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &null_label);
+    abi::emit_call_label(ctx.emitter, "__rt_itoa");
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&null_label);
+    let len_reg = abi::string_result_regs(ctx.emitter).1;
+    abi::emit_load_int_immediate(ctx.emitter, len_reg, 0);
+    ctx.emitter.label(&done_label);
+    Ok(())
 }
 
 /// Converts the loaded boolean result to PHP string ABI registers.

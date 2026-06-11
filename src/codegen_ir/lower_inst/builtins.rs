@@ -135,12 +135,16 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "array_key_exists" => arrays::lower_array_key_exists(ctx, inst),
         "array_search" => arrays::lower_array_search(ctx, inst),
         "in_array" => arrays::lower_in_array(ctx, inst),
+        "call_user_func" | "call_user_func_array" => {
+            arrays::lower_call_user_func_builtin_escape(ctx, inst, key.as_str())
+        }
         "range" => arrays::lower_range(ctx, inst),
         "intval" => lower_intval(ctx, inst),
         "floatval" => lower_floatval(ctx, inst),
         "boolval" => lower_boolval(ctx, inst),
         "empty" => lower_empty(ctx, inst),
         "settype" => types::lower_settype(ctx, inst),
+        "unset" => types::lower_unset_builtin(ctx, inst),
         "isset" => isset::lower_isset(ctx, inst),
         "gettype" => lower_gettype(ctx, inst),
         "define" => lower_define(ctx, inst),
@@ -152,6 +156,9 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "fclose" => io::lower_fclose(ctx, inst),
         "fread" => io::lower_fread(ctx, inst),
         "fwrite" => io::lower_fwrite(ctx, inst),
+        "fprintf" => io::lower_fprintf(ctx, inst),
+        "vfprintf" => io::lower_vfprintf(ctx, inst),
+        "fscanf" => io::lower_fscanf(ctx, inst),
         "fgets" => io::lower_fgets(ctx, inst),
         "fgetc" => io::lower_fgetc(ctx, inst),
         "fgetcsv" => io::lower_fgetcsv(ctx, inst),
@@ -166,6 +173,68 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "fflush" => io::lower_fflush(ctx, inst),
         "fdatasync" => io::lower_fdatasync(ctx, inst),
         "flock" => io::lower_flock(ctx, inst),
+        "disk_free_space" => io::lower_disk_free_space(ctx, inst),
+        "disk_total_space" => io::lower_disk_total_space(ctx, inst),
+        "gethostname" => io::lower_gethostname(ctx, inst),
+        "gethostbyname" => io::lower_gethostbyname(ctx, inst),
+        "gethostbyaddr" => io::lower_gethostbyaddr(ctx, inst),
+        "getprotobyname" => io::lower_getprotobyname(ctx, inst),
+        "getprotobynumber" => io::lower_getprotobynumber(ctx, inst),
+        "getservbyname" => io::lower_getservbyname(ctx, inst),
+        "getservbyport" => io::lower_getservbyport(ctx, inst),
+        "opendir" => io::lower_opendir(ctx, inst),
+        "readdir" => io::lower_readdir(ctx, inst),
+        "closedir" => io::lower_closedir(ctx, inst),
+        "rewinddir" => io::lower_rewinddir(ctx, inst),
+        "popen" => io::lower_popen(ctx, inst),
+        "pclose" => io::lower_pclose(ctx, inst),
+        "fsockopen" | "pfsockopen" => io::lower_fsockopen(ctx, inst),
+        "stream_wrapper_register" => io::lower_stream_wrapper_register(ctx, inst),
+        "stream_wrapper_unregister" => io::lower_stream_wrapper_unregister(ctx, inst),
+        "stream_wrapper_restore" => io::lower_stream_wrapper_restore(ctx, inst),
+        "stream_context_create" => io::lower_stream_context_create(ctx, inst),
+        "stream_context_get_default" => io::lower_stream_context_get_default(ctx, inst),
+        "stream_context_set_default" => io::lower_stream_context_set_default(ctx, inst),
+        "stream_context_set_option" => io::lower_stream_context_set_option(ctx, inst),
+        "stream_context_set_params" => io::lower_stream_context_set_params(ctx, inst),
+        "stream_context_get_options" => io::lower_stream_context_get_options(ctx, inst),
+        "stream_context_get_params" => io::lower_stream_context_get_params(ctx, inst),
+        "stream_get_contents" => io::lower_stream_get_contents(ctx, inst),
+        "stream_get_line" => io::lower_stream_get_line(ctx, inst),
+        "stream_get_meta_data" => io::lower_stream_get_meta_data(ctx, inst),
+        "stream_get_wrappers" => io::lower_stream_get_wrappers(ctx, inst),
+        "stream_get_transports" => io::lower_stream_get_transports(ctx, inst),
+        "stream_get_filters" => io::lower_stream_get_filters(ctx, inst),
+        "stream_filter_register" => io::lower_stream_filter_register(ctx, inst),
+        "stream_filter_append" | "stream_filter_prepend" => {
+            io::lower_stream_filter_attach(ctx, inst, key.as_str())
+        }
+        "stream_filter_remove" => io::lower_stream_filter_remove(ctx, inst),
+        "stream_bucket_make_writeable" => io::lower_stream_bucket_make_writeable(ctx, inst),
+        "stream_bucket_new" => io::lower_stream_bucket_new(ctx, inst),
+        "stream_bucket_append" | "stream_bucket_prepend" => {
+            io::lower_stream_bucket_append_or_prepend(ctx, inst)
+        }
+        "stream_is_local" => io::lower_stream_is_local(ctx, inst),
+        "stream_supports_lock" => io::lower_stream_supports_lock(ctx, inst),
+        "stream_isatty" => io::lower_stream_isatty(ctx, inst),
+        "stream_set_chunk_size" => io::lower_stream_set_chunk_size(ctx, inst),
+        "stream_set_read_buffer" => io::lower_stream_set_buffer(ctx, inst),
+        "stream_set_write_buffer" => io::lower_stream_set_buffer(ctx, inst),
+        "stream_set_blocking" => io::lower_stream_set_blocking(ctx, inst),
+        "stream_set_timeout" => io::lower_stream_set_timeout(ctx, inst),
+        "stream_select" => io::lower_stream_select(ctx, inst),
+        "stream_resolve_include_path" => io::lower_stream_resolve_include_path(ctx, inst),
+        "stream_copy_to_stream" => io::lower_stream_copy_to_stream(ctx, inst),
+        "stream_socket_server" => io::lower_stream_socket_server(ctx, inst),
+        "stream_socket_client" => io::lower_stream_socket_client(ctx, inst),
+        "stream_socket_accept" => io::lower_stream_socket_accept(ctx, inst),
+        "stream_socket_pair" => io::lower_stream_socket_pair(ctx, inst),
+        "stream_socket_get_name" => io::lower_stream_socket_get_name(ctx, inst),
+        "stream_socket_shutdown" => io::lower_stream_socket_shutdown(ctx, inst),
+        "stream_socket_enable_crypto" => io::lower_stream_socket_enable_crypto(ctx, inst),
+        "stream_socket_recvfrom" => io::lower_stream_socket_recvfrom(ctx, inst),
+        "stream_socket_sendto" => io::lower_stream_socket_sendto(ctx, inst),
         "file" => io::lower_file(ctx, inst),
         "realpath" => io::lower_realpath(ctx, inst),
         "file_put_contents" => io::lower_file_put_contents(ctx, inst),
@@ -244,6 +313,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
             lower_class_like_exists(ctx, inst, key.as_str())
         }
+        "class_alias" => types::lower_class_alias(ctx, inst),
         "get_class" | "get_parent_class" => types::lower_class_name_lookup(ctx, inst, key.as_str()),
         "is_a" | "is_subclass_of" => types::lower_is_a_relation(ctx, inst, key.as_str()),
         "class_implements" | "class_parents" | "class_uses" => {
@@ -263,7 +333,10 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_bool" => lower_static_type_predicate(ctx, inst, "is_bool", PhpType::Bool),
         "is_null" => lower_is_null_builtin(ctx, inst),
         "is_string" => lower_static_type_predicate(ctx, inst, "is_string", PhpType::Str),
+        "is_resource" => types::lower_is_resource(ctx, inst),
         "is_iterable" => lower_is_iterable(ctx, inst),
+        "get_resource_type" => types::lower_get_resource_type(ctx, inst),
+        "get_resource_id" => types::lower_get_resource_id(ctx, inst),
         "is_numeric" => is_numeric::lower_is_numeric(ctx, inst),
         "is_nan" => math::lower_is_nan(ctx, inst),
         "is_infinite" => math::lower_is_infinite(ctx, inst),
@@ -394,12 +467,31 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
             "base64_decode",
             "__rt_base64_decode",
         ),
-        "md5" => strings::lower_unary_string_runtime(ctx, inst, "md5", "__rt_md5"),
-        "sha1" => strings::lower_unary_string_runtime(ctx, inst, "sha1", "__rt_sha1"),
+        "md5" => strings::lower_md5(ctx, inst),
+        "sha1" => strings::lower_sha1(ctx, inst),
         "hash" => strings::lower_hash(ctx, inst),
+        "hash_hmac" => strings::lower_hash_hmac(ctx, inst),
+        "hash_equals" => strings::lower_hash_equals(ctx, inst),
+        "hash_algos" => strings::lower_hash_algos(ctx, inst),
+        "hash_init" => strings::lower_hash_init(ctx, inst),
+        "hash_update" => strings::lower_hash_update(ctx, inst),
+        "hash_final" => strings::lower_hash_final(ctx, inst),
+        "hash_copy" => strings::lower_hash_copy(ctx, inst),
+        "hash_file" => io::lower_hash_file(ctx, inst),
+        "crc32" => strings::lower_crc32(ctx, inst),
+        "gzcompress" => strings::lower_gzcompress(ctx, inst),
+        "gzdeflate" => strings::lower_gzdeflate(ctx, inst),
+        "gzinflate" => strings::lower_gzinflate(ctx, inst),
+        "gzuncompress" => strings::lower_gzuncompress(ctx, inst),
+        "long2ip" => strings::lower_long2ip(ctx, inst),
+        "ip2long" => strings::lower_ip2long(ctx, inst),
+        "inet_ntop" => strings::lower_inet(ctx, inst, "inet_ntop", "__rt_inet_ntop"),
+        "inet_pton" => strings::lower_inet(ctx, inst, "inet_pton", "__rt_inet_pton"),
         "str_pad" => strings::lower_str_pad(ctx, inst),
         "sprintf" => strings::lower_sprintf(ctx, inst),
         "printf" => strings::lower_printf(ctx, inst),
+        "vsprintf" => strings::lower_vsprintf(ctx, inst),
+        "vprintf" => strings::lower_vprintf(ctx, inst),
         "ctype_alpha" => ctype::lower_ctype_alpha(ctx, inst),
         "ctype_digit" => ctype::lower_ctype_digit(ctx, inst),
         "ctype_alnum" => ctype::lower_ctype_alnum(ctx, inst),
@@ -488,6 +580,10 @@ fn lower_gettype(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()
     ensure_arg_count(inst, "gettype", 1)?;
     let value = expect_operand(inst, 0)?;
     let ty = ctx.raw_value_php_type(value)?;
+    if matches!(ty, PhpType::TaggedScalar) {
+        emit_tagged_scalar_gettype(ctx, value)?;
+        return store_if_result(ctx, inst);
+    }
     if matches!(ty, PhpType::Mixed | PhpType::Union(_)) {
         emit_mixed_gettype(ctx, value)?;
         return store_if_result(ctx, inst);
@@ -500,6 +596,20 @@ fn lower_gettype(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()
     };
     emit_type_name_result(ctx, type_name);
     store_if_result(ctx, inst)
+}
+
+/// Emits `gettype()` for an inline tagged scalar by dispatching on its tag word.
+fn emit_tagged_scalar_gettype(ctx: &mut FunctionContext<'_>, value: ValueId) -> Result<()> {
+    let null_case = ctx.next_label("gettype_tagged_null");
+    let done = ctx.next_label("gettype_tagged_done");
+    ctx.load_value_to_result(value)?;
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &null_case);
+    emit_type_name_result(ctx, b"integer");
+    abi::emit_jump(ctx.emitter, &done);
+    ctx.emitter.label(&null_case);
+    emit_type_name_result(ctx, b"NULL");
+    ctx.emitter.label(&done);
+    Ok(())
 }
 
 /// Emits `gettype()` for a boxed Mixed or Union payload by dispatching on runtime tags.
@@ -575,7 +685,7 @@ fn static_gettype_name(ty: &PhpType) -> Option<&'static [u8]> {
         PhpType::Buffer(_) => Some(b"buffer".as_slice()),
         PhpType::Packed(_) => Some(b"packed".as_slice()),
         PhpType::Resource(_) => Some(b"resource".as_slice()),
-        PhpType::Mixed | PhpType::Union(_) => None,
+        PhpType::Mixed | PhpType::Union(_) | PhpType::TaggedScalar => None,
     }
 }
 
@@ -694,7 +804,8 @@ fn lower_is_callable(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
         | PhpType::Pointer(_)
         | PhpType::Buffer(_)
         | PhpType::Packed(_)
-        | PhpType::Resource(_) => {
+        | PhpType::Resource(_)
+        | PhpType::TaggedScalar => {
             emit_static_bool(ctx, false);
         }
     }
@@ -940,6 +1051,9 @@ fn lower_empty(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> 
             ctx.load_value_to_result(value)?;
             emit_string_length_zero_bool(ctx);
         }
+        PhpType::TaggedScalar => {
+            emit_tagged_scalar_empty_bool(ctx, value)?;
+        }
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             predicates::emit_array_truthiness(ctx, value)?;
             invert_bool_result(ctx);
@@ -959,6 +1073,20 @@ fn lower_empty(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> 
         }
     }
     store_if_result(ctx, inst)
+}
+
+/// Emits true for a tagged scalar that is null or an integer zero.
+fn emit_tagged_scalar_empty_bool(ctx: &mut FunctionContext<'_>, value: crate::ir::ValueId) -> Result<()> {
+    let empty_label = ctx.next_label("empty_tagged_true");
+    let done_label = ctx.next_label("empty_tagged_done");
+    ctx.load_value_to_result(value)?;
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &empty_label);
+    emit_int_result_zero_bool(ctx);
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&empty_label);
+    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+    ctx.emitter.label(&done_label);
+    Ok(())
 }
 
 /// Emits true when the canonical integer result register is zero.
@@ -1031,6 +1159,14 @@ fn lower_static_type_predicate(
     ensure_arg_count(inst, name, 1)?;
     let value = expect_operand(inst, 0)?;
     let ty = ctx.value_php_type(value)?;
+    if ty == PhpType::TaggedScalar {
+        if expected == PhpType::Int {
+            emit_tagged_scalar_int_predicate(ctx, value)?;
+        } else {
+            emit_static_bool(ctx, false);
+        }
+        return store_if_result(ctx, inst);
+    }
     if matches!(ty, PhpType::Mixed | PhpType::Union(_)) {
         if let Some(tag) = mixed_type_predicate_tag(&expected) {
             predicates::emit_mixed_tag_eq(ctx, value, tag)?;
@@ -1041,6 +1177,32 @@ fn lower_static_type_predicate(
     }
     emit_static_bool(ctx, ty == expected);
     store_if_result(ctx, inst)
+}
+
+/// Emits `is_int()` for a tagged scalar by checking that its tag is not null.
+fn emit_tagged_scalar_int_predicate(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+) -> Result<()> {
+    ctx.load_value_to_result(value)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp x1, #{}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // does the tagged scalar carry the runtime null tag?
+            ctx.emitter.instruction("cset x0, ne");                             // materialize true when the tagged scalar holds an integer
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!(
+                "cmp rdx, {}",
+                crate::codegen::sentinels::TAGGED_SCALAR_TAG_NULL
+            ));                                                                 // does the tagged scalar carry the runtime null tag?
+            ctx.emitter.instruction("setne al");                                // materialize true when the tagged scalar holds an integer
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean byte into the integer result register
+        }
+    }
+    Ok(())
 }
 
 /// Lowers `is_iterable()` for concrete values and boxed Mixed payloads.
@@ -1061,7 +1223,8 @@ fn lower_is_iterable(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
         | PhpType::Pointer(_)
         | PhpType::Buffer(_)
         | PhpType::Packed(_)
-        | PhpType::Resource(_) => false,
+        | PhpType::Resource(_)
+        | PhpType::TaggedScalar => false,
         PhpType::Mixed | PhpType::Union(_) => {
             emit_mixed_is_iterable(ctx, value)?;
             return store_if_result(ctx, inst);

@@ -188,9 +188,10 @@ pub(super) fn lower_array_get(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     let index = expect_operand(inst, 1)?;
     let elem_ty = indexed_array_element_type(&ctx.value_php_type(array)?, inst)?;
     require_array_get_result(&elem_ty, inst)?;
+    let result_ty = inst.result_php_type.codegen_repr();
     match ctx.emitter.target.arch {
-        Arch::AArch64 => lower_array_get_aarch64(ctx, inst, array, index, &elem_ty),
-        Arch::X86_64 => lower_array_get_x86_64(ctx, inst, array, index, &elem_ty),
+        Arch::AArch64 => lower_array_get_aarch64(ctx, inst, array, index, &elem_ty, &result_ty),
+        Arch::X86_64 => lower_array_get_x86_64(ctx, inst, array, index, &elem_ty, &result_ty),
     }
 }
 
@@ -306,6 +307,7 @@ fn lower_array_get_aarch64(
     array: ValueId,
     index: ValueId,
     elem_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     let array_reg = abi::symbol_scratch_reg(ctx.emitter);
     let len_reg = abi::secondary_scratch_reg(ctx.emitter);
@@ -320,11 +322,11 @@ fn lower_array_get_aarch64(
     abi::emit_load_from_address(ctx.emitter, len_reg, array_reg, 0);
     ctx.emitter.instruction(&format!("cmp {}, {}", result_reg, len_reg));       // compare the requested offset against the indexed-array length
     ctx.emitter.instruction(&format!("b.ge {}", null_label));                   // out-of-range indexed-array offsets read as null
-    emit_array_get_in_bounds_aarch64(ctx, array_reg, result_reg, elem_ty)?;
+    emit_array_get_in_bounds_aarch64(ctx, array_reg, result_reg, elem_ty, result_ty)?;
     ctx.emitter.instruction(&format!("b {}", done_label));                      // skip the null fallback after a successful indexed-array read
     ctx.emitter.label(&null_label);
     emit_undefined_array_key_warning(ctx);
-    emit_array_get_null_fallback(ctx, elem_ty);
+    emit_array_get_null_fallback(ctx, result_ty);
     ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
 }
@@ -381,6 +383,7 @@ fn lower_array_get_x86_64(
     array: ValueId,
     index: ValueId,
     elem_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     let array_reg = abi::symbol_scratch_reg(ctx.emitter);
     let len_reg = abi::secondary_scratch_reg(ctx.emitter);
@@ -395,11 +398,11 @@ fn lower_array_get_x86_64(
     abi::emit_load_from_address(ctx.emitter, len_reg, array_reg, 0);
     ctx.emitter.instruction(&format!("cmp {}, {}", result_reg, len_reg));       // compare the requested offset against the indexed-array length
     ctx.emitter.instruction(&format!("jge {}", null_label));                    // out-of-range indexed-array offsets read as null
-    emit_array_get_in_bounds_x86_64(ctx, array_reg, result_reg, elem_ty)?;
+    emit_array_get_in_bounds_x86_64(ctx, array_reg, result_reg, elem_ty, result_ty)?;
     ctx.emitter.instruction(&format!("jmp {}", done_label));                    // skip the null fallback after a successful indexed-array read
     ctx.emitter.label(&null_label);
     emit_undefined_array_key_warning(ctx);
-    emit_array_get_null_fallback(ctx, elem_ty);
+    emit_array_get_null_fallback(ctx, result_ty);
     ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
 }
@@ -455,6 +458,7 @@ fn emit_array_get_in_bounds_aarch64(
     array_reg: &str,
     index_reg: &str,
     elem_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     match elem_ty {
         PhpType::Void | PhpType::Never => {
@@ -463,6 +467,9 @@ fn emit_array_get_in_bounds_aarch64(
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.emitter.instruction(&format!("add {}, {}, #24", array_reg, array_reg)); // skip the indexed-array header to reach element payloads
             ctx.emitter.instruction(&format!("ldr {}, [{}, {}, lsl #3]", index_reg, array_reg, index_reg)); // load the selected pointer-sized indexed-array element
+            if matches!(result_ty, PhpType::TaggedScalar) {
+                crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+            }
         }
         PhpType::Float => {
             ctx.emitter.instruction(&format!("add {}, {}, #24", array_reg, array_reg)); // skip the indexed-array header to reach float payloads
@@ -496,6 +503,7 @@ fn emit_array_get_in_bounds_x86_64(
     array_reg: &str,
     index_reg: &str,
     elem_ty: &PhpType,
+    result_ty: &PhpType,
 ) -> Result<()> {
     match elem_ty {
         PhpType::Void | PhpType::Never => {
@@ -504,6 +512,9 @@ fn emit_array_get_in_bounds_x86_64(
         PhpType::Int | PhpType::Bool | PhpType::Callable => {
             ctx.emitter.instruction(&format!("lea {}, [{} + 24]", array_reg, array_reg)); // skip the indexed-array header to reach element payloads
             ctx.emitter.instruction(&format!("mov {}, QWORD PTR [{} + {} * 8]", index_reg, array_reg, index_reg)); // load the selected pointer-sized indexed-array element
+            if matches!(result_ty, PhpType::TaggedScalar) {
+                crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+            }
         }
         PhpType::Float => {
             ctx.emitter.instruction(&format!("lea {}, [{} + 24]", array_reg, array_reg)); // skip the indexed-array header to reach float payloads
@@ -539,6 +550,9 @@ fn emit_undefined_array_key_warning(ctx: &mut FunctionContext<'_>) {
 /// Emits the null/miss fallback in the result shape expected by the array element type.
 fn emit_array_get_null_fallback(ctx: &mut FunctionContext<'_>, elem_ty: &PhpType) {
     match elem_ty {
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+        }
         PhpType::Float => match ctx.emitter.target.arch {
             Arch::AArch64 => {
                 ctx.emitter.instruction("fmov d0, xzr");                        // materialize a stable zero float for an out-of-bounds array read
@@ -1038,6 +1052,12 @@ fn require_integer_like_index(index_ty: PhpType, inst: &Instruction) -> Result<(
 /// Rejects array-get result shapes that do not match the lowered array element type.
 fn require_array_get_result(elem_ty: &PhpType, inst: &Instruction) -> Result<()> {
     let result_ty = inst.result_php_type.codegen_repr();
+    if crate::codegen::sentinels::null_repr_is_tagged()
+        && matches!(elem_ty, PhpType::Int)
+        && result_ty == PhpType::TaggedScalar
+    {
+        return Ok(());
+    }
     if matches!(elem_ty, PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str)
         && result_ty == *elem_ty
     {

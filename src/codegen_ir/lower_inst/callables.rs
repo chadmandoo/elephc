@@ -1718,11 +1718,33 @@ fn store_descriptor_invoker_result(
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
             ctx.store_result_value(result)
         }
+        PhpType::TaggedScalar => store_descriptor_invoker_tagged_scalar_result(ctx, result),
         other => Err(CodegenIrError::unsupported(format!(
             "descriptor invoker result for PHP type {:?}",
             other
         ))),
     }
+}
+
+/// Unboxes a Mixed descriptor result into the inline nullable-int result shape.
+fn store_descriptor_invoker_tagged_scalar_result(
+    ctx: &mut FunctionContext<'_>,
+    result: ValueId,
+) -> Result<()> {
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x9, x0");                              // preserve the unboxed Mixed tag before moving the payload
+            ctx.emitter.instruction("mov x0, x1");                              // place the unboxed nullable-int payload into the tagged-scalar payload register
+            ctx.emitter.instruction("mov x1, x9");                              // place the unboxed Mixed tag into the tagged-scalar tag register
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r10, rax");                            // preserve the unboxed Mixed tag before moving the payload
+            ctx.emitter.instruction("mov rax, rdi");                            // place the unboxed nullable-int payload into the tagged-scalar payload register
+            ctx.emitter.instruction("mov rdx, r10");                            // place the unboxed Mixed tag into the tagged-scalar tag register
+        }
+    }
+    ctx.store_result_value(result)
 }
 
 /// Moves the current integer result register into an ABI argument register.

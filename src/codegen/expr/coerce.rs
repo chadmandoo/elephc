@@ -9,6 +9,7 @@
 //! - Coercions may allocate, retain, or box values, so ownership state must be updated with the result.
 
 use crate::codegen::context::Context;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::{abi, platform::Arch};
@@ -33,6 +34,34 @@ pub fn coerce_to_string(
     ctx: &mut Context,
     data: &mut DataSection,
     ty: &PhpType,
+) {
+    coerce_to_string_inner(emitter, ctx, data, ty, false);
+}
+
+/// Like [`coerce_to_string`], but when `release_owned_object` is set and `ty` is an object
+/// stringified via `__toString`, the owned object temporary is released after conversion.
+///
+/// Callers pass `true` only when the source expression produced an owned object temporary
+/// (e.g. `new C()` or a call result); a borrowed object (a variable or property) must pass
+/// `false` so its owner — not this coercion — releases it, avoiding a double free.
+pub fn coerce_to_string_releasing_owned(
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+    ty: &PhpType,
+    release_owned_object: bool,
+) {
+    coerce_to_string_inner(emitter, ctx, data, ty, release_owned_object);
+}
+
+/// Shared body of the string coercion. `release_owned_object` controls whether an owned
+/// object temporary that is stringified via `__toString` is released after conversion.
+fn coerce_to_string_inner(
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    data: &mut DataSection,
+    ty: &PhpType,
+    release_owned_object: bool,
 ) {
     match ty {
         PhpType::Int => {
@@ -83,12 +112,30 @@ pub fn coerce_to_string(
                 }
             }
         }
+        PhpType::TaggedScalar => {
+            // -- tagged scalar: null -> empty string, int payload -> decimal text --
+            let null_label = ctx.next_label("tagged_to_str_null");
+            let done_label = ctx.next_label("tagged_to_str_done");
+            crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(emitter, &null_label);
+            abi::emit_call_label(emitter, "__rt_itoa");                         // convert the non-null tagged scalar payload to decimal text
+            abi::emit_jump(emitter, &done_label);                               // skip the empty-string fallback after conversion
+            emitter.label(&null_label);
+            match emitter.target.arch {
+                Arch::AArch64 => {
+                    emitter.instruction("mov x2, #0");                          // null produces empty string (length = 0)
+                }
+                Arch::X86_64 => {
+                    emitter.instruction("mov rdx, 0");                          // null produces empty string (length = 0)
+                }
+            }
+            emitter.label(&done_label);
+        }
         PhpType::Mixed | PhpType::Union(_) => {
             // -- mixed strings dispatch on the boxed payload at runtime --
             abi::emit_call_label(emitter, "__rt_mixed_cast_string");            // cast the boxed mixed payload to string in the ABI string result registers
         }
-        PhpType::Iterable => {
-            // -- iterable values stringify to the literal "Array", matching PHP --
+        PhpType::Iterable | PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            // -- iterable and array values stringify to the literal "Array", matching PHP --
             let (label, len) = data.add_string(b"Array");
             let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
             abi::emit_symbol_address(emitter, ptr_reg, &label);                 // materialize the literal "Array" address in the active string-pointer result register
@@ -107,6 +154,9 @@ pub fn coerce_to_string(
                 .get(class_name)
                 .is_some_and(|class_info| class_info.methods.contains_key("__tostring"))
             {
+                if release_owned_object {
+                    abi::emit_push_reg(emitter, abi::int_result_reg(emitter));  // save the owned object temp below $this so it can be released after __toString borrows it
+                }
                 abi::emit_push_reg(emitter, abi::int_result_reg(emitter));      // push $this pointer for __toString dispatch using the active target ABI
                 super::objects::emit_method_call_with_pushed_args(
                     class_name,
@@ -115,18 +165,34 @@ pub fn coerce_to_string(
                     emitter,
                     ctx,
                 );
+                if release_owned_object {
+                    emit_release_saved_object_temp(emitter, ty);
+                }
             } else {
                 emit_missing_tostring_fatal(emitter, data, class_name);
             }
         }
         PhpType::Str
-        | PhpType::Array(_)
-        | PhpType::AssocArray { .. }
         | PhpType::Callable
         | PhpType::Buffer(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {}
     }
+}
+
+/// Releases an owned object temporary that was just stringified via `__toString`.
+///
+/// On entry the produced string is in the string result registers, and the object pointer
+/// was saved on the temporary stack below the (already-popped) `$this` slot. The string
+/// result is preserved across the object decref, then restored, and the saved object slot
+/// is discarded — leaving the string result in place and the object temporary freed.
+fn emit_release_saved_object_temp(emitter: &mut Emitter, ty: &PhpType) {
+    let (ptr_reg, len_reg) = abi::string_result_regs(emitter);
+    abi::emit_push_reg_pair(emitter, ptr_reg, len_reg);                         // preserve the __toString result string across the object decref call
+    abi::emit_load_temporary_stack_slot(emitter, abi::int_result_reg(emitter), 16); // reload the saved owned object pointer from below the 16-byte string slot
+    abi::emit_decref_if_refcounted(emitter, ty);                                // release the owned object temporary now that __toString produced its string
+    abi::emit_pop_reg_pair(emitter, ptr_reg, len_reg);                          // restore the preserved __toString result string
+    abi::emit_release_temporary_stack(emitter, 16);                             // discard the saved owned object slot
 }
 
 /// Emit a fatal error and terminate when an object without `__toString()` is coerced to string.
@@ -142,8 +208,7 @@ fn emit_missing_tostring_fatal(emitter: &mut Emitter, data: &mut DataSection, cl
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("mov x0, #2");                                  // fd = stderr for fatal conversion diagnostics
-            emitter.adrp("x1", &label);                                          // load the page that contains the fatal conversion message
-            emitter.add_lo12("x1", "x1", &label);                               // resolve the fatal conversion message address within that page
+            abi::emit_symbol_address(emitter, "x1", &label);                    // load the page that contains the fatal conversion message
             emitter.instruction(&format!("mov x2, #{}", len));                  // pass the fatal conversion message length to write()
             emitter.syscall(4);
             emitter.instruction("mov x0, #1");                                  // exit status 1 indicates abnormal termination
@@ -185,20 +250,25 @@ pub fn coerce_null_to_zero(emitter: &mut Emitter, ty: &PhpType) {
         // Bool is already 0/1 in x0, compatible with Int arithmetic
     } else if *ty == PhpType::Float {
         // Float is already in d0, no null sentinel to check
+    } else if *ty == PhpType::TaggedScalar {
+        crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(emitter);
+    } else if *ty == PhpType::Int && crate::codegen::sentinels::null_repr_is_tagged() {
+        // Under the tagged representation a plain Int can never hold the null sentinel
     } else if *ty == PhpType::Int {
         match emitter.target.arch {
             Arch::AArch64 => {
-                emitter.instruction("movz x9, #0xFFFE");                        // build null sentinel in x9: bits 0-15
-                emitter.instruction("movk x9, #0xFFFF, lsl #16");               // null sentinel bits 16-31
-                emitter.instruction("movk x9, #0xFFFF, lsl #32");               // null sentinel bits 32-47
-                emitter.instruction("movk x9, #0x7FFF, lsl #48");               // null sentinel bits 48-63, completing value
+                let sentinel = NULL_SENTINEL as u64;
+                emitter.instruction(&format!("movz x9, #0x{:X}", sentinel & 0xFFFF)); // build null sentinel in x9: bits 0-15
+                emitter.instruction(&format!("movk x9, #0x{:X}, lsl #16", (sentinel >> 16) & 0xFFFF)); // null sentinel bits 16-31
+                emitter.instruction(&format!("movk x9, #0x{:X}, lsl #32", (sentinel >> 32) & 0xFFFF)); // null sentinel bits 32-47
+                emitter.instruction(&format!("movk x9, #0x{:X}, lsl #48", (sentinel >> 48) & 0xFFFF)); // null sentinel bits 48-63, completing value
                 emitter.instruction("cmp x0, x9");                              // compare value against null sentinel
                 emitter.instruction("csel x0, xzr, x0, eq");                    // if x0 == sentinel, replace with zero
             }
             Arch::X86_64 => {
                 let sentinel_reg = abi::temp_int_reg(emitter.target);
                 let zero_reg = abi::symbol_scratch_reg(emitter);
-                emitter.instruction(&format!("mov {}, 9223372036854775806", sentinel_reg)); // materialize the runtime null sentinel in a scratch register
+                emitter.instruction(&format!("mov {}, {}", sentinel_reg, NULL_SENTINEL)); // materialize the runtime null sentinel in a scratch register
                 emitter.instruction(&format!("xor {}, {}", zero_reg, zero_reg)); // materialize an integer zero in a second scratch register
                 emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(emitter), sentinel_reg)); // compare the current integer result against the runtime null sentinel
                 emitter.instruction(&format!("cmove {}, {}", abi::int_result_reg(emitter), zero_reg)); // replace the sentinel with zero while leaving ordinary integers unchanged

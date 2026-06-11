@@ -9,6 +9,7 @@
 //! - Output is a side effect, and refcounted values must be inspected without consuming ownership.
 
 use crate::codegen::context::Context;
+use crate::codegen::NULL_SENTINEL;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::expr::emit_expr;
@@ -30,14 +31,13 @@ fn emit_write_literal(emitter: &mut Emitter, data: &mut DataSection, bytes: &[u8
     let (lbl, len) = data.add_string(bytes);
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.adrp("x1", &lbl);                                         // load the page that contains the literal string bytes
-            emitter.add_lo12("x1", "x1", &lbl);                               // resolve the literal string address within that page
+            abi::emit_symbol_address(emitter, "x1", &lbl);                      // resolve the literal string address
             emitter.instruction(&format!("mov x2, #{}", len));                  // pass the literal string length to write()
             emitter.instruction("mov x0, #1");                                  // fd = stdout
             emitter.syscall(4);
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("lea rsi, [rip + {}]", lbl));          // point the Linux write() buffer register at the literal string bytes
+            abi::emit_symbol_address(emitter, "rsi", &lbl);                     // point the Linux write() buffer register at the literal string bytes
             emitter.instruction(&format!("mov edx, {}", len));                  // pass the literal string length to write()
             emitter.instruction("mov edi, 1");                                  // fd = stdout
             emitter.instruction("mov eax, 1");                                  // Linux x86_64 syscall 1 = write
@@ -123,22 +123,50 @@ fn emit_write_current_string(emitter: &mut Emitter) {
 /// * `ctx` - Codegen context (used for label allocation)
 /// * `data` - Data section for literal strings
 fn emit_var_dump_int(emitter: &mut Emitter, ctx: &mut Context, data: &mut DataSection) {
+    if crate::codegen::sentinels::null_repr_is_tagged() {
+        // Under the tagged representation a plain Int is never null; print the payload
+        // directly so the full i64 range (including PHP_INT_MAX - 1) round-trips.
+        emit_var_dump_int_payload(emitter, data);
+        return;
+    }
     let not_null = ctx.next_label("vd_not_null");
     let done = ctx.next_label("vd_done");
     let result_reg = abi::int_result_reg(emitter);
     let scratch_reg = abi::symbol_scratch_reg(emitter);
-    abi::emit_load_int_immediate(emitter, scratch_reg, 0x7fff_ffff_ffff_fffe_u64 as i64); // materialize the shared null sentinel used by int-valued locals
+    abi::emit_load_int_immediate(emitter, scratch_reg, NULL_SENTINEL); // materialize the shared null sentinel used by int-valued locals
     emitter.instruction(&format!("cmp {}, {}", result_reg, scratch_reg));       // compare the incoming integer payload against the null sentinel
     emit_branch_if_ne(emitter, &not_null);                                      // branch to the ordinary int path when the payload is not null
     emit_write_literal(emitter, data, b"NULL\n");
     abi::emit_jump(emitter, &done);                                             // skip the int formatter after printing NULL
     emitter.label(&not_null);
+    emit_var_dump_int_payload(emitter, data);
+    emitter.label(&done);
+}
+
+/// Emits `int(N)\n` for the integer payload in the result register without any null check.
+/// Used directly for values that are statically known to be real ints (tagged scalar
+/// non-null branch), and by `emit_var_dump_int` after its sentinel test.
+fn emit_var_dump_int_payload(emitter: &mut Emitter, data: &mut DataSection) {
+    let result_reg = abi::int_result_reg(emitter);
     abi::emit_push_reg(emitter, result_reg);                                    // preserve the integer payload before prefix writes clobber the integer result register
     emit_write_literal(emitter, data, b"int(");
     abi::emit_pop_reg(emitter, result_reg);                                     // restore the integer payload after the prefix write
     abi::emit_call_label(emitter, "__rt_itoa");                                 // convert the integer payload to decimal text through the target-aware runtime helper
     emit_write_current_string(emitter);                                         // write the converted decimal text to stdout
     emit_write_literal(emitter, data, b")\n");
+}
+
+/// Emits var_dump output for a tagged scalar: `NULL\n` when the runtime tag is null,
+/// otherwise `int(N)\n` for the payload with no in-band sentinel check (the full i64
+/// range is printable).
+fn emit_var_dump_tagged_scalar(emitter: &mut Emitter, ctx: &mut Context, data: &mut DataSection) {
+    let null_case = ctx.next_label("vd_tagged_null");
+    let done = ctx.next_label("vd_tagged_done");
+    crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(emitter, &null_case);
+    emit_var_dump_int_payload(emitter, data);
+    abi::emit_jump(emitter, &done);                                             // skip the NULL literal after printing the tagged scalar payload
+    emitter.label(&null_case);
+    emit_var_dump_null(emitter, data);
     emitter.label(&done);
 }
 
@@ -257,21 +285,62 @@ fn emit_var_dump_null(emitter: &mut Emitter, data: &mut DataSection) {
 /// * `emitter` - Target-aware instruction emitter
 /// * `data` - Data section for literal strings
 fn emit_var_dump_array(emitter: &mut Emitter, data: &mut DataSection) {
+    emit_var_dump_array_with_elem(emitter, data, &PhpType::Mixed);
+}
+
+/// Emit the var_dump body for an array/hash. The element type drives which
+/// runtime walker is invoked: int arrays get \`__rt_var_dump_array_int\`,
+/// string arrays \`__rt_var_dump_array_str\`. For other element shapes
+/// (Hash, Mixed values) v1 prints just the header — the contents fall back
+/// to the empty-body output. v2 will add a Mixed-aware walker that
+/// dispatches per element tag.
+fn emit_var_dump_array_with_elem(
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+    elem_ty: &PhpType,
+) {
     let result_reg = abi::int_result_reg(emitter);
-    abi::emit_push_reg(emitter, result_reg);                                    // preserve the array/hash pointer across literal writes
+    abi::emit_push_reg(emitter, result_reg);                                    // preserve the array pointer across the header write
     emit_write_literal(emitter, data, b"array(");
-    abi::emit_pop_reg(emitter, result_reg);                                     // restore the saved array/hash pointer after the prefix write
+    abi::emit_pop_reg(emitter, result_reg);                                     // restore the array pointer after the prefix write
+    abi::emit_push_reg(emitter, result_reg);                                    // preserve it again for the per-element walker below
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction("ldr x0, [x0]");                                // load the container element count from the array/hash header
+            emitter.instruction("ldr x0, [x0]");                                // load the container element count from the array header
         }
         Arch::X86_64 => {
-            emitter.instruction("mov rax, QWORD PTR [rax]");                    // load the container element count from the array/hash header
+            emitter.instruction("mov rax, QWORD PTR [rax]");                    // load the container element count from the array header
         }
     }
-    abi::emit_call_label(emitter, "__rt_itoa");                                 // convert the element count to decimal text through the target-aware runtime helper
-    emit_write_current_string(emitter);                                         // write the converted container element count to stdout
-    emit_write_literal(emitter, data, b") {\n}\n");
+    abi::emit_call_label(emitter, "__rt_itoa");                                 // convert the count to decimal text
+    emit_write_current_string(emitter);                                         // write the count
+    emit_write_literal(emitter, data, b") {\n");
+    abi::emit_pop_reg(emitter, result_reg);                                     // restore the array pointer for the per-element walker
+    // Dispatch to a specialised walker when the element type is known to
+    // be homogeneous and one of the v1-supported scalar shapes.
+    let walker = match elem_ty {
+        PhpType::Int => Some("__rt_var_dump_array_int"),
+        PhpType::Str => Some("__rt_var_dump_array_str"),
+        PhpType::Bool => Some("__rt_var_dump_array_bool"),
+        PhpType::Float => Some("__rt_var_dump_array_float"),
+        // Mixed-element arrays need a per-element tag dispatch at runtime,
+        // but the static type `Array(Mixed)` reaches here both for arrays
+        // that were actually boxed as Mixed cells AND for arrays whose
+        // concrete element type was simply erased at the call site. The
+        // distinction is only visible through the array's value_type
+        // stamp at runtime, and conflating the two paths in the static
+        // dispatcher would corrupt the latter. Falling back to the
+        // header-only fallback keeps both cases printable, at the cost
+        // of empty bodies for genuine mixed-cell literals.
+        _ => None,
+    };
+    if let Some(label) = walker {
+        if matches!(emitter.target.arch, Arch::X86_64) {
+            emitter.instruction("mov rdi, rax");                                // move the array pointer into the SysV first-arg register
+        }
+        abi::emit_call_label(emitter, label);                                   // walk the elements and emit per-element var_dump output
+    }
+    emit_write_literal(emitter, data, b"}\n");
 }
 
 /// Emits var_dump output for a callable payload.
@@ -396,6 +465,7 @@ pub fn emit(
     let ty = emit_expr(&args[0], emitter, ctx, data);
     match &ty {
         PhpType::Int => emit_var_dump_int(emitter, ctx, data),
+        PhpType::TaggedScalar => emit_var_dump_tagged_scalar(emitter, ctx, data),
         PhpType::Float => emit_var_dump_float(emitter, data),
         PhpType::Str => emit_var_dump_string(emitter, data),
         PhpType::Bool => emit_var_dump_bool(emitter, ctx, data),
@@ -586,9 +656,14 @@ pub fn emit(
             emit_var_dump_null(emitter, data);                                  // print NULL for null/unknown mixed payloads
             emitter.label(&done);
         }
-        PhpType::Array(elem_ty) | PhpType::AssocArray { value: elem_ty, .. } => {
+        PhpType::Array(elem_ty) => {
+            emit_var_dump_array_with_elem(emitter, data, elem_ty);
+        }
+        PhpType::AssocArray { .. } => {
+            // Assoc-array layout differs (hash table, not contiguous
+            // 8-byte slots) — the v1 indexed-element walkers do not
+            // apply. Print just the `array(N) {\n}\n` shell.
             emit_var_dump_array(emitter, data);
-            let _ = elem_ty;
         }
         PhpType::Callable => emit_var_dump_callable(emitter, data),
         PhpType::Object(class_name) => emit_var_dump_object_name(emitter, data, class_name),

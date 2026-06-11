@@ -36,6 +36,12 @@ pub enum PhpType {
     Pointer(Option<String>), // None = opaque ptr, Some("Class") = typed ptr<Class>
     Resource(Option<String>), // None = generic resource, Some("stream") = file/stdio stream
     Union(Vec<PhpType>),
+    /// Codegen-internal inline nullable scalar: two words `{payload, tag}` with no heap
+    /// allocation. The tag reuses the runtime value tag scheme (0 = int, 8 = null), so the
+    /// pair is word-compatible with a boxed Mixed cell. The checker never produces this
+    /// type; codegen funnels construct it from `int|null` unions only under
+    /// `NullRepr::Tagged`. Under the default sentinel representation it never exists.
+    TaggedScalar,
 }
 
 impl PhpType {
@@ -78,6 +84,7 @@ impl PhpType {
             PhpType::Pointer(_) => 8,        // 64-bit address
             PhpType::Resource(_) => 8,       // runtime resource id / native handle
             PhpType::Union(_) => 8,          // boxed runtime-tagged payload (same storage as Mixed)
+            PhpType::TaggedScalar => 16,     // inline nullable scalar: payload word + tag word
         }
     }
 
@@ -101,6 +108,7 @@ impl PhpType {
             PhpType::Pointer(_) => 1,
             PhpType::Resource(_) => 1,
             PhpType::Union(_) => 1,
+            PhpType::TaggedScalar => 2,
         }
     }
 
@@ -127,12 +135,32 @@ impl PhpType {
     /// so it is no longer collapsed to `Mixed` here.
     pub fn codegen_repr(&self) -> PhpType {
         match self {
+            PhpType::Union(members)
+                if crate::codegen::sentinels::null_repr_is_tagged()
+                    && nullable_int_union_members(members) =>
+            {
+                PhpType::TaggedScalar
+            }
             PhpType::Union(_) => PhpType::Mixed,
             PhpType::Resource(_) => PhpType::Int,
             PhpType::Never => PhpType::Void, // never should not be materialized; fallback to void sentinel
             _ => self.clone(),
         }
     }
+}
+
+/// Returns true for an `int|null` union that can use the inline tagged-scalar representation.
+fn nullable_int_union_members(members: &[PhpType]) -> bool {
+    let mut has_int = false;
+    let mut has_null = false;
+    for member in members {
+        match member {
+            PhpType::Int => has_int = true,
+            PhpType::Void | PhpType::Never => has_null = true,
+            _ => return false,
+        }
+    }
+    has_int && has_null
 }
 
 impl fmt::Display for PhpType {
@@ -158,6 +186,7 @@ impl fmt::Display for PhpType {
             PhpType::Pointer(None) => write!(f, "ptr"),
             PhpType::Resource(Some(kind)) => write!(f, "resource<{}>", kind),
             PhpType::Resource(None) => write!(f, "resource"),
+            PhpType::TaggedScalar => write!(f, "int|null"),
             PhpType::Union(members) => {
                 for (i, member) in members.iter().enumerate() {
                     if i > 0 {

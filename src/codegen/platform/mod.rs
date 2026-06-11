@@ -84,14 +84,31 @@ mod tests {
         assert_eq!(map_syscall(1), 93);
         assert_eq!(map_syscall(4), 64);
         assert_eq!(map_syscall(5), 56);
+        assert_eq!(map_syscall(29), 207);
+        assert_eq!(map_syscall(30), 202);
+        assert_eq!(map_syscall(31), 205);
+        assert_eq!(map_syscall(32), 204);
+        assert_eq!(map_syscall(54), 29);
+        assert_eq!(map_syscall(92), 25);
+        assert_eq!(map_syscall(93), 72);
+        assert_eq!(map_syscall(97), 198);
+        assert_eq!(map_syscall(98), 203);
+        assert_eq!(map_syscall(104), 200);
+        assert_eq!(map_syscall(105), 208);
+        assert_eq!(map_syscall(106), 201);
         assert_eq!(map_syscall(128), 38);
+        assert_eq!(map_syscall(133), 206);
+        assert_eq!(map_syscall(134), 210);
+        assert_eq!(map_syscall(135), 199);
+        assert_eq!(map_syscall(160), 160);
         assert_eq!(map_syscall(338), 79);
+        assert_eq!(map_syscall(345), 43);
     }
 
     #[test]
     /// "bl _snprintf" becomes "bl snprintf" (known C symbol, underscore stripped).
     /// "bl __rt_itoa" returns None (runtime internal, not a C symbol).
-    /// "bl _sin" becomes "bl sin". "bl _CC_MD5" becomes "bl MD5" (CommonCrypto remap).
+    /// "bl _sin" becomes "bl sin".
     fn test_transform_c_call() {
         assert_eq!(
             transform_c_call("bl _snprintf"),
@@ -99,7 +116,6 @@ mod tests {
         );
         assert_eq!(transform_c_call("bl __rt_itoa"), None);
         assert_eq!(transform_c_call("bl _sin"), Some("bl sin".to_string()));
-        assert_eq!(transform_c_call("bl _CC_MD5"), Some("bl MD5".to_string()));
     }
 
     #[test]

@@ -33,7 +33,7 @@ use crate::types::PhpType;
 ///
 /// # Returns
 /// The `PhpType` of the emitted argument expression.
-pub(super) fn emit_stream_fd_arg(
+pub(crate) fn emit_stream_fd_arg(
     function_name: &str,
     arg: &Expr,
     emitter: &mut Emitter,
@@ -220,8 +220,7 @@ fn emit_write_type_error_and_exit(label: &str, len: usize, emitter: &mut Emitter
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("mov x0, #2");                                  // fd = stderr for the stream TypeError diagnostic
-            emitter.adrp("x1", label);                                          // load the page that contains the stream TypeError diagnostic
-            emitter.add_lo12("x1", "x1", label);                                // resolve the stream TypeError diagnostic address within that page
+            abi::emit_symbol_address(emitter, "x1", label);                     // load the page that contains the stream TypeError diagnostic
             emitter.instruction(&format!("mov x2, #{}", len));                  // pass the stream TypeError diagnostic length to write()
             emitter.syscall(4);
             emitter.instruction("mov x0, #1");                                  // exit status 1 indicates abnormal termination

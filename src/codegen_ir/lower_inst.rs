@@ -155,6 +155,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::BufferSet => buffers::lower_buffer_set(ctx, &inst),
         Op::ObjectNew => objects::lower_object_new(ctx, &inst),
         Op::DynamicObjectNew => objects::lower_dynamic_object_new(ctx, &inst),
+        Op::DynamicObjectNewMixed => objects::lower_dynamic_object_new_mixed(ctx, &inst),
         Op::PropGet => objects::lower_prop_get(ctx, &inst),
         Op::NullsafePropGet => objects::lower_nullsafe_prop_get(ctx, &inst),
         Op::DynamicPropGet => objects::lower_dynamic_prop_get(ctx, &inst),
@@ -464,6 +465,13 @@ fn pop_result_value(ctx: &mut FunctionContext<'_>, local_ty: &PhpType) {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_pop_reg_pair(ctx.emitter, ptr_reg, len_reg);
         }
+        PhpType::TaggedScalar => {
+            abi::emit_pop_reg_pair(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+            );
+        }
         PhpType::Void | PhpType::Never => {}
         _ => {
             abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
@@ -486,6 +494,15 @@ fn store_current_result_to_ref_cell(
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_store_to_address(ctx.emitter, ptr_reg, cell_reg, 0);
             abi::emit_store_to_address(ctx.emitter, len_reg, cell_reg, 8);
+        }
+        PhpType::TaggedScalar => {
+            abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), cell_reg, 0);
+            abi::emit_store_to_address(
+                ctx.emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+                cell_reg,
+                8,
+            );
         }
         PhpType::Void | PhpType::Never => {
             abi::emit_store_zero_to_address(ctx.emitter, cell_reg, 0);
@@ -1137,6 +1154,7 @@ fn legacy_context_from_eir_module(module: &crate::ir::Module) -> LegacyContext {
     for function in module
         .functions
         .iter()
+        .filter(|function| !is_property_init_thunk_function(function))
         .chain(module.class_methods.iter())
         .chain(module.closures.iter())
     {
@@ -1169,6 +1187,11 @@ fn legacy_context_from_eir_module(module: &crate::ir::Module) -> LegacyContext {
     ctx.packed_classes = module.packed_class_infos.clone();
     ctx.extern_classes = module.extern_class_infos.clone();
     ctx
+}
+
+/// Returns true for synthetic property-default init thunks, which are not PHP callables.
+fn is_property_init_thunk_function(function: &crate::ir::Function) -> bool {
+    function.name.starts_with("_class_propinit_")
 }
 
 /// Returns true when the EIR module contains the concrete instance-method body.
@@ -1403,6 +1426,25 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         }
         emit_object_tostring_call(ctx, value, normalized)?;
         return store_if_result(ctx, inst);
+    }
+    if inst.result_php_type.codegen_repr() == PhpType::TaggedScalar {
+        match source_ty {
+            PhpType::Int | PhpType::Bool | PhpType::Callable => {
+                ctx.load_value_to_result(value)?;
+                crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+                return store_if_result(ctx, inst);
+            }
+            PhpType::Void | PhpType::Never => {
+                crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+                return store_if_result(ctx, inst);
+            }
+            other => {
+                return Err(CodegenIrError::unsupported(format!(
+                    "runtime_call from PHP type {:?} to PHP type TaggedScalar",
+                    other
+                )))
+            }
+        }
     }
     if matches!(source_ty, PhpType::Mixed | PhpType::Union(_)) {
         let result_ty = inst.result_php_type.codegen_repr();
@@ -4362,6 +4404,7 @@ fn materialize_direct_call_arg_for_param(
     param_ty: &PhpType,
 ) -> Result<PhpType> {
     match param_ty.codegen_repr() {
+        PhpType::TaggedScalar => coerce_loaded_value_to_tagged_scalar(ctx, source_ty),
         PhpType::Int if matches!(source_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) => {
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
             Ok(PhpType::Int)
@@ -4393,6 +4436,28 @@ fn materialize_direct_call_arg_for_param(
             Ok(PhpType::Array(param_elem))
         }
         target_ty => Ok(target_ty),
+    }
+}
+
+/// Converts the currently loaded result registers into the inline nullable-int shape.
+pub(super) fn coerce_loaded_value_to_tagged_scalar(
+    ctx: &mut FunctionContext<'_>,
+    source_ty: &PhpType,
+) -> Result<PhpType> {
+    match source_ty.codegen_repr() {
+        PhpType::TaggedScalar => Ok(PhpType::TaggedScalar),
+        PhpType::Int | PhpType::Bool | PhpType::Callable => {
+            crate::codegen::sentinels::emit_tagged_scalar_from_int_result(ctx.emitter);
+            Ok(PhpType::TaggedScalar)
+        }
+        PhpType::Void | PhpType::Never => {
+            crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+            Ok(PhpType::TaggedScalar)
+        }
+        other => Err(CodegenIrError::unsupported(format!(
+            "conversion from PHP type {:?} to PHP type TaggedScalar",
+            other
+        ))),
     }
 }
 
@@ -4944,6 +5009,12 @@ fn store_pushed_value_to_ref_cell(
             abi::emit_store_to_address(ctx.emitter, ptr_reg, cell_reg, 0);
             abi::emit_store_to_address(ctx.emitter, len_reg, cell_reg, 8);
         }
+        PhpType::TaggedScalar => {
+            let tag_reg = crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter);
+            abi::emit_pop_reg_pair(ctx.emitter, abi::int_result_reg(ctx.emitter), tag_reg);
+            abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), cell_reg, 0);
+            abi::emit_store_to_address(ctx.emitter, tag_reg, cell_reg, 8);
+        }
         PhpType::Float => {
             abi::emit_pop_float_reg(ctx.emitter, abi::float_result_reg(ctx.emitter));
             abi::emit_store_to_address(ctx.emitter, abi::float_result_reg(ctx.emitter), cell_reg, 0);
@@ -5214,6 +5285,15 @@ fn load_ref_cell_local_to_result_as(
         PhpType::Float => {
             abi::emit_load_from_address(ctx.emitter, abi::float_result_reg(ctx.emitter), pointer_reg, 0);
         }
+        PhpType::TaggedScalar => {
+            abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+            abi::emit_load_from_address(
+                ctx.emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+                pointer_reg,
+                8,
+            );
+        }
         _ => {
             abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
         }
@@ -5269,6 +5349,10 @@ fn coerce_loaded_local_to_result_type(
                 abi::int_result_reg(ctx.emitter),
                 0x7fff_ffff_ffff_fffe,
             );
+            Ok(())
+        }
+        (_, PhpType::TaggedScalar) => {
+            coerce_loaded_value_to_tagged_scalar(ctx, &source_ty)?;
             Ok(())
         }
         (_, PhpType::Mixed) => {
@@ -5466,6 +5550,15 @@ fn store_value_to_ref_cell_as(
         PhpType::Float => {
             abi::emit_store_to_address(ctx.emitter, abi::float_result_reg(ctx.emitter), pointer_reg, 0);
         }
+        PhpType::TaggedScalar => {
+            abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+            abi::emit_store_to_address(
+                ctx.emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+                pointer_reg,
+                8,
+            );
+        }
         _ => {
             abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
         }
@@ -5483,6 +5576,10 @@ fn coerce_ref_cell_store_value(
     let target_ty = target_ty.codegen_repr();
     if target_ty == PhpType::Mixed && source_ty != PhpType::Mixed {
         emit_box_current_value_as_mixed(ctx.emitter, &source_ty);
+        return Ok(());
+    }
+    if target_ty == PhpType::TaggedScalar {
+        coerce_loaded_value_to_tagged_scalar(ctx, &source_ty)?;
         return Ok(());
     }
     if source_ty == PhpType::Mixed {
@@ -5559,13 +5656,17 @@ fn lower_const_bool(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result
     store_if_result(ctx, inst)
 }
 
-/// Lowers a null constant to the runtime null sentinel and stores it in the result slot.
+/// Lowers a null constant to the selected one-word or tagged-scalar representation.
 fn lower_const_null(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    abi::emit_load_int_immediate(
-        ctx.emitter,
-        abi::int_result_reg(ctx.emitter),
-        0x7fff_ffff_ffff_fffe,
-    );
+    if inst.result_php_type.codegen_repr() == PhpType::TaggedScalar {
+        crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+    } else {
+        abi::emit_load_int_immediate(
+            ctx.emitter,
+            abi::int_result_reg(ctx.emitter),
+            0x7fff_ffff_ffff_fffe,
+        );
+    }
     store_if_result(ctx, inst)
 }
 
@@ -5716,10 +5817,21 @@ fn emit_loaded_value_to_stdout(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> R
             ctx.emitter.label(&skip_label);
             Ok(())
         }
+        PhpType::TaggedScalar => {
+            let skip_label = ctx.next_label("echo_skip_tagged_null");
+            crate::codegen::sentinels::emit_branch_if_tagged_scalar_null(ctx.emitter, &skip_label);
+            abi::emit_write_stdout(ctx.emitter, &PhpType::Int);
+            ctx.emitter.label(&skip_label);
+            Ok(())
+        }
         PhpType::Int => {
+            if crate::codegen::sentinels::null_repr_is_tagged() {
+                abi::emit_write_stdout(ctx.emitter, ty);
+                return Ok(());
+            }
             let skip_label = ctx.next_label("echo_skip_null");
             let sentinel_reg = abi::symbol_scratch_reg(ctx.emitter);
-            abi::emit_load_int_immediate(ctx.emitter, sentinel_reg, 0x7fff_ffff_ffff_fffe);
+            abi::emit_load_int_immediate(ctx.emitter, sentinel_reg, crate::codegen::sentinels::NULL_SENTINEL);
             match ctx.emitter.target.arch {
                 Arch::AArch64 => {
                     ctx.emitter.instruction(&format!("cmp {}, {}", abi::int_result_reg(ctx.emitter), sentinel_reg)); // compare integer value against the runtime null sentinel
