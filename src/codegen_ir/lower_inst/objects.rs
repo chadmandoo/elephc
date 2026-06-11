@@ -2047,6 +2047,7 @@ pub(super) fn lower_prop_get(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
         emit_uninitialized_typed_property_guard(ctx, &slot, base_reg);
     }
     emit_property_load(ctx, &slot, base_reg)?;
+    materialize_loaded_property_result(ctx, inst, &slot.php_type)?;
     store_if_result(ctx, inst)
 }
 
@@ -2218,9 +2219,7 @@ fn lower_union_object_prop_get(
         emit_uninitialized_typed_property_guard(ctx, &slot, base_reg);
     }
     emit_property_load(ctx, &slot, base_reg)?;
-    if dynamic_property_result_needs_box(inst, &slot.php_type) {
-        emit_box_current_value_as_mixed(ctx.emitter, &slot.php_type.codegen_repr());
-    }
+    materialize_loaded_property_result(ctx, inst, &slot.php_type)?;
     ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
 }
@@ -2486,11 +2485,7 @@ fn lower_nullable_prop_get_with_warning(
         emit_uninitialized_typed_property_guard(ctx, &slot, base_reg);
     }
     emit_property_load(ctx, &slot, base_reg)?;
-    if inst.result_php_type.codegen_repr() == PhpType::Mixed
-        && slot.php_type.codegen_repr() != PhpType::Mixed
-    {
-        emit_box_current_value_as_mixed(ctx.emitter, &slot.php_type.codegen_repr());
-    }
+    materialize_loaded_property_result(ctx, inst, &slot.php_type)?;
     abi::emit_jump(ctx.emitter, &done_label);
 
     ctx.emitter.label(&null_label);
@@ -2580,11 +2575,7 @@ fn lower_const_dynamic_prop_get(
         emit_uninitialized_typed_property_guard(ctx, &slot, base_reg);
     }
     emit_property_load(ctx, &slot, base_reg)?;
-    if inst.result_php_type.codegen_repr() == PhpType::Mixed
-        && slot.php_type.codegen_repr() != PhpType::Mixed
-    {
-        emit_box_current_value_as_mixed(ctx.emitter, &slot.php_type.codegen_repr());
-    }
+    materialize_loaded_property_result(ctx, inst, &slot.php_type)?;
     store_if_result(ctx, inst)
 }
 
@@ -2627,9 +2618,7 @@ fn lower_runtime_dynamic_declared_prop_get(
             emit_uninitialized_typed_property_guard(ctx, slot, base_reg);
         }
         emit_property_load(ctx, slot, base_reg)?;
-        if dynamic_property_result_needs_box(inst, &slot.php_type) {
-            emit_box_current_value_as_mixed(ctx.emitter, &slot.php_type.codegen_repr());
-        }
+        materialize_loaded_property_result(ctx, inst, &slot.php_type)?;
         abi::emit_release_temporary_stack(ctx.emitter, 32);
         abi::emit_jump(ctx.emitter, &done_label);
     }
@@ -2736,10 +2725,23 @@ fn ensure_dynamic_property_miss_supported(inst: &Instruction) -> Result<()> {
     }
 }
 
-/// Returns true when a loaded property value must be boxed for a `Mixed` EIR result.
-fn dynamic_property_result_needs_box(inst: &Instruction, source_ty: &PhpType) -> bool {
-    inst.result_php_type.codegen_repr() == PhpType::Mixed
-        && source_ty.codegen_repr() != PhpType::Mixed
+/// Converts a just-loaded property payload into the EIR result representation.
+fn materialize_loaded_property_result(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    source_ty: &PhpType,
+) -> Result<()> {
+    match inst.result_php_type.codegen_repr() {
+        PhpType::Mixed if source_ty.codegen_repr() != PhpType::Mixed => {
+            emit_box_current_value_as_mixed(ctx.emitter, &source_ty.codegen_repr());
+            Ok(())
+        }
+        PhpType::TaggedScalar if source_ty.codegen_repr() != PhpType::TaggedScalar => {
+            super::coerce_loaded_value_to_tagged_scalar(ctx, source_ty)?;
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Emits a PHP null value for a dynamic property lookup that matched no declared slot.

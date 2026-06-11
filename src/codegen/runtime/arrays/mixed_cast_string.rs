@@ -13,7 +13,7 @@ use crate::codegen::platform::Arch;
 
 /// Converts a boxed Mixed value to a string by dispatching on the unboxed tag.
 /// Input: x0 = boxed mixed pointer. Output: x1 = string pointer, x2 = string length (ARM64).
-/// Handles int (tag 0 → itoa), string (tag 1 → pass-through), float (tag 2 → ftoa),
+/// Handles int (tag 0 → itoa), string (tag 1 → persisted copy), float (tag 2 → ftoa),
 /// bool (tag 3 → "1" or ""), and null/unsupported (→ empty string).
 /// Dispatches to `emit_mixed_cast_string_linux_x86_64` on x86_64; ARM64 emits inline.
 pub fn emit_mixed_cast_string(emitter: &mut Emitter) {
@@ -33,7 +33,7 @@ pub fn emit_mixed_cast_string(emitter: &mut Emitter) {
     emitter.instruction("cmp x0, #0");                                          // does the mixed payload hold an int?
     emitter.instruction("b.eq __rt_mixed_cast_string_from_int");                // ints cast through itoa
     emitter.instruction("cmp x0, #1");                                          // does the mixed payload already hold a string?
-    emitter.instruction("b.eq __rt_mixed_cast_string_done");                    // strings already satisfy the cast result registers
+    emitter.instruction("b.eq __rt_mixed_cast_string_from_string");             // strings need detaching from the source mixed owner
     emitter.instruction("cmp x0, #2");                                          // does the mixed payload hold a float?
     emitter.instruction("b.eq __rt_mixed_cast_string_from_float");              // floats cast through ftoa
     emitter.instruction("cmp x0, #3");                                          // does the mixed payload hold a bool?
@@ -46,6 +46,10 @@ pub fn emit_mixed_cast_string(emitter: &mut Emitter) {
     emitter.instruction("mov x0, x1");                                          // move the integer payload into the itoa argument register
     emitter.instruction("bl __rt_itoa");                                        // convert the integer payload to decimal text
     emitter.instruction("b __rt_mixed_cast_string_done");                       // return the converted integer string
+
+    emitter.label("__rt_mixed_cast_string_from_string");
+    emitter.instruction("bl __rt_str_persist");                                 // detach the string payload from the source mixed owner
+    emitter.instruction("b __rt_mixed_cast_string_done");                       // return the persisted string copy
 
     emitter.label("__rt_mixed_cast_string_from_float");
     emitter.instruction("fmov d0, x1");                                         // move the unboxed float bits into the FP register file
@@ -70,7 +74,7 @@ pub fn emit_mixed_cast_string(emitter: &mut Emitter) {
 
 /// x86_64 variant of `emit_mixed_cast_string`: converts a boxed Mixed value to a string.
 /// Input: RDI = boxed mixed pointer. Output: RAX = string pointer, RDX = string length (System V ABI).
-/// Handles int (tag 0 → itoa), string (tag 1 → pass-through), float (tag 2 → ftoa),
+/// Handles int (tag 0 → itoa), string (tag 1 → persisted copy), float (tag 2 → ftoa),
 /// bool (tag 3 → "1" or ""), and null/unsupported (→ empty string).
 fn emit_mixed_cast_string_linux_x86_64(emitter: &mut Emitter) {
     emitter.blank();
@@ -83,7 +87,7 @@ fn emit_mixed_cast_string_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp rax, 0");                                          // does the mixed payload hold an int?
     emitter.instruction("je __rt_mixed_cast_string_from_int");                  // ints cast through itoa
     emitter.instruction("cmp rax, 1");                                          // does the mixed payload already hold a string?
-    emitter.instruction("je __rt_mixed_cast_string_from_string");               // strings already satisfy the cast result registers
+    emitter.instruction("je __rt_mixed_cast_string_from_string");               // strings need detaching from the source mixed owner
     emitter.instruction("cmp rax, 2");                                          // does the mixed payload hold a float?
     emitter.instruction("je __rt_mixed_cast_string_from_float");                // floats cast through ftoa
     emitter.instruction("cmp rax, 3");                                          // does the mixed payload hold a bool?
@@ -99,7 +103,8 @@ fn emit_mixed_cast_string_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_mixed_cast_string_from_string");
     emitter.instruction("mov rax, rdi");                                        // move the unboxed string pointer into the ABI string result register
-    emitter.instruction("jmp __rt_mixed_cast_string_done");                     // keep the existing string length in rdx
+    emitter.instruction("call __rt_str_persist");                               // detach the string payload from the source mixed owner
+    emitter.instruction("jmp __rt_mixed_cast_string_done");                     // return the persisted string copy
 
     emitter.label("__rt_mixed_cast_string_from_float");
     emitter.instruction("movq xmm0, rdi");                                      // move the unboxed float bits into the FP register file
