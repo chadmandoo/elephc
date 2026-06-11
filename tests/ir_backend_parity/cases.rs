@@ -6,7 +6,7 @@
 //!
 //! Key details:
 //! - Each case compiles the same PHP snippet twice at the binary level, once
-//!   through the default backend and once through `--ir-backend`.
+//!   through `--ast-backend` and once through the default EIR backend.
 
 use std::fs;
 use std::path::PathBuf;
@@ -32,8 +32,8 @@ impl Backend {
 
     /// Adds the backend-specific CLI flags to the compile command.
     fn add_compile_flags(self, command: &mut Command) {
-        if matches!(self, Self::Ir) {
-            command.arg("--ir-backend");
+        if matches!(self, Self::Legacy) {
+            command.arg("--ast-backend");
         }
     }
 }

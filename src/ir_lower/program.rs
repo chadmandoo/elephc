@@ -96,8 +96,13 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
     for function in all_lowered_functions(module) {
         for inst in &function.instructions {
             match inst.op {
-                Op::BuiltinCall if builtin_call_requires_regex(module, inst) => {
-                    features.regex = true;
+                Op::BuiltinCall => {
+                    if builtin_call_requires_regex(module, inst) {
+                        features.regex = true;
+                    }
+                    if builtin_call_requires_descriptor_invoker(module, function, inst) {
+                        features.descriptor_invoker = true;
+                    }
                 }
                 Op::ExprCall | Op::CallableDescriptorInvoke => {
                     features.descriptor_invoker = true;
@@ -131,6 +136,48 @@ fn builtin_call_requires_regex(module: &Module, inst: &crate::ir::Instruction) -
         return false;
     };
     is_regex_builtin_name(name)
+}
+
+/// Returns true when a lowered builtin call emits runtime string-callable dispatch.
+fn builtin_call_requires_descriptor_invoker(
+    module: &Module,
+    function: &Function,
+    inst: &crate::ir::Instruction,
+) -> bool {
+    let Some(name) = builtin_call_name(module, inst) else {
+        return false;
+    };
+    let Some(callback_index) = string_callback_operand_index(name) else {
+        return false;
+    };
+    let Some(callback) = inst.operands.get(callback_index).copied() else {
+        return false;
+    };
+    function
+        .value(callback)
+        .is_some_and(|value| value.php_type.codegen_repr() == PhpType::Str)
+}
+
+/// Returns the canonical builtin name attached to a lowered builtin instruction.
+fn builtin_call_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    module
+        .data
+        .function_names
+        .get(data.as_raw() as usize)
+        .map(String::as_str)
+}
+
+/// Returns the callback operand index for builtins with runtime string callbacks.
+fn string_callback_operand_index(name: &str) -> Option<usize> {
+    match crate::names::php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "array_map" => Some(0),
+        "array_filter" | "array_reduce" | "array_walk" | "usort" | "uksort" | "uasort"
+        | "iterator_apply" | "preg_replace_callback" => Some(1),
+        _ => None,
+    }
 }
 
 /// Returns true when a builtin name is lowered through the regex runtime helpers.
