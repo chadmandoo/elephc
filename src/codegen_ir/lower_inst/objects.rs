@@ -3581,6 +3581,9 @@ fn ensure_property_value_supported(
     if can_coerce_tagged_scalar_to_int_property(value_ty, &slot.php_type) {
         return Ok(());
     }
+    if can_store_class_default_in_refined_null_property(ctx, value_ty, &slot.php_type) {
+        return Ok(());
+    }
     if can_box_value_for_mixed_property(value_ty, &slot.php_type) {
         return Ok(());
     }
@@ -3739,6 +3742,21 @@ fn can_coerce_mixed_to_scalar_property(value_ty: &PhpType, slot_ty: &PhpType) ->
 /// Returns true when a nullable inline scalar can be narrowed into int property storage.
 fn can_coerce_tagged_scalar_to_int_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
     value_ty.codegen_repr() == PhpType::TaggedScalar && slot_ty.codegen_repr() == PhpType::Int
+}
+
+/// Returns true when a class default initializer writes into an untyped property later refined to null.
+fn can_store_class_default_in_refined_null_property(
+    ctx: &FunctionContext<'_>,
+    value_ty: &PhpType,
+    slot_ty: &PhpType,
+) -> bool {
+    if !ctx.function.name.starts_with("_class_propinit_") {
+        return false;
+    }
+    if slot_ty.codegen_repr() != PhpType::Void {
+        return false;
+    }
+    matches!(value_ty.codegen_repr(), PhpType::Int | PhpType::Bool)
 }
 
 /// Returns true when an empty array literal initializes a typed array property.
