@@ -5859,10 +5859,13 @@ fn emit_loaded_value_to_stdout(ctx: &mut FunctionContext<'_>, ty: &PhpType) -> R
         | PhpType::Union(_)
         | PhpType::Iterable
         | PhpType::Resource(_)
-        | PhpType::Pointer(_)
-        | PhpType::Array(_)
-        | PhpType::AssocArray { .. } => {
+        | PhpType::Pointer(_) => {
             abi::emit_write_stdout(ctx.emitter, ty);
+            Ok(())
+        }
+        PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            conversions::emit_array_like_string_result(ctx);
+            abi::emit_write_stdout(ctx.emitter, &PhpType::Str);
             Ok(())
         }
         _ => Err(CodegenIrError::unsupported(format!("echo for PHP type {:?}", ty))),

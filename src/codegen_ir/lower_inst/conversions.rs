@@ -244,11 +244,16 @@ fn emit_missing_tostring_fatal(ctx: &mut FunctionContext<'_>, class_name: &str) 
 
 /// Lowers array-like PHP values to the literal string used by PHP casts.
 fn lower_array_like_to_string(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    emit_array_like_string_result(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Materializes PHP's array-to-string placeholder in the active string result registers.
+pub(super) fn emit_array_like_string_result(ctx: &mut FunctionContext<'_>) {
     let (label, len) = ctx.data.add_string(b"Array");
     let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
     abi::emit_symbol_address(ctx.emitter, ptr_reg, &label);
     abi::emit_load_int_immediate(ctx.emitter, len_reg, len as i64);
-    store_if_result(ctx, inst)
 }
 
 /// Converts the loaded native resource payload into PHP's one-based display id.

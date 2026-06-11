@@ -5944,14 +5944,35 @@ fn lower_ternary(
 fn lower_cast(ctx: &mut LoweringContext<'_, '_>, target: &CastType, inner: &Expr, expr: &Expr) -> LoweredValue {
     let value = lower_expr(ctx, inner);
     let php_type = cast_php_type(target);
-    ctx.emit_value(
+    let result = ctx.emit_value(
         Op::Cast,
         vec![value.value],
         Some(Immediate::CastTarget(value_ir_type(&php_type))),
         php_type,
         Op::Cast.default_effects(),
         Some(expr.span),
-    )
+    );
+    if matches!(target, CastType::String) {
+        release_stringified_source_if_owned(ctx, value, Some(expr.span));
+    }
+    result
+}
+
+/// Releases an owned source whose string result cannot alias the original storage.
+fn release_stringified_source_if_owned(
+    ctx: &mut LoweringContext<'_, '_>,
+    source: LoweredValue,
+    span: Option<crate::span::Span>,
+) {
+    if !ctx.value_is_owning_temporary(source) {
+        return;
+    }
+    match ctx.builder.value_php_type(source.value).codegen_repr() {
+        PhpType::Object(_) | PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            crate::ir_lower::ownership::release_if_owned(ctx, source, span);
+        }
+        _ => {}
+    }
 }
 
 /// Returns the PHP type produced by a cast.
@@ -7780,7 +7801,11 @@ fn coerce_to_string_at_span(
         IrType::Str => value,
         IrType::I64 | IrType::TaggedScalar => ctx.emit_value(Op::IToStr, vec![value.value], None, PhpType::Str, Op::IToStr.default_effects(), span),
         IrType::F64 => ctx.emit_value(Op::FToStr, vec![value.value], None, PhpType::Str, Op::FToStr.default_effects(), span),
-        _ => ctx.emit_value(Op::RuntimeCall, vec![value.value], None, PhpType::Str, Effects::all(), span),
+        _ => {
+            let result = ctx.emit_value(Op::RuntimeCall, vec![value.value], None, PhpType::Str, Effects::all(), span);
+            release_stringified_source_if_owned(ctx, value, span);
+            result
+        }
     }
 }
 

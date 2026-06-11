@@ -17,7 +17,7 @@ use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
-use super::{expect_operand, store_if_result};
+use super::{expect_operand, load_value_to_first_int_arg, store_if_result};
 use crate::codegen_ir::{CodegenIrError, Result};
 
 /// Lowers associative-array allocation through the shared runtime constructor.
@@ -500,6 +500,9 @@ fn materialize_hash_value_aarch64(
     if matches!(storage_value_ty, PhpType::Mixed | PhpType::Iterable) {
         return materialize_hash_mixed_value_aarch64(ctx, value, value_ty, storage_value_ty);
     }
+    if matches!(value_ty, PhpType::Mixed | PhpType::Union(_)) {
+        return materialize_hash_mixed_value_for_concrete_storage_aarch64(ctx, value, storage_value_ty);
+    }
     match value_ty {
         PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float => {
             ctx.load_value_to_reg(value, "x3")?;
@@ -537,6 +540,9 @@ fn materialize_hash_value_x86_64(
     if matches!(storage_value_ty, PhpType::Mixed | PhpType::Iterable) {
         return materialize_hash_mixed_value_x86_64(ctx, value, value_ty, storage_value_ty);
     }
+    if matches!(value_ty, PhpType::Mixed | PhpType::Union(_)) {
+        return materialize_hash_mixed_value_for_concrete_storage_x86_64(ctx, value, storage_value_ty);
+    }
     match value_ty {
         PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float => {
             ctx.load_value_to_reg(value, "rcx")?;
@@ -557,6 +563,90 @@ fn materialize_hash_value_x86_64(
         other => {
             return Err(CodegenIrError::unsupported(format!(
                 "hash_set value PHP type {:?}",
+                other
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Casts a boxed Mixed payload into a concrete AArch64 hash-set value payload.
+fn materialize_hash_mixed_value_for_concrete_storage_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    storage_value_ty: &PhpType,
+) -> Result<()> {
+    match storage_value_ty.codegen_repr() {
+        PhpType::Int => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
+            ctx.emitter.instruction("mov x3, x0");                              // pass the cast integer payload as the hash value low word
+            ctx.emitter.instruction("mov x4, xzr");                             // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Bool => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool");
+            ctx.emitter.instruction("mov x3, x0");                              // pass the cast boolean payload as the hash value low word
+            ctx.emitter.instruction("mov x4, xzr");                             // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Float => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
+            ctx.emitter.instruction("fmov x3, d0");                             // pass the cast float bits as the hash value low word
+            ctx.emitter.instruction("mov x4, xzr");                             // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Str => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
+            abi::emit_call_label(ctx.emitter, "__rt_str_persist");
+            ctx.emitter.instruction("mov x3, x1");                              // pass the persisted string pointer as the hash value low word
+            ctx.emitter.instruction("mov x4, x2");                              // pass the persisted string length as the hash value high word
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "mixed hash_set value for concrete PHP type {:?}",
+                other
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Casts a boxed Mixed payload into a concrete x86_64 hash-set value payload.
+fn materialize_hash_mixed_value_for_concrete_storage_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    storage_value_ty: &PhpType,
+) -> Result<()> {
+    match storage_value_ty.codegen_repr() {
+        PhpType::Int => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
+            ctx.emitter.instruction("mov rcx, rax");                            // pass the cast integer payload as the hash value low word
+            ctx.emitter.instruction("xor r8, r8");                              // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Bool => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool");
+            ctx.emitter.instruction("mov rcx, rax");                            // pass the cast boolean payload as the hash value low word
+            ctx.emitter.instruction("xor r8, r8");                              // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Float => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
+            ctx.emitter.instruction("movq rcx, xmm0");                          // pass the cast float bits as the hash value low word
+            ctx.emitter.instruction("xor r8, r8");                              // cast scalar hash values leave the high value word empty
+        }
+        PhpType::Str => {
+            load_value_to_first_int_arg(ctx, value)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
+            abi::emit_call_label(ctx.emitter, "__rt_str_persist");
+            ctx.emitter.instruction("mov rcx, rax");                            // pass the persisted string pointer as the hash value low word
+            ctx.emitter.instruction("mov r8, rdx");                             // pass the persisted string length as the hash value high word
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "mixed hash_set value for concrete PHP type {:?}",
                 other
             )));
         }
@@ -1006,6 +1096,14 @@ fn require_supported_hash_value(
         value_ty,
         PhpType::Int | PhpType::Bool | PhpType::Callable | PhpType::Float | PhpType::Str
     ) {
+        return Ok(value_ty);
+    }
+    if matches!(value_ty, PhpType::Mixed | PhpType::Union(_))
+        && matches!(
+            storage_value_ty.codegen_repr(),
+            PhpType::Int | PhpType::Bool | PhpType::Float | PhpType::Str
+        )
+    {
         return Ok(value_ty);
     }
     if value_ty.is_refcounted() && value_ty == storage_value_ty.codegen_repr() {
