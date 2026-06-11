@@ -528,23 +528,22 @@ imposed. See `docs/internals/the-ir.md`.
 - [x] `src/ir/` module — types, instructions, builder, validator, printer
 - [x] AST → EIR lowering pass — every `ExprKind`/`StmtKind` variant
 - [x] `--emit-ir` CLI flag for diagnostics and snapshot testing
-- [ ] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
-- [ ] `--ir-backend` CLI flag (opt-in stable; `--ast-backend` remains default during the soak period)
-- [ ] CI dual-backend matrix and IR-only benchmark job for parity and regression tracking
-- [ ] Two-week `v0.24.0` soak period to collect external feedback before any default switch
+- [x] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
+- [ ] Default backend switch from AST to EIR, with `--ast-backend` retained as an explicit fallback
+- [ ] CI default-EIR gate, legacy fallback coverage, and IR-only benchmark job for parity and regression tracking
 - [ ] Linear-scan register allocator (Poletto-Sarkar) with liveness analysis, live intervals, allocation table, separate int / float pools, and callee-saved preservation across calls
 - [ ] Register-pressure mitigations: caller-saved reuse for non-call-crossing intervals; better spill heuristic
 
-Expected outcome: opt-in feature parity at v0.24.0; IR backend remains
-opt-in through the soak period; ≥15% performance improvement on compute
-benchmarks after Phase 06 by end of v0.24.x.
+Expected outcome: EIR is the default backend in v0.24.x, the legacy AST
+backend remains available through `--ast-backend` as a fallback until real-world
+validation is complete, and ≥15% performance improvement on compute benchmarks
+after Phase 06 by end of v0.24.x.
 
 ## v0.25.x — EIR optimization passes
 
-Switch the user-facing default to the IR backend after the v0.24.x soak,
-then build the IR-level passes that the AST optimizer could not reach.
+Build the IR-level passes that the AST optimizer could not reach now that the
+EIR backend is the user-facing default.
 
-- [ ] Default backend switch from AST to EIR after the v0.24.x soak period
 - [ ] Deprecation warning on `--ast-backend` while keeping it available as a fallback for one minor version
 - [ ] Backend-switch release notes and documentation updates (`the-codegen.md`, `the-ir.md`)
 - [ ] Fixed-point IR pass driver with validation after each pass in test builds
@@ -561,10 +560,9 @@ then build the IR-level passes that the AST optimizer could not reach.
 - [ ] Small-function inliner (size threshold 24 instructions, non-recursive, no try/catch, no generators/fibers) (absorbs former v0.23 "Inline small functions")
 - [ ] Pipeline integration in fixed-point order
 
-Expected outcome: IR backend is the default, `--ast-backend` remains an
-escape hatch with a warning, additional 10–20% performance gain on loop-heavy
-and call-heavy benchmarks, and cumulative ≥30% improvement vs end-of-v0.23
-baseline.
+Expected outcome: `--ast-backend` remains an escape hatch with a warning,
+additional 10–20% performance gain on loop-heavy and call-heavy benchmarks,
+and cumulative ≥30% improvement vs end-of-v0.23 baseline.
 
 ## v0.26.x — Performance closure, legacy cleanup, and 0.x stabilization
 
