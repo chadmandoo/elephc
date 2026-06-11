@@ -344,6 +344,16 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         }
     }
 
+    /// Captures the definitely-initialized local slots at a control-flow split.
+    pub(crate) fn initialized_slots_snapshot(&self) -> HashSet<LocalSlotId> {
+        self.initialized_slots.clone()
+    }
+
+    /// Replaces the definitely-initialized local set after branch lowering or merge analysis.
+    pub(crate) fn restore_initialized_slots(&mut self, initialized_slots: HashSet<LocalSlotId>) {
+        self.initialized_slots = initialized_slots;
+    }
+
     /// Records that a local currently aliases by-reference storage.
     pub(crate) fn mark_ref_bound_local(&mut self, name: &str) {
         self.ref_bound_locals.insert(name.to_string());

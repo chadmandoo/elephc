@@ -9,8 +9,11 @@
 //! - Structured control flow creates EIR blocks; complex PHP runtime behavior
 //!   uses high-level opcodes with conservative effects.
 
+use std::collections::HashSet;
+
 use crate::ir::{
-    BlockId, CmpPredicate, Immediate, IrType, LocalKind, Op, Ownership, SwitchCase, Terminator,
+    BlockId, CmpPredicate, Immediate, IrType, LocalKind, LocalSlotId, Op, Ownership, SwitchCase,
+    Terminator,
 };
 use crate::ir_lower::context::{FinallyFrame, LoopFrame, LoweredValue, LoweringContext};
 use crate::ir_lower::effects_lookup;
@@ -368,6 +371,7 @@ fn lower_if_chain(
 ) -> bool {
     let cond_value = lower_expr(ctx, condition);
     let cond_value = ctx.truthy(cond_value, Some(condition.span));
+    let split_initialized = ctx.initialized_slots_snapshot();
     let then_block = ctx.builder.create_named_block("if.then", Vec::new());
     let else_block = ctx.builder.create_named_block("if.else", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
@@ -379,32 +383,67 @@ fn lower_if_chain(
     });
 
     ctx.builder.position_at_end(then_block);
+    ctx.restore_initialized_slots(split_initialized.clone());
     lower_block(ctx, then_body);
+    let then_initialized = ctx.initialized_slots_snapshot();
     let mut merge_reachable = false;
-    if !ctx.builder.insertion_block_is_terminated() {
+    let then_reachable = !ctx.builder.insertion_block_is_terminated();
+    if then_reachable {
         merge_reachable = true;
         branch_to(ctx, merge);
     }
 
     ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(else_block);
-    if let Some(((next_condition, next_body), rest)) = elseif_clauses.split_first() {
-        merge_reachable |=
-            lower_if_chain(ctx, next_condition, next_body, rest, else_body, merge, span);
+    ctx.restore_initialized_slots(split_initialized.clone());
+    let else_reachable = if let Some(((next_condition, next_body), rest)) = elseif_clauses.split_first() {
+        lower_if_chain(ctx, next_condition, next_body, rest, else_body, merge, span)
     } else if let Some(else_body) = else_body {
         lower_block(ctx, else_body);
         if !ctx.builder.insertion_block_is_terminated() {
-            merge_reachable = true;
             branch_to(ctx, merge);
+            true
+        } else {
+            false
         }
     } else {
         lower_noop(ctx, span);
         if !ctx.builder.insertion_block_is_terminated() {
-            merge_reachable = true;
             branch_to(ctx, merge);
+            true
+        } else {
+            false
         }
-    }
+    };
+    merge_reachable |= else_reachable;
+    let else_initialized = ctx.initialized_slots_snapshot();
+    ctx.restore_initialized_slots(merge_initialized_slots(
+        &split_initialized,
+        then_initialized,
+        then_reachable,
+        else_initialized,
+        else_reachable,
+    ));
     merge_reachable
+}
+
+/// Merges definitely-initialized locals from the reachable branches of an `if`.
+fn merge_initialized_slots(
+    split_initialized: &HashSet<LocalSlotId>,
+    then_initialized: HashSet<LocalSlotId>,
+    then_reachable: bool,
+    else_initialized: HashSet<LocalSlotId>,
+    else_reachable: bool,
+) -> HashSet<LocalSlotId> {
+    match (then_reachable, else_reachable) {
+        (true, true) => then_initialized
+            .intersection(&else_initialized)
+            .copied()
+            .collect(),
+        (true, false) => then_initialized,
+        (false, true) => else_initialized,
+        (false, false) => split_initialized.clone(),
+    }
 }
 
 /// Lowers a residual `ifdef`; normally the conditional pass removes these first.
