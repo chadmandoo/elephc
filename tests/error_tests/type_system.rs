@@ -615,3 +615,24 @@ fn test_error_static_closure_uses_this_through_short_ternary() {
         "Cannot use $this inside a static closure",
     );
 }
+
+/// Verifies that combining the nullable shorthand `?T` with a pipe union is rejected, and
+/// that the diagnostic points the user at the now-supported `T|null` spelling.
+#[test]
+fn test_error_nullable_shorthand_with_union() {
+    expect_error(
+        "<?php function f(): ?int|string { return 1; }",
+        "Nullable shorthand cannot be combined directly with union types; write T|null",
+    );
+}
+
+/// Verifies that a union type with a trailing pipe and no following member is rejected with
+/// the type-expression diagnostic, confirming `null`/`false`/`true` did not loosen the
+/// requirement that every pipe be followed by a real type.
+#[test]
+fn test_error_union_trailing_pipe() {
+    expect_error(
+        "<?php function f(): int| { return 1; }",
+        "Expected type expression",
+    );
+}

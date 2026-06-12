@@ -93,7 +93,7 @@ pub(crate) fn parse_type_expr(
     pos: &mut usize,
     span: Span,
 ) -> Result<TypeExpr, CompileError> {
-    let mut ty = if matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Question)) {
+    let ty = if matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Question)) {
         *pos += 1;
         TypeExpr::Nullable(Box::new(parse_atomic_type_expr(tokens, pos, span)?))
     } else {
@@ -115,11 +115,38 @@ pub(crate) fn parse_type_expr(
         members.push(parse_atomic_type_expr(tokens, pos, span)?);
     }
 
+    Ok(normalize_union_members(members))
+}
+
+/// Collapses a parsed union member list into its canonical `TypeExpr`.
+///
+/// A lone member is unwrapped. A `null` member (lowered to `TypeExpr::Void`) reproduces the
+/// nullable shorthand so that `T|null` is identical to `?T`: with a single remaining non-null
+/// member the union becomes `Nullable`, while a wider union keeps exactly one null sentinel so
+/// the checker's `union_contains_void` still recognizes it as nullable. Pure non-null unions
+/// are returned unchanged.
+fn normalize_union_members(members: Vec<TypeExpr>) -> TypeExpr {
+    let null_count = members
+        .iter()
+        .filter(|member| matches!(member, TypeExpr::Void))
+        .count();
+    if null_count > 0 && members.len() > null_count {
+        let mut non_null: Vec<TypeExpr> = members
+            .into_iter()
+            .filter(|member| !matches!(member, TypeExpr::Void))
+            .collect();
+        if non_null.len() == 1 {
+            return TypeExpr::Nullable(Box::new(
+                non_null.pop().expect("non-null member exists"),
+            ));
+        }
+        non_null.push(TypeExpr::Void);
+        return TypeExpr::Union(non_null);
+    }
     if members.len() == 1 {
-        ty = members.pop().expect("type member exists");
-        Ok(ty)
+        members.into_iter().next().expect("type member exists")
     } else {
-        Ok(TypeExpr::Union(members))
+        TypeExpr::Union(members)
     }
 }
 
@@ -204,6 +231,19 @@ fn parse_atomic_type_expr(
                 "Expected '>' after buffer element type",
             )?;
             Ok(TypeExpr::Buffer(Box::new(inner)))
+        }
+        // `null` is a first-class type that only ever means "the null value". It shares the
+        // runtime null sentinel with `void`/`?T`, so it lowers to `TypeExpr::Void`; the caller
+        // folds a `null` union member back into the canonical `Nullable` shorthand.
+        Some(Token::Null) => {
+            *pos += 1;
+            Ok(TypeExpr::Void)
+        }
+        // `false` and `true` are literal bool subtypes. elephc does not track literal-bool
+        // precision, so both widen to `bool`; the runtime representation is identical.
+        Some(Token::False) | Some(Token::True) => {
+            *pos += 1;
+            Ok(TypeExpr::Bool)
         }
         Some(Token::Identifier(_)) | Some(Token::Backslash) => Ok(TypeExpr::Named(parse_name(
             tokens,

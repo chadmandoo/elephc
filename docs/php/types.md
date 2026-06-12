@@ -24,6 +24,8 @@ sidebar:
 | `enum`           | Yes              | Pure and backed enums. Cases are singletons. Backed enums support `->value`, `::from()`, `::tryFrom()`, `::cases()`.   |
 | `int|string`     | Yes              | Union type — variable accepts any of the listed types. Lowered to Mixed at runtime.                                    |
 | `?int`           | Yes              | Nullable shorthand — sugar for `int|null`.                                                                             |
+| `string|null`    | Yes              | Union with the `null` literal type. Folds to the nullable shorthand `?string`, so `string|null` and `?string` are identical. |
+| `int|false`      | Yes              | Union with the `false` literal type (PHP's `strpos`-style return). `false`/`true` widen to `bool`; the runtime value is a real boolean. |
 | `void`           | Return only      | Valid as a function, method, closure, arrow, or extern return type. Internally, `null` is represented as `Void`.        |
 | `never`          | Return only      | Marks a function, method, closure, or interface method that **never returns** — it must always `throw`, call `exit()`/`die()`, or loop forever. Returning is rejected at type-check time. |
 | `ptr` / `ptr<T>` | elephc extension | Raw 64-bit pointer, optionally carrying a checked compile-time pointee tag. See [Pointers](../beyond-php/pointers.md). |
@@ -31,6 +33,32 @@ sidebar:
 | `packed class`   | elephc extension | Flat POD record type with compile-time field offsets. See [Packed Classes](../beyond-php/packed-classes.md).           |
 
 Integer-form numeric literals keep the `int` type only while they fit in PHP's signed 64-bit range. Larger decimal, hexadecimal, octal, or binary literals are promoted to `float`, matching PHP on 64-bit builds.
+
+### Literal pseudo-types in unions
+
+PHP lets `null`, `false`, and `true` appear as type members. elephc accepts them in parameter, return, and property positions, matched case-insensitively like the other built-in type names.
+
+```php
+<?php
+function find(string $haystack, string $needle): int|false {
+    return strpos($haystack, $needle); // a real int, or the literal false
+}
+
+function label(?string $name): string|null {
+    return $name === '' ? null : $name;
+}
+
+class Setting {
+    public string|null $value = null;
+}
+```
+
+Rules:
+
+- `T|null` is exactly equivalent to the nullable shorthand `?T` — both compile to the same type, so `string|null` and `?string` are interchangeable.
+- `false` and `true` widen to `bool`. elephc does not track literal-bool precision, so `int|false` is accepted wherever `int|bool` is; the stored value is still a genuine boolean at runtime.
+- A multi-member union may mix these with other members (`int|string|null`); the `null` member keeps the whole union nullable.
+- The nullable shorthand still may not be combined with a pipe union: write `T|null`, not `?T|U`.
 
 ### Never
 

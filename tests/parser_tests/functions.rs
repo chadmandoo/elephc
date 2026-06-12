@@ -475,6 +475,102 @@ fn test_parse_union_and_nullable_function_types() {
 }
 
 #[test]
+/// Verifies that a `T|null` union folds to the canonical `?T` nullable shorthand: the
+/// parser reproduces exactly the same `TypeExpr::Nullable` that `?string` would yield, so
+/// both spellings share one representation downstream.
+fn test_parse_t_or_null_folds_to_nullable() {
+    let stmts = parse_source("<?php function f(): string|null { return null; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { return_type, .. } => {
+            assert_eq!(
+                return_type.as_ref(),
+                Some(&TypeExpr::Nullable(Box::new(TypeExpr::Str)))
+            );
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that a leading `null|T` union order also folds to `Nullable(T)`, confirming the
+/// null member is recognized regardless of its position in the pipe list.
+fn test_parse_null_first_union_folds_to_nullable() {
+    let stmts = parse_source("<?php function f(null|int $x): int { return $x ?? 0; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { params, .. } => {
+            assert_eq!(params[0].1, Some(TypeExpr::Nullable(Box::new(TypeExpr::Int))));
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that the `false` literal type widens to `bool` in a union, so `int|false`
+/// (PHP's classic `strpos`-style return) parses as `Union([Int, Bool])`.
+fn test_parse_t_or_false_widens_to_bool_union() {
+    let stmts = parse_source("<?php function f(): int|false { return 1; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { return_type, .. } => {
+            assert_eq!(
+                return_type.as_ref(),
+                Some(&TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Bool]))
+            );
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that the `true` literal type also widens to `bool`, so `int|true` parses as
+/// `Union([Int, Bool])`.
+fn test_parse_t_or_true_widens_to_bool_union() {
+    let stmts = parse_source("<?php function f(int|true $x): int { return 0; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { params, .. } => {
+            assert_eq!(
+                params[0].1,
+                Some(TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Bool]))
+            );
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that a multi-member union with `null` keeps the other members flat and retains a
+/// single null sentinel (`TypeExpr::Void`) rather than collapsing to `Nullable`, so the
+/// checker still sees every member.
+fn test_parse_multi_member_null_union_keeps_sentinel() {
+    let stmts = parse_source("<?php function f(): int|string|null { return 1; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { return_type, .. } => {
+            assert_eq!(
+                return_type.as_ref(),
+                Some(&TypeExpr::Union(vec![
+                    TypeExpr::Int,
+                    TypeExpr::Str,
+                    TypeExpr::Void
+                ]))
+            );
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that a standalone `null` return type parses as the null sentinel
+/// (`TypeExpr::Void`), which the checker treats as null-accepting.
+fn test_parse_standalone_null_type() {
+    let stmts = parse_source("<?php function f(): null { return null; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { return_type, .. } => {
+            assert_eq!(return_type.as_ref(), Some(&TypeExpr::Void));
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
 // Verifies that `<?php function bump(int &$x) { }` parses a typed by-reference parameter:
 // type `Int`, name "x", and pass-by-reference flag set.
 /// Verifies that parse typed ref param.
