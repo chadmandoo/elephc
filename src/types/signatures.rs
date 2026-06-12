@@ -673,6 +673,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             &[PhpType::Mixed],
             PhpType::Str,
         )),
+        "printf" => return_typed_first_class_builtin_sig(name, PhpType::Int),
         "grapheme_strrev" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Str],

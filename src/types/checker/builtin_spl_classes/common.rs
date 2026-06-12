@@ -148,6 +148,9 @@ pub(super) fn dummy_body_for(return_type: Option<&TypeExpr>) -> Vec<Stmt> {
             ExprKind::StringLiteral(String::new()),
             crate::span::Span::dummy(),
         )),
+        Some(TypeExpr::Array(_)) => {
+            return_body(Expr::new(ExprKind::ArrayLiteral(Vec::new()), crate::span::Span::dummy()))
+        }
         Some(TypeExpr::Named(name)) if name.as_canonical() == "array" => {
             return_body(Expr::new(ExprKind::ArrayLiteral(Vec::new()), crate::span::Span::dummy()))
         }
@@ -234,6 +237,11 @@ pub(super) fn mixed_type() -> TypeExpr {
 /// Computes the type metadata for array.
 pub(super) fn array_type() -> TypeExpr {
     named_type("array")
+}
+
+/// Computes the type metadata for array<string>.
+pub(super) fn string_array_type() -> TypeExpr {
+    TypeExpr::Array(Box::new(TypeExpr::Str))
 }
 
 /// Computes the type metadata for named.

@@ -35,32 +35,69 @@ use crate::codegen::platform::Arch;
 /// Capacity of the shared `_stream_grow_scratch` window used as the iconv output buffer.
 const ICONV_SCRATCH: i64 = 65536;
 
+/// Emits the iconv WRITE-filter attachment through the legacy codegen context.
+pub fn emit_iconv_write_attach(
+    emitter: &mut Emitter,
+    ctx: &mut Context,
+    from_sym: &str,
+    to_sym: &str,
+) {
+    emit_iconv_write_attach_with_labels(emitter, from_sym, to_sym, |prefix| ctx.next_label(prefix));
+}
+
 /// Emits the iconv WRITE-filter attachment. The descriptor is in the int result
 /// register at entry; on return the stream is re-boxed as a resource Mixed cell.
-pub fn emit_iconv_write_attach(emitter: &mut Emitter, ctx: &mut Context, from_sym: &str, to_sym: &str) {
-    let fwrite_label = ctx.next_label("iconv_w_fwrite");
-    let close_label = ctx.next_label("iconv_w_close");
-    let skip_label = ctx.next_label("iconv_w_skip_helpers");
+pub(crate) fn emit_iconv_write_attach_with_labels<F>(
+    emitter: &mut Emitter,
+    from_sym: &str,
+    to_sym: &str,
+    mut next_label: F,
+)
+where
+    F: FnMut(&str) -> String,
+{
+    let fwrite_label = next_label("iconv_w_fwrite");
+    let close_label = next_label("iconv_w_close");
+    let skip_label = next_label("iconv_w_skip_helpers");
     match emitter.target.arch {
-        Arch::AArch64 => emit_arm64(emitter, ctx, from_sym, to_sym, &fwrite_label, &close_label, &skip_label),
-        Arch::X86_64 => emit_x86_64(emitter, ctx, from_sym, to_sym, &fwrite_label, &close_label, &skip_label),
+        Arch::AArch64 => emit_arm64(
+            emitter,
+            from_sym,
+            to_sym,
+            &fwrite_label,
+            &close_label,
+            &skip_label,
+            &mut next_label,
+        ),
+        Arch::X86_64 => emit_x86_64(
+            emitter,
+            from_sym,
+            to_sym,
+            &fwrite_label,
+            &close_label,
+            &skip_label,
+            &mut next_label,
+        ),
     }
 }
 
 /// ARM64 helpers + inline init.
-fn emit_arm64(
+fn emit_arm64<F>(
     emitter: &mut Emitter,
-    ctx: &mut Context,
     from_sym: &str,
     to_sym: &str,
     fwrite_label: &str,
     close_label: &str,
     skip_label: &str,
-) {
-    let loop_label = ctx.next_label("iconv_w_loop");
-    let after_write = ctx.next_label("iconv_w_after_write");
-    let done_label = ctx.next_label("iconv_w_done");
-    let skip_store = ctx.next_label("iconv_w_skip_store");
+    next_label: &mut F,
+)
+where
+    F: FnMut(&str) -> String,
+{
+    let loop_label = next_label("iconv_w_loop");
+    let after_write = next_label("iconv_w_after_write");
+    let done_label = next_label("iconv_w_done");
+    let skip_store = next_label("iconv_w_skip_store");
 
     emitter.instruction(&format!("b {}", skip_label));                          // skip over the inline iconv helper routines
 
@@ -168,19 +205,22 @@ fn emit_arm64(
 }
 
 /// x86_64 helpers + inline init.
-fn emit_x86_64(
+fn emit_x86_64<F>(
     emitter: &mut Emitter,
-    ctx: &mut Context,
     from_sym: &str,
     to_sym: &str,
     fwrite_label: &str,
     close_label: &str,
     skip_label: &str,
-) {
-    let loop_label = ctx.next_label("iconv_w_loop");
-    let after_write = ctx.next_label("iconv_w_after_write");
-    let done_label = ctx.next_label("iconv_w_done");
-    let skip_store = ctx.next_label("iconv_w_skip_store");
+    next_label: &mut F,
+)
+where
+    F: FnMut(&str) -> String,
+{
+    let loop_label = next_label("iconv_w_loop");
+    let after_write = next_label("iconv_w_after_write");
+    let done_label = next_label("iconv_w_done");
+    let skip_store = next_label("iconv_w_skip_store");
 
     emitter.instruction(&format!("jmp {}", skip_label));                        // skip over the inline iconv helper routines
 

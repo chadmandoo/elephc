@@ -263,6 +263,31 @@ pub fn function_variant_active_symbol(name: &str) -> String {
     format!("_fn_variant_active_{}", mangle_fqn(name))
 }
 
+/// Returns the EIR global storage symbol for a PHP global name.
+///
+/// Format: `_eir_global_<mangled_fqn>`. Used by the IR backend for `LoadGlobal`
+/// and `StoreGlobal` storage that is distinct from user function labels.
+pub fn ir_global_symbol(name: &str) -> String {
+    format!("_eir_global_{}", mangle_fqn(name.trim_start_matches('\\')))
+}
+
+/// Returns the runtime guard symbol for a `define()` constant name.
+///
+/// The encoding matches the legacy backend's existing BSS sentinel naming so
+/// duplicate `define()` checks stay stable across backend implementations.
+pub fn define_seen_symbol(name: &str) -> String {
+    let mut symbol = String::from("_define_seen");
+    for byte in name.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => symbol.push(byte as char),
+            b'_' => symbol.push_str("_u"),
+            b'\\' => symbol.push_str("_ns"),
+            _ => symbol.push_str(&format!("_x{:02x}", byte)),
+        }
+    }
+    symbol
+}
+
 /// Returns the function epilogue symbol for a given PHP function name.
 ///
 /// Format: `_fn_<mangled_fqn>_epilogue`. Appends `_epilogue` to `function_symbol`.

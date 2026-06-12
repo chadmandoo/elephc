@@ -334,7 +334,12 @@ fn spl_file_info_methods() -> Vec<ClassMethod> {
                 property_access(this_expr(), "fileClass"),
                 "SplFileObject",
                 "SplFileObject",
-                vec![file_path_arg_expr(), var_expr("mode")],
+                vec![
+                    file_path_arg_expr(),
+                    var_expr("mode"),
+                    var_expr("useIncludePath"),
+                    var_expr("context"),
+                ],
             )),
         ),
         method_with_body(
@@ -425,7 +430,7 @@ fn spl_file_object_methods() -> Vec<ClassMethod> {
         method_with_body(
             "fputcsv",
             vec![
-                param("fields", array_type()),
+                param("fields", string_array_type()),
                 param_default("separator", TypeExpr::Str, string_expr(",")),
                 param_default("enclosure", TypeExpr::Str, string_expr("\"")),
                 param_default("escape", TypeExpr::Str, string_expr("\\")),
@@ -593,7 +598,7 @@ fn recursive_caching_iterator_methods() -> Vec<ClassMethod> {
             "__elephcAssumeRecursiveIterator",
             vec![param("iterator", mixed_type())],
             Some(named_type("RecursiveIterator")),
-            Vec::new(),
+            return_body(var_expr("iterator")),
         ),
     ]
 }
@@ -1230,15 +1235,19 @@ fn spl_temp_file_object_should_spill_expr() -> Expr {
 
 /// Builds statements that refresh inherited line storage from the memory buffer.
 fn spl_temp_file_object_reload_lines_from_buffer_body() -> Vec<Stmt> {
-    vec![if_stmt(
-        binary_expr(function_call("strlen", vec![temp_buffer_arg_expr()]), BinOp::StrictEq, int_expr(0)),
-        vec![property_assign_stmt(this_expr(), "lines", empty_array_expr())],
-        Some(vec![property_assign_stmt(
-            this_expr(),
-            "lines",
-            function_call("explode", vec![string_expr("\n"), temp_buffer_arg_expr()]),
-        )]),
-    )]
+    vec![
+        property_assign_stmt(this_expr(), "lines", empty_array_expr()),
+        if_stmt(
+            binary_expr(function_call("strlen", vec![temp_buffer_arg_expr()]), BinOp::StrictEq, int_expr(0)),
+            Vec::new(),
+            Some(vec![foreach_stmt(
+                function_call("explode", vec![string_expr("\n"), temp_buffer_arg_expr()]),
+                None,
+                "line",
+                vec![property_array_push_stmt(this_expr(), "lines", var_expr("line"))],
+            )]),
+        ),
+    ]
 }
 
 /// Builds SplFileObject current() with lightweight READ_CSV support.

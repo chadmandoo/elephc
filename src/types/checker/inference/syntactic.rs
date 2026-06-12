@@ -265,7 +265,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
                 PhpType::Mixed
             }
             "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::Bool]),
-            "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv"
+            "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv" | "printf"
             | "rand" | "time" | "fpassthru" | "linkinfo" => PhpType::Int,
             "floatval" | "floor" | "ceil" | "round" | "sqrt" | "pow" | "fmod" | "sin" | "cos"
             | "tan" | "asin" | "acos" | "atan" | "atan2" | "sinh" | "cosh" | "tanh" | "log"
@@ -329,14 +329,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
             result_ty
         }
         ExprKind::ArrayLiteral(elems) => {
-            let mut elem_ty = elems
-                .first()
-                .map(infer_expr_type_syntactic)
-                .unwrap_or(PhpType::Never);
-            for elem in elems.iter().skip(1) {
-                elem_ty = wider_type_syntactic(&elem_ty, &infer_expr_type_syntactic(elem));
-            }
-            PhpType::Array(Box::new(elem_ty))
+            PhpType::Array(Box::new(array_literal_element_type_syntactic(elems)))
         }
         ExprKind::ArrayLiteralAssoc(entries) => {
             let mut key_ty = entries
@@ -366,6 +359,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
         ExprKind::NewScopedObject { .. } => PhpType::Object(String::new()),
         ExprKind::ClassConstant { .. } | ExprKind::ScopedConstantAccess { .. } => PhpType::Str,
         ExprKind::This => PhpType::Object(String::new()),
+        ExprKind::Closure { .. } | ExprKind::FirstClassCallable(_) => PhpType::Callable,
         ExprKind::PtrCast { target_type, .. } => PhpType::Pointer(Some(target_type.clone())),
         ExprKind::BinaryOp { left, op, right } => match op {
             BinOp::Add => {
@@ -414,6 +408,35 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
         ExprKind::InstanceOf { .. } => PhpType::Bool,
         _ => PhpType::Int,
     }
+}
+
+/// Infers the element type for an indexed array literal without scalar coercion widening.
+fn array_literal_element_type_syntactic(elems: &[Expr]) -> PhpType {
+    let mut elem_ty = elems
+        .first()
+        .map(infer_expr_type_syntactic)
+        .unwrap_or(PhpType::Never);
+    for elem in elems.iter().skip(1) {
+        elem_ty = merge_array_literal_element_type_syntactic(
+            elem_ty,
+            infer_expr_type_syntactic(elem),
+        );
+    }
+    elem_ty
+}
+
+/// Merges two indexed-array literal element types, using Mixed for heterogeneous slots.
+fn merge_array_literal_element_type_syntactic(existing: PhpType, next: PhpType) -> PhpType {
+    if existing == next {
+        return existing;
+    }
+    if matches!(existing, PhpType::Never) {
+        return next;
+    }
+    if matches!(next, PhpType::Never) {
+        return existing;
+    }
+    PhpType::Mixed
 }
 
 #[cfg(test)]

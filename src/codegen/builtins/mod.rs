@@ -23,6 +23,12 @@ mod system;
 mod types;
 
 pub(crate) use io::publish_tls_function_pointers;
+pub(crate) use io::phar_stream;
+pub(crate) use io::stream_filter_bzip2;
+pub(crate) use io::stream_filter_iconv;
+pub(crate) use io::stream_filter_iconv_write;
+pub(crate) use io::stream_filter_inflate;
+pub(crate) use io::stream_filter_zlib;
 pub(crate) use strings::hash_crypto;
 
 use super::context::Context;

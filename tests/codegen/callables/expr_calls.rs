@@ -9,6 +9,13 @@
 
 use crate::support::*;
 
+/// Returns true when assembly contains a valid invokable object dispatch path.
+fn asm_has_invokable_object_call(user_asm: &str, class_name: &str) -> bool {
+    let eir_method = format!("_method_{}__u__u_invoke", class_name);
+    (user_asm.contains("callable_instance_method") && user_asm.contains("callable_invoker"))
+        || user_asm.contains(&eir_method)
+}
+
 /// Verifies that expr call returns string.
 #[test]
 fn test_expr_call_returns_string() {
@@ -471,7 +478,7 @@ echo $callback(value: 7);
     let (user_asm, _runtime_asm, _required_libraries) =
         compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
     assert!(
-        user_asm.contains("cufa_descriptor_invoker_ready"),
+        user_asm.contains("descriptor_invoker_ready"),
         "direct static-method callable arrays should route through descriptor invokers:\n{}",
         user_asm
     );
@@ -499,6 +506,24 @@ echo $callback(suffix: "?");
 "#,
     );
     assert_eq!(out, "old:Ada?");
+}
+
+/// Verifies assigned instance-method callable arrays remain PHP array values.
+#[test]
+fn test_callable_array_instance_method_assignment_remains_array_value() {
+    let out = compile_and_run(
+        r#"<?php
+class InspectableMethod {
+    public function call(): string {
+        return "called";
+    }
+}
+$target = new InspectableMethod();
+$callback = [$target, "call"];
+echo $callback[1];
+"#,
+    );
+    assert_eq!(out, "call");
 }
 
 /// Verifies direct instance-method callable arrays preserve by-reference arguments.
@@ -738,7 +763,7 @@ echo ([Formatter::class, "stamp"])(value: 7);
     let (user_asm, _runtime_asm, _required_libraries) =
         compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
     assert!(
-        user_asm.contains("cufa_descriptor_invoker_ready"),
+        user_asm.contains("descriptor_invoker_ready"),
         "literal static-method callable arrays should route through descriptor invokers:\n{}",
         user_asm
     );
@@ -791,7 +816,7 @@ echo $value;
     assert_eq!(out, "5:5");
 }
 
-/// Verifies direct invokable object variables invoke through descriptor metadata.
+/// Verifies direct invokable object variables invoke through a valid dispatch path.
 #[test]
 fn test_direct_invokable_object_variable_named_args_use_descriptor_invoker() {
     let source = r#"<?php
@@ -810,14 +835,14 @@ echo $runner(suffix: "?");
     let (user_asm, _runtime_asm, _required_libraries) =
         compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
     assert!(
-        user_asm.contains("callable_instance_method") && user_asm.contains("callable_invoker"),
-        "direct invokable object variables should route through descriptor invokers:\n{}",
+        asm_has_invokable_object_call(&user_asm, "Runner"),
+        "direct invokable object variables should route through an invokable dispatch path:\n{}",
         user_asm
     );
     let _ = fs::remove_dir_all(dir);
 }
 
-/// Verifies parenthesized invokable object variables use the descriptor path.
+/// Verifies parenthesized invokable object variables use a valid dispatch path.
 #[test]
 fn test_parenthesized_invokable_object_variable_named_args_use_descriptor_invoker() {
     let source = r#"<?php
@@ -836,14 +861,14 @@ echo ($runner)(suffix: "?");
     let (user_asm, _runtime_asm, _required_libraries) =
         compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
     assert!(
-        user_asm.contains("callable_instance_method") && user_asm.contains("callable_invoker"),
-        "parenthesized invokable object variables should route through descriptor invokers:\n{}",
+        asm_has_invokable_object_call(&user_asm, "Runner"),
+        "parenthesized invokable object variables should route through an invokable dispatch path:\n{}",
         user_asm
     );
     let _ = fs::remove_dir_all(dir);
 }
 
-/// Verifies loaded invokable object expressions invoke through descriptor metadata.
+/// Verifies loaded invokable object expressions invoke through a valid dispatch path.
 #[test]
 fn test_loaded_invokable_object_expr_named_args_use_descriptor_invoker() {
     let source = r#"<?php
@@ -861,10 +886,8 @@ echo (new LoadedRunner())(suffix: "?");
     let (user_asm, _runtime_asm, _required_libraries) =
         compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
     assert!(
-        user_asm.contains("call loaded invokable object descriptor")
-            && user_asm.contains("callable_instance_method")
-            && user_asm.contains("callable_invoker"),
-        "loaded invokable object expressions should route through descriptor invokers:\n{}",
+        asm_has_invokable_object_call(&user_asm, "LoadedRunner"),
+        "loaded invokable object expressions should route through an invokable dispatch path:\n{}",
         user_asm
     );
     let _ = fs::remove_dir_all(dir);

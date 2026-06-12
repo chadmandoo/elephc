@@ -87,8 +87,8 @@ pub fn emit(
     }
     // Attach inflate; this returns x0/rax = Mixed-boxed resource.
     match emitter.target.arch {
-        Arch::AArch64 => super::stream_filter_inflate::emit_arm64(emitter, ctx),
-        Arch::X86_64 => super::stream_filter_inflate::emit_x86_64(emitter, ctx),
+        Arch::AArch64 => super::stream_filter_inflate::emit_arm64(emitter, |prefix| ctx.next_label(prefix)),
+        Arch::X86_64 => super::stream_filter_inflate::emit_x86_64(emitter, |prefix| ctx.next_label(prefix)),
     }
     match emitter.target.arch {
         Arch::AArch64 => emitter.instruction(&format!("b {}", done_label)),     // skip false boxing after attaching inflate

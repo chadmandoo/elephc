@@ -47,6 +47,8 @@ pub fn emit_mixed_strict_eq(emitter: &mut Emitter) {
     emitter.instruction("b.ne __rt_mixed_strict_eq_false");                     // different payload tags are never strictly equal
 
     // -- dispatch on the shared concrete runtime tag --
+    emitter.instruction("cmp x0, #8");                                          // do both payloads represent PHP null?
+    emitter.instruction("b.eq __rt_mixed_strict_eq_true");                      // null identity depends only on the matching runtime tag
     emitter.instruction("cmp x0, #1");                                          // do both payloads hold strings?
     emitter.instruction("b.eq __rt_mixed_strict_eq_string");                    // strings need byte-by-byte comparison
     emitter.instruction("ldr x10, [sp, #24]");                                  // reload the left payload low word
@@ -55,8 +57,10 @@ pub fn emit_mixed_strict_eq(emitter: &mut Emitter) {
     emitter.instruction("ldr x11, [sp, #32]");                                  // reload the left payload high word
     emitter.instruction("cmp x11, x2");                                         // compare high payload words for string/null padding
     emitter.instruction("b.ne __rt_mixed_strict_eq_false");                     // mismatched payload high words are not equal
-    emitter.instruction("mov x0, #1");                                          // matching tag + payload words means strict equality
-    emitter.instruction("b __rt_mixed_strict_eq_done");                         // return true after the scalar/pointer comparison
+
+    emitter.label("__rt_mixed_strict_eq_true");
+    emitter.instruction("mov x0, #1");                                          // report strict equality after null or payload identity matched
+    emitter.instruction("b __rt_mixed_strict_eq_done");                         // return true after the matching-tag comparison path
 
     // -- strings compare by bytes, not by pointer identity --
     emitter.label("__rt_mixed_strict_eq_string");
@@ -102,14 +106,18 @@ fn emit_mixed_strict_eq_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("cmp r10, rax");                                        // strict equality first requires matching runtime tags
     emitter.instruction("jne __rt_mixed_strict_eq_false");                      // different payload tags are never strictly equal
 
+    emitter.instruction("cmp rax, 8");                                          // do both payloads represent PHP null?
+    emitter.instruction("je __rt_mixed_strict_eq_true");                        // null identity depends only on the matching runtime tag
     emitter.instruction("cmp rax, 1");                                          // do both payloads hold strings?
     emitter.instruction("je __rt_mixed_strict_eq_string");                      // strings need byte-by-byte comparison
     emitter.instruction("cmp QWORD PTR [rsp + 24], rdi");                       // compare low payload words for scalar or pointer tags
     emitter.instruction("jne __rt_mixed_strict_eq_false");                      // mismatched payload low words are not equal
     emitter.instruction("cmp QWORD PTR [rsp + 32], rdx");                       // compare high payload words for string/null padding
     emitter.instruction("jne __rt_mixed_strict_eq_false");                      // mismatched payload high words are not equal
-    emitter.instruction("mov rax, 1");                                          // matching tag plus payload words means strict equality
-    emitter.instruction("jmp __rt_mixed_strict_eq_done");                       // return true after the scalar or pointer comparison path
+
+    emitter.label("__rt_mixed_strict_eq_true");
+    emitter.instruction("mov rax, 1");                                          // report strict equality after null or payload identity matched
+    emitter.instruction("jmp __rt_mixed_strict_eq_done");                       // return true after the matching-tag comparison path
 
     emitter.label("__rt_mixed_strict_eq_string");
     emitter.instruction("mov rcx, rdx");                                        // move the right string length into the fourth SysV integer argument register

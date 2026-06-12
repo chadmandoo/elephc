@@ -1,6 +1,6 @@
 //! Purpose:
-//! Defines parsed type expressions before semantic type checking.
-//! Represents named, nullable, union, intersection, callable, iterable, and buffer type syntax.
+//! Defines parsed and synthetic type expressions before semantic type checking.
+//! Represents named, nullable, union, callable, iterable, buffer, and internal array element syntax.
 //!
 //! Called from:
 //! - `crate::parser::stmt::params`, OOP parsers, and downstream type-resolution passes.
@@ -20,6 +20,7 @@ pub enum TypeExpr {
     Void,
     Never,
     Iterable,
+    Array(Box<TypeExpr>),
     Ptr(Option<Name>),
     Buffer(Box<TypeExpr>),
     Named(Name),

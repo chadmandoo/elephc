@@ -27,7 +27,7 @@ const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
 /// Emits a write syscall for a labeled literal string to stderr, using the given
 /// label (from the data section) and its byte length. Handles target-specific
 /// register conventions for the write syscall arguments.
-pub(super) fn emit_write_literal_stderr(emitter: &mut Emitter, label: &str, len: usize) {
+pub(crate) fn emit_write_literal_stderr(emitter: &mut Emitter, label: &str, len: usize) {
     match emitter.target.arch {
         Arch::AArch64 => {
             crate::codegen::abi::emit_symbol_address(emitter, "x1", label);     // load the page address of the stderr literal on AArch64
@@ -47,7 +47,7 @@ pub(super) fn emit_write_literal_stderr(emitter: &mut Emitter, label: &str, len:
 
 /// Emits a write syscall for the current string in result registers to stderr.
 /// Loads pointer/length from the appropriate ABI registers for the target.
-pub(super) fn emit_write_current_string_stderr(emitter: &mut Emitter) {
+pub(crate) fn emit_write_current_string_stderr(emitter: &mut Emitter) {
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction("mov x0, #2");                                  // target the stderr file descriptor on AArch64
@@ -253,7 +253,7 @@ pub(super) fn emit_static_property_initializers(
 }
 
 /// Emits all deferred closures, fiber wrappers, and callback wrappers into the output.
-pub(super) fn emit_deferred_closures(
+pub(crate) fn emit_deferred_closures(
     emitter: &mut Emitter,
     data: &mut DataSection,
     ctx: &mut Context,
@@ -396,7 +396,8 @@ pub(crate) fn runtime_value_tag(ty: &PhpType) -> u8 {
         PhpType::Iterable => 7,
         PhpType::Void => 8,
         PhpType::Resource(_) => 9,
-        PhpType::Callable | PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) | PhpType::Never => 0,
+        PhpType::Callable => 10,
+        PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) | PhpType::Never => 0,
         PhpType::TaggedScalar => {
             unreachable!("TaggedScalar carries its runtime tag in the tag register, not a static tag")
         }
@@ -505,7 +506,21 @@ pub(crate) fn emit_box_current_value_as_mixed(emitter: &mut Emitter, ty: &PhpTyp
                 }
             }
         }
-        PhpType::Callable | PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) => {
+        PhpType::Callable => match emitter.target.arch {
+            Arch::AArch64 => {
+                emitter.instruction("mov x1, x0");                              // move the callable descriptor into the mixed helper payload register
+                emitter.instruction("mov x2, xzr");                             // callable descriptor payloads only use the low word
+                emitter.instruction("mov x0, #10");                             // runtime tag 10 = callable descriptor
+                emitter.instruction("bl __rt_mixed_from_value");                // retain the callable descriptor and box it into a mixed cell
+            }
+            Arch::X86_64 => {
+                emitter.instruction("mov rdi, rax");                            // move the callable descriptor into the mixed helper payload register
+                emitter.instruction("xor rsi, rsi");                            // callable descriptor payloads only use the low word
+                abi::emit_load_int_immediate(emitter, "rax", 10);
+                emitter.instruction("call __rt_mixed_from_value");              // retain the callable descriptor and box it into a mixed cell
+            }
+        },
+        PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) => {
             match emitter.target.arch {
                 Arch::AArch64 => {
                     emitter.instruction("mov x1, x0");                          // move the raw pointer into the mixed helper payload register
@@ -532,7 +547,11 @@ pub(crate) fn emit_box_current_expr_value_as_mixed_for_container(
 ) {
     if !matches!(
         ty,
-        PhpType::Str | PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_)
+        PhpType::Str
+            | PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Object(_)
+            | PhpType::Callable
     ) || expr_result_heap_ownership(expr) != HeapOwnership::Owned
     {
         emit_box_current_value_as_mixed(emitter, ty);
@@ -541,7 +560,7 @@ pub(crate) fn emit_box_current_expr_value_as_mixed_for_container(
 
     match ty {
         PhpType::Str => emit_box_current_owned_string_as_mixed_for_container(emitter, ty),
-        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) | PhpType::Callable => {
             emit_box_current_owned_refcounted_as_mixed_for_container(emitter, ty);
         }
         _ => emit_box_current_value_as_mixed(emitter, ty),
@@ -576,6 +595,21 @@ pub(crate) fn emit_release_pushed_refcounted_temp_after_array_push(
     }
 }
 
+/// Boxes an owned current result into Mixed and releases the original owner afterward.
+pub(crate) fn emit_box_current_owned_value_as_mixed(emitter: &mut Emitter, ty: &PhpType) {
+    match ty {
+        PhpType::Str => emit_box_current_owned_string_as_mixed_for_container(emitter, ty),
+        PhpType::Array(_)
+        | PhpType::AssocArray { .. }
+        | PhpType::Iterable
+        | PhpType::Object(_)
+        | PhpType::Callable => {
+            emit_box_current_owned_refcounted_as_mixed_for_container(emitter, ty);
+        }
+        _ => emit_box_current_value_as_mixed(emitter, ty),
+    }
+}
+
 /// Boxes an owned string from x1/x2 (AArch64) or rax/rdx (x86_64) into a Mixed cell
 /// while preserving and releasing the original string pointer/length after the Mixed
 /// helper copies the payload. The original string is released via `__rt_heap_free_safe`
@@ -605,8 +639,9 @@ fn emit_box_current_owned_string_as_mixed_for_container(emitter: &mut Emitter, t
 
 /// Boxes an owned refcounted value from the result register into a Mixed cell while
 /// preserving the original heap pointer, boxing it, releasing the original via
-/// decref, and restoring the boxed result. Used for owned arrays and objects that
-/// must be transferred into a Mixed container without double-freeing.
+/// decref, and restoring the boxed result. Used for owned arrays, iterables,
+/// objects, and callables that must be transferred into a Mixed container without
+/// double-freeing.
 fn emit_box_current_owned_refcounted_as_mixed_for_container(emitter: &mut Emitter, ty: &PhpType) {
     match emitter.target.arch {
         Arch::AArch64 => {

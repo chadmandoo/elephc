@@ -289,7 +289,14 @@ fn spill_wrapper_args(
 
     for (idx, ty) in arg_types.iter().enumerate().skip(hidden_start) {
         let slot_offset = idx * 16;
-        spill_descriptor_hidden_arg(emitter, descriptor_reg, idx - hidden_start, ty, slot_offset);
+        spill_descriptor_hidden_arg(
+            emitter,
+            wrapper,
+            descriptor_reg,
+            idx - hidden_start,
+            ty,
+            slot_offset,
+        );
     }
 }
 
@@ -367,6 +374,7 @@ fn spill_variadic_start_arg_array_aarch64(
 /// Spills one hidden Fiber callback argument from the callable descriptor's runtime capture slots.
 fn spill_descriptor_hidden_arg(
     emitter: &mut Emitter,
+    wrapper: &DeferredFiberWrapper,
     descriptor_reg: &str,
     capture_index: usize,
     ty: &PhpType,
@@ -389,7 +397,12 @@ fn spill_descriptor_hidden_arg(
         PhpType::Void | PhpType::Never => {}
         _ => {
             emitter.instruction(&format!("str {}, [sp, #{}]", abi::int_result_reg(emitter), slot_offset)); // spill the descriptor-captured payload for the final call
-            retain_refcounted_capture_for_closure_frame(emitter, ty, abi::int_result_reg(emitter));
+            retain_refcounted_capture_for_closure_frame(
+                emitter,
+                wrapper,
+                ty,
+                abi::int_result_reg(emitter),
+            );
         }
     }
 }
@@ -397,13 +410,18 @@ fn spill_descriptor_hidden_arg(
 /// Retains a refcounted hidden capture for the closure parameter frame.
 ///
 /// The callable descriptor remains the persistent owner of its capture slots. The
-/// invoked closure cleans up hidden parameters like ordinary arguments, so the wrapper
-/// must hand it a separate retained owner for refcounted values.
+/// legacy closure frame cleans up hidden parameters like ordinary arguments, so that
+/// wrapper mode must hand it a separate retained owner for refcounted values. EIR
+/// closure params are borrowed and therefore skip this retain.
 fn retain_refcounted_capture_for_closure_frame(
     emitter: &mut Emitter,
+    wrapper: &DeferredFiberWrapper,
     ty: &PhpType,
     value_reg: &str,
 ) {
+    if !wrapper.retain_hidden_args_for_closure_call {
+        return;
+    }
     if !ty.is_refcounted() && !matches!(ty.codegen_repr(), PhpType::Callable) {
         return;
     }
@@ -608,7 +626,14 @@ fn spill_wrapper_args_x86_64(
 
     for (idx, ty) in arg_types.iter().enumerate().skip(hidden_start) {
         let slot_offset = frame_arg_slot_offset(idx);
-        spill_descriptor_hidden_arg_x86_64(emitter, descriptor_reg, idx - hidden_start, ty, slot_offset);
+        spill_descriptor_hidden_arg_x86_64(
+            emitter,
+            wrapper,
+            descriptor_reg,
+            idx - hidden_start,
+            ty,
+            slot_offset,
+        );
     }
 }
 
@@ -667,6 +692,7 @@ fn spill_variadic_start_arg_array_x86_64(
 /// x86_64-specific spill of one hidden argument from descriptor runtime capture storage.
 fn spill_descriptor_hidden_arg_x86_64(
     emitter: &mut Emitter,
+    wrapper: &DeferredFiberWrapper,
     descriptor_reg: &str,
     capture_index: usize,
     ty: &PhpType,
@@ -690,7 +716,12 @@ fn spill_descriptor_hidden_arg_x86_64(
         PhpType::Void | PhpType::Never => {}
         _ => {
             abi::store_at_offset(emitter, abi::int_result_reg(emitter), slot_offset);
-            retain_refcounted_capture_for_closure_frame(emitter, ty, abi::int_result_reg(emitter));
+            retain_refcounted_capture_for_closure_frame(
+                emitter,
+                wrapper,
+                ty,
+                abi::int_result_reg(emitter),
+            );
         }
     }
 }

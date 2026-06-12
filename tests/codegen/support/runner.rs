@@ -15,6 +15,30 @@ use std::process::Stdio;
 
 use super::*;
 
+/// Describes a Rust bridge staticlib needed by codegen integration fixtures.
+struct TestBridgeStaticlib {
+    /// Linker library name requested by the compiled program.
+    lib_name: &'static str,
+    /// Cargo package that produces `lib<lib_name>.a` for tests.
+    package: &'static str,
+}
+
+/// Lists bridge staticlibs that codegen fixtures may link through `extra_link_libs`.
+const TEST_BRIDGE_STATICLIBS: &[TestBridgeStaticlib] = &[
+    TestBridgeStaticlib {
+        lib_name: "elephc_tls",
+        package: "elephc-tls",
+    },
+    TestBridgeStaticlib {
+        lib_name: "elephc_pdo",
+        package: "elephc-pdo",
+    },
+    TestBridgeStaticlib {
+        lib_name: "elephc_crypto",
+        package: "elephc-crypto",
+    },
+];
+
 /// Assemble `asm` to `obj_path` by piping the source through `as`'s stdin so
 /// no intermediate `.s` file is created.
 fn assemble_from_stdin(asm: &str, obj_path: &Path) {
@@ -107,6 +131,48 @@ pub(crate) fn assemble_custom_runtime(heap_size: usize, dir: &Path) -> std::path
     obj_path
 }
 
+/// Returns the bridge staticlibs requested by a fixture's effective link libraries.
+fn requested_bridge_staticlibs<'a>(
+    actual_link_libs: &[&str],
+) -> Vec<&'a TestBridgeStaticlib> {
+    TEST_BRIDGE_STATICLIBS
+        .iter()
+        .filter(|bridge| actual_link_libs.iter().any(|lib| *lib == bridge.lib_name))
+        .collect()
+}
+
+/// Builds any requested bridge staticlibs missing from the debug target directory.
+fn ensure_bridge_staticlibs(actual_link_libs: &[&str], bridge_staticlib_dir: &str) {
+    for bridge in requested_bridge_staticlibs(actual_link_libs) {
+        let archive_path =
+            Path::new(bridge_staticlib_dir).join(format!("lib{}.a", bridge.lib_name));
+        if archive_path.exists() {
+            continue;
+        }
+
+        let status = Command::new("cargo")
+            .args(["build", "-p", bridge.package])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .status()
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to run cargo build for bridge staticlib {}: {}",
+                    bridge.package, err
+                )
+            });
+        assert!(
+            status.success(),
+            "failed to build bridge staticlib {}",
+            bridge.package
+        );
+        assert!(
+            archive_path.exists(),
+            "bridge staticlib {} was built but {} is still missing",
+            bridge.package,
+            archive_path.display()
+        );
+    }
+}
 
 /// Links a user object file and a runtime object into a final native binary.
 /// On macOS uses `ld` with SDK/platform_version flags; on Linux uses `gcc` with
@@ -135,6 +201,9 @@ pub(crate) fn link_binary(
         Ok(dir) if !dir.is_empty() => format!("{}/debug", dir),
         _ => format!("{}/target/debug", env!("CARGO_MANIFEST_DIR")),
     };
+    if needs_bridge_staticlib {
+        ensure_bridge_staticlibs(&actual_link_libs, &bridge_staticlib_dir);
+    }
 
     match target().platform {
         Platform::MacOS => {

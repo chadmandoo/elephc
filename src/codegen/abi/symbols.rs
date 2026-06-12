@@ -445,8 +445,8 @@ pub fn emit_dec_symbol(emitter: &mut Emitter, symbol: &str) {
 /// Loads a symbol's value and places it into the appropriate result registers.
 /// Reads from `symbol` at offset 0 (and 8 for strings) and places the value
 /// into the target's canonical result registers: float_result_reg for Float,
-/// string_result_regs for Str, int_result_reg otherwise.  Used to return
-/// a symbol's value as a call result.
+/// string_result_regs for Str, tagged-scalar result registers for TaggedScalar,
+/// int_result_reg otherwise. Used to return a symbol's value as a call result.
 pub fn emit_load_symbol_to_result(emitter: &mut Emitter, symbol: &str, ty: &PhpType) {
     match ty.codegen_repr() {
         PhpType::Float => {
@@ -460,6 +460,15 @@ pub fn emit_load_symbol_to_result(emitter: &mut Emitter, symbol: &str, ty: &PhpT
         PhpType::Void => {
             emit_load_symbol_to_reg(emitter, int_result_reg(emitter), symbol, 0);       // load the null sentinel from symbol storage into the result register
         }
+        PhpType::TaggedScalar => {
+            emit_load_symbol_to_reg(emitter, int_result_reg(emitter), symbol, 0);       // load the tagged scalar payload from symbol storage
+            emit_load_symbol_to_reg(
+                emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(emitter),
+                symbol,
+                8,
+            );                                                                          // load the tagged scalar tag from symbol storage
+        }
         _ => {
             emit_load_symbol_to_reg(emitter, int_result_reg(emitter), symbol, 0);       // load the scalar or pointer-like payload from symbol storage into the result register
         }
@@ -470,8 +479,8 @@ pub fn emit_load_symbol_to_result(emitter: &mut Emitter, symbol: &str, ty: &PhpT
 /// If `release_previous` is true, first loads the old symbol value and
 /// releases it: strings call `__rt_heap_free_safe`, refcounted types call
 /// `emit_decref_if_refcounted`.  Incoming results are preserved on the stack
-/// during the release call.  Handles Float, Str (pointer + length pair),
-/// Void (null sentinel), and scalar/pointer types.
+/// during the release call. Handles Float, Str (pointer + length pair),
+/// TaggedScalar (payload + tag pair), Void (null sentinel), and scalar/pointer types.
 pub fn emit_store_result_to_symbol(
     emitter: &mut Emitter,
     symbol: &str,
@@ -537,6 +546,15 @@ pub fn emit_store_result_to_symbol(
             let null_reg = secondary_scratch_reg(emitter);
             emit_load_int_immediate(emitter, null_reg, NULL_SENTINEL);
             emit_store_reg_to_symbol(emitter, null_reg, symbol, 0);                     // store the null sentinel result into symbol storage
+        }
+        PhpType::TaggedScalar => {
+            emit_store_reg_to_symbol(emitter, int_result_reg(emitter), symbol, 0);      // store the tagged scalar payload into symbol storage
+            emit_store_reg_to_symbol(
+                emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(emitter),
+                symbol,
+                8,
+            );                                                                          // store the tagged scalar tag into symbol storage
         }
         _ => {
             emit_store_reg_to_symbol(emitter, int_result_reg(emitter), symbol, 0);      // store the scalar or pointer-like result into symbol storage

@@ -159,6 +159,7 @@ fn push_loaded_mixed_hash_value_arg(
     let direct_marker_label = ctx.next_label("hash_invoker_ref_value_direct");
     let nested_probe_label = ctx.next_label("hash_invoker_ref_value_probe");
     let nested_marker_label = ctx.next_label("hash_invoker_ref_value_nested");
+    let boxed_mixed_label = ctx.next_label("hash_invoker_ref_value_boxed_mixed");
     let ordinary_label = ctx.next_label("hash_invoker_ref_value_ordinary");
     let done_label = ctx.next_label("hash_invoker_ref_value_done");
     let (raw_lo_reg, raw_hi_reg, raw_tag_reg) = raw_hash_value_regs(emitter);
@@ -178,11 +179,17 @@ fn push_loaded_mixed_hash_value_arg(
         &nested_marker_label,
         emitter,
     );
-    abi::emit_jump(emitter, &ordinary_label);
+    abi::emit_jump(emitter, &boxed_mixed_label);
 
     emitter.label(&ordinary_label);
     materialize_hash_value_to_result(emitter, &PhpType::Mixed);
     let ordinary_ty = push_materialized_mixed_hash_value_arg(target_ty, emitter, ctx, data);
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&boxed_mixed_label);
+    move_raw_hash_value_lo_to_result(emitter);
+    abi::emit_incref_if_refcounted(emitter, &PhpType::Mixed);
+    let boxed_ty = push_materialized_mixed_hash_value_arg(target_ty, emitter, ctx, data);
     abi::emit_jump(emitter, &done_label);
 
     emitter.label(&direct_marker_label);
@@ -211,7 +218,10 @@ fn push_loaded_mixed_hash_value_arg(
     );
 
     emitter.label(&done_label);
-    widen_loaded_arg_type(&ordinary_ty, &widen_loaded_arg_type(&direct_ty, &nested_ty))
+    widen_loaded_arg_type(
+        &widen_loaded_arg_type(&ordinary_ty, &boxed_ty),
+        &widen_loaded_arg_type(&direct_ty, &nested_ty),
+    )
 }
 
 /// Coerces and pushes a materialized boxed Mixed hash value.

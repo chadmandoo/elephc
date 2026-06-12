@@ -105,16 +105,32 @@ pub fn emit_bzip2_decompress_attach(
     emitter.comment("stream_filter_append(bzip2.decompress)");
     emit_stream_fd_arg("stream_filter_append", &args[0], emitter, ctx, data);
     match emitter.target.arch {
-        Arch::AArch64 => super::compress_bzip2_stream::emit_arm64(emitter, ctx),
-        Arch::X86_64 => super::compress_bzip2_stream::emit_x86_64(emitter, ctx),
+        Arch::AArch64 => super::compress_bzip2_stream::emit_arm64(emitter, |prefix| ctx.next_label(prefix)),
+        Arch::X86_64 => super::compress_bzip2_stream::emit_x86_64(emitter, |prefix| ctx.next_label(prefix)),
     }
     Some(PhpType::Mixed)
+}
+
+/// Emits the reusable ARM64 `bzip2.decompress` read-filter body.
+pub(crate) fn emit_decompress_arm64<F>(emitter: &mut Emitter, next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    super::compress_bzip2_stream::emit_arm64(emitter, next_label);
+}
+
+/// Emits the reusable x86_64 `bzip2.decompress` read-filter body.
+pub(crate) fn emit_decompress_x86_64<F>(emitter: &mut Emitter, next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    super::compress_bzip2_stream::emit_x86_64(emitter, next_label);
 }
 
 /// Emits the ARM64 compress helpers, then the bz_stream initialization.
 /// `work_factor` is the bzip2 workFactor (0..250, 0 = libbz2 default) from the
 /// `['work' => N]` `$params` entry.
-fn emit_compress_arm64(
+pub(crate) fn emit_compress_arm64(
     emitter: &mut Emitter,
     fwrite_label: &str,
     close_label: &str,
@@ -288,7 +304,7 @@ fn emit_compress_arm64(
 /// Emits the x86_64 compress helpers, then the bz_stream initialization.
 /// `work_factor` is the bzip2 workFactor (0..250, 0 = libbz2 default) from the
 /// `['work' => N]` `$params` entry.
-fn emit_compress_x86_64(
+pub(crate) fn emit_compress_x86_64(
     emitter: &mut Emitter,
     fwrite_label: &str,
     close_label: &str,

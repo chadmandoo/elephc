@@ -8,9 +8,9 @@
 //! Key details:
 //! - Keeps frontend type metadata, runtime cache assumptions, and target-specific emission ordered before linking.
 
-mod abi;
-mod builtins;
-mod cdylib;
+pub(crate) mod abi;
+pub(crate) mod builtins;
+pub(crate) mod cdylib;
 pub(crate) mod callable_descriptor;
 pub(crate) mod callable_dispatch;
 pub(crate) mod runtime_callable_invoker;
@@ -19,29 +19,31 @@ mod class_methods;
 mod property_init_thunks;
 /// Codegen context module.
 pub mod context;
-mod data_section;
+pub(crate) mod data_section;
 mod driver_support;
-mod emit;
+pub(crate) mod emit;
 mod expr;
 mod ffi;
 mod fiber_sigs;
 mod function_variants;
 mod functions;
-mod interface_wrappers;
+pub(crate) mod interface_wrappers;
 mod main_emission;
 /// Platform module.
 pub mod platform;
 mod prescan;
 mod program_usage;
-mod reflection;
-mod runtime;
+pub(crate) mod reflection;
+pub(crate) mod runtime;
 mod runtime_features;
 pub(crate) mod sentinels;
 mod stmt;
-mod visibility;
+pub(crate) mod visibility;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+
+pub(crate) use functions::{emit_callback_wrapper, emit_extern_callback_trampoline};
 
 thread_local! {
     /// Number of `spl_autoload_register` closure rules the autoload pass
@@ -73,6 +75,21 @@ fn set_declared_name_order(classes: Vec<String>, interfaces: Vec<String>, traits
     DECLARED_CLASS_NAMES.with(|names| *names.borrow_mut() = classes);
     DECLARED_INTERFACE_NAMES.with(|names| *names.borrow_mut() = interfaces);
     DECLARED_TRAIT_NAMES.with(|names| *names.borrow_mut() = traits);
+}
+
+/// Prepares declaration-order registries shared by legacy and EIR introspection builtins.
+pub fn prepare_declared_name_order(
+    program: &Program,
+    classes: &HashMap<String, ClassInfo>,
+    interfaces: &HashMap<String, InterfaceInfo>,
+) {
+    let declared_trait_order = collect_declared_trait_names(program);
+    DECLARED_TRAIT_USES.with(|uses| *uses.borrow_mut() = collect_declared_trait_uses(program));
+    set_declared_name_order(
+        collect_declared_class_names(program, classes),
+        collect_declared_interface_names(program, interfaces),
+        declared_trait_order,
+    );
 }
 
 /// Returns the ordered list of class names declared in the program,
@@ -120,11 +137,15 @@ use emit::Emitter;
 use interface_wrappers::emit_interface_return_wrappers;
 use main_emission::emit_main_and_finalize;
 pub(crate) use driver_support::{
-    emit_box_current_expr_value_as_mixed_for_container, emit_box_current_value_as_mixed,
-    emit_box_iterable_value_for_mixed_container, emit_box_runtime_payload_as_mixed,
+    emit_box_current_expr_value_as_mixed_for_container, emit_box_current_owned_value_as_mixed,
+    emit_box_current_value_as_mixed, emit_box_iterable_value_for_mixed_container,
+    emit_box_runtime_payload_as_mixed, emit_deferred_closures,
+    emit_write_current_string_stderr, emit_write_literal_stderr,
     emit_normalized_hash_key, emit_release_pushed_refcounted_temp_after_array_push,
     runtime_value_tag,
 };
+pub(crate) use expr::arrays::emit_array_value_type_stamp;
+pub(crate) use functions::{emit_fiber_wrapper, emit_generator_with_label};
 pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
 pub use sentinels::{set_null_repr, NullRepr};
 #[allow(unused_imports)]
@@ -136,6 +157,7 @@ pub use runtime_features::{
 };
 pub use runtime_features::RuntimeFeatures;
 use platform::Target;
+pub(crate) use prescan::collect_constants;
 
 /// Output artifact kind selected by the compiler's `--emit` flag.
 ///
@@ -153,7 +175,7 @@ pub enum Emit {
     Executable,
     Cdylib,
 }
-use prescan::{collect_constants, collect_global_var_names, collect_static_vars};
+use prescan::{collect_global_var_names, collect_static_vars};
 use program_usage::{
     collect_required_class_names, collect_required_class_names_in_stmts,
     program_has_dynamic_instanceof,
@@ -514,7 +536,11 @@ fn collect_program_declared_names<T>(
                     continue;
                 };
                 let key = crate::names::php_symbol_key(name);
-                if known.contains_key(name) && seen.insert(key) {
+                let is_known = known.contains_key(name)
+                    || known.keys().any(|candidate| {
+                        crate::names::php_symbol_key(candidate.trim_start_matches('\\')) == key
+                    });
+                if is_known && seen.insert(key) {
                     out.push(name.to_string());
                 }
             }

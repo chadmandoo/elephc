@@ -135,12 +135,32 @@ impl PhpType {
     /// so it is no longer collapsed to `Mixed` here.
     pub fn codegen_repr(&self) -> PhpType {
         match self {
+            PhpType::Union(members)
+                if crate::codegen::sentinels::null_repr_is_tagged()
+                    && nullable_int_union_members(members) =>
+            {
+                PhpType::TaggedScalar
+            }
             PhpType::Union(_) => PhpType::Mixed,
             PhpType::Resource(_) => PhpType::Int,
             PhpType::Never => PhpType::Void, // never should not be materialized; fallback to void sentinel
             _ => self.clone(),
         }
     }
+}
+
+/// Returns true for an `int|null` union that can use the inline tagged-scalar representation.
+fn nullable_int_union_members(members: &[PhpType]) -> bool {
+    let mut has_int = false;
+    let mut has_null = false;
+    for member in members {
+        match member {
+            PhpType::Int => has_int = true,
+            PhpType::Void | PhpType::Never => has_null = true,
+            _ => return false,
+        }
+    }
+    has_int && has_null
 }
 
 impl fmt::Display for PhpType {

@@ -141,7 +141,7 @@ impl Checker {
     fn type_expr_contains_never(type_expr: &TypeExpr) -> bool {
         match type_expr {
             TypeExpr::Never => true,
-            TypeExpr::Nullable(inner) | TypeExpr::Buffer(inner) => {
+            TypeExpr::Array(inner) | TypeExpr::Nullable(inner) | TypeExpr::Buffer(inner) => {
                 Self::type_expr_contains_never(inner)
             }
             TypeExpr::Union(members) => members.iter().any(Self::type_expr_contains_never),
@@ -150,10 +150,9 @@ impl Checker {
     }
 
     /// Validates that `actual_ty` is suitable storage for a by-reference parameter whose
-    /// declared type is `PhpType::Mixed` (including union/nullable variants of Mixed).
-    /// Returns an error if `actual_ty` is a concrete non-Mixed type — such types cannot be
-    /// stored in the mixed-by-ref slot because their live interval would be ambiguous for
-    /// the compiler's register allocator.
+    /// declared type needs boxed or nullable storage.
+    /// Returns an error if `actual_ty` is a concrete non-boxed type that cannot represent
+    /// writes of every value accepted by the by-reference parameter.
     pub(crate) fn require_boxed_by_ref_storage(
         &self,
         expected_ty: &PhpType,
@@ -161,8 +160,8 @@ impl Checker {
         span: crate::span::Span,
         context: &str,
     ) -> Result<(), CompileError> {
-        if matches!(expected_ty.codegen_repr(), PhpType::Mixed)
-            && !matches!(actual_ty.codegen_repr(), PhpType::Mixed)
+        if requires_by_ref_boxed_storage(expected_ty)
+            && !supports_by_ref_boxed_storage(actual_ty)
         {
             return Err(CompileError::new(
                 span,
@@ -303,4 +302,14 @@ impl Checker {
 
         result
     }
+}
+
+/// Returns true when a by-reference parameter can write values that need boxed or nullable storage.
+fn requires_by_ref_boxed_storage(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::Mixed | PhpType::TaggedScalar)
+}
+
+/// Returns true when an argument variable's storage can accept boxed or nullable writebacks.
+fn supports_by_ref_boxed_storage(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::Mixed | PhpType::TaggedScalar)
 }

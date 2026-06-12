@@ -395,21 +395,29 @@ class PDOStatement implements Iterator {
             }
             return json_decode(json_encode($_assoc));
         }
-        $_row = [];
-        for ($_i = 0; $_i < $_count; $_i++) {
-            $_value = $this->columnValue($_i);
-            if ($mode == 3) {
-                $_row[$_i] = $_value;
-            } elseif ($mode == 2) {
-                $_name = elephc_pdo_column_name($this->stmt, $_i);
-                $_row[$_name] = $_value;
-            } else {
-                $_name = elephc_pdo_column_name($this->stmt, $_i);
-                $_row[$_i] = $_value;
-                $_row[$_name] = $_value;
+        if ($mode == 3) {
+            $_numRow = [];
+            for ($_i = 0; $_i < $_count; $_i++) {
+                $_numRow[$_i] = $this->columnValue($_i);
             }
+            return $_numRow;
         }
-        return $_row;
+        if ($mode == 2) {
+            $_assocRow = [];
+            for ($_i = 0; $_i < $_count; $_i++) {
+                $_name = elephc_pdo_column_name($this->stmt, $_i);
+                $_assocRow[$_name] = $this->columnValue($_i);
+            }
+            return $_assocRow;
+        }
+        $_bothRow = [];
+        for ($_i = 0; $_i < $_count; $_i++) {
+            $_name = elephc_pdo_column_name($this->stmt, $_i);
+            $_value = $this->columnValue($_i);
+            $_bothRow[$_name] = $_value;
+            $_bothRow[$_i] = $_value;
+        }
+        return $_bothRow;
     }
 
     public function fetchAll(int $mode = 0): array {

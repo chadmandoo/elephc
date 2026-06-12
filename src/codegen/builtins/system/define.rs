@@ -12,6 +12,7 @@ use crate::codegen::context::Context;
 use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::{abi, platform::Arch};
+use crate::names::define_seen_symbol;
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::PhpType;
 
@@ -87,26 +88,6 @@ fn emit_runtime_define_result(flag_symbol: &str, emitter: &mut Emitter, ctx: &mu
     abi::emit_store_reg_to_symbol(emitter, result_reg, flag_symbol, 0);
 
     emitter.label(&done_label);
-}
-
-/// Constructs a unique BSS symbol name for tracking whether a constant has been defined.
-///
-/// Mangled name encodes alphanumeric characters verbatim, underscores as `_u`,
-/// backslashes as `_ns`, and all other bytes as `_xHH` hex escape sequences.
-///
-/// # Arguments
-/// * `name` - The PHP constant name to mangle into a valid assembly symbol
-fn define_seen_symbol(name: &str) -> String {
-    let mut symbol = String::from("_define_seen");
-    for byte in name.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => symbol.push(byte as char),
-            b'_' => symbol.push_str("_u"),
-            b'\\' => symbol.push_str("_ns"),
-            _ => symbol.push_str(&format!("_x{:02x}", byte)),
-        }
-    }
-    symbol
 }
 
 /// Emits a runtime warning for duplicate `define()` calls.

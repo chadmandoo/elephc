@@ -104,7 +104,7 @@ pub(crate) fn emit_generator_closure(
 /// * `hidden_params` - Additional params from closures (may be empty)
 /// * `body` - Parsed AST statements (must contain `yield`)
 /// * `classes` - Optional class info map (used to look up the Generator class id)
-fn emit_generator_with_label(
+pub(crate) fn emit_generator_with_label(
     emitter: &mut Emitter,
     data: &mut DataSection,
     wrapper_label: &str,

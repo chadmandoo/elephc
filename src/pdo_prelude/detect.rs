@@ -74,7 +74,7 @@ fn callable_target_refs_pdo(target: &CallableTarget) -> bool {
 }
 
 /// Returns whether a type expression names a PDO class, recursing through
-/// nullable/union/buffer wrappers and `ptr<Class>` targets.
+/// nullable/union/array/buffer wrappers and `ptr<Class>` targets.
 fn type_refs_pdo(type_expr: &TypeExpr) -> bool {
     match type_expr {
         TypeExpr::Int
@@ -85,7 +85,9 @@ fn type_refs_pdo(type_expr: &TypeExpr) -> bool {
         | TypeExpr::Never
         | TypeExpr::Iterable => false,
         TypeExpr::Ptr(target) => target.as_ref().is_some_and(name_is_pdo),
-        TypeExpr::Buffer(inner) | TypeExpr::Nullable(inner) => type_refs_pdo(inner),
+        TypeExpr::Array(inner) | TypeExpr::Buffer(inner) | TypeExpr::Nullable(inner) => {
+            type_refs_pdo(inner)
+        }
         TypeExpr::Named(name) => name_is_pdo(name),
         TypeExpr::Union(members) => members.iter().any(type_refs_pdo),
     }

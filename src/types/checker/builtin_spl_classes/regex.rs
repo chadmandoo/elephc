@@ -197,7 +197,7 @@ fn spl_recursive_regex_iterator_methods() -> Vec<ClassMethod> {
             "__elephcAssumeRecursiveIterator",
             vec![param("iterator", mixed_type())],
             Some(named_type("RecursiveIterator")),
-            Vec::new(),
+            return_body(var_expr("iterator")),
         ),
     ]);
     methods
@@ -307,7 +307,7 @@ fn regex_capture_closure_expr(
     let mut captures = capture_refs.clone();
     captures.extend(capture_values);
     expr(ExprKind::Closure {
-        params: vec![param("matches", array_type())],
+        params: vec![("matches".to_string(), None, None, false)],
         variadic: None,
         return_type: Some(TypeExpr::Str),
         body,

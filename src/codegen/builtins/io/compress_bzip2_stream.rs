@@ -92,8 +92,8 @@ pub fn emit(
     }
 
     match emitter.target.arch {
-        Arch::AArch64 => emit_arm64(emitter, ctx),
-        Arch::X86_64 => emit_x86_64(emitter, ctx),
+        Arch::AArch64 => emit_arm64(emitter, |prefix| ctx.next_label(prefix)),
+        Arch::X86_64 => emit_x86_64(emitter, |prefix| ctx.next_label(prefix)),
     }
     match emitter.target.arch {
         Arch::AArch64 => emitter.instruction(&format!("b {}", done_label)),     // skip false boxing after bzip2 setup
@@ -117,13 +117,16 @@ pub fn emit(
 ///   [sp, 56..64)  padding
 ///   [sp, 64..72)  saved x29
 ///   [sp, 72..80)  saved x30
-pub(super) fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context) {
-    let slurp = ctx.next_label("bz2_slurp");
-    let slurp_done = ctx.next_label("bz2_slurped");
-    let write = ctx.next_label("bz2_write");
-    let write_done = ctx.next_label("bz2_written");
-    let decompress_fail = ctx.next_label("bz2_decompress_fail");
-    let common_done = ctx.next_label("bz2_done_arm");
+pub(super) fn emit_arm64<F>(emitter: &mut Emitter, mut next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("bz2_slurp");
+    let slurp_done = next_label("bz2_slurped");
+    let write = next_label("bz2_write");
+    let write_done = next_label("bz2_written");
+    let decompress_fail = next_label("bz2_decompress_fail");
+    let common_done = next_label("bz2_done_arm");
 
     emitter.instruction("sub sp, sp, #96");                                     // reserve the bzip2 scratch frame
     emitter.instruction("stp x29, x30, [sp, #64]");                             // save frame pointer and return address
@@ -226,13 +229,16 @@ pub(super) fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context) {
 }
 
 /// x86_64: same shape as ARM64. Frame is rbp-relative (-88 bytes).
-pub(super) fn emit_x86_64(emitter: &mut Emitter, ctx: &mut Context) {
-    let slurp = ctx.next_label("bz2_slurp_x");
-    let slurp_done = ctx.next_label("bz2_slurped_x");
-    let write = ctx.next_label("bz2_write_x");
-    let write_done = ctx.next_label("bz2_written_x");
-    let decompress_fail = ctx.next_label("bz2_decompress_fail_x");
-    let common_done = ctx.next_label("bz2_done_x");
+pub(super) fn emit_x86_64<F>(emitter: &mut Emitter, mut next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("bz2_slurp_x");
+    let slurp_done = next_label("bz2_slurped_x");
+    let write = next_label("bz2_write_x");
+    let write_done = next_label("bz2_written_x");
+    let decompress_fail = next_label("bz2_decompress_fail_x");
+    let common_done = next_label("bz2_done_x");
 
     emitter.instruction("push rbp");                                            // preserve the caller frame pointer
     emitter.instruction("mov rbp, rsp");                                        // establish the helper frame pointer

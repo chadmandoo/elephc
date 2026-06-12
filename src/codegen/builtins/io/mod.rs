@@ -45,7 +45,7 @@ mod ftp_stream;
 mod ftps_stream;
 mod http_stream;
 mod https_stream;
-mod phar_stream;
+pub(crate) mod phar_stream;
 mod php_filter_stream;
 mod filesize;
 mod filetype;

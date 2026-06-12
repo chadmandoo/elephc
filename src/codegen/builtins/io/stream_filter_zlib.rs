@@ -68,7 +68,7 @@ pub fn emit_zlib_deflate_attach(
 }
 
 /// Emits the ARM64 helpers, then the deflate-stream initialization.
-fn emit_arm64(
+pub(crate) fn emit_arm64(
     emitter: &mut Emitter,
     fwrite_label: &str,
     close_label: &str,
@@ -245,7 +245,7 @@ fn emit_arm64(
 }
 
 /// Emits the x86_64 helpers, then the deflate-stream initialization.
-fn emit_x86_64(
+pub(crate) fn emit_x86_64(
     emitter: &mut Emitter,
     fwrite_label: &str,
     close_label: &str,

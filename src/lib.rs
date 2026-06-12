@@ -11,6 +11,8 @@
 pub mod autoload;
 /// Compiler pipeline for autoloading classes.
 pub mod codegen;
+/// EIR-consuming assembly backend track.
+pub mod codegen_ir;
 /// Conditional compilation directives.
 pub mod conditional;
 /// Error and warning reporting.
@@ -19,6 +21,10 @@ pub mod errors;
 pub mod exports;
 /// Intrinsic call handling.
 pub mod intrinsics;
+/// Intermediate representation used by the EIR backend track.
+pub mod ir;
+/// AST-to-EIR lowering pass used by `--emit-ir` diagnostics.
+pub mod ir_lower;
 /// Lexer for tokenizing PHP source.
 pub mod lexer;
 /// Magic constant substitution.

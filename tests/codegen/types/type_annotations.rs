@@ -258,6 +258,28 @@ fn test_nullable_typed_parameter_accepts_null_and_int() {
     assert_eq!(out, "null|7");
 }
 
+/// Regression: strict comparison of a nullable array parameter against null must
+/// keep the null-default call out of the foreach branch, while still iterating arrays.
+#[test]
+fn test_nullable_array_parameter_strict_not_null_guards_foreach() {
+    let out = compile_and_run(
+        "<?php
+        function show(?array $values = null): void {
+            if ($values !== null) {
+                foreach ($values as $value) {
+                    echo $value;
+                }
+            }
+            echo \"ok\";
+        }
+        show();
+        echo \"|\";
+        show([\"a\", \"b\"]);
+        ",
+    );
+    assert_eq!(out, "ok|abok");
+}
+
 /// Verifies a union typed `int|string` parameter accepts both an integer and a string,
 /// and `gettype()` reports the correct runtime type for each.
 #[test]

@@ -11,10 +11,15 @@
 mod autoload;
 mod cli;
 mod codegen;
+mod codegen_ir;
 mod conditional;
 mod errors;
 mod exports;
 mod intrinsics;
+#[allow(dead_code, unused_imports)]
+mod ir;
+#[allow(dead_code, unused_imports)]
+mod ir_lower;
 mod linker;
 mod lexer;
 mod magic_constants;

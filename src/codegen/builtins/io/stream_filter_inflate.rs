@@ -45,21 +45,24 @@ pub fn emit_zlib_inflate_attach(
     emitter.comment("stream_filter_append(zlib.inflate)");
     emit_stream_fd_arg("stream_filter_append", &args[0], emitter, ctx, data);
     match emitter.target.arch {
-        Arch::AArch64 => emit_arm64(emitter, ctx),
-        Arch::X86_64 => emit_x86_64(emitter, ctx),
+        Arch::AArch64 => emit_arm64(emitter, |prefix| ctx.next_label(prefix)),
+        Arch::X86_64 => emit_x86_64(emitter, |prefix| ctx.next_label(prefix)),
     }
     Some(PhpType::Mixed)
 }
 
 /// ARM64: a 176-byte scratch frame holds the 112-byte `z_stream` at `[sp, #0]`
 /// plus the descriptor, lengths, and buffers at `[sp, #112..168)`.
-pub(super) fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context) {
-    let slurp = ctx.next_label("zlib_inflate_slurp");
-    let slurp_done = ctx.next_label("zlib_inflate_slurped");
-    let zero = ctx.next_label("zlib_inflate_zero");
-    let zeroed = ctx.next_label("zlib_inflate_zeroed");
-    let write = ctx.next_label("zlib_inflate_write");
-    let write_done = ctx.next_label("zlib_inflate_written");
+pub(crate) fn emit_arm64<F>(emitter: &mut Emitter, mut next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("zlib_inflate_slurp");
+    let slurp_done = next_label("zlib_inflate_slurped");
+    let zero = next_label("zlib_inflate_zero");
+    let zeroed = next_label("zlib_inflate_zeroed");
+    let write = next_label("zlib_inflate_write");
+    let write_done = next_label("zlib_inflate_written");
 
     emitter.instruction("sub sp, sp, #176");                                    // z_stream frame plus saved values
     emitter.instruction("str x0, [sp, #112]");                                  // save the source file descriptor
@@ -183,14 +186,17 @@ pub(super) fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context) {
 
 /// x86_64: same 176-byte scratch layout; `inflateInit2_` takes four register
 /// arguments, so no stack-argument shuffling is needed.
-pub(super) fn emit_x86_64(emitter: &mut Emitter, ctx: &mut Context) {
-    let slurp = ctx.next_label("zlib_inflate_slurp");
-    let slurp_done = ctx.next_label("zlib_inflate_slurped");
-    let sized = ctx.next_label("zlib_inflate_sized");
-    let zero = ctx.next_label("zlib_inflate_zero");
-    let zeroed = ctx.next_label("zlib_inflate_zeroed");
-    let write = ctx.next_label("zlib_inflate_write");
-    let write_done = ctx.next_label("zlib_inflate_written");
+pub(crate) fn emit_x86_64<F>(emitter: &mut Emitter, mut next_label: F)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("zlib_inflate_slurp");
+    let slurp_done = next_label("zlib_inflate_slurped");
+    let sized = next_label("zlib_inflate_sized");
+    let zero = next_label("zlib_inflate_zero");
+    let zeroed = next_label("zlib_inflate_zeroed");
+    let write = next_label("zlib_inflate_write");
+    let write_done = next_label("zlib_inflate_written");
 
     emitter.instruction("sub rsp, 176");                                        // z_stream frame plus saved values
     emitter.instruction("mov QWORD PTR [rsp + 112], rax");                      // save the source file descriptor

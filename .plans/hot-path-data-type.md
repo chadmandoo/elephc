@@ -29,9 +29,9 @@ La strada meno rischiosa e piu' performante e' **aggiungere un tipo compiler-spe
 
 Perche':
 
-- Gli assoc array passano da `__rt_hash_get` e quindi ogni accesso e' una lookup runtime, non un load diretto: [src/codegen/expr/arrays.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/expr/arrays.rs), [src/codegen/runtime/arrays/hash_get.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/runtime/arrays/hash_get.rs).
-- Gli array indicizzati vivono comunque nel runtime heap/COW: [src/codegen/runtime/arrays/array_new.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/runtime/arrays/array_new.rs).
-- Esistono gia' i ganci giusti per un percorso piu' basso livello: `PhpType::Pointer`, `ExternClassInfo`, field offsets e property access su `ptr<T>`: [src/types/mod.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/types/mod.rs), [src/codegen/expr/objects/access.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/expr/objects/access.rs).
+- Gli assoc array passano da `__rt_hash_get` e quindi ogni accesso e' una lookup runtime, non un load diretto: `src/codegen/expr/arrays.rs`, `src/codegen/runtime/arrays/hash_get.rs`.
+- Gli array indicizzati vivono comunque nel runtime heap/COW: `src/codegen/runtime/arrays/array_new.rs`.
+- Esistono gia' i ganci giusti per un percorso piu' basso livello: `PhpType::Pointer`, `ExternClassInfo`, field offsets e property access su `ptr<T>`: `src/types/model.rs`, `src/codegen/expr/objects/access.rs`.
 
 ## Forma iniziale proposta
 
@@ -81,8 +81,8 @@ flowchart LR
 
 Estendere parser e AST per rappresentare il nuovo tipo e le operazioni base:
 
-- Nuovi token/keyword o nuova sintassi tipo-generica in [src/lexer/token.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/lexer/token.rs) e [src/parser/expr.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/parser/expr.rs).
-- Nuovi nodi in [src/parser/ast.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/parser/ast.rs):
+- Nuovi token/keyword o nuova sintassi tipo-generica in `src/lexer/token.rs` e `src/parser/expr/`.
+- Nuovi nodi in `src/parser/ast/stmt.rs`, `src/parser/ast/expr.rs`, e `src/parser/ast/types.rs`:
   - dichiarazione `packed class` oppure equivalente
   - tipo `Buffer<T>` / `PackedArray<T>`
   - accesso indicizzato hot-path
@@ -90,7 +90,7 @@ Estendere parser e AST per rappresentare il nuovo tipo e le operazioni base:
 
 ### Type checker
 
-- Estendere [src/types/mod.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/types/mod.rs) con tipi nuovi, ad esempio:
+- Estendere `src/types/model.rs` con tipi nuovi, ad esempio:
   - `PhpType::Packed(String)`
   - `PhpType::Buffer(Box<PhpType>)`
 - Creare metadata statici analoghi a `ExternClassInfo`, ma per tipi packed nativi.
@@ -99,8 +99,8 @@ Estendere parser e AST per rappresentare il nuovo tipo e le operazioni base:
 
 ### Codegen
 
-- Nuovo path di emissione in [src/codegen/expr.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/expr.rs) e sotto-moduli dedicati, evitando `__rt_hash_get` e le semantiche COW.
-- Riutilizzare il modello gia' presente per accesso a campi a offset statici in [src/codegen/expr/objects/access.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/expr/objects/access.rs).
+- Nuovo path di emissione in `src/codegen/expr.rs` e sotto-moduli dedicati, evitando `__rt_hash_get` e le semantiche COW.
+- Riutilizzare il modello gia' presente per accesso a campi a offset statici in `src/codegen/expr/objects/access.rs`.
 - Generare indirizzo base + `index * stride` + `field_offset`, poi `ldr/str` diretti.
 
 ### Runtime
@@ -109,7 +109,7 @@ Estendere parser e AST per rappresentare il nuovo tipo e le operazioni base:
   - `__rt_buffer_new`
   - `__rt_buffer_free` o integrazione controllata col heap attuale
   - opzionale `__rt_buffer_bounds_fail`
-- Evitare il coinvolgimento del path hash/array runtime, che oggi introduce il costo che vogliamo bypassare: [src/codegen/runtime/arrays/hash_get.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/runtime/arrays/hash_get.rs), [src/codegen/runtime/arrays/array_new.rs](/Volumes/Crucio/Developer/illegal.studio/elephc/src/codegen/runtime/arrays/array_new.rs).
+- Evitare il coinvolgimento del path hash/array runtime, che oggi introduce il costo che vogliamo bypassare: `src/codegen/runtime/arrays/hash_get.rs`, `src/codegen/runtime/arrays/array_new.rs`.
 
 ## Strategia di rollout
 

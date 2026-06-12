@@ -11,6 +11,7 @@
 
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
+use crate::codegen::abi;
 
 /// Emits the `__rt_mixed_array_set` runtime helper for writing into boxed Mixed arrays.
 ///
@@ -63,6 +64,8 @@ fn emit_mixed_array_set_aarch64(emitter: &mut Emitter) {
     emitter.instruction("b.eq __rt_mixed_array_set_indexed");                   // route indexed arrays to slot-based mutation
     emitter.instruction("cmp x9, #5");                                          // is the Mixed payload an associative array?
     emitter.instruction("b.eq __rt_mixed_array_set_assoc");                     // route hash arrays to key-based mutation
+    emitter.instruction("cmp x9, #6");                                          // is the Mixed payload an object?
+    emitter.instruction("b.eq __rt_mixed_array_set_object");                    // route runtime-managed ArrayAccess objects to offsetSet
     emitter.instruction("b __rt_mixed_array_set_drop");                         // non-array Mixed payloads cannot be mutated here
     emitter.label("__rt_mixed_array_set_indexed");
     emitter.instruction("ldr x10, [x0, #8]");                                   // load the indexed-array pointer from the Mixed payload
@@ -73,33 +76,15 @@ fn emit_mixed_array_set_aarch64(emitter: &mut Emitter) {
     emitter.instruction("ldr x9, [sp, #8]");                                    // reload the requested integer index
     emitter.instruction("cmp x9, #0");                                          // reject negative indexes before touching storage
     emitter.instruction("b.lt __rt_mixed_array_set_drop");                      // negative indexed writes are ignored by this helper
-    emitter.instruction("ldr x11, [x10]");                                      // load the current logical length
-    emitter.instruction("str x11, [sp, #48]");                                  // preserve the original length for overwrite and extension checks
-    emitter.instruction("ldr x12, [x10, #16]");                                 // load the element size used by the array payload
-    emitter.instruction("cmp x12, #8");                                         // Mixed arrays must use pointer-sized slots
-    emitter.instruction("b.ne __rt_mixed_array_set_drop");                      // non-pointer layouts cannot safely receive Mixed cells
     emitter.instruction("ldr x12, [x10, #-8]");                                 // load the packed indexed-array metadata
-    emitter.instruction("ubfx x13, x12, #8, #7");                               // extract the runtime value_type tag
-    emitter.instruction("cmp x11, #0");                                         // is the array currently empty?
-    emitter.instruction("b.eq __rt_mixed_array_set_type_ready");                // empty arrays can be stamped as Mixed-valued before the first write
-    emitter.instruction("cmp x13, #7");                                         // do existing slots already hold boxed Mixed pointers?
-    emitter.instruction("b.ne __rt_mixed_array_set_drop");                      // avoid corrupting typed arrays wrapped in a Mixed cell
-    emitter.label("__rt_mixed_array_set_type_ready");
-
-    emitter.instruction("mov x0, x10");                                         // pass the indexed array to the copy-on-write helper
-    emitter.instruction("bl __rt_array_ensure_unique");                         // split shared arrays before mutating a boxed payload
+    emitter.instruction("ubfx x1, x12, #8, #7");                                // pass the source value_type tag to the Mixed conversion helper
+    emitter.instruction("mov x0, x10");                                         // pass the indexed array to the Mixed conversion helper
+    emitter.instruction("bl __rt_array_to_mixed");                              // split shared arrays and normalize slots before writing Mixed values
     emitter.instruction("str x0, [sp, #32]");                                   // save the unique array pointer
     emitter.instruction("ldr x10, [sp, #0]");                                   // reload the target Mixed cell after the helper call
     emitter.instruction("str x0, [x10, #8]");                                   // publish the unique array pointer back into the Mixed cell
-    emitter.instruction("ldr x12, [x0, #-8]");                                  // reload the unique array metadata
-    emitter.instruction("mov x13, #0x80ff");                                    // preserve indexed-array kind and copy-on-write bits
-    emitter.instruction("and x12, x12, x13");                                   // clear stale value_type bits
-    emitter.instruction("mov x13, #7");                                         // runtime value_type 7 = boxed Mixed
-    emitter.instruction("lsl x13, x13, #8");                                    // move the Mixed tag into the metadata byte lane
-    emitter.instruction("orr x12, x12, x13");                                   // combine preserved container bits with the Mixed value type
-    emitter.instruction("str x12, [x0, #-8]");                                  // stamp the indexed array as Mixed-valued
-    emitter.instruction("mov x12, #8");                                         // boxed Mixed slots are pointer-sized
-    emitter.instruction("str x12, [x0, #16]");                                  // persist the pointer-sized slot width
+    emitter.instruction("ldr x11, [x0]");                                       // load the post-conversion logical length
+    emitter.instruction("str x11, [sp, #48]");                                  // preserve the original length for overwrite and extension checks
     emitter.instruction("ldr x9, [sp, #8]");                                    // reload the requested integer index
     emitter.instruction("str x9, [sp, #40]");                                   // preserve the target index across growth and release helpers
 
@@ -163,6 +148,67 @@ fn emit_mixed_array_set_aarch64(emitter: &mut Emitter) {
     emitter.instruction("str x0, [x10, #8]");                                   // publish the possibly-reallocated hash table back to the Mixed cell
     emitter.instruction("b __rt_mixed_array_set_done");                         // finish after mutating the associative array
 
+    emitter.label("__rt_mixed_array_set_object");
+    emitter.instruction("ldr x10, [x0, #8]");                                   // load object payload from the Mixed cell
+    emitter.instruction("cbz x10, __rt_mixed_array_set_drop");                  // null object payloads cannot receive ArrayAccess writes
+    emitter.instruction("str x10, [sp, #32]");                                  // save object receiver while boxing the offset
+    emitter.instruction("ldr x11, [x10]");                                      // load object class id
+    abi::emit_symbol_address(emitter, "x12", "_spl_fixed_array_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // load SplFixedArray class id
+    emitter.instruction("cmp x11, x12");                                        // is this a SplFixedArray object?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_fixed");                 // dispatch to SplFixedArray::offsetSet
+    abi::emit_symbol_address(emitter, "x12", "_spl_dll_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // load SplDoublyLinkedList class id
+    emitter.instruction("cmp x11, x12");                                        // is this a SplDoublyLinkedList object?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_dll");                   // dispatch to the shared list offsetSet helper
+    abi::emit_symbol_address(emitter, "x12", "_spl_stack_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // load SplStack class id
+    emitter.instruction("cmp x11, x12");                                        // is this a SplStack object?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_dll");                   // SplStack shares list storage
+    abi::emit_symbol_address(emitter, "x12", "_spl_queue_class_id");
+    emitter.instruction("ldr x12, [x12]");                                      // load SplQueue class id
+    emitter.instruction("cmp x11, x12");                                        // is this a SplQueue object?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_dll");                   // SplQueue shares list storage
+    emitter.instruction("b __rt_mixed_array_set_drop");                         // unsupported objects cannot be mutated by this helper
+    emitter.label("__rt_mixed_array_set_spl_fixed");
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload normalized key high word
+    emitter.instruction("cmn x11, #1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_fixed_int_key");         // integer keys box as Mixed int
+    emitter.instruction("mov x0, #1");                                          // tag = string for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key string pointer
+    emitter.instruction("ldr x2, [sp, #16]");                                   // key string length
+    emitter.instruction("b __rt_mixed_array_set_spl_fixed_box_key");            // share offsetSet after key boxing
+    emitter.label("__rt_mixed_array_set_spl_fixed_int_key");
+    emitter.instruction("mov x0, #0");                                          // tag = int for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key integer payload
+    emitter.instruction("mov x2, #0");                                          // integer keys have no high payload
+    emitter.label("__rt_mixed_array_set_spl_fixed_box_key");
+    emitter.instruction("bl __rt_mixed_from_value");                            // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov x1, x0");                                          // pass boxed offset as argument 1
+    emitter.instruction("ldr x0, [sp, #32]");                                   // pass unboxed SplFixedArray receiver as argument 0
+    emitter.instruction("ldr x2, [sp, #24]");                                   // pass owned Mixed value as argument 2
+    emitter.instruction("bl __rt_spl_fixed_offset_set");                        // write through SplFixedArray::offsetSet
+    emitter.instruction("b __rt_mixed_array_set_done");                         // value ownership was consumed by offsetSet
+    emitter.label("__rt_mixed_array_set_spl_dll");
+    emitter.instruction("ldr x11, [sp, #16]");                                  // reload normalized key high word
+    emitter.instruction("cmn x11, #1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("b.eq __rt_mixed_array_set_spl_dll_int_key");           // integer keys box as Mixed int
+    emitter.instruction("mov x0, #1");                                          // tag = string for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key string pointer
+    emitter.instruction("ldr x2, [sp, #16]");                                   // key string length
+    emitter.instruction("b __rt_mixed_array_set_spl_dll_box_key");              // share offsetSet after key boxing
+    emitter.label("__rt_mixed_array_set_spl_dll_int_key");
+    emitter.instruction("mov x0, #0");                                          // tag = int for mixed_from_value
+    emitter.instruction("ldr x1, [sp, #8]");                                    // key integer payload
+    emitter.instruction("mov x2, #0");                                          // integer keys have no high payload
+    emitter.label("__rt_mixed_array_set_spl_dll_box_key");
+    emitter.instruction("bl __rt_mixed_from_value");                            // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov x1, x0");                                          // pass boxed offset as argument 1
+    emitter.instruction("ldr x0, [sp, #32]");                                   // pass unboxed SPL list receiver as argument 0
+    emitter.instruction("ldr x2, [sp, #24]");                                   // pass owned Mixed value as argument 2
+    emitter.instruction("bl __rt_spl_dll_offset_set");                          // write through the shared SPL list offsetSet helper
+    emitter.instruction("b __rt_mixed_array_set_done");                         // value ownership was consumed by offsetSet
+
     emitter.label("__rt_mixed_array_set_drop");
     emitter.instruction("ldr x0, [sp, #24]");                                   // reload the unused boxed value
     emitter.instruction("bl __rt_decref_mixed");                                // release the boxed value when the write cannot be applied
@@ -203,6 +249,8 @@ fn emit_mixed_array_set_x86_64(emitter: &mut Emitter) {
     emitter.instruction("je __rt_mixed_array_set_indexed");                     // route indexed arrays to slot-based mutation
     emitter.instruction("cmp r10, 5");                                          // is the Mixed payload an associative array?
     emitter.instruction("je __rt_mixed_array_set_assoc");                       // route hash arrays to key-based mutation
+    emitter.instruction("cmp r10, 6");                                          // is the Mixed payload an object?
+    emitter.instruction("je __rt_mixed_array_set_object");                      // route runtime-managed ArrayAccess objects to offsetSet
     emitter.instruction("jmp __rt_mixed_array_set_drop");                       // non-array Mixed payloads cannot be mutated here
     emitter.label("__rt_mixed_array_set_indexed");
     emitter.instruction("mov r10, QWORD PTR [rdi + 8]");                        // load the indexed-array pointer from the Mixed payload
@@ -214,31 +262,17 @@ fn emit_mixed_array_set_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov r9, QWORD PTR [rbp - 16]");                        // reload the requested integer index
     emitter.instruction("cmp r9, 0");                                           // reject negative indexes before touching storage
     emitter.instruction("jl __rt_mixed_array_set_drop");                        // negative indexed writes are ignored by this helper
-    emitter.instruction("mov r11, QWORD PTR [r10]");                            // load the current logical length
-    emitter.instruction("mov QWORD PTR [rbp - 56], r11");                       // preserve the original length for overwrite and extension checks
-    emitter.instruction("mov r8, QWORD PTR [r10 + 16]");                        // load the element size used by the array payload
-    emitter.instruction("cmp r8, 8");                                           // Mixed arrays must use pointer-sized slots
-    emitter.instruction("jne __rt_mixed_array_set_drop");                       // non-pointer layouts cannot safely receive Mixed cells
     emitter.instruction("mov r8, QWORD PTR [r10 - 8]");                         // load the packed indexed-array metadata
     emitter.instruction("shr r8, 8");                                           // move the value_type tag into the low byte
     emitter.instruction("and r8, 0x7f");                                        // isolate the runtime value_type tag
-    emitter.instruction("cmp r11, 0");                                          // is the array currently empty?
-    emitter.instruction("je __rt_mixed_array_set_type_ready");                  // empty arrays can be stamped as Mixed-valued before the first write
-    emitter.instruction("cmp r8, 7");                                           // do existing slots already hold boxed Mixed pointers?
-    emitter.instruction("jne __rt_mixed_array_set_drop");                       // avoid corrupting typed arrays wrapped in a Mixed cell
-    emitter.label("__rt_mixed_array_set_type_ready");
-
-    emitter.instruction("mov rdi, r10");                                        // pass the indexed array to the copy-on-write helper
-    emitter.instruction("call __rt_array_ensure_unique");                       // split shared arrays before mutating a boxed payload
+    emitter.instruction("mov rsi, r8");                                         // pass the source value_type tag to the Mixed conversion helper
+    emitter.instruction("mov rdi, r10");                                        // pass the indexed array to the Mixed conversion helper
+    emitter.instruction("call __rt_array_to_mixed");                            // split shared arrays and normalize slots before writing Mixed values
     emitter.instruction("mov QWORD PTR [rbp - 40], rax");                       // save the unique array pointer
     emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the target Mixed cell after the helper call
     emitter.instruction("mov QWORD PTR [r10 + 8], rax");                        // publish the unique array pointer back into the Mixed cell
-    emitter.instruction("mov r10, QWORD PTR [rax - 8]");                        // reload the unique array metadata
-    emitter.instruction("mov r11, 0xffffffff000080ff");                         // preserve x86 heap marker, indexed-array kind, and COW bits
-    emitter.instruction("and r10, r11");                                        // clear stale value_type bits
-    emitter.instruction("or r10, 0x700");                                       // encode runtime value_type 7 = boxed Mixed
-    emitter.instruction("mov QWORD PTR [rax - 8], r10");                        // stamp the indexed array as Mixed-valued
-    emitter.instruction("mov QWORD PTR [rax + 16], 8");                         // persist the pointer-sized slot width
+    emitter.instruction("mov r11, QWORD PTR [rax]");                            // load the post-conversion logical length
+    emitter.instruction("mov QWORD PTR [rbp - 56], r11");                       // preserve the original length for overwrite and extension checks
     emitter.instruction("mov r9, QWORD PTR [rbp - 16]");                        // reload the requested integer index
     emitter.instruction("mov QWORD PTR [rbp - 48], r9");                        // preserve the target index across growth and release helpers
 
@@ -299,6 +333,64 @@ fn emit_mixed_array_set_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the owning Mixed cell after hash mutation
     emitter.instruction("mov QWORD PTR [r10 + 8], rax");                        // publish the possibly-reallocated hash table back to the Mixed cell
     emitter.instruction("jmp __rt_mixed_array_set_done");                       // finish after mutating the associative array
+
+    emitter.label("__rt_mixed_array_set_object");
+    emitter.instruction("mov r10, QWORD PTR [rdi + 8]");                        // load object payload from the Mixed cell
+    emitter.instruction("test r10, r10");                                       // null object payloads cannot receive ArrayAccess writes
+    emitter.instruction("je __rt_mixed_array_set_drop");                        // drop the value for null object payloads
+    emitter.instruction("mov QWORD PTR [rbp - 40], r10");                       // save object receiver while boxing the offset
+    emitter.instruction("mov r11, QWORD PTR [r10]");                            // load object class id
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_fixed_array_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is this a SplFixedArray object?
+    emitter.instruction("je __rt_mixed_array_set_spl_fixed");                   // dispatch to SplFixedArray::offsetSet
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_dll_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is this a SplDoublyLinkedList object?
+    emitter.instruction("je __rt_mixed_array_set_spl_dll");                     // dispatch to the shared list offsetSet helper
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_stack_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is this a SplStack object?
+    emitter.instruction("je __rt_mixed_array_set_spl_dll");                     // SplStack shares list storage
+    abi::emit_load_symbol_to_reg(emitter, "r12", "_spl_queue_class_id", 0);
+    emitter.instruction("cmp r11, r12");                                        // is this a SplQueue object?
+    emitter.instruction("je __rt_mixed_array_set_spl_dll");                     // SplQueue shares list storage
+    emitter.instruction("jmp __rt_mixed_array_set_drop");                       // unsupported objects cannot be mutated by this helper
+    emitter.label("__rt_mixed_array_set_spl_fixed");
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload normalized key high word
+    emitter.instruction("cmp r11, -1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("je __rt_mixed_array_set_spl_fixed_int_key");           // integer keys box as Mixed int
+    emitter.instruction("mov rax, 1");                                          // tag = string for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key string pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 24]");                       // key string length
+    emitter.instruction("jmp __rt_mixed_array_set_spl_fixed_box_key");          // share offsetSet after key boxing
+    emitter.label("__rt_mixed_array_set_spl_fixed_int_key");
+    emitter.instruction("mov rax, 0");                                          // tag = int for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key integer payload
+    emitter.instruction("xor esi, esi");                                        // integer keys have no high payload
+    emitter.label("__rt_mixed_array_set_spl_fixed_box_key");
+    emitter.instruction("call __rt_mixed_from_value");                          // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov rsi, rax");                                        // pass boxed offset as argument 1
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 40]");                       // pass unboxed SplFixedArray receiver as argument 0
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 32]");                       // pass owned Mixed value as argument 2
+    emitter.instruction("call __rt_spl_fixed_offset_set");                      // write through SplFixedArray::offsetSet
+    emitter.instruction("jmp __rt_mixed_array_set_done");                       // value ownership was consumed by offsetSet
+    emitter.label("__rt_mixed_array_set_spl_dll");
+    emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload normalized key high word
+    emitter.instruction("cmp r11, -1");                                         // does key_hi carry the integer-key sentinel?
+    emitter.instruction("je __rt_mixed_array_set_spl_dll_int_key");             // integer keys box as Mixed int
+    emitter.instruction("mov rax, 1");                                          // tag = string for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key string pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 24]");                       // key string length
+    emitter.instruction("jmp __rt_mixed_array_set_spl_dll_box_key");            // share offsetSet after key boxing
+    emitter.label("__rt_mixed_array_set_spl_dll_int_key");
+    emitter.instruction("mov rax, 0");                                          // tag = int for mixed_from_value
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // key integer payload
+    emitter.instruction("xor esi, esi");                                        // integer keys have no high payload
+    emitter.label("__rt_mixed_array_set_spl_dll_box_key");
+    emitter.instruction("call __rt_mixed_from_value");                          // allocate the boxed ArrayAccess offset
+    emitter.instruction("mov rsi, rax");                                        // pass boxed offset as argument 1
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 40]");                       // pass unboxed SPL list receiver as argument 0
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 32]");                       // pass owned Mixed value as argument 2
+    emitter.instruction("call __rt_spl_dll_offset_set");                        // write through the shared SPL list offsetSet helper
+    emitter.instruction("jmp __rt_mixed_array_set_done");                       // value ownership was consumed by offsetSet
 
     emitter.label("__rt_mixed_array_set_drop");
     emitter.instruction("mov rax, QWORD PTR [rbp - 32]");                       // reload the unused boxed value

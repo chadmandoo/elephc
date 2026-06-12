@@ -84,7 +84,7 @@ pub fn emit(
             emitter.instruction("ldr x0, [sp], #16");                           // restore the descriptor into the result register
             emitter.instruction("cmp x9, #2");                                  // is this a STREAM_FILTER_WRITE-only filter?
             emitter.instruction(&format!("b.eq {}", write_label));              // install the streaming write transcoder
-            emit_arm64(emitter, ctx, &from_sym, &to_sym);                       // READ / ALL: attach-time read transform (re-boxes the resource)
+            emit_read_arm64(emitter, &from_sym, &to_sym, |prefix| ctx.next_label(prefix)); // READ / ALL: attach-time read transform
             emitter.instruction(&format!("b {}", after_label));                 // skip the write-attach path
             emitter.label(&write_label);
             super::stream_filter_iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
@@ -101,7 +101,7 @@ pub fn emit(
             abi::emit_pop_reg(emitter, "rax");                                  // restore the descriptor into the result register
             emitter.instruction("cmp r9, 2");                                   // is this a STREAM_FILTER_WRITE-only filter?
             emitter.instruction(&format!("je {}", write_label));                // install the streaming write transcoder
-            emit_x86_64(emitter, ctx, &from_sym, &to_sym);                      // READ / ALL: attach-time read transform (re-boxes the resource)
+            emit_read_x86_64(emitter, &from_sym, &to_sym, |prefix| ctx.next_label(prefix)); // READ / ALL: attach-time read transform
             emitter.instruction(&format!("jmp {}", after_label));               // skip the write-attach path
             emitter.label(&write_label);
             super::stream_filter_iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
@@ -135,13 +135,21 @@ fn rebox_fd_as_resource(emitter: &mut Emitter) -> PhpType {
 /// [0]=fd [8]=input len [16]=out buf [24]=out cap [32]=temp fd [40]=iconv cd
 /// [48]=iconv inbuf [56]=iconv inbytesleft [64]=iconv outbuf [72]=iconv outbytesleft
 /// [80]=converted len [88]=write offset; x29/x30 at [144].
-fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context, from_sym: &str, to_sym: &str) {
-    let slurp = ctx.next_label("iconv_slurp");
-    let slurp_done = ctx.next_label("iconv_slurped");
-    let sized = ctx.next_label("iconv_sized");
-    let skip = ctx.next_label("iconv_skip");
-    let write = ctx.next_label("iconv_write");
-    let write_done = ctx.next_label("iconv_written");
+pub(crate) fn emit_read_arm64<F>(
+    emitter: &mut Emitter,
+    from_sym: &str,
+    to_sym: &str,
+    mut next_label: F,
+)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("iconv_slurp");
+    let slurp_done = next_label("iconv_slurped");
+    let sized = next_label("iconv_sized");
+    let skip = next_label("iconv_skip");
+    let write = next_label("iconv_write");
+    let write_done = next_label("iconv_written");
 
     emitter.instruction("sub sp, sp, #160");                                    // iconv scratch frame
     emitter.instruction("stp x29, x30, [sp, #144]");                            // save frame pointer and return address
@@ -266,13 +274,21 @@ fn emit_arm64(emitter: &mut Emitter, ctx: &mut Context, from_sym: &str, to_sym: 
 }
 
 /// x86_64: same 160-byte sp-relative scratch layout as the AArch64 path.
-fn emit_x86_64(emitter: &mut Emitter, ctx: &mut Context, from_sym: &str, to_sym: &str) {
-    let slurp = ctx.next_label("iconv_slurp");
-    let slurp_done = ctx.next_label("iconv_slurped");
-    let sized = ctx.next_label("iconv_sized");
-    let skip = ctx.next_label("iconv_skip");
-    let write = ctx.next_label("iconv_write");
-    let write_done = ctx.next_label("iconv_written");
+pub(crate) fn emit_read_x86_64<F>(
+    emitter: &mut Emitter,
+    from_sym: &str,
+    to_sym: &str,
+    mut next_label: F,
+)
+where
+    F: FnMut(&str) -> String,
+{
+    let slurp = next_label("iconv_slurp");
+    let slurp_done = next_label("iconv_slurped");
+    let sized = next_label("iconv_sized");
+    let skip = next_label("iconv_skip");
+    let write = next_label("iconv_write");
+    let write_done = next_label("iconv_written");
 
     emitter.instruction("sub rsp, 160");                                        // iconv scratch frame
     emitter.instruction("mov QWORD PTR [rsp + 0], rax");                        // save the source file descriptor

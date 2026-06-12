@@ -13,13 +13,14 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::time::Instant;
 
-use crate::cli::CliConfig;
+use crate::cli::{CliConfig, CodegenBackend};
 use crate::codegen::platform::{Platform, Target};
 use crate::codegen::Emit;
 use crate::timings::CompileTimings;
 use crate::{
-    autoload, codegen, conditional, errors, exports, lexer, linker, magic_constants,
-    name_resolver, optimize, parser, pdo_prelude, resolver, runtime_cache, source_map, types,
+    autoload, codegen, codegen_ir, conditional, errors, exports, ir, ir_lower, lexer, linker,
+    magic_constants, name_resolver, optimize, parser, pdo_prelude, resolver, runtime_cache,
+    source_map, types,
 };
 
 /// Holds the paths for all compilation output files (assembly, object, binary, source map).
@@ -39,6 +40,8 @@ pub(crate) fn compile(config: CliConfig) {
         heap_size,
         gc_stats,
         heap_debug,
+        emit_ir,
+        backend,
         null_repr,
         emit_asm,
         emit,
@@ -157,6 +160,11 @@ pub(crate) fn compile(config: CliConfig) {
     for warning in &check_result.warnings {
         errors::report_warning(warning);
     }
+    codegen::prepare_declared_name_order(
+        &ast,
+        &check_result.classes,
+        &check_result.interfaces,
+    );
 
     if !target.supports_current_backend() {
         eprintln!(
@@ -205,8 +213,52 @@ pub(crate) fn compile(config: CliConfig) {
     let ast = optimize::eliminate_dead_code(ast);
     timings.record_since("dce", phase_started);
 
-    let runtime_features =
-        codegen::runtime_features_for_program_and_classes(&ast, &check_result.classes);
+    if emit_ir {
+        let phase_started = Instant::now();
+        let module = match ir_lower::lower_program(&ast, &check_result, target) {
+            Ok(module) => module,
+            Err(err) => {
+                eprintln!("EIR lowering error: {}", err);
+                process::exit(1);
+            }
+        };
+        timings.record_since("ir-lower", phase_started);
+
+        let phase_started = Instant::now();
+        let text = ir::print_module(&module);
+        timings.record_since("ir-print", phase_started);
+        timings.report();
+        print!("{}", text);
+        return;
+    }
+
+    let ir_module = if matches!(backend, CodegenBackend::Eir) {
+        let phase_started = Instant::now();
+        let module = match ir_lower::lower_program(&ast, &check_result, target) {
+            Ok(module) => module,
+            Err(err) => {
+                eprintln!("EIR lowering error: {}", err);
+                process::exit(1);
+            }
+        };
+        timings.record_since("ir-lower", phase_started);
+        Some(module)
+    } else {
+        None
+    };
+
+    let runtime_features = ir_module
+        .as_ref()
+        .map(|module| module.required_runtime_features)
+        .unwrap_or_else(|| {
+            codegen::runtime_features_for_program_and_classes(&ast, &check_result.classes)
+        });
+
+    let requires_elephc_tls = extra_link_libs.iter().any(|lib| lib == "elephc_tls")
+        || check_result
+            .required_libraries
+            .iter()
+            .any(|lib| lib == "elephc_tls");
 
     let phase_started = Instant::now();
     let runtime_pic = matches!(emit, Emit::Cdylib);
@@ -221,35 +273,52 @@ pub(crate) fn compile(config: CliConfig) {
     timings.note(format!("runtime-cache {}", runtime_object.status.as_str()));
 
     let phase_started = Instant::now();
-    let requires_elephc_tls = extra_link_libs.iter().any(|lib| lib == "elephc_tls")
-        || check_result
-            .required_libraries
-            .iter()
-            .any(|lib| lib == "elephc_tls");
-    let user_asm = codegen::generate_user_asm(
-        &ast,
-        &check_result.global_env,
-        &check_result.functions,
-        &check_result.callable_param_sigs,
-        &check_result.callable_return_sigs,
-        &check_result.callable_array_return_sigs,
-        &check_result.interfaces,
-        &check_result.classes,
-        &check_result.enums,
-        &check_result.packed_classes,
-        &check_result.extern_functions,
-        &check_result.extern_classes,
-        &check_result.extern_globals,
-        heap_size,
-        gc_stats,
-        heap_debug,
-        target,
-        requires_elephc_tls,
-        null_repr,
-        emit,
-        &exported_functions,
-    );
-    timings.record_since("codegen", phase_started);
+    let codegen_timing = if ir_module.is_some() {
+        "codegen-ir"
+    } else {
+        "codegen"
+    };
+    let user_asm = if let Some(module) = &ir_module {
+        match codegen_ir::generate_user_asm_from_ir_with_options(
+            module,
+            gc_stats,
+            heap_debug,
+            requires_elephc_tls,
+            emit,
+            &exported_functions,
+        ) {
+            Ok(asm) => asm,
+            Err(err) => {
+                eprintln!("EIR backend error: {}", err);
+                process::exit(1);
+            }
+        }
+    } else {
+        codegen::generate_user_asm(
+            &ast,
+            &check_result.global_env,
+            &check_result.functions,
+            &check_result.callable_param_sigs,
+            &check_result.callable_return_sigs,
+            &check_result.callable_array_return_sigs,
+            &check_result.interfaces,
+            &check_result.classes,
+            &check_result.enums,
+            &check_result.packed_classes,
+            &check_result.extern_functions,
+            &check_result.extern_classes,
+            &check_result.extern_globals,
+            heap_size,
+            gc_stats,
+            heap_debug,
+            target,
+            requires_elephc_tls,
+            null_repr,
+            emit,
+            &exported_functions,
+        )
+    };
+    timings.record_since(codegen_timing, phase_started);
 
     for lib in &check_result.required_libraries {
         if !extra_link_libs.contains(lib) {

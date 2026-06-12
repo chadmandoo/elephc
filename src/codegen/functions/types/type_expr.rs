@@ -38,7 +38,9 @@ pub(super) fn resolve_buffer_element_type(type_expr: &TypeExpr, ctx: &Context) -
         TypeExpr::Buffer(inner) => {
             PhpType::Buffer(Box::new(resolve_buffer_element_type(inner, ctx)))
         }
-        TypeExpr::Iterable | TypeExpr::Nullable(_) | TypeExpr::Union(_) => PhpType::Int,
+        TypeExpr::Array(_) | TypeExpr::Iterable | TypeExpr::Nullable(_) | TypeExpr::Union(_) => {
+            PhpType::Int
+        }
     }
 }
 
@@ -62,6 +64,7 @@ pub(crate) fn codegen_declared_type(type_expr: &TypeExpr, ctx: &Context) -> PhpT
         TypeExpr::Buffer(inner) => {
             PhpType::Buffer(Box::new(resolve_buffer_element_type(inner, ctx)))
         }
+        TypeExpr::Array(inner) => PhpType::Array(Box::new(codegen_static_type(inner, ctx))),
         TypeExpr::Named(name) => match name.as_str() {
             "string" => PhpType::Str,
             "mixed" => PhpType::Mixed,
