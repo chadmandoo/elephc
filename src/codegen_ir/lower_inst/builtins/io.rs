@@ -141,6 +141,15 @@ fn publish_dynamic_phar_write_function_pointer(ctx: &mut FunctionContext<'_>) {
     publish_phar_bridge_entries(ctx, ENTRIES);
 }
 
+/// Publishes the native PHAR deletion bridge used by `unlink("phar://...")`.
+fn publish_phar_delete_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_delete_url",
+        "_elephc_phar_delete_url_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
 /// Lowers `hash_file(algo, filename, binary?)` by reading bytes then hashing them.
 pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "hash_file", 2, 3)?;
@@ -3547,13 +3556,23 @@ pub(super) fn lower_file_exists(
 
 /// Lowers `unlink(path)` through the target-aware runtime helper.
 pub(super) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    lower_single_path_wrapper_op(
-        ctx,
-        inst,
-        "unlink",
-        "__rt_unlink",
-        STREAM_WRAPPER_UNLINK_SLOT,
-    )
+    super::ensure_arg_count(inst, "unlink", 1)?;
+    let path = expect_operand(inst, 0)?;
+    let path_literal = optional_const_string_operand(ctx, path)?;
+    let can_be_phar = path_literal
+        .as_deref()
+        .map(|path| path.starts_with("phar://"))
+        .unwrap_or(true);
+    if can_be_phar {
+        publish_phar_delete_function_pointer(ctx);
+    }
+    load_string_to_result(ctx, path, "unlink")?;
+    if can_be_phar {
+        emit_unlink_maybe_phar_dispatch(ctx);
+    } else {
+        emit_single_path_wrapper_dispatch(ctx, "__rt_unlink", STREAM_WRAPPER_UNLINK_SLOT);
+    }
+    store_if_result(ctx, inst)
 }
 
 /// Lowers `mkdir(path)` through the target-aware runtime helper.
@@ -5062,6 +5081,101 @@ fn emit_single_path_wrapper_dispatch(
             ctx.emitter.instruction("xor ecx, ecx");                            // pass default mode/options argument
             ctx.emitter.instruction("xor r8d, r8d");                            // pass default value/options argument
             abi::emit_call_label(ctx.emitter, "__rt_user_wrapper_path_op");
+            ctx.emitter.label(&after);
+            ctx.emitter.instruction("add rsp, 16");                             // release path scratch storage
+        }
+    }
+}
+
+/// Emits PHAR-aware `unlink()` dispatch with wrapper/native fallback.
+fn emit_unlink_maybe_phar_dispatch(ctx: &mut FunctionContext<'_>) {
+    let not_phar = ctx.next_label("unlink_not_phar");
+    let phar_fail = ctx.next_label("unlink_phar_fail");
+    let after = ctx.next_label("unlink_after");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("sub sp, sp, #16");                         // reserve path scratch storage across the PHAR probe
+            ctx.emitter.instruction("str x1, [sp, #0]");                        // preserve the unlink path pointer
+            ctx.emitter.instruction("str x2, [sp, #8]");                        // preserve the unlink path length
+            ctx.emitter.instruction("cmp x2, #7");                              // path must be at least "phar://" long
+            ctx.emitter.instruction(&format!("b.lt {}", not_phar));             // shorter paths use normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #0]");                       // read scheme byte 0
+            ctx.emitter.instruction("cmp w9, #112");                            // compare with 'p'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #1]");                       // read scheme byte 1
+            ctx.emitter.instruction("cmp w9, #104");                            // compare with 'h'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #2]");                       // read scheme byte 2
+            ctx.emitter.instruction("cmp w9, #97");                             // compare with 'a'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #3]");                       // read scheme byte 3
+            ctx.emitter.instruction("cmp w9, #114");                            // compare with 'r'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #4]");                       // read scheme separator byte
+            ctx.emitter.instruction("cmp w9, #58");                             // compare with ':'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #5]");                       // read first slash byte
+            ctx.emitter.instruction("cmp w9, #47");                             // compare with '/'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("ldrb w9, [x1, #6]");                       // read second slash byte
+            ctx.emitter.instruction("cmp w9, #47");                             // compare with '/'
+            ctx.emitter.instruction(&format!("b.ne {}", not_phar));             // non-PHAR scheme uses normal unlink dispatch
+            abi::emit_symbol_address(ctx.emitter, "x9", "_elephc_phar_delete_url_fn");
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional PHAR delete bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", phar_fail));         // missing bridge makes PHAR unlink fail
+            ctx.emitter.instruction("ldr x0, [sp, #0]");                        // bridge arg 0 = full phar:// URL pointer
+            ctx.emitter.instruction("ldr x1, [sp, #8]");                        // bridge arg 1 = full phar:// URL length
+            ctx.emitter.instruction("blr x9");                                  // delete the archive entry through elephc-phar
+            ctx.emitter.instruction("cmp x0, #0");                              // test the bridge success flag
+            ctx.emitter.instruction("cset x0, ne");                             // normalize bridge result to PHP bool
+            ctx.emitter.instruction(&format!("b {}", after));                   // skip native unlink fallback for PHAR URLs
+            ctx.emitter.label(&phar_fail);
+            ctx.emitter.instruction("mov x0, #0");                              // report false for failed PHAR unlink
+            ctx.emitter.instruction(&format!("b {}", after));                   // skip native unlink fallback for PHAR URLs
+            ctx.emitter.label(&not_phar);
+            ctx.emitter.instruction("ldr x1, [sp, #0]");                        // restore the path pointer for normal unlink dispatch
+            ctx.emitter.instruction("ldr x2, [sp, #8]");                        // restore the path length for normal unlink dispatch
+            emit_single_path_wrapper_dispatch(ctx, "__rt_unlink", STREAM_WRAPPER_UNLINK_SLOT);
+            ctx.emitter.label(&after);
+            ctx.emitter.instruction("add sp, sp, #16");                         // release path scratch storage
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("sub rsp, 16");                             // reserve path scratch storage across the PHAR probe
+            ctx.emitter.instruction("mov QWORD PTR [rsp + 0], rax");            // preserve the unlink path pointer
+            ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rdx");            // preserve the unlink path length
+            ctx.emitter.instruction("cmp rdx, 7");                              // path must be at least "phar://" long
+            ctx.emitter.instruction(&format!("jl {}", not_phar));               // shorter paths use normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 0], 0x70");            // compare scheme byte 0 with 'p'
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 1], 0x68");            // compare scheme byte 1 with 'h'
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 2], 0x61");            // compare scheme byte 2 with 'a'
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 3], 0x72");            // compare scheme byte 3 with 'r'
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 4], 0x3A");            // compare scheme separator with ':'
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 5], 0x2F");            // compare first slash byte
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            ctx.emitter.instruction("cmp BYTE PTR [rax + 6], 0x2F");            // compare second slash byte
+            ctx.emitter.instruction(&format!("jne {}", not_phar));              // non-PHAR scheme uses normal unlink dispatch
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r10", "_elephc_phar_delete_url_fn", 0);
+            ctx.emitter.instruction("test r10, r10");                           // test whether the PHAR delete bridge was published
+            ctx.emitter.instruction(&format!("jz {}", phar_fail));              // missing bridge makes PHAR unlink fail
+            ctx.emitter.instruction("mov rdi, QWORD PTR [rsp + 0]");            // bridge arg 0 = full phar:// URL pointer
+            ctx.emitter.instruction("mov rsi, QWORD PTR [rsp + 8]");            // bridge arg 1 = full phar:// URL length
+            ctx.emitter.instruction("call r10");                                // delete the archive entry through elephc-phar
+            ctx.emitter.instruction("test rax, rax");                           // test the bridge success flag
+            ctx.emitter.instruction("setne al");                                // normalize bridge result to PHP bool
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized bool
+            ctx.emitter.instruction(&format!("jmp {}", after));                 // skip native unlink fallback for PHAR URLs
+            ctx.emitter.label(&phar_fail);
+            ctx.emitter.instruction("xor eax, eax");                            // report false for failed PHAR unlink
+            ctx.emitter.instruction(&format!("jmp {}", after));                 // skip native unlink fallback for PHAR URLs
+            ctx.emitter.label(&not_phar);
+            ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 0]");            // restore the path pointer for normal unlink dispatch
+            ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 8]");            // restore the path length for normal unlink dispatch
+            emit_single_path_wrapper_dispatch(ctx, "__rt_unlink", STREAM_WRAPPER_UNLINK_SLOT);
             ctx.emitter.label(&after);
             ctx.emitter.instruction("add rsp, 16");                             // release path scratch storage
         }

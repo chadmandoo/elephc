@@ -298,6 +298,9 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize) -> String {
     // _elephc_phar_put_url_fn: indirect pointer to the elephc-phar native
     // writer bridge for runtime-built phar:// file_put_contents() URLs.
     out.push_str(".p2align 3\n.globl _elephc_phar_put_url_fn\n_elephc_phar_put_url_fn:\n    .quad 0\n");
+    // _elephc_phar_delete_url_fn: indirect pointer to the elephc-phar entry
+    // deletion bridge used by unlink("phar://...") and Phar::offsetUnset().
+    out.push_str(".p2align 3\n.globl _elephc_phar_delete_url_fn\n_elephc_phar_delete_url_fn:\n    .quad 0\n");
     // _elephc_phar_stream_*_fn: indirect pointers to the elephc-phar buffered
     // write-stream bridge. These allow multiple phar:// write descriptors to
     // stay open at once while the old assembly single-entry writer remains as

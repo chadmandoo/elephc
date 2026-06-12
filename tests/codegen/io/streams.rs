@@ -2026,6 +2026,37 @@ echo file_get_contents("phar://" . $archive . "/dir/two.txt");
     assert_eq!(out, "5|5|alpha|bravo");
 }
 
+/// `unlink("phar://...")` removes one archive entry while preserving sibling
+/// entries across native PHAR, tar, and ZIP containers.
+#[test]
+fn test_unlink_phar_entries_preserves_siblings() {
+    let out = compile_and_run(
+        r#"<?php
+file_put_contents("phar://delete.phar/one.txt", "alpha");
+file_put_contents("phar://delete.phar/two.txt", "bravo");
+echo (unlink("phar://delete.phar/one.txt") ? "u|" : "bad|");
+$phar = "delete.phar";
+echo (file_get_contents("phar://" . $phar . "/one.txt") === false ? "missing|" : "bad|");
+echo file_get_contents("phar://" . $phar . "/two.txt") . "|";
+file_put_contents("phar://delete.tar/one.txt", "tar-one");
+file_put_contents("phar://delete.tar/two.txt", "tar-two");
+echo (unlink("phar://delete.tar/one.txt") ? "u|" : "bad|");
+$tar = "delete.tar";
+echo file_get_contents("phar://" . $tar . "/two.txt") . "|";
+file_put_contents("phar://delete.zip/one.txt", "zip-one");
+file_put_contents("phar://delete.zip/two.txt", "zip-two");
+echo (unlink("phar://delete.zip/one.txt") ? "u|" : "bad|");
+$zip = "delete.zip";
+echo file_get_contents("phar://" . $zip . "/two.txt") . "|";
+echo (unlink("phar://delete.zip/missing.txt") ? "bad" : "missing");
+"#,
+    );
+    assert_eq!(
+        out,
+        "u|missing|bravo|u|tar-two|u|zip-two|missing"
+    );
+}
+
 /// `Phar` and `PharData` expose a minimal OOP ArrayAccess surface that maps
 /// bracket reads/writes/isset to the existing runtime `phar://` reader/writer.
 #[test]
@@ -2071,6 +2102,29 @@ echo $pd["note.txt"];
 "#,
     );
     assert_eq!(out, "alpha|bravo|tar");
+}
+
+/// ArrayAccess `unset()` on `Phar` and `PharData` deletes the archive entry and
+/// leaves other entries readable.
+#[test]
+fn test_phar_oop_array_access_unset_deletes_entry() {
+    let out = compile_and_run(
+        r#"<?php
+$p = new Phar("unset.phar");
+$p["one.txt"] = "alpha";
+$p["two.txt"] = "bravo";
+unset($p["one.txt"]);
+echo (isset($p["one.txt"]) ? "bad|" : "missing|");
+echo $p["two.txt"] . "|";
+$pd = new PharData("unset.tar");
+$pd["one.txt"] = "tar-one";
+$pd["two.txt"] = "tar-two";
+unset($pd["one.txt"]);
+echo (isset($pd["one.txt"]) ? "bad|" : "missing|");
+echo $pd["two.txt"];
+"#,
+    );
+    assert_eq!(out, "missing|bravo|missing|tar-two");
 }
 
 /// `file_get_contents()` of a literal `phar://` URL decodes the entry at compile

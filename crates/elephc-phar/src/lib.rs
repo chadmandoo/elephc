@@ -1,7 +1,7 @@
 //! Purpose:
 //! Pure-Rust archive bridge for elephc's `phar://` runtime paths.
 //! Extracts native PHAR, tar-based PHAR, and zip-based PHAR entries, and writes
-//! archive entries through a small C ABI so generated assembly does not
+//! or deletes archive entries through a small C ABI so generated assembly does not
 //! duplicate archive parsers or manifest writers.
 //!
 //! Called from:
@@ -130,6 +130,32 @@ pub fn put_url_bytes(url: &[u8], payload: &[u8]) -> Option<usize> {
     put_entry_bytes(archive_path, entry_name, payload)
 }
 
+/// Removes one entry from an archive on disk.
+///
+/// Existing native PHAR, tar, and ZIP archives are decoded and rewritten in
+/// their original archive family. Missing archives or missing entries return
+/// `None`, matching PHP's false-result path for failed `unlink()`.
+pub fn delete_entry_bytes(archive_path: &[u8], entry_name: &[u8]) -> Option<()> {
+    if entry_name.is_empty() {
+        return None;
+    }
+    let archive_path = std::str::from_utf8(archive_path).ok()?;
+    let path = std::path::Path::new(archive_path);
+    let archive = std::fs::read(path).ok()?;
+    let (mut entries, format) = parse_archive_entries(&archive)?;
+    remove_entry(&mut entries, entry_name)?;
+    let archive = build_archive(&entries, format)?;
+    std::fs::write(path, archive).ok()?;
+    Some(())
+}
+
+/// Removes one entry described by a full `phar://` URL.
+pub fn delete_url_bytes(url: &[u8]) -> Option<()> {
+    let rest = url.strip_prefix(b"phar://")?;
+    let (archive_path, entry_name) = split_write_url_entry(rest)?;
+    delete_entry_bytes(archive_path, entry_name)
+}
+
 /// C ABI wrapper around [`extract_url_bytes`].
 ///
 /// Returns a pointer to a stable process-global buffer and writes the byte
@@ -203,6 +229,25 @@ pub unsafe extern "C" fn elephc_phar_put_url(
     match result {
         Ok(Some(len)) => len,
         _ => usize::MAX,
+    }
+}
+
+/// C ABI wrapper around [`delete_url_bytes`].
+///
+/// Returns `1` when the entry was removed and the archive was rewritten, or `0`
+/// when the URL is invalid, the archive cannot be parsed, or the entry is absent.
+///
+/// # Safety
+/// `url_ptr` must be valid for `url_len` bytes unless `url_len` is zero.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_phar_delete_url(
+    url_ptr: *const u8,
+    url_len: usize,
+) -> usize {
+    let result = std::panic::catch_unwind(|| delete_url_bytes(slice(url_ptr, url_len)));
+    match result {
+        Ok(Some(())) => 1,
+        _ => 0,
     }
 }
 
@@ -548,6 +593,13 @@ fn upsert_entry(entries: &mut Vec<ArchiveEntry>, entry_name: &[u8], payload: &[u
             compression: PharCompression::None,
         });
     }
+}
+
+/// Removes an archive entry and reports failure when no matching entry exists.
+fn remove_entry(entries: &mut Vec<ArchiveEntry>, entry_name: &[u8]) -> Option<()> {
+    let index = entries.iter().position(|entry| entry.name == entry_name)?;
+    entries.remove(index);
+    Some(())
 }
 
 /// Builds a SHA1-signed native PHAR archive from decoded entries.
@@ -1321,6 +1373,94 @@ mod tests {
             extract_entry_bytes(&archive, b"dir/two.txt").as_deref(),
             Some(&b"bravo"[..])
         );
+    }
+
+    /// Verifies native PHAR deletion removes one entry while preserving siblings.
+    #[test]
+    fn deletes_native_phar_entry_from_url() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_delete_{}_{}.phar",
+            std::process::id(),
+            "unit"
+        ));
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"one.txt", b"alpha"),
+            Some(5)
+        );
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"two.txt", b"bravo"),
+            Some(5)
+        );
+        let url = format!("phar://{}/one.txt", path.display());
+        assert_eq!(delete_url_bytes(url.as_bytes()), Some(()));
+        let archive = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(extract_entry_bytes(&archive, b"one.txt"), None);
+        assert_eq!(
+            extract_entry_bytes(&archive, b"two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+    }
+
+    /// Verifies tar and ZIP deletion preserve the archive family.
+    #[test]
+    fn deletes_tar_and_zip_entries() {
+        let tar_path = std::env::temp_dir().join(format!(
+            "elephc_phar_delete_{}_{}.tar",
+            std::process::id(),
+            "unit"
+        ));
+        std::fs::write(&tar_path, build_tar(&[("one.txt", b"alpha"), ("two.txt", b"bravo")]))
+            .unwrap();
+        let tar_url = format!("phar://{}/one.txt", tar_path.display());
+        assert_eq!(delete_url_bytes(tar_url.as_bytes()), Some(()));
+        let tar_archive = std::fs::read(&tar_path).unwrap();
+        std::fs::remove_file(&tar_path).ok();
+        assert_eq!(extract_entry_bytes(&tar_archive, b"one.txt"), None);
+        assert_eq!(
+            extract_entry_bytes(&tar_archive, b"two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+
+        let zip_path = std::env::temp_dir().join(format!(
+            "elephc_phar_delete_{}_{}.zip",
+            std::process::id(),
+            "unit"
+        ));
+        std::fs::write(
+            &zip_path,
+            build_zip(&[("one.txt", b"alpha", false), ("two.txt", b"bravo", true)]),
+        )
+        .unwrap();
+        let zip_url = format!("phar://{}/one.txt", zip_path.display());
+        assert_eq!(delete_url_bytes(zip_url.as_bytes()), Some(()));
+        let zip_archive = std::fs::read(&zip_path).unwrap();
+        std::fs::remove_file(&zip_path).ok();
+        assert_eq!(zip_archive.get(0..4), Some(&[0x50, 0x4b, 0x03, 0x04][..]));
+        assert_eq!(extract_entry_bytes(&zip_archive, b"one.txt"), None);
+        assert_eq!(
+            extract_entry_bytes(&zip_archive, b"two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+    }
+
+    /// Verifies deletion fails cleanly when the requested entry is absent.
+    #[test]
+    fn delete_missing_entry_returns_none() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_delete_missing_{}_{}.phar",
+            std::process::id(),
+            "unit"
+        ));
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"one.txt", b"alpha"),
+            Some(5)
+        );
+        let url = format!("phar://{}/missing.txt", path.display());
+        assert_eq!(delete_url_bytes(url.as_bytes()), None);
+        std::fs::remove_file(&path).ok();
     }
 
     /// Verifies full phar:// URL writes split archive and entry names at run time.

@@ -87,7 +87,7 @@ fn phar_methods() -> Vec<ClassMethod> {
             "offsetUnset",
             vec![param("offset", mixed_type())],
             Some(TypeExpr::Void),
-            Vec::new(),
+            phar_offset_unset_body(),
         ),
     ]
 }
@@ -127,6 +127,14 @@ fn phar_offset_set_body() -> Vec<crate::parser::ast::Stmt> {
     vec![expr_stmt(function_call(
         "file_put_contents",
         vec![phar_entry_url_expr(var_expr("offset")), var_expr("value")],
+    ))]
+}
+
+/// Builds `offsetUnset()` as an archive-entry `unlink()`.
+fn phar_offset_unset_body() -> Vec<crate::parser::ast::Stmt> {
+    vec![expr_stmt(function_call(
+        "unlink",
+        vec![phar_entry_url_expr(var_expr("offset"))],
     ))]
 }
 

@@ -575,7 +575,7 @@ PHP-visible surface, not the internal commits.
 - [x] Phase 47 — runtime-built `phar://` write streams for `fopen()`: non-literal `fopen($path, $mode)` now publishes the PHAR URL writer bridge alongside the dynamic reader bridge. `__rt_fopen_maybe_phar` still routes `r*` modes to `__rt_phar_read_entry`, but `w`/`a`/`c`/`x` modes now tail-call `__rt_phar_write_open_url`, which persists the full runtime URL with `__rt_str_persist` so `fclose()` can finalize through `elephc_phar_put_url`. Dynamic stream writes therefore preserve sibling entries in native PHAR archives just like literal streams and dynamic `file_put_contents()` writes. Test: `test_fopen_dynamic_phar_write_preserves_existing_entries`. Deferred: compressed-entry writes, private-key signing, and concurrent PHAR write streams. ARM64 + x86_64 (both Docker-verified)
 - [x] Phase 48 — tar/zip `phar://` writes: the `elephc-phar` bridge now preserves the archive family for existing native PHAR, tar, and ZIP containers, and missing `.tar` / `.zip` archive paths are created in that family instead of native PHAR. Literal write splitting recognizes `.phar/`, `.tar/`, and `.zip/` boundaries; runtime-built URLs use the same suffix-aware split. ZIP output uses stored entries (read support still accepts deflated ZIP inputs), tar output is POSIX ustar, and native PHAR gzip/bzip2 entries keep their compression when replaced. Tests: `writes_tar_entries`, `writes_zip_entries`, `writes_preserve_gzip_native_phar_entries`, `writes_preserve_bzip2_native_phar_entries`, `test_file_put_contents_phar_tar_archive_runtime_readback`, `test_file_put_contents_phar_zip_archive_runtime_readback`. Deferred: explicit compression-control writes, private-key signing, and concurrent PHAR write streams. ARM64 + x86_64 (both Docker-verified)
 - [x] Phase 49 — concurrent `phar://` write streams: write-mode `fopen()` now publishes buffered `elephc-phar` stream entrypoints, so literal and runtime-built PHAR URLs receive real synthetic descriptors in the `0x50000000..0x50000020` range instead of sharing one global `0x50000000` stream. `fwrite()` and `fclose()` dispatch that whole range, and the bridge owns per-descriptor payload/target state until finalization; the old assembly single-stream writer remains as an unlinked-bridge fallback. Tests: `concurrent_phar_write_streams_preserve_distinct_entries`, `test_fopen_concurrent_phar_write_streams_preserve_entries`. Deferred: explicit compression-control writes and private-key signing. ARM64 + x86_64 (both Docker-verified)
-- [x] Phase 50 — `Phar` / `PharData` OOP baseline: the checker now injects builtin `Phar` and `PharData` classes with PHP-facing format/compression/signature constants, constructors that store the archive path, `addFromString()`, and ArrayAccess methods (`offsetGet`, `offsetSet`, `offsetExists`, `offsetUnset`) lowered as synthetic PHP bodies over the existing `phar://` `file_get_contents()` / `file_put_contents()` runtime paths. This gives `$phar->addFromString("entry", "data")`, `$phar["entry"]` read/write, and `isset($phar["entry"])` coverage for native PHAR plus tar/ZIP containers without new target-specific assembly. `offsetUnset()` is currently a no-op because archive entry deletion remains deferred. Tests: `test_phar_oop_array_access_read_write`, `test_phar_oop_add_from_string_writes_entries`. Deferred: full iterator API, metadata/stub APIs, explicit compression controls, entry deletion, and private-key signing.
+- [x] Phase 50 — `Phar` / `PharData` OOP baseline: the checker now injects builtin `Phar` and `PharData` classes with PHP-facing format/compression/signature constants, constructors that store the archive path, `addFromString()`, and ArrayAccess methods (`offsetGet`, `offsetSet`, `offsetExists`, `offsetUnset`) lowered as synthetic PHP bodies over the existing `phar://` `file_get_contents()` / `file_put_contents()` / `unlink()` runtime paths. This gives `$phar->addFromString("entry", "data")`, `$phar["entry"]` read/write, `isset($phar["entry"])`, and `unset($phar["entry"])` coverage for native PHAR plus tar/ZIP containers without new target-specific assembly. Tests: `test_phar_oop_array_access_read_write`, `test_phar_oop_add_from_string_writes_entries`, `test_phar_oop_array_access_unset_deletes_entry`. Deferred: full iterator API, metadata/stub APIs, explicit compression controls, and private-key signing.
 
 ### Streams — remaining work (subsystem considered *partially complete*; merged as-is)
 
@@ -601,7 +601,8 @@ none are needed for typical stream usage.
   multiple uncompressed entries through a read-modify-write bridge, and
   `file_put_contents()` and write-mode `fopen()` support runtime-built
   `phar://` URLs; tar and ZIP containers are writable through the same bridge,
-  and multiple write streams can stay open concurrently.
+  multiple write streams can stay open concurrently, and
+  `unlink("phar://archive/entry")` removes entries while preserving siblings.
   Deferred: explicit compression-control writes and OpenSSL/private-key signing.
 - [x] **`phar://` tar/zip variants** — native PHAR, tar-based PHAR, and
   zip-based PHAR containers are readable and writable through literal and
@@ -609,9 +610,10 @@ none are needed for typical stream usage.
   remain deferred.
 - [ ] **`Phar` / `PharData` OOP API** — a baseline constructor/constants,
   `addFromString()`, and ArrayAccess read/write/isset surface is implemented
-  (Phase 50). The full OOP archive API remains deferred: iteration,
-  `PharFileInfo`, metadata/stub APIs, explicit compression controls, deletion,
-  and OpenSSL/private-key signing.
+  (Phase 50). `offsetUnset()` deletes archive entries through the PHAR-aware
+  `unlink()` path. The full OOP archive API remains deferred: iteration,
+  `PharFileInfo`, metadata/stub APIs, explicit compression controls, and
+  OpenSSL/private-key signing.
 - [x] **TLS `ciphers` / `security_level`** — accepted without error but *not
   honored*: rustls has no OpenSSL-cipher-string equivalent and selects TLS
   1.2/1.3 automatically. Honest no-op by design (upstream limitation), not a

@@ -119,6 +119,17 @@ pub(super) fn check_builtin(
                     &format!("{}() takes exactly 1 argument", name),
                 ));
             }
+            if name == "unlink" {
+                if let Some(crate::parser::ast::ExprKind::StringLiteral(url)) =
+                    args.first().map(|a| &a.kind)
+                {
+                    if url.starts_with("phar://") {
+                        checker.require_builtin_library("elephc_phar");
+                    }
+                } else {
+                    checker.require_builtin_library("elephc_phar");
+                }
+            }
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Bool))
         }
