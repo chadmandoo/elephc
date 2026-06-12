@@ -1974,6 +1974,38 @@ echo file_get_contents("phar://" . $archive . "/dir/two.txt");
     assert_eq!(out, "5|6|closed|alpha|stream");
 }
 
+/// `phar://` writes to a `.tar` archive create/update a tar container through
+/// the Rust bridge, and the runtime reader can read both entries back.
+#[test]
+fn test_file_put_contents_phar_tar_archive_runtime_readback() {
+    let out = compile_and_run(
+        r#"<?php
+echo file_put_contents("phar://out.tar/one.txt", "alpha") . "|";
+echo file_put_contents("phar://out.tar/dir/two.txt", "bravo") . "|";
+$archive = "out.tar";
+echo file_get_contents("phar://" . $archive . "/one.txt") . "|";
+echo file_get_contents("phar://" . $archive . "/dir/two.txt");
+"#,
+    );
+    assert_eq!(out, "5|5|alpha|bravo");
+}
+
+/// `phar://` writes to a `.zip` archive create/update a ZIP container through
+/// the Rust bridge, and the runtime reader can read both entries back.
+#[test]
+fn test_file_put_contents_phar_zip_archive_runtime_readback() {
+    let out = compile_and_run(
+        r#"<?php
+echo file_put_contents("phar://out.zip/one.txt", "alpha") . "|";
+echo file_put_contents("phar://out.zip/dir/two.txt", "bravo") . "|";
+$archive = "out.zip";
+echo file_get_contents("phar://" . $archive . "/one.txt") . "|";
+echo file_get_contents("phar://" . $archive . "/dir/two.txt");
+"#,
+    );
+    assert_eq!(out, "5|5|alpha|bravo");
+}
+
 /// `file_get_contents()` of a literal `phar://` URL decodes the entry at compile
 /// time (like the fopen read fast path) and returns its bytes as a string; a
 /// missing entry returns `false`.

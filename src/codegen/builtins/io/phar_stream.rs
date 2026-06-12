@@ -18,6 +18,9 @@
 //!   compile time.
 //! - A missing archive or a missing entry lowers to PHP `false`, matching a
 //!   failed `fopen()`.
+//! - Write-mode literal URLs seed the shared PHAR write runtime. The splitter
+//!   recognizes `.phar/`, `.tar/`, and `.zip/` archive boundaries so the
+//!   runtime bridge can preserve the requested archive family.
 //! - PHAR binary layout parsed here (all integers little-endian): a PHP stub
 //!   ending in `__HALT_COMPILER();`, then the manifest
 //!   (`manifest_len`, `num_files`, 2-byte api version, 4-byte global flags,
@@ -102,15 +105,19 @@ fn is_phar_write_mode(mode: &str) -> bool {
 
 /// Splits a `phar://<archive>/<entry>` write URL into `(archive_path, entry)`.
 /// Unlike the read path the archive need not exist yet, so the split happens at
-/// the first `.phar/` boundary; if none is present it falls back to the longest
-/// existing-file prefix. Returns `None` when neither rule yields an entry.
+/// the first `.phar/`, `.tar/`, or `.zip/` boundary; if none is present it
+/// falls back to the longest existing-file prefix. Returns `None` when neither
+/// rule yields an entry.
 pub(crate) fn resolve_write_target(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("phar://")?;
-    if let Some(idx) = rest.find(".phar/") {
-        let archive = &rest[..idx + 5];
-        let entry = &rest[idx + 6..];
-        if !entry.is_empty() {
-            return Some((archive.to_string(), entry.to_string()));
+    for suffix in [".phar/", ".tar/", ".zip/"] {
+        if let Some(idx) = rest.find(suffix) {
+            let archive_end = idx + suffix.len() - 1;
+            let archive = &rest[..archive_end];
+            let entry = &rest[archive_end + 1..];
+            if !entry.is_empty() {
+                return Some((archive.to_string(), entry.to_string()));
+            }
         }
     }
     let (archive, entry) = split_archive_entry(rest)?;

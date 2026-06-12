@@ -3,7 +3,7 @@ name = "elephc-phar"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Pure-Rust PHAR/TAR/ZIP archive reader bridge for elephc phar:// runtime paths"
+description = "Pure-Rust PHAR/TAR/ZIP archive bridge for elephc phar:// runtime paths"
 publish = false
 
 [lib]

@@ -48,6 +48,12 @@ echo file_get_contents("phar://" . $out_archive . "/generated.txt");
 echo file_get_contents("phar://" . $out_archive . "/nested/info.txt");
 echo file_get_contents("phar://" . $out_archive . "/streamed.txt");
 
+// The same phar:// write bridge can produce zip-based containers.
+$zip_archive = "examples/phar-reader/runtime-write.zip";
+@unlink($zip_archive);
+echo file_put_contents("phar://" . $zip_archive . "/zip-entry.txt", "zip payload\n") . " zip bytes written\n";
+echo file_get_contents("phar://" . $zip_archive . "/zip-entry.txt");
+
 // A missing entry returns false, like any failed fopen().
 $missing = @fopen("phar://examples/phar-reader/app.phar/does-not-exist.txt", "r");
 echo $missing === false ? "missing entry -> false\n" : "unexpected\n";

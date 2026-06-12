@@ -1,7 +1,7 @@
 //! Purpose:
 //! Pure-Rust archive bridge for elephc's `phar://` runtime paths.
 //! Extracts native PHAR, tar-based PHAR, and zip-based PHAR entries, and writes
-//! native PHAR entries through a small C ABI so generated assembly does not
+//! archive entries through a small C ABI so generated assembly does not
 //! duplicate archive parsers or manifest writers.
 //!
 //! Called from:
@@ -13,10 +13,12 @@
 //! Key details:
 //! - Returned FFI pointers reference a process-global buffer and remain valid
 //!   until the next `elephc_phar_extract_url` call.
-//! - ZIP64, encrypted ZIP entries, ZIP data descriptors, tar/zip writes, and
-//!   compressed PHAR writes are intentionally unsupported.
+//! - Writes preserve the archive family for existing native PHAR, tar, and ZIP
+//!   archives. ZIP writes emit stored entries; ZIP64, encrypted ZIP entries,
+//!   ZIP data descriptors, and compressed PHAR writes are intentionally
+//!   unsupported.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::{Mutex, OnceLock};
 
 const PHAR_FLAG_GZIP: u32 = 0x0000_1000;
@@ -30,10 +32,25 @@ const ZIP_FLAG_DATA_DESCRIPTOR: u16 = 0x0008;
 
 static EXTRACT_BUFFER: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PharCompression {
+    None,
+    Gzip,
+    Bzip2,
+}
+
 #[derive(Clone)]
-struct NativePharEntry {
+struct ArchiveEntry {
     name: Vec<u8>,
     payload: Vec<u8>,
+    compression: PharCompression,
+}
+
+#[derive(Clone, Copy)]
+enum ArchiveFormat {
+    NativePhar,
+    Tar,
+    Zip,
 }
 
 /// Extracts a `phar://archive/entry` URL into bytes.
@@ -61,13 +78,12 @@ pub fn extract_entry_bytes(archive: &[u8], entry: &[u8]) -> Option<Vec<u8>> {
         .or_else(|| parse_tar_entry(archive, entry))
 }
 
-/// Inserts or replaces one uncompressed entry in a native PHAR archive on disk.
+/// Inserts or replaces one entry in an archive on disk.
 ///
-/// Missing archives are created. Existing native PHAR archives are read,
-/// decoded, rewritten as uncompressed native PHAR, and SHA1-signed. Existing
-/// tar/zip containers are intentionally rejected because tar/zip writes are not
-/// part of elephc's supported `phar://` write surface.
-pub fn put_native_entry(
+/// Missing archives are created as native PHAR unless the path extension is
+/// `.tar` or `.zip`. Existing native PHAR, tar, and ZIP archives are read,
+/// decoded, updated, and rewritten in their original archive family.
+pub fn put_entry_bytes(
     archive_path: &[u8],
     entry_name: &[u8],
     payload: &[u8],
@@ -77,14 +93,14 @@ pub fn put_native_entry(
     }
     let archive_path = std::str::from_utf8(archive_path).ok()?;
     let path = std::path::Path::new(archive_path);
-    let mut entries = if path.exists() {
+    let (mut entries, format) = if path.exists() {
         let archive = std::fs::read(path).ok()?;
-        parse_native_phar_entries(&archive)?
+        parse_archive_entries(&archive)?
     } else {
-        Vec::new()
+        (Vec::new(), format_for_new_archive_path(path))
     };
-    upsert_native_entry(&mut entries, entry_name, payload);
-    let archive = build_native_phar_archive(&entries)?;
+    upsert_entry(&mut entries, entry_name, payload);
+    let archive = build_archive(&entries, format)?;
     std::fs::write(path, archive).ok()?;
     Some(payload.len())
 }
@@ -97,7 +113,7 @@ pub fn put_native_entry(
 pub fn put_url_bytes(url: &[u8], payload: &[u8]) -> Option<usize> {
     let rest = url.strip_prefix(b"phar://")?;
     let (archive_path, entry_name) = split_write_url_entry(rest)?;
-    put_native_entry(archive_path, entry_name, payload)
+    put_entry_bytes(archive_path, entry_name, payload)
 }
 
 /// C ABI wrapper around [`extract_url_bytes`].
@@ -123,7 +139,7 @@ pub unsafe extern "C" fn elephc_phar_extract_url(
     }
 }
 
-/// C ABI wrapper around [`put_native_entry`].
+/// C ABI wrapper around [`put_entry_bytes`].
 ///
 /// Returns the written payload length on success and `usize::MAX` on failure.
 /// The archive is always a native PHAR after a successful write.
@@ -141,7 +157,7 @@ pub unsafe extern "C" fn elephc_phar_put_entry(
     data_len: usize,
 ) -> usize {
     let result = std::panic::catch_unwind(|| {
-        put_native_entry(
+        put_entry_bytes(
             slice(archive_ptr, archive_len),
             slice(entry_ptr, entry_len),
             slice(data_ptr, data_len),
@@ -228,15 +244,43 @@ fn split_archive_entry(rest: &[u8]) -> Option<(&[u8], &[u8])> {
 
 /// Splits `phar://` URL body bytes for writes, including missing archives.
 fn split_write_url_entry(rest: &[u8]) -> Option<(&[u8], &[u8])> {
-    if let Some(idx) = find_subslice(rest, b".phar/") {
-        let split = idx.checked_add(b".phar".len())?;
-        return Some((rest.get(..split)?, rest.get(split + 1..)?));
+    for suffix in [b".phar/".as_slice(), b".tar/".as_slice(), b".zip/".as_slice()] {
+        if let Some(idx) = find_subslice(rest, suffix) {
+            let split = idx.checked_add(suffix.len().checked_sub(1)?)?;
+            return Some((rest.get(..split)?, rest.get(split + 1..)?));
+        }
     }
     let idx = rest.iter().rposition(|&byte| byte == b'/')?;
     if idx == 0 || idx + 1 >= rest.len() {
         return None;
     }
     Some((rest.get(..idx)?, rest.get(idx + 1..)?))
+}
+
+/// Parses archive bytes into decoded entries and reports the archive family.
+fn parse_archive_entries(data: &[u8]) -> Option<(Vec<ArchiveEntry>, ArchiveFormat)> {
+    parse_native_phar_entries(data)
+        .map(|entries| (entries, ArchiveFormat::NativePhar))
+        .or_else(|| parse_zip_entries(data).map(|entries| (entries, ArchiveFormat::Zip)))
+        .or_else(|| parse_tar_entries(data).map(|entries| (entries, ArchiveFormat::Tar)))
+}
+
+/// Selects the archive family for a missing output path.
+fn format_for_new_archive_path(path: &std::path::Path) -> ArchiveFormat {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("tar") => ArchiveFormat::Tar,
+        Some(ext) if ext.eq_ignore_ascii_case("zip") => ArchiveFormat::Zip,
+        _ => ArchiveFormat::NativePhar,
+    }
+}
+
+/// Builds an archive in the selected output family.
+fn build_archive(entries: &[ArchiveEntry], format: ArchiveFormat) -> Option<Vec<u8>> {
+    match format {
+        ArchiveFormat::NativePhar => build_native_phar_archive(entries),
+        ArchiveFormat::Tar => build_tar_archive(entries),
+        ArchiveFormat::Zip => build_zip_archive(entries),
+    }
 }
 
 /// Parses a native PHAR archive and returns a decoded entry payload.
@@ -248,7 +292,7 @@ fn parse_native_phar_entry(data: &[u8], entry: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Parses a native PHAR archive and returns every decoded entry payload.
-fn parse_native_phar_entries(data: &[u8]) -> Option<Vec<NativePharEntry>> {
+fn parse_native_phar_entries(data: &[u8]) -> Option<Vec<ArchiveEntry>> {
     let halt = b"__HALT_COMPILER();";
     let halt_idx = find_subslice(data, halt)?;
     let mut p = halt_idx + halt.len();
@@ -289,13 +333,25 @@ fn parse_native_phar_entries(data: &[u8]) -> Option<Vec<NativePharEntry>> {
         let start = data_section.checked_add(data_offset)?;
         let stored = data.get(start..start.checked_add(compressed)?)?;
         let payload = decode_phar_payload(stored, flags, uncompressed)?;
-        entries.push(NativePharEntry {
+        entries.push(ArchiveEntry {
             name: name.to_vec(),
             payload,
+            compression: phar_compression_from_flags(flags),
         });
         data_offset = data_offset.checked_add(compressed)?;
     }
     Some(entries)
+}
+
+/// Extracts the PHAR compression mode from per-entry flags.
+fn phar_compression_from_flags(flags: u32) -> PharCompression {
+    if flags & PHAR_FLAG_GZIP != 0 {
+        PharCompression::Gzip
+    } else if flags & PHAR_FLAG_BZIP2 != 0 {
+        PharCompression::Bzip2
+    } else {
+        PharCompression::None
+    }
 }
 
 /// Decodes a native PHAR entry payload according to its per-entry flags.
@@ -315,22 +371,24 @@ fn decode_phar_payload(stored: &[u8], flags: u32, uncompressed: usize) -> Option
     }
 }
 
-/// Inserts `payload` under `entry_name`, replacing an existing entry with the same name.
-fn upsert_native_entry(entries: &mut Vec<NativePharEntry>, entry_name: &[u8], payload: &[u8]) {
+/// Inserts `payload` under `entry_name`, preserving compression for replacements.
+fn upsert_entry(entries: &mut Vec<ArchiveEntry>, entry_name: &[u8], payload: &[u8]) {
     if let Some(existing) = entries.iter_mut().find(|entry| entry.name == entry_name) {
         existing.payload.clear();
         existing.payload.extend_from_slice(payload);
     } else {
-        entries.push(NativePharEntry {
+        entries.push(ArchiveEntry {
             name: entry_name.to_vec(),
             payload: payload.to_vec(),
+            compression: PharCompression::None,
         });
     }
 }
 
-/// Builds a SHA1-signed native PHAR archive from decoded, uncompressed entries.
-fn build_native_phar_archive(entries: &[NativePharEntry]) -> Option<Vec<u8>> {
+/// Builds a SHA1-signed native PHAR archive from decoded entries.
+fn build_native_phar_archive(entries: &[ArchiveEntry]) -> Option<Vec<u8>> {
     let mut manifest = Vec::new();
+    let mut stored_entries = Vec::with_capacity(entries.len());
     manifest.extend_from_slice(&u32::try_from(entries.len()).ok()?.to_le_bytes());
     manifest.extend_from_slice(&[0x11, 0x00]);
     manifest.extend_from_slice(&PHAR_HDR_SIGNATURE.to_le_bytes());
@@ -339,24 +397,167 @@ fn build_native_phar_archive(entries: &[NativePharEntry]) -> Option<Vec<u8>> {
     for entry in entries {
         let name_len = u32::try_from(entry.name.len()).ok()?;
         let payload_len = u32::try_from(entry.payload.len()).ok()?;
+        let stored = encode_phar_payload(&entry.payload, entry.compression)?;
+        let stored_len = u32::try_from(stored.len()).ok()?;
         manifest.extend_from_slice(&name_len.to_le_bytes());
         manifest.extend_from_slice(&entry.name);
         manifest.extend_from_slice(&payload_len.to_le_bytes());
         manifest.extend_from_slice(&0u32.to_le_bytes());
-        manifest.extend_from_slice(&payload_len.to_le_bytes());
+        manifest.extend_from_slice(&stored_len.to_le_bytes());
         manifest.extend_from_slice(&crc32(&entry.payload).to_le_bytes());
-        manifest.extend_from_slice(&PHAR_FILE_MODE_0644.to_le_bytes());
+        manifest.extend_from_slice(
+            &(PHAR_FILE_MODE_0644 | phar_compression_flag(entry.compression)).to_le_bytes(),
+        );
         manifest.extend_from_slice(&0u32.to_le_bytes());
+        stored_entries.push(stored);
     }
 
     let mut out = Vec::new();
     out.extend_from_slice(b"<?php __HALT_COMPILER(); ?>\r\n");
     out.extend_from_slice(&u32::try_from(manifest.len()).ok()?.to_le_bytes());
     out.extend_from_slice(&manifest);
-    for entry in entries {
-        out.extend_from_slice(&entry.payload);
+    for stored in stored_entries {
+        out.extend_from_slice(&stored);
     }
     append_sha1_signature(&mut out);
+    Some(out)
+}
+
+/// Encodes a native PHAR payload according to its preserved compression mode.
+fn encode_phar_payload(payload: &[u8], compression: PharCompression) -> Option<Vec<u8>> {
+    match compression {
+        PharCompression::None => Some(payload.to_vec()),
+        PharCompression::Gzip => {
+            let mut encoder =
+                flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(payload).ok()?;
+            encoder.finish().ok()
+        }
+        PharCompression::Bzip2 => Some(payload.to_vec()),
+    }
+}
+
+/// Returns the PHAR manifest flag for a compression mode.
+fn phar_compression_flag(compression: PharCompression) -> u32 {
+    match compression {
+        PharCompression::None => 0,
+        PharCompression::Gzip => PHAR_FLAG_GZIP,
+        PharCompression::Bzip2 => 0,
+    }
+}
+
+/// Builds a POSIX ustar archive with stored regular-file entries.
+fn build_tar_archive(entries: &[ArchiveEntry]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    for entry in entries {
+        let (name, prefix) = split_tar_name(&entry.name)?;
+        let mut header = [0u8; 512];
+        header[..name.len()].copy_from_slice(name);
+        if let Some(prefix) = prefix {
+            header[345..345 + prefix.len()].copy_from_slice(prefix);
+        }
+        let mode = b"0000644\0";
+        header[100..100 + mode.len()].copy_from_slice(mode);
+        let uid = b"0000000\0";
+        header[108..108 + uid.len()].copy_from_slice(uid);
+        header[116..116 + uid.len()].copy_from_slice(uid);
+        let size = format!("{:011o}\0", entry.payload.len());
+        header[124..124 + size.len()].copy_from_slice(size.as_bytes());
+        let mtime = b"00000000000\0";
+        header[136..136 + mtime.len()].copy_from_slice(mtime);
+        header[156] = b'0';
+        header[257..263].copy_from_slice(b"ustar\0");
+        header[263..265].copy_from_slice(b"00");
+        for byte in &mut header[148..156] {
+            *byte = b' ';
+        }
+        let checksum: u32 = header.iter().map(|&byte| byte as u32).sum();
+        let checksum = format!("{:06o}\0 ", checksum);
+        header[148..156].copy_from_slice(checksum.as_bytes());
+        out.extend_from_slice(&header);
+        out.extend_from_slice(&entry.payload);
+        out.resize(
+            out.len() + round_up_to_512(entry.payload.len())? - entry.payload.len(),
+            0,
+        );
+    }
+    out.extend_from_slice(&[0u8; 1024]);
+    Some(out)
+}
+
+/// Splits a tar entry path into ustar `name` and optional `prefix` fields.
+fn split_tar_name(name: &[u8]) -> Option<(&[u8], Option<&[u8]>)> {
+    if name.len() <= 100 {
+        return Some((name, None));
+    }
+    for idx in (1..name.len()).rev() {
+        if name[idx] != b'/' {
+            continue;
+        }
+        let prefix = &name[..idx];
+        let leaf = &name[idx + 1..];
+        if !leaf.is_empty() && prefix.len() <= 155 && leaf.len() <= 100 {
+            return Some((leaf, Some(prefix)));
+        }
+    }
+    None
+}
+
+/// Builds a ZIP archive with stored entries and central-directory records.
+fn build_zip_archive(entries: &[ArchiveEntry]) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut central = Vec::new();
+    for entry in entries {
+        let name_len = u16::try_from(entry.name.len()).ok()?;
+        let payload_len = u32::try_from(entry.payload.len()).ok()?;
+        let local_offset = u32::try_from(out.len()).ok()?;
+        let crc = crc32(&entry.payload);
+
+        out.extend_from_slice(&0x0403_4b50u32.to_le_bytes());
+        out.extend_from_slice(&20u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&ZIP_METHOD_STORE.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&crc.to_le_bytes());
+        out.extend_from_slice(&payload_len.to_le_bytes());
+        out.extend_from_slice(&payload_len.to_le_bytes());
+        out.extend_from_slice(&name_len.to_le_bytes());
+        out.extend_from_slice(&0u16.to_le_bytes());
+        out.extend_from_slice(&entry.name);
+        out.extend_from_slice(&entry.payload);
+
+        central.extend_from_slice(&0x0201_4b50u32.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&20u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&ZIP_METHOD_STORE.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&crc.to_le_bytes());
+        central.extend_from_slice(&payload_len.to_le_bytes());
+        central.extend_from_slice(&payload_len.to_le_bytes());
+        central.extend_from_slice(&name_len.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u16.to_le_bytes());
+        central.extend_from_slice(&0u32.to_le_bytes());
+        central.extend_from_slice(&local_offset.to_le_bytes());
+        central.extend_from_slice(&entry.name);
+    }
+    let central_offset = u32::try_from(out.len()).ok()?;
+    let central_len = u32::try_from(central.len()).ok()?;
+    let entry_count = u16::try_from(entries.len()).ok()?;
+    out.extend_from_slice(&central);
+    out.extend_from_slice(&0x0605_4b50u32.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&entry_count.to_le_bytes());
+    out.extend_from_slice(&entry_count.to_le_bytes());
+    out.extend_from_slice(&central_len.to_le_bytes());
+    out.extend_from_slice(&central_offset.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
     Some(out)
 }
 
@@ -385,9 +586,18 @@ fn crc32(bytes: &[u8]) -> u32 {
 
 /// Parses a ZIP archive central directory and returns a store/deflate entry.
 fn parse_zip_entry(data: &[u8], entry: &[u8]) -> Option<Vec<u8>> {
+    parse_zip_entries(data)?
+        .into_iter()
+        .find(|candidate| candidate.name == entry)
+        .map(|candidate| candidate.payload)
+}
+
+/// Parses a ZIP archive central directory and returns every supported entry.
+fn parse_zip_entries(data: &[u8]) -> Option<Vec<ArchiveEntry>> {
     let eocd = find_zip_eocd(data)?;
     let entry_count = le16(data, eocd + 10)? as usize;
     let central_dir_offset = le32(data, eocd + 16)? as usize;
+    let mut entries = Vec::with_capacity(entry_count);
     let mut p = central_dir_offset;
     for _ in 0..entry_count {
         if le32(data, p)? != 0x0201_4b50 {
@@ -406,21 +616,24 @@ fn parse_zip_entry(data: &[u8], entry: &[u8]) -> Option<Vec<u8>> {
         let local_offset = le32(data, p + 42)? as usize;
         let name_start = p + 46;
         let name = data.get(name_start..name_start.checked_add(name_len)?)?;
-        if name == entry {
-            return decode_zip_local_entry(
-                data,
-                local_offset,
-                method,
-                compressed_size,
-                uncompressed_size,
-            );
-        }
+        let payload = decode_zip_local_entry(
+            data,
+            local_offset,
+            method,
+            compressed_size,
+            uncompressed_size,
+        )?;
+        entries.push(ArchiveEntry {
+            name: name.to_vec(),
+            payload,
+            compression: PharCompression::None,
+        });
         p = name_start
             .checked_add(name_len)?
             .checked_add(extra_len)?
             .checked_add(comment_len)?;
     }
-    None
+    Some(entries)
 }
 
 /// Finds the ZIP end-of-central-directory record.
@@ -466,23 +679,36 @@ fn decode_zip_local_entry(
 
 /// Parses a POSIX tar archive and returns a regular-file entry.
 fn parse_tar_entry(data: &[u8], entry: &[u8]) -> Option<Vec<u8>> {
+    parse_tar_entries(data)?
+        .into_iter()
+        .find(|candidate| candidate.name == entry)
+        .map(|candidate| candidate.payload)
+}
+
+/// Parses a POSIX tar archive and returns regular-file entries.
+fn parse_tar_entries(data: &[u8]) -> Option<Vec<ArchiveEntry>> {
     let mut p = 0usize;
+    let mut entries = Vec::new();
     while p.checked_add(512)? <= data.len() {
         let header = &data[p..p + 512];
         if header.iter().all(|&b| b == 0) {
-            return None;
+            return Some(entries);
         }
         let size = parse_tar_octal(&header[124..136])?;
         let payload_start = p.checked_add(512)?;
         let payload_end = payload_start.checked_add(size)?;
         let payload = data.get(payload_start..payload_end)?;
         let typeflag = header[156];
-        if (typeflag == 0 || typeflag == b'0') && tar_entry_name(header).as_deref() == Some(entry) {
-            return Some(payload.to_vec());
+        if typeflag == 0 || typeflag == b'0' {
+            entries.push(ArchiveEntry {
+                name: tar_entry_name(header)?,
+                payload: payload.to_vec(),
+                compression: PharCompression::None,
+            });
         }
         p = payload_start.checked_add(round_up_to_512(size)?)?;
     }
-    None
+    Some(entries)
 }
 
 /// Builds the full tar path from the `prefix` and `name` header fields.
@@ -562,32 +788,48 @@ mod tests {
     use flate2::Compression;
     use std::io::Write;
 
-    /// Builds a minimal native PHAR fixture with uncompressed entries.
-    fn build_native_phar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    /// Builds a minimal native PHAR fixture with entries carrying explicit flags.
+    fn build_native_phar_with_flags(entries: &[(&str, &[u8], u32, u32)]) -> Vec<u8> {
         let mut manifest = Vec::new();
         manifest.extend_from_slice(&(entries.len() as u32).to_le_bytes());
         manifest.extend_from_slice(&[0x11, 0x00]);
         manifest.extend_from_slice(&0u32.to_le_bytes());
         manifest.extend_from_slice(&0u32.to_le_bytes());
         manifest.extend_from_slice(&0u32.to_le_bytes());
-        for (name, content) in entries {
+        for (name, stored, uncompressed_len, flags) in entries {
             manifest.extend_from_slice(&(name.len() as u32).to_le_bytes());
             manifest.extend_from_slice(name.as_bytes());
-            manifest.extend_from_slice(&(content.len() as u32).to_le_bytes());
+            manifest.extend_from_slice(&uncompressed_len.to_le_bytes());
             manifest.extend_from_slice(&0u32.to_le_bytes());
-            manifest.extend_from_slice(&(content.len() as u32).to_le_bytes());
+            manifest.extend_from_slice(&(stored.len() as u32).to_le_bytes());
             manifest.extend_from_slice(&0u32.to_le_bytes());
-            manifest.extend_from_slice(&0x0000_01a4u32.to_le_bytes());
+            manifest.extend_from_slice(&flags.to_le_bytes());
             manifest.extend_from_slice(&0u32.to_le_bytes());
         }
         let mut out = Vec::new();
         out.extend_from_slice(b"<?php __HALT_COMPILER(); ?>\r\n");
         out.extend_from_slice(&(manifest.len() as u32).to_le_bytes());
         out.extend_from_slice(&manifest);
-        for (_, content) in entries {
-            out.extend_from_slice(content);
+        for (_, stored, _, _) in entries {
+            out.extend_from_slice(stored);
         }
         out
+    }
+
+    /// Builds a minimal native PHAR fixture with uncompressed entries.
+    fn build_native_phar(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let entries = entries
+            .iter()
+            .map(|(name, content)| (*name, *content, content.len() as u32, PHAR_FILE_MODE_0644))
+            .collect::<Vec<_>>();
+        build_native_phar_with_flags(&entries)
+    }
+
+    /// Builds a raw-DEFLATE payload for PHAR gzip entry fixtures.
+    fn deflate_payload(content: &[u8]) -> Vec<u8> {
+        let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(content).unwrap();
+        encoder.finish().unwrap()
     }
 
     /// Builds a small tar archive with regular-file entries.
@@ -722,15 +964,15 @@ mod tests {
         ));
         let path_bytes = path.to_string_lossy();
         assert_eq!(
-            put_native_entry(path_bytes.as_bytes(), b"one.txt", b"alpha"),
+            put_entry_bytes(path_bytes.as_bytes(), b"one.txt", b"alpha"),
             Some(5)
         );
         assert_eq!(
-            put_native_entry(path_bytes.as_bytes(), b"dir/two.txt", b"bravo"),
+            put_entry_bytes(path_bytes.as_bytes(), b"dir/two.txt", b"bravo"),
             Some(5)
         );
         assert_eq!(
-            put_native_entry(path_bytes.as_bytes(), b"one.txt", b"updated"),
+            put_entry_bytes(path_bytes.as_bytes(), b"one.txt", b"updated"),
             Some(7)
         );
         let archive = std::fs::read(&path).unwrap();
@@ -738,6 +980,89 @@ mod tests {
         assert_eq!(
             extract_entry_bytes(&archive, b"one.txt").as_deref(),
             Some(&b"updated"[..])
+        );
+        assert_eq!(
+            extract_entry_bytes(&archive, b"dir/two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+    }
+
+    /// Verifies native PHAR writes preserve gzip compression on replaced entries.
+    #[test]
+    fn writes_preserve_gzip_native_phar_entries() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_gzip_update_{}_{}.phar",
+            std::process::id(),
+            "unit"
+        ));
+        let original = b"gzip old payload gzip old payload";
+        let stored = deflate_payload(original);
+        let archive = build_native_phar_with_flags(&[(
+            "z.txt",
+            &stored,
+            original.len() as u32,
+            PHAR_FILE_MODE_0644 | PHAR_FLAG_GZIP,
+        )]);
+        std::fs::write(&path, archive).unwrap();
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"z.txt", b"gzip updated payload"),
+            Some(20)
+        );
+        let archive = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        let entries = parse_native_phar_entries(&archive).unwrap();
+        assert_eq!(entries[0].compression, PharCompression::Gzip);
+        assert_eq!(entries[0].payload, b"gzip updated payload");
+    }
+
+    /// Verifies tar writes preserve the tar container family while updating entries.
+    #[test]
+    fn writes_tar_entries() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_tar_write_{}_{}.tar",
+            std::process::id(),
+            "unit"
+        ));
+        std::fs::write(&path, build_tar(&[("one.txt", b"alpha")])).unwrap();
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"dir/two.txt", b"bravo"),
+            Some(5)
+        );
+        let archive = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            extract_entry_bytes(&archive, b"one.txt").as_deref(),
+            Some(&b"alpha"[..])
+        );
+        assert_eq!(
+            extract_entry_bytes(&archive, b"dir/two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+        assert_ne!(archive.get(0..5), Some(&b"<?php"[..]));
+    }
+
+    /// Verifies ZIP writes preserve the ZIP container family while updating entries.
+    #[test]
+    fn writes_zip_entries() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_zip_write_{}_{}.zip",
+            std::process::id(),
+            "unit"
+        ));
+        std::fs::write(&path, build_zip(&[("one.txt", b"alpha", true)])).unwrap();
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"dir/two.txt", b"bravo"),
+            Some(5)
+        );
+        let archive = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert_eq!(archive.get(0..4), Some(&[0x50, 0x4b, 0x03, 0x04][..]));
+        assert_eq!(
+            extract_entry_bytes(&archive, b"one.txt").as_deref(),
+            Some(&b"alpha"[..])
         );
         assert_eq!(
             extract_entry_bytes(&archive, b"dir/two.txt").as_deref(),
