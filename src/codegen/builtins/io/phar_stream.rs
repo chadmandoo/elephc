@@ -103,7 +103,7 @@ fn is_phar_write_mode(mode: &str) -> bool {
 /// Unlike the read path the archive need not exist yet, so the split happens at
 /// the first `.phar/` boundary; if none is present it falls back to the longest
 /// existing-file prefix. Returns `None` when neither rule yields an entry.
-fn resolve_write_target(url: &str) -> Option<(String, String)> {
+pub(crate) fn resolve_write_target(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("phar://")?;
     if let Some(idx) = rest.find(".phar/") {
         let archive = &rest[..idx + 5];
@@ -373,7 +373,7 @@ fn find_subslice(hay: &[u8], needle: &[u8]) -> Option<usize> {
 /// content and patches the size/CRC fields, which sit at fixed negative offsets
 /// from the end of the template (uncompressed at -24, compressed at -16, crc at
 /// -12) — so `__rt_phar_write_finalize` derives them from the template length.
-fn build_phar_write_template(entry: &str) -> Vec<u8> {
+pub(crate) fn build_phar_write_template(entry: &str) -> Vec<u8> {
     let name = entry.as_bytes();
     let mut out = Vec::new();
     out.extend_from_slice(b"<?php __HALT_COMPILER(); ?>\r\n");

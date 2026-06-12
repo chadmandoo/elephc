@@ -164,7 +164,10 @@ pub(super) fn lower_fopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
         if path.starts_with("ftp://") {
             return lower_literal_ftp_fopen(ctx, inst, path);
         }
-        if path.starts_with("phar://") && !literal_fopen_mode_is_write(ctx, mode)? {
+        if path.starts_with("phar://") {
+            if literal_fopen_mode_is_write(ctx, mode)? {
+                return lower_literal_phar_fopen_write(ctx, inst, path);
+            }
             return lower_literal_phar_fopen_read(ctx, inst, path);
         }
         if path.starts_with("http://") {
@@ -220,7 +223,10 @@ fn emit_literal_fopen_result(
     if path.starts_with("ftp://") {
         return emit_literal_ftp_fopen_result(ctx, path);
     }
-    if path.starts_with("phar://") && !literal_fopen_mode_is_write(ctx, mode)? {
+    if path.starts_with("phar://") {
+        if literal_fopen_mode_is_write(ctx, mode)? {
+            return emit_literal_phar_fopen_write_result(ctx, path);
+        }
         return emit_literal_phar_fopen_read_result(ctx, path);
     }
     if path.starts_with("http://") {
@@ -701,6 +707,77 @@ fn emit_literal_phar_fopen_read_result(ctx: &mut FunctionContext<'_>, path: &str
     }
     box_stream_fd_or_false_result(ctx, "fopen_phar");
     Ok(())
+}
+
+/// Lowers a literal write-mode `fopen("phar://...", ...)` through the PHAR writer.
+fn lower_literal_phar_fopen_write(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    path: &str,
+) -> Result<()> {
+    emit_literal_phar_fopen_write_result(ctx, path)?;
+    store_if_result(ctx, inst)
+}
+
+/// Emits the boxed stream result for a literal write-mode `phar://` stream open.
+fn emit_literal_phar_fopen_write_result(ctx: &mut FunctionContext<'_>, path: &str) -> Result<()> {
+    match emit_phar_write_open_for_literal(ctx, path)? {
+        true => match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.emitter.instruction("mov w0, #0x5000");                     // low half of the phar-write descriptor 0x50000000
+                ctx.emitter.instruction("lsl w0, w0, #16");                     // form the phar-write synthetic descriptor
+            }
+            Arch::X86_64 => {
+                ctx.emitter.instruction("mov eax, 0x50000000");                 // return the phar-write synthetic descriptor
+            }
+        },
+        false => match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.emitter.instruction("mov x0, #-1");                         // unresolved phar write target lowers to PHP false
+            }
+            Arch::X86_64 => {
+                ctx.emitter.instruction("mov rax, -1");                         // unresolved phar write target lowers to PHP false
+            }
+        },
+    }
+    box_stream_fd_or_false_result(ctx, "fopen_phar_write");
+    Ok(())
+}
+
+/// Seeds the PHAR write buffer for a literal target and records the output archive path.
+fn emit_phar_write_open_for_literal(ctx: &mut FunctionContext<'_>, url: &str) -> Result<bool> {
+    let Some((archive, entry)) = crate::codegen::builtins::phar_stream::resolve_write_target(url)
+    else {
+        return Ok(false);
+    };
+    let template = crate::codegen::builtins::phar_stream::build_phar_write_template(&entry);
+    let (template_label, template_len) = ctx.data.add_string(&template);
+    let (path_label, path_len) = ctx.data.add_string(archive.as_bytes());
+    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_symbol_address(ctx.emitter, "x9", &path_label);
+            abi::emit_symbol_address(ctx.emitter, "x10", "_phar_write_path_ptr");
+            ctx.emitter.instruction("str x9, [x10]");                           // record the archive path pointer for finalize
+            ctx.emitter.instruction(&format!("mov x9, #{}", path_len));         // materialize the archive path byte length
+            abi::emit_symbol_address(ctx.emitter, "x10", "_phar_write_path_len");
+            ctx.emitter.instruction("str x9, [x10]");                           // record the archive path length for finalize
+            abi::emit_symbol_address(ctx.emitter, "x0", &template_label);
+            ctx.emitter.instruction(&format!("mov x1, #{}", template_len));     // pass the single-entry PHAR template length
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_open");
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "r9", &path_label);
+            abi::emit_symbol_address(ctx.emitter, "r10", "_phar_write_path_ptr");
+            ctx.emitter.instruction("mov QWORD PTR [r10], r9");                 // record the archive path pointer for finalize
+            abi::emit_symbol_address(ctx.emitter, "r10", "_phar_write_path_len");
+            ctx.emitter.instruction(&format!("mov QWORD PTR [r10], {}", path_len)); // record the archive path length for finalize
+            abi::emit_symbol_address(ctx.emitter, "rdi", &template_label);
+            ctx.emitter.instruction(&format!("mov rsi, {}", template_len));     // pass the single-entry PHAR template length
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_open");
+        }
+    }
+    Ok(true)
 }
 
 /// Returns true when a literal fopen mode opens a PHAR entry for writing.
@@ -3321,9 +3398,52 @@ pub(super) fn lower_file_put_contents(
     super::ensure_arg_count(inst, "file_put_contents", 2)?;
     let path = expect_operand(inst, 0)?;
     let data = expect_operand(inst, 1)?;
+    if let Some(path_literal) = optional_const_string_operand(ctx, path)? {
+        if path_literal.starts_with("phar://") {
+            return lower_literal_phar_file_put_contents(ctx, inst, &path_literal, data);
+        }
+    }
     match ctx.emitter.target.arch {
         Arch::AArch64 => lower_file_put_contents_arm64(ctx, path, data)?,
         Arch::X86_64 => lower_file_put_contents_x86_64(ctx, path, data)?,
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers one-shot `file_put_contents("phar://archive/entry", data)`.
+fn lower_literal_phar_file_put_contents(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    path: &str,
+    data: ValueId,
+) -> Result<()> {
+    if !emit_phar_write_open_for_literal(ctx, path)? {
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.emitter.instruction("mov x0, #-1");                         // unresolved phar write target returns failure
+            }
+            Arch::X86_64 => {
+                ctx.emitter.instruction("mov rax, -1");                         // unresolved phar write target returns failure
+            }
+        }
+        return store_if_result(ctx, inst);
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_to_result(ctx, data, "file_put_contents phar data")?;
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_append");
+            abi::emit_push_reg(ctx.emitter, "x0");
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_finalize");
+            abi::emit_pop_reg(ctx.emitter, "x0");
+        }
+        Arch::X86_64 => {
+            load_string_to_result(ctx, data, "file_put_contents phar data")?;
+            ctx.emitter.instruction("mov rsi, rax");                            // pass the entry payload pointer to the phar writer
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_append");
+            abi::emit_push_reg(ctx.emitter, "rax");
+            abi::emit_call_label(ctx.emitter, "__rt_phar_write_finalize");
+            abi::emit_pop_reg(ctx.emitter, "rax");
+        }
     }
     store_if_result(ctx, inst)
 }

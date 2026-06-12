@@ -1788,6 +1788,36 @@ echo file_put_contents("phar://out.phar/note.txt", "via fpc");
     assert_eq!(&tail[4..8], b"GBMB", "phar magic missing");
 }
 
+/// EIR phar:// write streams seed the runtime PHAR writer instead of falling
+/// through to a literal filesystem path named `phar://...`.
+#[test]
+fn test_fopen_phar_write_runtime_readback() {
+    let out = compile_and_run(
+        r#"<?php
+$f = fopen("phar://streamed.phar/hello.txt", "w");
+echo fwrite($f, "streamed") . "|";
+echo (fclose($f) ? "closed" : "failed") . "|";
+$archive = "streamed.phar";
+echo file_get_contents("phar://" . $archive . "/hello.txt");
+"#,
+    );
+    assert_eq!(out, "8|closed|streamed");
+}
+
+/// EIR one-shot phar:// writes use the same signed archive runtime as
+/// `fopen()` + `fwrite()` + `fclose()` and are readable through a runtime URL.
+#[test]
+fn test_file_put_contents_phar_runtime_readback() {
+    let out = compile_and_run(
+        r#"<?php
+echo file_put_contents("phar://single.phar/note.txt", "via fpc") . "|";
+$archive = "single.phar";
+echo file_get_contents("phar://" . $archive . "/note.txt");
+"#,
+    );
+    assert_eq!(out, "7|via fpc");
+}
+
 /// `file_get_contents()` of a literal `phar://` URL decodes the entry at compile
 /// time (like the fopen read fast path) and returns its bytes as a string; a
 /// missing entry returns `false`.
