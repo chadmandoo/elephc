@@ -1,5 +1,9 @@
 # Phase 04 — IR → ASM Backend (1:1, no optimization)
 
+> **Current status:** Historical phase plan. EIR is now the default and only
+> active implementation backend. References below to keeping the legacy backend
+> working were Phase 04 parity scaffolding, not current feature-work policy.
+
 > **For agentic workers:** Build a new backend that takes an EIR `Module` and produces assembly. The goal is **semantic equivalence** to the current `src/codegen/` backend on every `tests/codegen/` fixture, NOT byte-identical assembly. Zero new optimizations.
 
 **Goal:** A new module `src/codegen_ir/` that walks EIR and emits ASM identical-in-behavior to today's AST → ASM path. After this phase, choosing the IR backend produces correct programs; choosing the legacy backend continues to work. No default switch yet (that's Phase 05).

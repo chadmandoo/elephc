@@ -108,9 +108,29 @@ Each test runs in an isolated temp directory. Tests run in parallel — the `com
 
 ```
 PHP source → Lexer → Parser → Magic constants → Conditional compilation → Resolver
-→ NameResolver → Constant folding → Type Checker / warnings → Optimizer passes
-→ Codegen → runtime cache → assembler/linker → binary
+→ NameResolver → Constant folding → Type Checker / warnings → AST optimizer passes
+→ EIR lowering / validation → EIR codegen → runtime cache → assembler/linker
+→ binary
 ```
+
+### Backend policy
+
+EIR is the only active backend for new implementation work. New language
+features, builtins, runtime semantics, optimizer behavior, ownership paths, and
+target support must be implemented through the AST → EIR → EIR codegen path.
+
+The legacy direct AST → ASM backend and the `--ast-backend` path are frozen.
+Ignore them for feature work: do not add new semantics, parity fixes,
+optimizations, or target-specific lowering there. Touch legacy direct emitters
+only for narrowly scoped build-break fixes caused by shared API changes,
+for diagnostic comparison while debugging, or to remove/isolate the legacy path.
+If a task appears to require extending the legacy backend, stop and justify why
+before making that change.
+
+This freeze does not apply to shared target/runtime infrastructure still used by
+EIR, such as `src/codegen/abi/`, `src/codegen/runtime/`, runtime data emission,
+linking, and target convention helpers. Those shared pieces remain active, but
+new PHP-visible behavior must be driven by EIR lowering and `src/codegen_ir/`.
 
 ### Key modules
 
@@ -124,8 +144,11 @@ PHP source → Lexer → Parser → Magic constants → Conditional compilation 
 | `src/resolver/` | `resolve()` | Resolves `include`/`require`, discovers declarations, and tracks include-loaded function variants. Runs before namespace/name canonicalization |
 | `src/name_resolver/` | `resolve()` | Applies namespace/use rules, rewrites references to canonical fully-qualified names, handles PHP-style builtin fallback, and flattens namespace-only AST nodes before type checking |
 | `src/types/` | `check()` | Type checking, returns `CheckResult` with `TypeEnv`, function/class/interface/enum/FFI metadata, warnings, required libraries, and the internal `Mixed` type for heterogeneous assoc-array values |
-| `src/optimize/`, `src/optimize.rs` | `fold_constants()`, `propagate_constants()`, `eliminate_dead_code()` | Constant folding/propagation, control-flow pruning/normalization, DCE, and effect modeling |
-| `src/codegen/` | `generate()` / `generate_user_asm()` | AST → target assembly string. Top-level orchestration lives in `mod.rs`, while most lowering lives under `expr/`, `stmt/`, and `runtime/` |
+| `src/optimize/`, `src/optimize.rs` | `fold_constants()`, `propagate_constants()`, `eliminate_dead_code()` | AST-level constant folding/propagation, control-flow pruning/normalization, DCE, and effect modeling |
+| `src/ir/` | IR types / builders / validator | EIR program, function, block, instruction, terminator, value, local, effect, ownership, and textual-format definitions |
+| `src/ir_lower/` | `lower_program()` | Active AST → EIR lowering, including local slot creation, hidden temporaries, ownership annotations, and PHP call semantics |
+| `src/codegen_ir/` | `generate()` | Active EIR → target assembly backend |
+| `src/codegen/` | `generate()` / shared emitters | Frozen legacy direct AST backend plus shared ABI/runtime/target helpers still consumed by EIR |
 | `src/codegen/abi/` | ABI helpers | Target-specific argument materialization, frame layout, registers, stack slots, symbols, and call helpers |
 | `src/codegen/program_usage/` | Program scans | Collects codegen metadata such as required classes and variables before emission |
 | `src/runtime_cache.rs` | `prepare_runtime_object()` | Builds/reuses the target runtime object before final linking |
@@ -134,11 +157,12 @@ PHP source → Lexer → Parser → Magic constants → Conditional compilation 
 
 ### Codegen layout
 
-- `src/codegen/expr.rs` is mainly a dispatcher; most expression lowering now lives in focused helpers under `src/codegen/expr/`
-- `src/codegen/stmt.rs` is mainly a dispatcher; most statement lowering now lives in focused helpers under `src/codegen/stmt/`
-- `src/codegen/runtime/mod.rs` emits runtime code (`__rt_*` routines)
-- `src/codegen/runtime/data.rs` emits runtime `.data` / `.bss` symbols and metadata tables
-- `src/codegen/context.rs` carries variable layout, ownership state, class metadata, and FFI metadata through codegen
+- `src/ir_lower/` is the active high-level lowering layer. Add PHP-visible semantics there, not in legacy direct AST emitters.
+- `src/codegen_ir/lower_inst/` and `src/codegen_ir/lower_term.rs` are the active EIR instruction/terminator assembly lowerers.
+- `src/codegen_ir/context.rs`, `src/codegen_ir/frame.rs`, and `src/codegen_ir/value_placement.rs` carry active backend state, frame layout, and value placement.
+- `src/codegen/expr.rs`, `src/codegen/stmt.rs`, and their focused legacy helper modules are frozen direct AST backend dispatchers. Do not extend them for new features.
+- `src/codegen/runtime/mod.rs` emits shared runtime code (`__rt_*` routines)
+- `src/codegen/runtime/data.rs` emits shared runtime `.data` / `.bss` symbols and metadata tables
 - `src/codegen/abi/` centralizes target-specific register, stack, frame, symbol, and call mechanics. Prefer these helpers over hardcoding ARM64 or x86_64 details in feature emitters.
 
 ### Adding a new operator
@@ -149,7 +173,7 @@ PHP source → Lexer → Parser → Magic constants → Conditional compilation 
 4. Add one line to `infix_bp()` in `src/parser/expr/pratt.rs` (the Pratt parser binding power table)
 5. Add type checking/inference in the relevant `src/types/checker/` file, usually under `inference/ops.rs` or expression inference
 6. Add optimizer/effect handling when the operator can be folded, propagated, pruned, or has side effects
-7. Add target-aware codegen in the relevant file under `src/codegen/expr/` (and only touch `src/codegen/expr.rs` if the dispatcher must learn about a new helper path)
+7. Add EIR lowering in the relevant `src/ir_lower/expr/` path and target-aware EIR codegen under `src/codegen_ir/lower_inst/` when the operator needs a new IR instruction or lowering path. Do not extend the frozen legacy direct AST emitter.
 8. Add tests in all 4 test files
 
 ### Adding a new statement type
@@ -159,8 +183,8 @@ PHP source → Lexer → Parser → Magic constants → Conditional compilation 
 3. Add resolver/name-resolver handling if the statement can contain names, declarations, includes, function variants, or expressions
 4. Add type checking in the relevant `src/types/checker/` module
 5. Add optimizer/effects/warnings handling if the statement can be folded, pruned, read variables, write variables, or alter control flow
-6. Add codegen in the relevant file under `src/codegen/stmt/` (and only touch `src/codegen/stmt.rs` if the dispatcher must learn about a new helper path)
-7. If it introduces variables or hidden temporaries, update local collection in `src/codegen/functions/locals.rs` and any main-emission allocation needed before frame sizing
+6. Add EIR lowering in `src/ir_lower/stmt/` and target-aware EIR codegen under `src/codegen_ir/` when the statement needs new instruction or terminator support. Do not extend the frozen legacy direct AST emitter.
+7. If it introduces variables or hidden temporaries, update EIR local/temp declaration in `src/ir_lower/context.rs` and any frame-layout allocation needed before frame sizing
 8. Add tests
 
 ### Adding or changing an AST node
@@ -175,9 +199,9 @@ Common places to audit:
 - Type checking, inference, return analysis, warnings, and type compatibility in `src/types/`
 - Optimizer folding, propagation, DCE, control-flow normalization, and effect modeling in `src/optimize/`
 - Program usage scans in `src/codegen/program_usage/`
-- Local/hidden-slot collection in `src/codegen/functions/locals.rs`
-- Ownership cleanup helpers in `src/codegen/expr/ownership.rs` and related runtime/GC paths
-- Expression/statement codegen dispatchers plus the focused lowering module
+- Local/hidden-slot declaration in `src/ir_lower/context.rs` and frame placement in `src/codegen_ir/`
+- Ownership metadata in `src/ir_lower/ownership.rs`, EIR ownership lowering in `src/codegen_ir/lower_inst/ownership.rs`, and related runtime/GC paths
+- EIR lowering in `src/ir_lower/` plus EIR backend lowering in `src/codegen_ir/`
 - Lexer/parser/codegen/error/regression tests, depending on the surface area
 
 ### Adding a new built-in function
@@ -188,14 +212,14 @@ Common places to audit:
 4. Add type signature handling in the appropriate `src/types/checker/builtins/<category>.rs` file (argument count, value types, return type, warnings, required Linux libraries).
 5. Add first-class callable support in `first_class_callable_builtin_sig()` if the builtin should work through first-class callable syntax or callable aliases.
 6. Add optimizer effect modeling in `src/optimize/effects/builtins.rs` when purity, reads, writes, or thrown/fatal behavior matters for DCE/constant propagation.
-7. Add the codegen return type to `src/codegen/functions/types/builtins.rs` when local type inference needs to know the result type before the builtin is emitted.
-8. Create a new file in `src/codegen/builtins/<category>/` (e.g., `strings/my_func.rs`).
-9. Add `mod my_func;` plus dispatcher wiring in the category's `mod.rs`.
-10. If the function needs a runtime routine, create it under `src/codegen/runtime/<category>/`.
-11. Add module/re-export wiring in the relevant `runtime/<category>/mod.rs`, then call it from the runtime emitter orchestration.
+7. Add or update EIR call/lowering support in `src/ir_lower/expr/` when argument materialization, hidden temporaries, or ownership differ from ordinary calls.
+8. Add target-aware EIR backend support in `src/codegen_ir/lower_inst/builtins/<category>.rs` or the closest focused EIR lowering module.
+9. If the function needs a runtime routine, create it under `src/codegen/runtime/<category>/`.
+10. Add module/re-export wiring in the relevant `runtime/<category>/mod.rs`, then call it from the runtime emitter orchestration.
+11. Leave the frozen legacy `src/codegen/builtins/` path untouched unless a narrow shared-API build fix is required.
 12. Update docs and add codegen/error tests. New PHP-visible builtins should include at least one case-insensitive or namespaced call test when relevant.
 
-Do not stop after wiring only the checker and codegen dispatcher. A builtin is not complete until the catalog, `function_exists()`, case-insensitive lookup, and namespace fallback all see it. New builtins should include at least one case-insensitive or namespaced call test when the feature is PHP-visible.
+Do not stop after wiring only the checker and EIR backend dispatcher. A builtin is not complete until the catalog, `function_exists()`, case-insensitive lookup, and namespace fallback all see it. New builtins should include at least one case-insensitive or namespaced call test when the feature is PHP-visible.
 
 Leaf builtin/runtime files contain exactly **one emitter function**. Keep dispatcher/re-export files (`mod.rs`) as orchestration-only files, and keep runtime data emission in `src/codegen/runtime/data.rs`.
 
@@ -205,11 +229,11 @@ Do not list every builtin in this guide. `src/types/checker/builtins/catalog.rs`
 
 All function-like call surfaces must share the same argument rules instead of normalizing locally in individual emitters:
 
-- Shared named/positional/spread semantics live in `src/types/call_args.rs` whenever they are not codegen-specific.
-- `src/types/call_args.rs` owns the semantic planner (`CallArgPlan` / `plan_call_args`). The checker and codegen should consume that plan; they should not rebuild named-argument matching, duplicate detection, static associative-spread expansion, spread bounds, or the regular/variadic split locally.
+- Shared named/positional/spread semantics live in `src/types/call_args/` whenever they are not codegen-specific.
+- `src/types/call_args/` owns the semantic planner (`CallArgPlan` / `plan_call_args`). The checker and EIR lowering should consume that plan; they should not rebuild named-argument matching, duplicate detection, static associative-spread expansion, spread bounds, or the regular/variadic split locally.
 - If a codegen surface uses an internal signature with hidden parameters, such as closure captures, pass the caller-visible regular parameter count through `plan_call_args_with_regular_param_count()` instead of letting the planner infer it from the full internal signature.
 - Type-checker validation and diagnostic mapping lives in `src/types/checker/functions/call_validation.rs`; it maps planner errors to `CompileError` diagnostics instead of owning the semantic rules.
-- `src/codegen/expr/calls/args.rs` is call-argument orchestration: planner consumption, spread checks, and ABI materialization. Source-order named/spread lowering lives in `src/codegen/expr/calls/args/named.rs` and must also consume the shared plan.
+- `src/ir_lower/expr/` owns active EIR call-argument lowering: planner consumption, source-order named/spread lowering, spread checks, and hidden-temp creation. `src/codegen_ir/` then materializes the lowered call through target-aware ABI helpers. The legacy `src/codegen/expr/calls/` path is frozen.
 - User-defined calls, builtins, and extern calls must use the same named/spread normalization rules before any callee-specific lowering runs.
 - PHP call unpacking with static string keys maps to named arguments (`f(...["a" => 1])` behaves like `f(a: 1)`). Static numeric keys remain positional, and duplicate static string keys inside one unpack use PHP's last-wins behavior before planning.
 - When adding or extending a builtin, verify `first_class_callable_builtin_sig()` as well as the direct builtin signature so first-class callable syntax and callable aliases stay coherent.
@@ -218,7 +242,7 @@ All function-like call surfaces must share the same argument rules instead of no
 - A positional spread into a variadic callee fills visible regular parameters first; only the remaining tail becomes the variadic array.
 - User-defined variadics accept unknown named arguments as string-keyed variadic entries; internal/builtin variadics reject unknown named arguments like PHP internals.
 - Ref-like parameters, including mutating builtin parameters, must avoid value-temp preevaluation so the original storage is passed/mutated.
-- If hidden named-argument temporaries are introduced, update `src/codegen/functions/locals.rs` and main emission so slots are allocated before frame-size calculation.
+- If hidden named-argument temporaries are introduced, update `src/ir_lower/context.rs` and EIR frame placement so slots are allocated before frame-size calculation.
 
 ### Optimizer and effects
 
@@ -317,6 +341,7 @@ Adding or updating function docblocks must not change code behavior. Do not alte
 ### Codegen conventions (target-aware)
 
 - Prefer helpers from `src/codegen/abi/` for registers, stack slots, frame layout, argument materialization, symbol addresses, and calls.
+- New feature emitters belong in `src/codegen_ir/`; the legacy direct AST emitters under `src/codegen/expr/`, `src/codegen/stmt/`, and `src/codegen/builtins/` are frozen.
 - New feature emitters must support every supported target through `emitter.target` or clearly isolate target-specific code behind existing target helpers with explicit tests and diagnostics.
 - Avoid hardcoding ARM64 register names, x86_64 register names, syscall numbers, object formats, or stack alignment rules in shared lowering code.
 - Do not add an ARM64-only runtime helper, builtin emitter, ABI path, or ownership cleanup path unless the feature is intentionally target-gated and documented as unsupported elsewhere.

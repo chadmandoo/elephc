@@ -44,7 +44,7 @@ If any production path still requires the legacy code, document it in `docs/inte
 
 - [ ] **Step 2: Remove `--ast-backend` from CLI**
 
-In `src/cli.rs`, remove the `--ast-backend` flag. The argument parser should error with `unknown flag: --ast-backend; the IR backend is the only backend since v0.26.0`.
+In `src/cli.rs`, remove the `--ast-backend` flag. The argument parser should error with `unknown flag: --ast-backend; the EIR backend is the only supported backend`.
 
 - [ ] **Step 3: Run full gate**
 

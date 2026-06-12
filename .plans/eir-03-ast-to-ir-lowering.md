@@ -1,5 +1,10 @@
 # Phase 03 — AST → IR Lowering
 
+> **Current status:** Historical phase plan. EIR lowering is now part of the
+> active production path, and the legacy direct AST backend is frozen. References
+> below to the legacy backend as production path are superseded by `AGENTS.md`
+> and `ROADMAP.md`.
+
 > **For agentic workers:** Build the pass that consumes a typed AST (after frontend/optimizer) and produces an EIR `Module`. No assembly is emitted; the existing AST → ASM backend remains the production path. Output is exercised by a new `--emit-ir` CLI flag and by a parallel test harness.
 
 **Goal:** Lower every `ExprKind` and `StmtKind` variant currently handled by `src/codegen/` into EIR, preserving PHP semantics. Validate the resulting module after each top-level lowering.

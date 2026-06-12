@@ -8,7 +8,7 @@ foundations, and concrete product tracks without a major-version release gate.
 
 Current direction:
 
-- Finish the well-bounded PHP-visible compatibility gaps before backend replacement.
+- Finish the well-bounded PHP-visible compatibility gaps on the EIR backend.
 - Keep completed historical items in their original version sections.
 - Move optimizer work behind EIR, benchmark evidence, and real-world validation.
 - Treat shared libraries, the PHP extension bridge, and WebAssembly as later 0.x product tracks.
@@ -660,13 +660,13 @@ imposed. See `docs/internals/the-ir.md`.
 - [x] `--emit-ir` CLI flag for diagnostics and snapshot testing
 - [x] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
 - [x] Default backend switch from AST to EIR, with `--ast-backend` retained as an explicit fallback
-- [x] CI default-EIR gate, legacy fallback coverage, and IR-only benchmark job for parity and regression tracking
+- [x] CI default-EIR gate, frozen fallback smoke coverage, and IR-only benchmark job for parity and regression tracking
 - [ ] Linear-scan register allocator (Poletto-Sarkar) with liveness analysis, live intervals, allocation table, separate int / float pools, and callee-saved preservation across calls
 - [ ] Register-pressure mitigations: caller-saved reuse for non-call-crossing intervals; better spill heuristic
 
-Expected outcome: EIR is the default backend in v0.24.x, the legacy AST
-backend remains available through `--ast-backend` as a fallback until real-world
-validation is complete, and ≥15% performance improvement on compute benchmarks
+Expected outcome: EIR is the default and only active implementation backend in
+v0.24.x. The legacy AST backend is frozen behind `--ast-backend` for diagnostics
+and removal work only, and ≥15% performance improvement on compute benchmarks
 after Phase 06 by end of v0.24.x.
 
 ## v0.25.x — EIR optimization passes
@@ -674,8 +674,8 @@ after Phase 06 by end of v0.24.x.
 Build the IR-level passes that the AST optimizer could not reach now that the
 EIR backend is the user-facing default.
 
-- [x] Deprecation warning on `--ast-backend` while keeping it available as a fallback for one minor version
-- [ ] Backend-switch release notes and documentation updates (`the-codegen.md`, `the-ir.md`)
+- [x] Deprecation warning on `--ast-backend`; from this point the legacy AST backend is frozen as a diagnostic-only fallback, not a feature/parity target
+- [ ] EIR-only backend release notes and documentation updates (`the-codegen.md`, `the-ir.md`) with `--ast-backend` documented only as frozen diagnostic fallback
 - [ ] Fixed-point IR pass driver with validation after each pass in test builds
 - [ ] Identity arithmetic folding (`x + 0`, `x * 1`, `x ^ x`, etc.)
 - [ ] Peephole patterns: redundant load/store, box/unbox cancellation, string-literal concat folding, paired acquire/release cancellation, redundant `Move` / `Borrow` cleanup
@@ -690,7 +690,7 @@ EIR backend is the user-facing default.
 - [ ] Small-function inliner (size threshold 24 instructions, non-recursive, no try/catch, no generators/fibers) (absorbs former v0.23 "Inline small functions")
 - [ ] Pipeline integration in fixed-point order
 
-Expected outcome: `--ast-backend` remains an escape hatch with a warning,
+Expected outcome: EIR remains the only active backend implementation target,
 additional 10–20% performance gain on loop-heavy and call-heavy benchmarks,
 and cumulative ≥30% improvement vs end-of-v0.23 baseline.
 
@@ -711,11 +711,11 @@ and 0.x validation rather than by speculative pass work.
 - [ ] Runtime routine dead stripping — include or link only runtime helpers reachable from the generated program instead of carrying the whole target runtime slice
 - [ ] Tail-call optimization — direct tail self- and mutual-recursion lowering on top of EIR (`Br` to function entry with parameter rebinding)
 - [ ] Performance within 2x of C -O0 on compute benchmarks
-- [ ] DOOM showcase performance gate after EIR optimizations — build and run a reproducible SDL benchmark for `showcases/doom`, track AST fallback vs EIR FPS / generated assembly size / runtime helper counts, and require no large real-world regression before legacy backend removal
+- [ ] DOOM showcase performance gate after EIR optimizations — build and run a reproducible SDL benchmark for `showcases/doom`, track EIR FPS / generated assembly size / runtime helper counts, optionally compare against the last known legacy baseline when available, and require no large real-world regression before deleting the frozen legacy backend
 - [ ] Real-world CLI tools compiled as validation
-- [ ] Keep the legacy AST → ASM backend available as a fallback until real-world validation has passed; do not remove it before this gate
-- [ ] Remove the deprecated `--ast-backend` CLI flag after validation; report it as unsupported once the IR backend is the only backend
-- [ ] Delete legacy AST → ASM emitter modules after all production paths consume the IR backend
+- [ ] Audit remaining references to `--ast-backend` and legacy AST emitters so docs, help text, and release notes present them as frozen diagnostic-only fallback before removal
+- [ ] Remove the deprecated `--ast-backend` CLI flag once diagnostic fallback is no longer needed; report it as unsupported
+- [ ] Delete frozen legacy AST → ASM emitter modules after shared ABI/runtime dependencies are disentangled
 - [ ] Rename `src/codegen_ir/` to `src/codegen/`
 - [ ] Move historical codegen doc to `docs/internals/legacy-codegen.md`; refresh `docs/internals/the-codegen.md` to describe the IR pipeline
 - [ ] Refresh `docs/internals/the-ir.md` as the canonical, non-preview IR contract for v1.0

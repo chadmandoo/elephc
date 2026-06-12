@@ -1,17 +1,22 @@
 # Phase 05 - Switch EIR Backend to Default
 
-> **For agentic workers:** This phase ships the EIR backend as the user-facing
-> default. Keep the legacy AST backend reachable through an explicit
-> `--ast-backend` fallback while the old emitter remains in-tree. No
-> optimization work in this phase.
+> **Current status:** Historical phase plan. The EIR switch is complete, and
+> the legacy AST backend is now frozen as a diagnostic-only fallback. Do not use
+> this plan to justify new work on the legacy backend; follow `AGENTS.md` and
+> `ROADMAP.md` instead.
+
+> **For agentic workers:** This historical phase shipped the EIR backend as the
+> user-facing default. The legacy AST backend is now frozen behind the explicit
+> `--ast-backend` diagnostic fallback while the old emitter remains in-tree. No
+> optimization work belongs in the legacy path.
 
 **Goal:** Move the default backend to EIR now that parity gates are green. Keep
-the legacy backend available as an escape hatch until real-world validation is
-complete. Remove it in Phase 09.
+the legacy backend frozen as a diagnostic-only fallback until it is removed in
+Phase 09.
 
 **Architecture:** `src/cli.rs` owns backend selection, and `src/pipeline.rs`
 uses that selection to choose AST -> ASM or AST -> EIR -> ASM. CI should run
-the EIR backend on the normal path and keep explicit legacy fallback coverage.
+the EIR backend on the normal path and keep only frozen fallback smoke coverage.
 
 **Tech Stack:** Rust, existing CLI argument parser, existing CI configuration.
 
@@ -141,8 +146,8 @@ Only on public-ish entry points such as `codegen::generate_user_asm` and
 - [ ] **Step 3: Update `the-codegen.md`**
 
 At the top of `docs/internals/the-codegen.md`, explain that EIR is the default
-backend and that the legacy AST backend remains temporarily documented only as
-a fallback implementation.
+backend and that the legacy AST backend is documented only as a frozen
+diagnostic-only fallback implementation.
 
 - [ ] **Step 4: Commit**
 
