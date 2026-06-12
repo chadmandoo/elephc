@@ -237,6 +237,34 @@ Property type declarations are checked at compile time for both instance and sta
 
 Property default values are applied both for the normal `new ClassName()` form and for dynamic `new $variable()` instantiation (and therefore for runtime-instantiated stream wrappers and stream filters). When the class name resolves to a known class, dynamic instantiation follows the same allocation path as direct construction, so constructor arguments are evaluated and `__construct` runs normally.
 
+### Asymmetric visibility (`private(set)`)
+
+PHP 8.4 asymmetric visibility lets a property be read more widely than it can be written. A `(set)` modifier after a visibility keyword sets the write visibility independently of the read visibility:
+
+```php
+<?php
+class Counter {
+    public private(set) int $value = 0;     // read: public, write: private
+
+    public function increment(): void {
+        $this->value = $this->value + 1;     // allowed: write from inside the class
+    }
+}
+
+$c = new Counter();
+$c->increment();
+echo $c->value;   // 2 — public read
+// $c->value = 9; // rejected: write is private
+```
+
+Rules:
+
+- The `set` visibility applies to writes; the ordinary (read) visibility applies to reads.
+- A lone `private(set)` / `protected(set)` leaves the read visibility at its `public` default.
+- `protected(set)` allows writes from the declaring class and its subclasses; `private(set)` only from the declaring class.
+- The write visibility must not be weaker than the read visibility (`private public(set)` is rejected).
+- The property must be typed, and the modifier is not allowed on static properties.
+
 ### Property redeclaration
 
 A child class may redeclare a property inherited from a non-private parent. The redeclaration is checked at compile time and must follow PHP rules:

@@ -328,6 +328,7 @@ pub(crate) fn insert_enum_metadata(
             property_declaring_classes,
             defaults,
             property_visibilities,
+            property_set_visibilities: HashMap::new(),
             declared_properties,
             final_properties,
             readonly_properties,

@@ -125,6 +125,9 @@ pub(super) fn parse_method_params(
                     promoted_properties.push(ClassProperty {
                         name: n.clone(),
                         visibility,
+                        // Asymmetric visibility on promoted constructor parameters is not parsed
+                        // yet; only declared properties carry a `set` visibility.
+                        set_visibility: None,
                         type_expr: type_ann.clone(),
                         hooks: PropertyHooks::none(),
                         readonly,

@@ -224,7 +224,7 @@ fn check_object_property_write(
                 &format!("Undefined property: {}::{}", class_name, property),
             ));
         }
-        validate_object_property_access(checker, class_name, property, span)?;
+        validate_object_property_access(checker, class_name, property, true, span)?;
         let expected_ty = class_info
             .properties
             .iter()
@@ -270,12 +270,22 @@ fn validate_object_property_access(
     checker: &Checker,
     class_name: &str,
     property: &str,
+    is_write: bool,
     span: Span,
 ) -> Result<(), CompileError> {
     let class_info = checker.classes.get(class_name).ok_or_else(|| {
         CompileError::new(span, &format!("Undefined class: {}", class_name))
     })?;
-    if let Some(visibility) = class_info.property_visibilities.get(property) {
+    // A write to a property with PHP 8.4 asymmetric visibility uses its `set` visibility; reads
+    // and ordinary properties fall back to the regular (read) visibility.
+    let asymmetric_write = if is_write {
+        class_info.property_set_visibilities.get(property)
+    } else {
+        None
+    };
+    if let Some(visibility) =
+        asymmetric_write.or_else(|| class_info.property_visibilities.get(property))
+    {
         let declaring_class = class_info
             .property_declaring_classes
             .get(property)
@@ -411,7 +421,7 @@ fn resolve_object_array_property(
             &format!("Undefined property: {}::{}", class_name, property),
         ));
     }
-    validate_object_property_access(checker, class_name, property, span)?;
+    validate_object_property_access(checker, class_name, property, false, span)?;
     let property_has_declared_type = class_info.declared_properties.contains(property);
     let prop_ty = class_info
         .properties

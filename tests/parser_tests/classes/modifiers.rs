@@ -269,3 +269,44 @@ fn test_parse_trait_abstract_property_hook_contract() {
         other => panic!("Expected TraitDecl, got {:?}", other),
     }
 }
+
+/// Verifies that `public private(set)` parses as read visibility public with an asymmetric
+/// write (`set`) visibility of private.
+#[test]
+fn test_parse_asymmetric_visibility_public_private_set() {
+    let stmts = parse_source("<?php class C { public private(set) int $v = 1; }");
+    match &stmts[0].kind {
+        StmtKind::ClassDecl { properties, .. } => {
+            assert_eq!(properties[0].visibility, Visibility::Public);
+            assert_eq!(properties[0].set_visibility, Some(Visibility::Private));
+        }
+        other => panic!("Expected ClassDecl, got {:?}", other),
+    }
+}
+
+/// Verifies that a lone `private(set)` modifier leaves the read visibility at its public default
+/// while setting the write visibility to private.
+#[test]
+fn test_parse_asymmetric_visibility_set_only_defaults_get_public() {
+    let stmts = parse_source("<?php class C { private(set) string $name = \"x\"; }");
+    match &stmts[0].kind {
+        StmtKind::ClassDecl { properties, .. } => {
+            assert_eq!(properties[0].visibility, Visibility::Public);
+            assert_eq!(properties[0].set_visibility, Some(Visibility::Private));
+        }
+        other => panic!("Expected ClassDecl, got {:?}", other),
+    }
+}
+
+/// Verifies that an ordinary property without a `(set)` modifier has no asymmetric write
+/// visibility.
+#[test]
+fn test_parse_property_without_set_visibility() {
+    let stmts = parse_source("<?php class C { public int $v = 1; }");
+    match &stmts[0].kind {
+        StmtKind::ClassDecl { properties, .. } => {
+            assert_eq!(properties[0].set_visibility, None);
+        }
+        other => panic!("Expected ClassDecl, got {:?}", other),
+    }
+}

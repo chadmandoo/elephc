@@ -342,6 +342,7 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
             properties.push(ClassProperty {
                 name: prop_name,
                 visibility: modifiers.visibility,
+                set_visibility: modifiers.set_visibility,
                 type_expr,
                 hooks,
                 readonly: modifiers.is_readonly,
@@ -411,6 +412,9 @@ fn parse_optional_property_type(
 /// Used internally during class-like body parsing to collect modifiers before processing a member declaration.
 pub(super) struct MemberModifiers {
     visibility: Visibility,
+    /// PHP 8.4 asymmetric visibility: the write (`set`) visibility from a `private(set)` /
+    /// `protected(set)` modifier, when present. Only meaningful for properties.
+    set_visibility: Option<Visibility>,
     is_static: bool,
     is_readonly: bool,
     is_abstract: bool,
@@ -422,25 +426,31 @@ pub(super) struct MemberModifiers {
 /// Default visibility is `Public` if no visibility modifier is present.
 fn parse_member_modifiers(tokens: &[(Token, Span)], pos: &mut usize) -> MemberModifiers {
     let mut visibility = Visibility::Public;
+    let mut set_visibility = None;
     let mut is_static = false;
     let mut is_readonly = false;
     let mut is_abstract = false;
     let mut is_final = false;
 
     loop {
+        // A visibility keyword immediately followed by `(set)` is a PHP 8.4 asymmetric write
+        // visibility (`private(set)`); otherwise it is the ordinary read visibility.
+        let visibility_keyword = match tokens.get(*pos).map(|(t, _)| t) {
+            Some(Token::Public) => Some(Visibility::Public),
+            Some(Token::Protected) => Some(Visibility::Protected),
+            Some(Token::Private) => Some(Visibility::Private),
+            _ => None,
+        };
+        if let Some(keyword) = visibility_keyword {
+            *pos += 1;
+            if consume_set_marker(tokens, pos) {
+                set_visibility = Some(keyword);
+            } else {
+                visibility = keyword;
+            }
+            continue;
+        }
         match tokens.get(*pos).map(|(t, _)| t) {
-            Some(Token::Public) => {
-                visibility = Visibility::Public;
-                *pos += 1;
-            }
-            Some(Token::Protected) => {
-                visibility = Visibility::Protected;
-                *pos += 1;
-            }
-            Some(Token::Private) => {
-                visibility = Visibility::Private;
-                *pos += 1;
-            }
             Some(Token::Static) => {
                 is_static = true;
                 *pos += 1;
@@ -463,10 +473,30 @@ fn parse_member_modifiers(tokens: &[(Token, Span)], pos: &mut usize) -> MemberMo
 
     MemberModifiers {
         visibility,
+        set_visibility,
         is_static,
         is_readonly,
         is_abstract,
         is_final,
+    }
+}
+
+/// Consumes a `(set)` marker at `*pos` (an `LParen`, the `set` identifier, and an `RParen`),
+/// returning `true` when one was present. Leaves `*pos` unchanged otherwise. `set` is matched
+/// case-insensitively, mirroring PHP's case-insensitive modifier keywords.
+fn consume_set_marker(tokens: &[(Token, Span)], pos: &mut usize) -> bool {
+    let is_set_ident = matches!(
+        tokens.get(*pos + 1).map(|(t, _)| t),
+        Some(Token::Identifier(name)) if name.eq_ignore_ascii_case("set")
+    );
+    if matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::LParen))
+        && is_set_ident
+        && matches!(tokens.get(*pos + 2).map(|(t, _)| t), Some(Token::RParen))
+    {
+        *pos += 3;
+        true
+    } else {
+        false
     }
 }
 
@@ -683,6 +713,7 @@ fn parse_interface_body(
             properties.push(ClassProperty {
                 name: prop_name,
                 visibility: Visibility::Public,
+                set_visibility: None,
                 type_expr,
                 hooks,
                 readonly: false,

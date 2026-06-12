@@ -873,3 +873,40 @@ fn test_error_operator_after_arrow_is_rejected() {
         "Expected property or method name after '->'",
     );
 }
+
+/// Verifies that writing a `public private(set)` property from outside the class is rejected,
+/// while reading it (not shown) is allowed.
+#[test]
+fn test_error_asymmetric_visibility_external_write() {
+    expect_error(
+        "<?php class C { public private(set) int $v = 1; } $c = new C(); $c->v = 9;",
+        "Cannot access private property: C::v",
+    );
+}
+
+/// Verifies that a `set` visibility weaker than the `get` visibility is rejected.
+#[test]
+fn test_error_asymmetric_visibility_set_weaker_than_get() {
+    expect_error(
+        "<?php class C { private public(set) int $v = 1; }",
+        "Asymmetric set visibility must not be weaker than the get visibility",
+    );
+}
+
+/// Verifies that asymmetric visibility on an untyped property is rejected.
+#[test]
+fn test_error_asymmetric_visibility_requires_type() {
+    expect_error(
+        "<?php class C { public private(set) $v = 1; }",
+        "Property with asymmetric visibility must have a type",
+    );
+}
+
+/// Verifies that asymmetric visibility on a static property is rejected.
+#[test]
+fn test_error_asymmetric_visibility_on_static_property() {
+    expect_error(
+        "<?php class C { public private(set) static int $v = 1; }",
+        "Static property may not declare asymmetric visibility",
+    );
+}
