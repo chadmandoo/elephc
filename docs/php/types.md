@@ -60,6 +60,21 @@ Rules:
 - A multi-member union may mix these with other members (`int|string|null`); the `null` member keeps the whole union nullable.
 - The nullable shorthand still may not be combined with a pipe union: write `T|null`, not `?T|U`.
 
+### Intersection types
+
+An intersection type `A&B` (PHP 8.1) declares a value that satisfies every listed class/interface. elephc accepts the syntax in parameter and return positions:
+
+```php
+<?php
+function render(Renderable&Cacheable $widget): string {
+    return $widget->render();
+}
+```
+
+The `&` is recognized as an intersection only when it is followed by another type; a `&` before a variable (`int &$x`) remains the by-reference marker.
+
+Current limitation: the value is typed as its **first** listed member, so member access resolves against that member (`$widget->render()` above, from `Renderable`). Methods declared only on later members are not yet resolved, and argument compatibility is checked against the first member. Full structural intersection resolution is planned.
+
 ### Never
 
 `never` marks a function, method, closure, or interface method that **must not return normally**. The function body is expected to either `throw`, call `exit()`/`die()`, or loop forever.

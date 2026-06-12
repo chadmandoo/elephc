@@ -26,6 +26,10 @@ pub enum TypeExpr {
     Named(Name),
     Nullable(Box<TypeExpr>),
     Union(Vec<TypeExpr>),
+    /// PHP 8.1 intersection type `A&B`: a value satisfying every member (all are class/interface
+    /// types). Represented for the value as its first member; argument boundaries validate that
+    /// every member is satisfied.
+    Intersection(Vec<TypeExpr>),
 }
 
 impl TypeExpr {
@@ -55,6 +59,12 @@ impl TypeExpr {
                 inner.substitute_relative_class_types(self_class, parent_class),
             )),
             TypeExpr::Union(members) => TypeExpr::Union(
+                members
+                    .iter()
+                    .map(|member| member.substitute_relative_class_types(self_class, parent_class))
+                    .collect(),
+            ),
+            TypeExpr::Intersection(members) => TypeExpr::Intersection(
                 members
                     .iter()
                     .map(|member| member.substitute_relative_class_types(self_class, parent_class))

@@ -27,6 +27,8 @@ mod union_types;
 mod relative_types;
 #[path = "oop/anonymous_classes.rs"]
 mod anonymous_classes;
+#[path = "oop/intersection_types.rs"]
+mod intersection_types;
 #[path = "oop/misc.rs"]
 mod misc;
 #[path = "oop/attributes.rs"]

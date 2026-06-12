@@ -830,3 +830,39 @@ fn test_parse_single_arg_trailing_comma_in_call() {
         panic!("expected ExprStmt");
     }
 }
+
+#[test]
+/// Verifies that an intersection type `A&B` parses as `TypeExpr::Intersection` with both members,
+/// and is not mistaken for a by-reference parameter.
+fn test_parse_intersection_type_param() {
+    let stmts = parse_source("<?php function f(A&B $x): int { return 0; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { params, .. } => {
+            match &params[0].1 {
+                Some(TypeExpr::Intersection(members)) => {
+                    assert_eq!(members.len(), 2);
+                    assert_eq!(members[0], TypeExpr::Named(Name::unqualified("A")));
+                    assert_eq!(members[1], TypeExpr::Named(Name::unqualified("B")));
+                }
+                other => panic!("Expected Intersection, got {:?}", other),
+            }
+            // The parameter is by-value, not by-reference.
+            assert!(!params[0].3);
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}
+
+#[test]
+/// Verifies that a by-reference parameter `int &$x` is still parsed as by-reference, not as an
+/// intersection — the `&` is followed by a variable, not a type.
+fn test_parse_byref_not_intersection() {
+    let stmts = parse_source("<?php function f(int &$x): int { return 0; }");
+    match &stmts[0].kind {
+        StmtKind::FunctionDecl { params, .. } => {
+            assert_eq!(params[0].1, Some(TypeExpr::Int));
+            assert!(params[0].3, "parameter should be by-reference");
+        }
+        other => panic!("Expected FunctionDecl, got {:?}", other),
+    }
+}

@@ -1079,6 +1079,11 @@ pub(crate) fn type_expr_to_php_type(type_expr: &TypeExpr) -> PhpType {
         TypeExpr::Union(members) => {
             PhpType::Union(members.iter().map(type_expr_to_php_type).collect())
         }
+        // An intersection value is an object pointer; type it as its first member.
+        TypeExpr::Intersection(members) => members
+            .first()
+            .map(type_expr_to_php_type)
+            .unwrap_or(PhpType::Mixed),
     }
 }
 

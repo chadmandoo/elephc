@@ -109,6 +109,22 @@ pub(crate) fn parse_type_expr(
         ));
     }
 
+    // Intersection type `A&B`: an `&` immediately followed by another type. A bare `&` followed
+    // by a `$variable`/`...` is the by-reference marker, handled by the parameter parser, so it is
+    // left in place here.
+    if matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Ampersand))
+        && type_starts_at(tokens, *pos + 1)
+    {
+        let mut members = vec![ty];
+        while matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Ampersand))
+            && type_starts_at(tokens, *pos + 1)
+        {
+            *pos += 1; // consume '&'
+            members.push(parse_atomic_type_expr(tokens, pos, span)?);
+        }
+        return Ok(TypeExpr::Intersection(members));
+    }
+
     let mut members = vec![ty];
     while matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Pipe)) {
         *pos += 1;
@@ -116,6 +132,21 @@ pub(crate) fn parse_type_expr(
     }
 
     Ok(normalize_union_members(members))
+}
+
+/// Returns true if the token at `index` can begin a (non-nullable) type — used to tell an
+/// intersection `A&B` apart from a by-reference parameter `A &$x`.
+fn type_starts_at(tokens: &[(Token, Span)], index: usize) -> bool {
+    matches!(
+        tokens.get(index).map(|(token, _)| token),
+        Some(
+            Token::Identifier(_)
+                | Token::Backslash
+                | Token::Self_
+                | Token::Static
+                | Token::Parent
+        )
+    )
 }
 
 /// Collapses a parsed union member list into its canonical `TypeExpr`.
