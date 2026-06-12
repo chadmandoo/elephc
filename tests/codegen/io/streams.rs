@@ -2253,6 +2253,36 @@ echo stream_set_blocking(STDIN, true) ? "b" : "B";
     assert_eq!(out, "nb");
 }
 
+/// Verifies nonblocking fread/fgets misses do not mark the stream EOF.
+#[test]
+fn test_nonblocking_socket_reads_do_not_mark_eof() {
+    let out = compile_and_run(
+        r#"<?php
+$pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);
+stream_set_blocking($pair[0], false);
+$first = fread($pair[0], 5);
+echo $first === "" ? "empty" : "data";
+echo "|";
+echo feof($pair[0]) ? "eof" : "open";
+echo "|";
+$line = fgets($pair[0]);
+echo $line === false ? "false" : "line";
+echo "|";
+echo feof($pair[0]) ? "eof" : "open";
+echo "|";
+$char = fgetc($pair[0]);
+echo $char === false ? "false" : "char";
+echo "|";
+echo feof($pair[0]) ? "eof" : "open";
+echo "|";
+fwrite($pair[1], "hi\n");
+echo fgets($pair[0]);
+echo feof($pair[0]) ? "eof" : "open";
+"#,
+    );
+    assert_eq!(out, "empty|open|false|open|false|open|hi\nopen");
+}
+
 /// Verifies compiled PHP output for stream socket shutdown on connection.
 #[test]
 fn test_stream_socket_shutdown_on_connection() {

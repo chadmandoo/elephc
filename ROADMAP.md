@@ -603,8 +603,11 @@ none are needed for typical stream usage.
   planned change. Covered by Phase 32 and a focused context-option regression.
   (`ssl.passphrase` is likewise unsupported — rustls reads only unencrypted
   keys.)
-- [ ] **Misc lower-level gaps** — true non-blocking semantics (beyond the
-  `O_NONBLOCK` fcntl).
+- [x] **Misc lower-level gaps** — true non-blocking semantics beyond the
+  `O_NONBLOCK` fcntl: native `read()` paths now distinguish
+  `EAGAIN`/`EWOULDBLOCK` from EOF, so `fread()` returns an empty result,
+  `fgetc()`/`fgets()` return `false`, and `stream_get_line()` also avoids
+  setting `feof()` on transient non-blocking misses.
 
 ### Database access — PDO (SQLite, PostgreSQL, MySQL/MariaDB)
 
