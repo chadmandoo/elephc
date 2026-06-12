@@ -10,6 +10,7 @@
 
 use crate::errors::CompileError;
 use crate::lexer::Token;
+use crate::names::{property_hook_get_method, property_hook_set_method};
 use crate::parser::ast::{
     ClassConst, ClassMethod, ClassProperty, EnumCaseDecl, PropertyHooks, Stmt, StmtKind, TraitUse,
     TypeExpr, Visibility,
@@ -17,7 +18,7 @@ use crate::parser::ast::{
 use crate::parser::expr::parse_expr;
 use crate::span::Span;
 
-use super::super::params::{parse_name_list, parse_type_expr};
+use super::super::params::{looks_like_typed_param, parse_name_list, parse_type_expr};
 use super::super::{expect_semicolon, expect_token, parse_block};
 use super::method_params::parse_method_params;
 use super::traits::parse_trait_use;
@@ -318,7 +319,8 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
             } else {
                 None
             };
-            let hooks = parse_property_hooks(tokens, pos, member_span)?;
+            let (hooks, hook_accessors) =
+                parse_property_hooks(tokens, pos, member_span, &prop_name, type_expr.as_ref())?;
             if modifiers.is_abstract && default.is_some() {
                 return Err(CompileError::new(
                     member_span,
@@ -374,12 +376,13 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
                         "Private abstract properties are not supported",
                     ));
                 }
-            } else if hooks.any() {
+            } else if hooks.any() && hook_accessors.is_empty() {
                 return Err(CompileError::new(
                     member_span,
                     "Non-abstract property hook must have a body",
                 ));
             }
+            methods.extend(hook_accessors);
             properties.push(ClassProperty {
                 name: prop_name,
                 visibility: modifiers.visibility,
@@ -732,7 +735,14 @@ fn parse_interface_body(
                     "Interface properties cannot have a default value",
                 ));
             }
-            let hooks = parse_property_hooks(tokens, pos, member_span)?;
+            let (hooks, hook_accessors) =
+                parse_property_hooks(tokens, pos, member_span, &prop_name, type_expr.as_ref())?;
+            if !hook_accessors.is_empty() {
+                return Err(CompileError::new(
+                    member_span,
+                    "Interface property hooks cannot have a body",
+                ));
+            }
             if !hooks.any() {
                 return Err(CompileError::new(
                     member_span,
@@ -800,14 +810,23 @@ fn parse_interface_body(
 /// Returns a `PropertyHooks` indicating which hooks are present (`get`, `set`, by-ref variants).
 /// Consumes the opening `{`, hook declarations, and closing `}`.
 /// Returns an error if no hook declarations appear or if the block is malformed.
+/// Parses the property-hook tail of a property declaration: either a bare `;` (no hooks), or a
+/// `{ get ...; set ...; }` block. Concrete hook bodies are compiled into synthetic accessor methods
+/// (`__propget_<name>()` / `__propset_<name>($value)`) returned alongside the [`PropertyHooks`]
+/// flags, so the bodies flow through every later pass as ordinary methods. `prop_name`/`prop_type`
+/// name and type the property the hooks belong to; the get accessor returns `prop_type` and the set
+/// accessor receives it. Abstract/interface hooked properties (a hook ending in `;`) produce flags
+/// but no accessor methods.
 fn parse_property_hooks(
     tokens: &[(Token, Span)],
     pos: &mut usize,
     span: Span,
-) -> Result<PropertyHooks, CompileError> {
+    prop_name: &str,
+    prop_type: Option<&TypeExpr>,
+) -> Result<(PropertyHooks, Vec<ClassMethod>), CompileError> {
     if *pos < tokens.len() && tokens[*pos].0 == Token::Semicolon {
         *pos += 1;
-        return Ok(PropertyHooks::none());
+        return Ok((PropertyHooks::none(), Vec::new()));
     }
     if !matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::LBrace)) {
         return Err(CompileError::new(
@@ -818,6 +837,7 @@ fn parse_property_hooks(
     *pos += 1;
 
     let mut hooks = PropertyHooks::none();
+    let mut accessors: Vec<ClassMethod> = Vec::new();
     while *pos < tokens.len() && !matches!(tokens[*pos].0, Token::RBrace | Token::Eof) {
         let hook_span = tokens[*pos].1;
         let get_by_ref = if tokens[*pos].0 == Token::Ampersand {
@@ -836,22 +856,94 @@ fn parse_property_hooks(
             }
         };
         *pos += 1;
-
-        if !matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Semicolon)) {
+        let is_get = hook_name.eq_ignore_ascii_case("get");
+        let is_set = hook_name.eq_ignore_ascii_case("set");
+        if !is_get && !is_set {
             return Err(CompileError::new(
                 hook_span,
-                "Property hook bodies are not supported yet",
+                &format!("Unknown property hook '{}'", hook_name),
             ));
         }
-        *pos += 1;
 
-        if hook_name.eq_ignore_ascii_case("get") {
+        // Optional set-hook parameter list: `set(Type $value)` (the type is accepted but the
+        // property type governs); the default parameter name is `$value`.
+        let mut set_param = "value".to_string();
+        if is_set && matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::LParen)) {
+            *pos += 1;
+            if looks_like_typed_param(tokens, *pos) {
+                let _ = parse_type_expr(tokens, pos, hook_span)?;
+            }
+            match tokens.get(*pos).map(|(t, _)| t) {
+                Some(Token::Variable(name)) => {
+                    set_param = name.clone();
+                    *pos += 1;
+                }
+                _ => {
+                    return Err(CompileError::new(
+                        hook_span,
+                        "Expected '$value' parameter in set hook",
+                    ))
+                }
+            }
+            expect_token(
+                tokens,
+                pos,
+                &Token::RParen,
+                "Expected ')' after set hook parameter",
+            )?;
+        }
+
+        // Hook body: `;` (abstract), `=> expr;` (short), or `{ ... }` (block).
+        let body: Option<Vec<Stmt>> = match tokens.get(*pos).map(|(t, _)| t) {
+            Some(Token::Semicolon) => {
+                *pos += 1;
+                None
+            }
+            Some(Token::DoubleArrow) => {
+                *pos += 1;
+                let expr = parse_expr(tokens, pos)?;
+                expect_semicolon(tokens, pos)?;
+                if is_get {
+                    Some(vec![Stmt::new(StmtKind::Return(Some(expr)), hook_span)])
+                } else {
+                    return Err(CompileError::new(
+                        hook_span,
+                        "Short `set => expr` hooks require a backed property; use a block `set { ... }`",
+                    ));
+                }
+            }
+            Some(Token::LBrace) => Some(parse_block(tokens, pos)?),
+            _ => {
+                return Err(CompileError::new(
+                    hook_span,
+                    "Expected '=>', '{', or ';' in property hook",
+                ))
+            }
+        };
+
+        if is_get {
             if hooks.requires_get() {
                 return Err(CompileError::new(hook_span, "Duplicate get property hook"));
             }
             hooks.get = !get_by_ref;
             hooks.get_by_ref = get_by_ref;
-        } else if hook_name.eq_ignore_ascii_case("set") {
+            if let Some(body) = body {
+                accessors.push(ClassMethod {
+                    name: property_hook_get_method(prop_name),
+                    visibility: Visibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_final: false,
+                    has_body: true,
+                    params: Vec::new(),
+                    variadic: None,
+                    return_type: prop_type.cloned(),
+                    body,
+                    span: hook_span,
+                    attributes: Vec::new(),
+                });
+            }
+        } else {
             if get_by_ref {
                 return Err(CompileError::new(
                     hook_span,
@@ -862,11 +954,22 @@ fn parse_property_hooks(
                 return Err(CompileError::new(hook_span, "Duplicate set property hook"));
             }
             hooks.set = true;
-        } else {
-            return Err(CompileError::new(
-                hook_span,
-                &format!("Unknown property hook '{}'", hook_name),
-            ));
+            if let Some(body) = body {
+                accessors.push(ClassMethod {
+                    name: property_hook_set_method(prop_name),
+                    visibility: Visibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_final: false,
+                    has_body: true,
+                    params: vec![(set_param, prop_type.cloned(), None, false)],
+                    variadic: None,
+                    return_type: Some(TypeExpr::Void),
+                    body,
+                    span: hook_span,
+                    attributes: Vec::new(),
+                });
+            }
         }
     }
 
@@ -879,5 +982,5 @@ fn parse_property_hooks(
     if !hooks.any() {
         return Err(CompileError::new(span, "Expected property hook declaration"));
     }
-    Ok(hooks)
+    Ok((hooks, accessors))
 }

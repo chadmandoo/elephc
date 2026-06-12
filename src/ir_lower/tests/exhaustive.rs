@@ -170,6 +170,7 @@ fn class_info(_class_name: &str) -> ClassInfo {
         property_declaring_classes: HashMap::new(),
         defaults: Vec::new(),
         property_visibilities: HashMap::new(),
+        property_set_visibilities: HashMap::new(),
         declared_properties: Default::default(),
         final_properties: Default::default(),
         readonly_properties: Default::default(),
@@ -341,6 +342,7 @@ fn lowers_every_stmt_variant_smoke() {
     let property = ClassProperty {
         name: "p".to_string(),
         visibility: Visibility::Public,
+        set_visibility: None,
         type_expr: Some(TypeExpr::Int),
         hooks: PropertyHooks::none(),
         readonly: false,

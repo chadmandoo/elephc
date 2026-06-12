@@ -310,3 +310,46 @@ fn test_parse_property_without_set_visibility() {
         other => panic!("Expected ClassDecl, got {:?}", other),
     }
 }
+
+/// Verifies a concrete `get` hook with a short body records the hook flag and generates a synthetic
+/// `__propget_<name>` accessor (and no setter) to carry the body through later passes.
+#[test]
+fn test_parse_concrete_get_hook_generates_accessor() {
+    let stmts = parse_source("<?php class C { public int $x { get => 42; } }");
+    match &stmts[0].kind {
+        StmtKind::ClassDecl {
+            properties, methods, ..
+        } => {
+            assert_eq!(properties[0].name, "x");
+            assert!(properties[0].hooks.get);
+            assert!(!properties[0].hooks.set);
+            assert!(methods.iter().any(|m| m.name == "__propget_x"));
+            assert!(!methods.iter().any(|m| m.name == "__propset_x"));
+        }
+        other => panic!("Expected ClassDecl, got {:?}", other),
+    }
+}
+
+/// Verifies a `get`/`set` hook pair with block bodies generates both accessor methods, and that a
+/// custom `set` parameter name is carried onto the generated setter's single parameter.
+#[test]
+fn test_parse_get_set_hooks_generate_both_accessors() {
+    let stmts = parse_source(
+        "<?php class C { private int $n = 0; public int $v { get { return $this->n; } set(int $newVal) { $this->n = $newVal; } } }",
+    );
+    match &stmts[0].kind {
+        StmtKind::ClassDecl {
+            properties, methods, ..
+        } => {
+            let v = properties.iter().find(|p| p.name == "v").unwrap();
+            assert!(v.hooks.get);
+            assert!(v.hooks.set);
+            let getter = methods.iter().find(|m| m.name == "__propget_v").unwrap();
+            assert!(getter.params.is_empty());
+            let setter = methods.iter().find(|m| m.name == "__propset_v").unwrap();
+            assert_eq!(setter.params.len(), 1);
+            assert_eq!(setter.params[0].0, "newVal");
+        }
+        other => panic!("Expected ClassDecl, got {:?}", other),
+    }
+}

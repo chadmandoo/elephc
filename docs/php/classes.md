@@ -190,7 +190,7 @@ class Square extends Shape {
 }
 ```
 
-The concrete redeclaration reuses the parent's slot (offsets are stable across the inheritance chain), so the property is accessible to both parent and child methods. elephc supports hook contracts (`{ get; }`, `{ set; }`, and `{ get; set; }`) in abstract classes, interfaces, and traits; executable hook bodies are not implemented yet.
+The concrete redeclaration reuses the parent's slot (offsets are stable across the inheritance chain), so the property is accessible to both parent and child methods. elephc supports hook contracts (`{ get; }`, `{ set; }`, and `{ get; set; }`) in abstract classes, interfaces, and traits, and executable hook bodies on concrete properties (see [Property hooks](#property-hooks-get--set)).
 
 ## Final classes, methods, and properties
 ```php
@@ -290,6 +290,75 @@ echo (new Child())->value; // 5
 ```
 
 Private parent properties are still considered separate slots in PHP, but elephc rejects same-named redeclarations through them; declare a different name in the child for now.
+
+### Property hooks (`get` / `set`)
+
+A property can define **hooks** that run when it is read or written, replacing hand-written getter and setter methods. The hooks live in a `{ ... }` block after the property name. Reading the property runs its `get` hook; assigning to it runs its `set` hook.
+
+A `get`-only property is **virtual** — it has no stored value of its own and is read-only. The short form `get => expr;` returns `expr`; the block form `get { ... }` runs statements and returns a value:
+
+```php
+<?php
+class Person {
+    public string $first = "Ada";
+    public string $last = "Lovelace";
+
+    public string $full {
+        get => $this->first . " " . $this->last;
+    }
+}
+
+echo (new Person())->full; // Ada Lovelace
+```
+
+A property with both `get` and `set` typically reads from and writes to a separate backing field. The value assigned to the property is available inside the `set` hook as `$value` (rename it with `set(Type $other)`):
+
+```php
+<?php
+class Thermostat {
+    private float $c = 0.0;
+
+    public float $celsius {
+        get => $this->c;
+        set { $this->c = $value; }
+    }
+
+    public float $fahrenheit {
+        get => $this->c * 9.0 / 5.0 + 32.0;
+        set { $this->c = ($value - 32.0) * 5.0 / 9.0; }
+    }
+}
+
+$t = new Thermostat();
+$t->fahrenheit = 212.0;
+echo $t->celsius; // 100
+```
+
+Inside a property's own hook, `$this->prop` accesses the raw stored value rather than re-running the hook, so a hook may read and write the property it belongs to (a *backed* property):
+
+```php
+<?php
+class Name {
+    public string $value {
+        get => $this->value;
+        set { $this->value = trim($value); }
+    }
+}
+
+$n = new Name();
+$n->value = "  Ada  ";
+echo $n->value; // Ada
+```
+
+Rules:
+
+- A property with a `get` hook but no `set` hook is read-only. Writing it is a compile-time error.
+- Hooked properties cannot have a default value and cannot be `static`, `final`, or `readonly`.
+- Each hook may be declared at most once per property.
+- The short `set => expr;` form is not supported; use a block `set { ... }`.
+- Hooks are inherited by subclasses along with the property.
+
+Abstract classes, interfaces, and traits may declare hook *contracts* (`{ get; }`, `{ set; }`, `{ get; set; }`) with no body; see [Abstract properties](#abstract-properties) and [Interfaces](#interfaces).
 
 ## Static properties
 Static properties use class-scoped storage and are accessed with `::`.
@@ -932,8 +1001,7 @@ Class constants (PHP 7.1+ visibility, PHP 8.1+ `final`) live on classes, interfa
 
 ## Limitations
 - `readonly static` properties are rejected to match PHP. Static properties in a `readonly class` are still mutable.
-- Property hook bodies are not implemented; elephc supports hook contracts only.
+- Backed property hooks may read and write their own backing slot, but the short `set => expr;` form is not supported; use a block `set { ... }`.
 - Shadowing a private parent property with a same-named child property is not yet supported (PHP gives them separate slots; elephc uses one slot per name)
 - Class constants must be literal-or-foldable expressions; cyclic constant references are not supported.
-- Anonymous classes (`new class { ... }`) are not yet supported.
 - Class attribute names and supported literal args are exposed at runtime through `class_attribute_names()`, `class_attribute_args()`, `class_get_attributes()`, and the supported `ReflectionClass`/`ReflectionMethod`/`ReflectionProperty::getAttributes()` APIs; parameter reflection is not yet available. `#[\Override]`, `#[\Deprecated]`, and `#[\AllowDynamicProperties]` are enforced/diagnosed/honored at compile time and runtime; `#[\SensitiveParameter]` is parsed but not yet propagated to parameters (refactor of param representation and stack-trace infrastructure pending).

@@ -9,6 +9,7 @@
 //! - Assignment checking must distinguish value writes, by-reference mutation, nullable access, and declared property contracts.
 
 use crate::errors::CompileError;
+use crate::names::{php_symbol_key, property_hook_get_method, property_hook_set_method};
 use crate::parser::ast::Expr;
 use crate::span::Span;
 use crate::types::{
@@ -246,6 +247,29 @@ fn check_object_property_write(
                 span,
                 &format!(
                     "Cannot assign to readonly property outside constructor: {}::{}",
+                    class_name, property
+                ),
+            ));
+        }
+        // A property with a `get` hook but no `set` hook is read-only: external writes are an error
+        // (PHP rejects writing a virtual/get-only hooked property). Writes from inside the property's
+        // own accessor target the raw backing slot and are allowed.
+        let has_get_hook = class_info
+            .methods
+            .contains_key(&php_symbol_key(&property_hook_get_method(property)));
+        let has_set_hook = class_info
+            .methods
+            .contains_key(&php_symbol_key(&property_hook_set_method(property)));
+        let in_own_accessor = checker.current_class.as_deref() == Some(class_name)
+            && checker.current_method.as_deref().is_some_and(|method| {
+                method == property_hook_get_method(property)
+                    || method == property_hook_set_method(property)
+            });
+        if has_get_hook && !has_set_hook && !in_own_accessor {
+            return Err(CompileError::new(
+                span,
+                &format!(
+                    "Cannot write to read-only hooked property {}::{} (it declares a get hook but no set hook)",
                     class_name, property
                 ),
             ));
