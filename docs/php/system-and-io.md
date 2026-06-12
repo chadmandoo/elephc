@@ -226,6 +226,8 @@ wrappers are documented in [Streams](streams.md).
 | `chmod()` | `chmod($filename, $mode): bool` | Change file mode. On a registered `scheme://` path it dispatches to the wrapper's `stream_metadata($path, STREAM_META_ACCESS, $mode)` and returns its `bool` result (false when the wrapper does not implement `stream_metadata`). |
 | `chown()` | `chown($filename, $user): bool` | Change owner by UID or user name. The group is left unchanged. On a registered `scheme://` path it dispatches to the wrapper's `stream_metadata($path, STREAM_META_OWNER, $uid)` (integer `$user`) or `stream_metadata($path, STREAM_META_OWNER_NAME, $name)` (string `$user`). |
 | `chgrp()` | `chgrp($filename, $group): bool` | Change group by GID or group name. The owner is left unchanged. On a registered `scheme://` path it dispatches to the wrapper's `stream_metadata($path, STREAM_META_GROUP, $gid)` (integer `$group`) or `stream_metadata($path, STREAM_META_GROUP_NAME, $name)` (string `$group`). |
+| `lchown()` | `lchown($filename, $user): bool` | Change a symlink's owner by UID or user name without following the link. The group is left unchanged. |
+| `lchgrp()` | `lchgrp($filename, $group): bool` | Change a symlink's group by GID or group name without following the link. The owner is left unchanged. |
 | `umask()` | `umask([$mask]): int` | Set the process umask and return the previous value. With no argument, returns the current umask without changing it (implemented by setting `umask(0)` and immediately restoring the original). |
 
 > Except for `umask()`, file-modification functions return `true` on success and `false` on failure.

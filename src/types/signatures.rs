@@ -373,6 +373,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "chmod" => Some(fixed(&["filename", "permissions"])),
         "chown" => Some(fixed(&["filename", "user"])),
         "chgrp" => Some(fixed(&["filename", "group"])),
+        "lchown" => Some(fixed(&["filename", "user"])),
+        "lchgrp" => Some(fixed(&["filename", "group"])),
         "touch" => Some(optional(
             &["filename", "mtime", "atime"],
             1,

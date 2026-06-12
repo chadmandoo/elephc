@@ -496,7 +496,7 @@ The first table covers the file/filesystem core; the subsections after it cover 
 | `__rt_fnmatch` | Match shell-style path globs with PHP/libc-compatible flag bits for the selected target |
 | `__rt_realpath` | Canonicalize an existing path, returning a null pointer on failure so codegen can box PHP `false` |
 | `__rt_pathinfo_str` / `__rt_pathinfo_array` | Return one `pathinfo()` component for component flags, or build the associative-array `PATHINFO_ALL` shape |
-| `__rt_chmod` / `__rt_chown` / `__rt_chown_user` / `__rt_chgrp_group` | File ownership and mode modification helpers |
+| `__rt_chmod` / `__rt_chown` / `__rt_lchown` / name-resolving variants | File ownership and mode modification helpers, including symlink-aware ownership updates |
 | `__rt_umask` / `__rt_ftruncate` | Process umask and file truncation helpers |
 | `__rt_fsync` / `__rt_fflush` / `__rt_fdatasync` | File descriptor flush helpers; `fflush()` maps to `fsync()` because elephc has no userspace stdio buffer |
 | `__rt_touch` | Create missing files and update access/modification timestamps |

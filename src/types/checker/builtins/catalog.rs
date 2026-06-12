@@ -214,6 +214,8 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "lcfirst",
     "link",
     "linkinfo",
+    "lchgrp",
+    "lchown",
     "log",
     "log10",
     "log2",

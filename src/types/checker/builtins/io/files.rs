@@ -163,7 +163,7 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Bool))
         }
-        "chown" | "chgrp" => {
+        "chown" | "chgrp" | "lchown" | "lchgrp" => {
             if args.len() != 2 {
                 return Err(CompileError::new(
                     span,

@@ -604,7 +604,7 @@ none are needed for typical stream usage.
   (`ssl.passphrase` is likewise unsupported — rustls reads only unencrypted
   keys.)
 - [ ] **Misc lower-level gaps** — true non-blocking semantics (beyond the
-  `O_NONBLOCK` fcntl), `realpath_cache_*`, and `lchown`/`lchgrp`.
+  `O_NONBLOCK` fcntl).
 
 ### Database access — PDO (SQLite, PostgreSQL, MySQL/MariaDB)
 

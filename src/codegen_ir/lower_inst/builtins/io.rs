@@ -3366,6 +3366,16 @@ pub(super) fn lower_chgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
     lower_chown_or_chgrp(ctx, inst, "chgrp", PrincipalKind::Group)
 }
 
+/// Lowers `lchown(path, owner)` for integer UIDs and string user names without following symlinks.
+pub(super) fn lower_lchown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_lchown_or_lchgrp(ctx, inst, "lchown", PrincipalKind::Owner)
+}
+
+/// Lowers `lchgrp(path, group)` for integer GIDs and string group names without following symlinks.
+pub(super) fn lower_lchgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    lower_lchown_or_lchgrp(ctx, inst, "lchgrp", PrincipalKind::Group)
+}
+
 /// Lowers `umask(mask?)` through the target-aware runtime helper.
 pub(super) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "umask", 0, 1)?;
@@ -3644,6 +3654,101 @@ fn lower_chown_or_chgrp_x86_64(
     Ok(())
 }
 
+/// Lowers the native symlink-aware path/principal convention for `lchown()` and `lchgrp()`.
+fn lower_lchown_or_lchgrp(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    kind: PrincipalKind,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 2)?;
+    let path = expect_operand(inst, 0)?;
+    let principal = expect_operand(inst, 1)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_lchown_or_lchgrp_aarch64(ctx, path, principal, name, kind)?,
+        Arch::X86_64 => lower_lchown_or_lchgrp_x86_64(ctx, path, principal, name, kind)?,
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Materializes `lchown()`/`lchgrp()` operands for the ARM64 runtime ABI.
+fn lower_lchown_or_lchgrp_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    path: ValueId,
+    principal: ValueId,
+    name: &str,
+    kind: PrincipalKind,
+) -> Result<()> {
+    load_string_to_result(ctx, path, name)?;
+    abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+    match ctx.load_value_to_result(principal)?.codegen_repr() {
+        PhpType::Str => {
+            ctx.emitter.instruction("mov x3, x1");                              // pass principal name pointer to symlink ownership helper
+            ctx.emitter.instruction("mov x4, x2");                              // pass principal name length to symlink ownership helper
+            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+            abi::emit_call_label(ctx.emitter, lprincipal_string_runtime(kind));
+        }
+        PhpType::Int => {
+            ctx.emitter.instruction("mov x9, x0");                              // preserve uid/gid while restoring the path
+            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+            if matches!(kind, PrincipalKind::Owner) {
+                ctx.emitter.instruction("mov x3, x9");                          // pass uid and leave symlink group unchanged
+                ctx.emitter.instruction("mov x4, #-1");                         // keep the symlink group unchanged
+            } else {
+                ctx.emitter.instruction("mov x3, #-1");                         // keep the symlink owner unchanged
+                ctx.emitter.instruction("mov x4, x9");                          // pass gid and leave symlink owner unchanged
+            }
+            abi::emit_call_label(ctx.emitter, "__rt_lchown");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} principal PHP type {:?}",
+                name, other
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Materializes `lchown()`/`lchgrp()` operands for the Linux x86_64 runtime ABI.
+fn lower_lchown_or_lchgrp_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    path: ValueId,
+    principal: ValueId,
+    name: &str,
+    kind: PrincipalKind,
+) -> Result<()> {
+    load_string_to_result(ctx, path, name)?;
+    abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+    match ctx.load_value_to_result(principal)?.codegen_repr() {
+        PhpType::Str => {
+            ctx.emitter.instruction("mov rdi, rax");                            // pass principal name pointer to symlink ownership helper
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass principal name length to symlink ownership helper
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+            abi::emit_call_label(ctx.emitter, lprincipal_string_runtime(kind));
+        }
+        PhpType::Int => {
+            ctx.emitter.instruction("mov r9, rax");                             // preserve uid/gid while restoring the path
+            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+            if matches!(kind, PrincipalKind::Owner) {
+                ctx.emitter.instruction("mov rdi, r9");                         // pass uid and leave symlink group unchanged
+                ctx.emitter.instruction("mov rsi, -1");                         // keep the symlink group unchanged
+            } else {
+                ctx.emitter.instruction("mov rdi, -1");                         // keep the symlink owner unchanged
+                ctx.emitter.instruction("mov rsi, r9");                         // pass gid and leave symlink owner unchanged
+            }
+            abi::emit_call_label(ctx.emitter, "__rt_lchown");
+        }
+        other => {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} principal PHP type {:?}",
+                name, other
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Returns the wrapper metadata option for string ownership changes.
 fn principal_name_option(kind: PrincipalKind) -> usize {
     match kind {
@@ -3665,6 +3770,14 @@ fn principal_string_runtime(kind: PrincipalKind) -> &'static str {
     match kind {
         PrincipalKind::Owner => "__rt_chown_user",
         PrincipalKind::Group => "__rt_chgrp_group",
+    }
+}
+
+/// Returns the string-principal runtime helper for symlink ownership changes.
+fn lprincipal_string_runtime(kind: PrincipalKind) -> &'static str {
+    match kind {
+        PrincipalKind::Owner => "__rt_lchown_user",
+        PrincipalKind::Group => "__rt_lchgrp_group",
     }
 }
 

@@ -250,6 +250,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "chmod" => io::lower_chmod(ctx, inst),
         "chown" => io::lower_chown(ctx, inst),
         "chgrp" => io::lower_chgrp(ctx, inst),
+        "lchown" => io::lower_lchown(ctx, inst),
+        "lchgrp" => io::lower_lchgrp(ctx, inst),
         "umask" => io::lower_umask(ctx, inst),
         "touch" => io::lower_touch(ctx, inst),
         "getcwd" => io::lower_getcwd(ctx, inst),
