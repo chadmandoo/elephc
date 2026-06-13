@@ -2137,6 +2137,43 @@ echo $pd->getMetadata() . "|" . $pd->__toString();
     );
 }
 
+/// `Phar` and `PharData` iterate over entries written through the OOP surface.
+#[test]
+fn test_phar_oop_iteration_tracks_written_entries() {
+    let out = compile_and_run(
+        r#"<?php
+$p = new Phar("iter.phar");
+$p->addFromString("one.txt", "alpha");
+$p["two.txt"] = "bravo";
+$p->addFromString("one.txt", "alpha2");
+echo ($p instanceof Iterator) ? "iter|" : "no-iter|";
+echo ($p instanceof Countable) ? "countable|" : "no-count|";
+echo $p->count() . "|";
+foreach ($p as $name => $info) {
+    echo $name . "=" . $info->getContent() . "|";
+}
+$p->rewind();
+echo get_class($p->current()) . "|";
+unset($p["two.txt"]);
+echo $p->count() . "|";
+foreach ($p as $name => $info) {
+    echo $name . "=" . $info->getContent() . "|";
+}
+$pd = new PharData("iter.tar");
+$pd->addFromString("tar.txt", "tar");
+foreach ($pd as $name => $info) {
+    echo $name . "=" . $info->getContent();
+}
+unlink("iter.phar");
+unlink("iter.tar");
+"#,
+    );
+    assert_eq!(
+        out,
+        "iter|countable|2|one.txt=alpha2|two.txt=bravo|PharFileInfo|1|one.txt=alpha2|tar.txt=tar"
+    );
+}
+
 /// `Phar::compressFiles()` and `decompressFiles()` rewrite native PHAR entry
 /// compression while preserving readable payloads.
 #[test]

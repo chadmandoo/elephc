@@ -31,7 +31,11 @@ fn insert_phar_like_class(class_map: &mut HashMap<String, FlattenedClass>, name:
         FlattenedClass {
             name: name.to_string(),
             extends: None,
-            implements: vec!["ArrayAccess".to_string()],
+            implements: vec![
+                "ArrayAccess".to_string(),
+                "Iterator".to_string(),
+                "Countable".to_string(),
+            ],
             is_abstract: false,
             is_final: false,
             is_readonly_class: false,
@@ -71,6 +75,8 @@ fn phar_properties() -> Vec<ClassProperty> {
         storage_property("metadata", TypeExpr::Str),
         storage_property("hasMetadata", TypeExpr::Bool),
         storage_property("stub", TypeExpr::Str),
+        storage_property("entries", array_type()),
+        storage_property("position", TypeExpr::Int),
     ]
 }
 
@@ -147,6 +153,17 @@ fn phar_methods() -> Vec<ClassMethod> {
             Some(TypeExpr::Str),
             return_body(property_access(this_expr(), "stub")),
         ),
+        method_with_body("rewind", Vec::new(), Some(TypeExpr::Void), phar_rewind_body()),
+        method_with_body("next", Vec::new(), Some(TypeExpr::Void), phar_next_body()),
+        method_with_body("valid", Vec::new(), Some(TypeExpr::Bool), phar_valid_body()),
+        method_with_body("key", Vec::new(), Some(mixed_type()), phar_key_body()),
+        method_with_body(
+            "current",
+            Vec::new(),
+            Some(named_type("PharFileInfo")),
+            phar_current_body(),
+        ),
+        method_with_body("count", Vec::new(), Some(TypeExpr::Int), phar_count_body()),
         method_with_body(
             "offsetExists",
             vec![param("offset", mixed_type())],
@@ -259,6 +276,8 @@ fn phar_construct_body() -> Vec<crate::parser::ast::Stmt> {
         property_assign_stmt(this_expr(), "metadata", string_expr("")),
         property_assign_stmt(this_expr(), "hasMetadata", bool_expr(false)),
         property_assign_stmt(this_expr(), "stub", string_expr("<?php __HALT_COMPILER(); ?>")),
+        property_assign_stmt(this_expr(), "entries", empty_array_expr()),
+        property_assign_stmt(this_expr(), "position", int_expr(0)),
     ]
 }
 
@@ -296,6 +315,47 @@ fn phar_set_stub_body() -> Vec<crate::parser::ast::Stmt> {
     ]
 }
 
+/// Builds `rewind()` by resetting the object-local entry position.
+fn phar_rewind_body() -> Vec<crate::parser::ast::Stmt> {
+    vec![property_assign_stmt(this_expr(), "position", int_expr(0))]
+}
+
+/// Builds `next()` by advancing the object-local entry position.
+fn phar_next_body() -> Vec<crate::parser::ast::Stmt> {
+    vec![property_assign_stmt(
+        this_expr(),
+        "position",
+        binary_expr(phar_position_expr(), BinOp::Add, int_expr(1)),
+    )]
+}
+
+/// Builds `valid()` over the tracked entry-name list.
+fn phar_valid_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(binary_expr(
+        phar_position_expr(),
+        BinOp::Lt,
+        count_expr(phar_entries_expr()),
+    ))
+}
+
+/// Builds `key()` as the current tracked entry name.
+fn phar_key_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(phar_entry_at_position_expr())
+}
+
+/// Builds `current()` as a `PharFileInfo` for the current tracked entry.
+fn phar_current_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(new_object_expr(
+        "PharFileInfo",
+        vec![phar_entry_url_expr(phar_entry_at_position_expr())],
+    ))
+}
+
+/// Builds `count()` over the tracked entry-name list.
+fn phar_count_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(count_expr(phar_entries_expr()))
+}
+
 /// Builds `offsetExists()` as a `file_get_contents()` false check.
 fn phar_offset_exists_body() -> Vec<crate::parser::ast::Stmt> {
     return_body(binary_expr(
@@ -315,10 +375,12 @@ fn phar_offset_get_body() -> Vec<crate::parser::ast::Stmt> {
 
 /// Builds `addFromString()` as a typed `file_put_contents()` archive write.
 fn phar_add_from_string_body() -> Vec<crate::parser::ast::Stmt> {
-    vec![expr_stmt(function_call(
+    let mut body = vec![expr_stmt(function_call(
         "file_put_contents",
         vec![phar_entry_url_expr(var_expr("localName")), var_expr("contents")],
-    ))]
+    ))];
+    body.extend(phar_track_entry_body(var_expr("localName")));
+    body
 }
 
 /// Builds `compressFiles()` as an archive-wide native PHAR compression rewrite.
@@ -339,26 +401,37 @@ fn phar_decompress_files_body() -> Vec<crate::parser::ast::Stmt> {
 
 /// Builds `delete()` as an archive-entry `unlink()`.
 fn phar_delete_body() -> Vec<crate::parser::ast::Stmt> {
-    return_body(function_call(
-        "unlink",
-        vec![phar_entry_url_expr(var_expr("localName"))],
-    ))
+    let mut body = vec![assign_stmt(
+        "deleted",
+        function_call("unlink", vec![phar_entry_url_expr(var_expr("localName"))]),
+    )];
+    body.push(if_stmt(
+        var_expr("deleted"),
+        phar_forget_entry_body(var_expr("localName")),
+        None,
+    ));
+    body.push(return_stmt(var_expr("deleted")));
+    body
 }
 
 /// Builds `offsetSet()` as a `file_put_contents()` write.
 fn phar_offset_set_body() -> Vec<crate::parser::ast::Stmt> {
-    vec![expr_stmt(function_call(
+    let mut body = vec![expr_stmt(function_call(
         "file_put_contents",
         vec![phar_entry_url_expr(var_expr("offset")), var_expr("value")],
-    ))]
+    ))];
+    body.extend(phar_track_entry_body(var_expr("offset")));
+    body
 }
 
 /// Builds `offsetUnset()` as an archive-entry `unlink()`.
 fn phar_offset_unset_body() -> Vec<crate::parser::ast::Stmt> {
-    vec![expr_stmt(function_call(
+    let mut body = vec![expr_stmt(function_call(
         "unlink",
         vec![phar_entry_url_expr(var_expr("offset"))],
-    ))]
+    ))];
+    body.extend(phar_forget_entry_body(var_expr("offset")));
+    body
 }
 
 /// Builds the `phar://<archive>/<entry>` URL expression for an ArrayAccess offset.
@@ -376,9 +449,85 @@ fn phar_entry_url_expr(offset: Expr) -> Expr {
     )
 }
 
+/// Builds statements that append one entry name to the object-local iterator list once.
+fn phar_track_entry_body(entry: Expr) -> Vec<crate::parser::ast::Stmt> {
+    vec![
+        assign_stmt("entryName", cast_expr(CastType::String, entry)),
+        assign_stmt("seen", bool_expr(false)),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(phar_entries_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    binary_expr(
+                        phar_entry_at_expr(var_expr("i")),
+                        BinOp::StrictEq,
+                        var_expr("entryName"),
+                    ),
+                    vec![assign_stmt("seen", bool_expr(true))],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        if_stmt(
+            not_expr(var_expr("seen")),
+            vec![property_array_push_stmt(this_expr(), "entries", var_expr("entryName"))],
+            None,
+        ),
+    ]
+}
+
+/// Builds statements that remove one entry name from the object-local iterator list.
+fn phar_forget_entry_body(entry: Expr) -> Vec<crate::parser::ast::Stmt> {
+    vec![
+        assign_stmt("entryName", cast_expr(CastType::String, entry)),
+        assign_stmt("newEntries", empty_array_expr()),
+        assign_stmt("i", int_expr(0)),
+        assign_stmt("limit", count_expr(phar_entries_expr())),
+        while_stmt(
+            binary_expr(var_expr("i"), BinOp::Lt, var_expr("limit")),
+            vec![
+                if_stmt(
+                    not_expr(binary_expr(
+                        phar_entry_at_expr(var_expr("i")),
+                        BinOp::StrictEq,
+                        var_expr("entryName"),
+                    )),
+                    vec![array_push_stmt("newEntries", phar_entry_at_expr(var_expr("i")))],
+                    None,
+                ),
+                increment_stmt("i"),
+            ],
+        ),
+        property_assign_stmt(this_expr(), "entries", var_expr("newEntries")),
+    ]
+}
+
 /// Returns the archive path stored by the constructor.
 fn phar_path_expr() -> Expr {
     property_access(this_expr(), "path")
+}
+
+/// Returns the object-local tracked entry-name list.
+fn phar_entries_expr() -> Expr {
+    property_access(this_expr(), "entries")
+}
+
+/// Returns the current object-local iterator position.
+fn phar_position_expr() -> Expr {
+    property_access(this_expr(), "position")
+}
+
+/// Returns the tracked entry name at an arbitrary position.
+fn phar_entry_at_expr(index: Expr) -> Expr {
+    array_access(phar_entries_expr(), index)
+}
+
+/// Returns the tracked entry name at the current iterator position.
+fn phar_entry_at_position_expr() -> Expr {
+    phar_entry_at_expr(phar_position_expr())
 }
 
 /// Builds the currently exposed PHAR format, compression, and signature constants.
