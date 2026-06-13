@@ -156,6 +156,28 @@ pub fn delete_url_bytes(url: &[u8]) -> Option<()> {
     delete_entry_bytes(archive_path, entry_name)
 }
 
+/// Updates all native-PHAR entry compression flags in an archive on disk.
+///
+/// Compression codes follow PHP's `Phar::NONE`, `Phar::GZ`, and `Phar::BZ2`
+/// constants. Tar and ZIP containers intentionally return `None` because their
+/// per-entry compression semantics differ from native PHAR manifest flags.
+pub fn set_archive_compression(archive_path: &[u8], compression_code: usize) -> Option<()> {
+    let compression = compression_from_php_constant(compression_code)?;
+    let archive_path = std::str::from_utf8(archive_path).ok()?;
+    let path = std::path::Path::new(archive_path);
+    let archive = std::fs::read(path).ok()?;
+    let (mut entries, format) = parse_archive_entries(&archive)?;
+    if !matches!(format, ArchiveFormat::NativePhar) {
+        return None;
+    }
+    for entry in &mut entries {
+        entry.compression = compression;
+    }
+    let archive = build_archive(&entries, format)?;
+    std::fs::write(path, archive).ok()?;
+    Some(())
+}
+
 /// C ABI wrapper around [`extract_url_bytes`].
 ///
 /// Returns a pointer to a stable process-global buffer and writes the byte
@@ -245,6 +267,28 @@ pub unsafe extern "C" fn elephc_phar_delete_url(
     url_len: usize,
 ) -> usize {
     let result = std::panic::catch_unwind(|| delete_url_bytes(slice(url_ptr, url_len)));
+    match result {
+        Ok(Some(())) => 1,
+        _ => 0,
+    }
+}
+
+/// C ABI wrapper around [`set_archive_compression`].
+///
+/// Returns `1` when the native PHAR archive was rewritten, or `0` for invalid
+/// paths, unsupported archive families, or unsupported compression constants.
+///
+/// # Safety
+/// `path_ptr` must be valid for `path_len` bytes unless `path_len` is zero.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_phar_set_compression(
+    path_ptr: *const u8,
+    path_len: usize,
+    compression_code: usize,
+) -> usize {
+    let result = std::panic::catch_unwind(|| {
+        set_archive_compression(slice(path_ptr, path_len), compression_code)
+    });
     match result {
         Ok(Some(())) => 1,
         _ => 0,
@@ -665,6 +709,16 @@ fn phar_compression_flag(compression: PharCompression) -> u32 {
         PharCompression::None => 0,
         PharCompression::Gzip => PHAR_FLAG_GZIP,
         PharCompression::Bzip2 => PHAR_FLAG_BZIP2,
+    }
+}
+
+/// Converts PHP's PHAR compression constants into bridge compression modes.
+fn compression_from_php_constant(value: usize) -> Option<PharCompression> {
+    match value {
+        0 => Some(PharCompression::None),
+        4_096 => Some(PharCompression::Gzip),
+        8_192 => Some(PharCompression::Bzip2),
+        _ => None,
     }
 }
 
@@ -1461,6 +1515,74 @@ mod tests {
         let url = format!("phar://{}/missing.txt", path.display());
         assert_eq!(delete_url_bytes(url.as_bytes()), None);
         std::fs::remove_file(&path).ok();
+    }
+
+    /// Verifies native PHAR archive-wide compression controls rewrite all entries.
+    #[test]
+    fn sets_native_phar_archive_compression() {
+        let path = std::env::temp_dir().join(format!(
+            "elephc_phar_compress_{}_{}.phar",
+            std::process::id(),
+            "unit"
+        ));
+        let path_bytes = path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"one.txt", b"alpha"),
+            Some(5)
+        );
+        assert_eq!(
+            put_entry_bytes(path_bytes.as_bytes(), b"two.txt", b"bravo"),
+            Some(5)
+        );
+        assert_eq!(set_archive_compression(path_bytes.as_bytes(), 4_096), Some(()));
+        let gzip_archive = std::fs::read(&path).unwrap();
+        let gzip_entries = parse_native_phar_entries(&gzip_archive).unwrap();
+        assert!(gzip_entries
+            .iter()
+            .all(|entry| entry.compression == PharCompression::Gzip));
+        assert_eq!(
+            extract_entry_bytes(&gzip_archive, b"two.txt").as_deref(),
+            Some(&b"bravo"[..])
+        );
+
+        assert_eq!(set_archive_compression(path_bytes.as_bytes(), 0), Some(()));
+        let plain_archive = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        let plain_entries = parse_native_phar_entries(&plain_archive).unwrap();
+        assert!(plain_entries
+            .iter()
+            .all(|entry| entry.compression == PharCompression::None));
+        assert_eq!(
+            extract_entry_bytes(&plain_archive, b"one.txt").as_deref(),
+            Some(&b"alpha"[..])
+        );
+    }
+
+    /// Verifies compression controls reject unsupported constants and containers.
+    #[test]
+    fn set_compression_rejects_unsupported_inputs() {
+        let phar_path = std::env::temp_dir().join(format!(
+            "elephc_phar_compress_bad_{}_{}.phar",
+            std::process::id(),
+            "unit"
+        ));
+        let phar_bytes = phar_path.to_string_lossy();
+        assert_eq!(
+            put_entry_bytes(phar_bytes.as_bytes(), b"one.txt", b"alpha"),
+            Some(5)
+        );
+        assert_eq!(set_archive_compression(phar_bytes.as_bytes(), 123), None);
+        std::fs::remove_file(&phar_path).ok();
+
+        let tar_path = std::env::temp_dir().join(format!(
+            "elephc_phar_compress_bad_{}_{}.tar",
+            std::process::id(),
+            "unit"
+        ));
+        std::fs::write(&tar_path, build_tar(&[("one.txt", b"alpha")])).unwrap();
+        let tar_bytes = tar_path.to_string_lossy();
+        assert_eq!(set_archive_compression(tar_bytes.as_bytes(), 4_096), None);
+        std::fs::remove_file(&tar_path).ok();
     }
 
     /// Verifies full phar:// URL writes split archive and entry names at run time.

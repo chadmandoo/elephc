@@ -78,6 +78,24 @@ fn phar_methods() -> Vec<ClassMethod> {
             phar_add_from_string_body(),
         ),
         method_with_body(
+            "compressFiles",
+            vec![param("compression", TypeExpr::Int)],
+            Some(TypeExpr::Void),
+            phar_compress_files_body(),
+        ),
+        method_with_body(
+            "decompressFiles",
+            Vec::new(),
+            Some(TypeExpr::Bool),
+            phar_decompress_files_body(),
+        ),
+        method_with_body(
+            "delete",
+            vec![param("localName", TypeExpr::Str)],
+            Some(TypeExpr::Bool),
+            phar_delete_body(),
+        ),
+        method_with_body(
             "offsetSet",
             vec![param("offset", mixed_type()), param("value", mixed_type())],
             Some(TypeExpr::Void),
@@ -120,6 +138,30 @@ fn phar_add_from_string_body() -> Vec<crate::parser::ast::Stmt> {
         "file_put_contents",
         vec![phar_entry_url_expr(var_expr("localName")), var_expr("contents")],
     ))]
+}
+
+/// Builds `compressFiles()` as an archive-wide native PHAR compression rewrite.
+fn phar_compress_files_body() -> Vec<crate::parser::ast::Stmt> {
+    vec![expr_stmt(function_call(
+        "__elephc_phar_set_compression",
+        vec![property_access(this_expr(), "path"), var_expr("compression")],
+    ))]
+}
+
+/// Builds `decompressFiles()` as a native PHAR compression reset.
+fn phar_decompress_files_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(function_call(
+        "__elephc_phar_set_compression",
+        vec![property_access(this_expr(), "path"), int_expr(0)],
+    ))
+}
+
+/// Builds `delete()` as an archive-entry `unlink()`.
+fn phar_delete_body() -> Vec<crate::parser::ast::Stmt> {
+    return_body(function_call(
+        "unlink",
+        vec![phar_entry_url_expr(var_expr("localName"))],
+    ))
 }
 
 /// Builds `offsetSet()` as a `file_put_contents()` write.

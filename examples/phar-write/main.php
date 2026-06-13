@@ -33,6 +33,8 @@ $oop->addFromString("hello.txt", "written through addFromString\n");
 $oop["array-access.txt"] = "written through ArrayAccess\n";
 $oop["temporary.txt"] = "this entry will be deleted\n";
 unset($oop["temporary.txt"]);
+$oop->compressFiles(Phar::GZ);
+$oop->decompressFiles();
 
 // Read the archive back. Using a runtime (non-literal) path goes through the
 // runtime phar reader, so a program can read a phar it just wrote in the same run.
@@ -48,3 +50,5 @@ echo "via file_get_contents: " . file_get_contents("phar://" . $archive . "/gree
 echo "oop addFromString: " . $oop["hello.txt"];
 echo "oop array access: " . $oop["array-access.txt"];
 echo "oop unset removed temporary entry: " . (isset($oop["temporary.txt"]) ? "no\n" : "yes\n");
+$oop->delete("array-access.txt");
+echo "oop delete removed array-access entry: " . (isset($oop["array-access.txt"]) ? "no\n" : "yes\n");

@@ -93,6 +93,19 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Int))
         }
+        "__elephc_phar_set_compression" => {
+            if args.len() != 2 {
+                return Err(CompileError::new(
+                    span,
+                    "__elephc_phar_set_compression() takes exactly 2 arguments",
+                ));
+            }
+            checker.require_builtin_library("elephc_phar");
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
+            Ok(Some(PhpType::Bool))
+        }
         "file" => {
             if args.len() != 1 {
                 return Err(CompileError::new(span, "file() takes exactly 1 argument"));

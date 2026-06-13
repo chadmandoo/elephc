@@ -237,6 +237,15 @@ fn test_error_phar_add_from_string_wrong_args() {
     );
 }
 
+/// Verifies that `Phar::compressFiles()` requires a compression constant.
+#[test]
+fn test_error_phar_compress_files_wrong_args() {
+    expect_error(
+        "<?php $p = new Phar(\"x.phar\"); $p->compressFiles();",
+        "expects 1 arguments, got 0",
+    );
+}
+
 /// Verifies that `SplHeap` stays abstract and cannot be instantiated directly.
 #[test]
 fn test_error_spl_heap_is_abstract() {

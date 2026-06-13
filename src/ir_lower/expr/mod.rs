@@ -5152,7 +5152,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "is_subclass_of" | "is_writeable" | "is_writable" | "settype"
         | "is_resource" | "hash_equals" | "hash_update" | "spl_autoload_register"
         | "spl_autoload_unregister" | "stream_context_set_option" | "stream_context_set_params"
-        | "stream_filter_register" | "stream_filter_remove"
+        | "stream_filter_register" | "stream_filter_remove" | "__elephc_phar_set_compression"
         | "stream_wrapper_register" | "stream_wrapper_restore" | "stream_wrapper_unregister"
         | "stream_isatty" | "stream_is_local" | "stream_set_blocking" | "stream_set_timeout"
         | "stream_socket_enable_crypto" | "stream_socket_shutdown" | "stream_supports_lock" | "symlink" | "touch"

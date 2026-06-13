@@ -14,7 +14,7 @@ use crate::codegen::platform::Arch;
 use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
 use crate::names::{define_seen_symbol, ir_global_symbol, php_symbol_key};
 use crate::parser::ast::Visibility;
-use crate::types::checker::builtins::canonical_builtin_function_name;
+use crate::types::checker::builtins::is_php_visible_builtin_function;
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
@@ -240,6 +240,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "realpath_cache_get" => io::lower_realpath_cache_get(ctx, inst),
         "realpath_cache_size" => io::lower_realpath_cache_size(ctx, inst),
         "file_put_contents" => io::lower_file_put_contents(ctx, inst),
+        "__elephc_phar_set_compression" => io::lower_elephc_phar_set_compression(ctx, inst),
         "file_exists" => io::lower_file_exists(ctx, inst),
         "copy" => io::lower_copy(ctx, inst),
         "rename" => io::lower_rename(ctx, inst),
@@ -730,7 +731,7 @@ fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
     } else {
         let exists = ctx.function_by_name(&function_name).is_some()
             || ctx.has_extern_function(&function_name)
-            || canonical_builtin_function_name(function_name.trim_start_matches('\\')).is_some();
+            || is_php_visible_builtin_function(function_name.trim_start_matches('\\'));
         emit_static_bool(ctx, exists);
     }
     store_if_result(ctx, inst)
@@ -1440,7 +1441,7 @@ fn callable_name_exists(ctx: &FunctionContext<'_>, name: &str) -> bool {
     ctx.function_variant_group_name(name).is_some()
         || ctx.function_by_name(name).is_some()
         || ctx.has_extern_function(name)
-        || canonical_builtin_function_name(name.trim_start_matches('\\')).is_some()
+        || is_php_visible_builtin_function(name.trim_start_matches('\\'))
 }
 
 /// Checks whether a PHP symbol is present in an iterator of known names.

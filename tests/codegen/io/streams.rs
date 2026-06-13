@@ -2104,6 +2104,47 @@ echo $pd["note.txt"];
     assert_eq!(out, "alpha|bravo|tar");
 }
 
+/// `Phar::compressFiles()` and `decompressFiles()` rewrite native PHAR entry
+/// compression while preserving readable payloads.
+#[test]
+fn test_phar_oop_compress_and_decompress_files() {
+    let out = compile_and_run(
+        r#"<?php
+$p = new Phar("compress.phar");
+$p->addFromString("one.txt", "alpha alpha alpha");
+$p->addFromString("two.txt", "bravo bravo bravo");
+$p->compressFiles(Phar::GZ);
+echo $p["one.txt"] . "|";
+echo ($p->decompressFiles() ? "plain|" : "bad|");
+echo $p["two.txt"] . "|";
+echo (function_exists("__elephc_phar_set_compression") ? "visible" : "hidden");
+"#,
+    );
+    assert_eq!(out, "alpha alpha alpha|plain|bravo bravo bravo|hidden");
+}
+
+/// `Phar::delete()` and `PharData::delete()` remove archive entries through the
+/// same PHAR-aware unlink path as ArrayAccess unset.
+#[test]
+fn test_phar_oop_delete_method_removes_entries() {
+    let out = compile_and_run(
+        r#"<?php
+$p = new Phar("delete-method.phar");
+$p->addFromString("one.txt", "alpha");
+$p->addFromString("two.txt", "bravo");
+echo ($p->delete("one.txt") ? "deleted|" : "bad|");
+echo (isset($p["one.txt"]) ? "bad|" : "missing|");
+echo $p["two.txt"] . "|";
+$pd = new PharData("delete-method.tar");
+$pd->addFromString("one.txt", "tar-one");
+$pd->addFromString("two.txt", "tar-two");
+echo ($pd->delete("one.txt") ? "deleted|" : "bad|");
+echo $pd["two.txt"];
+"#,
+    );
+    assert_eq!(out, "deleted|missing|bravo|deleted|tar-two");
+}
+
 /// ArrayAccess `unset()` on `Phar` and `PharData` deletes the archive entry and
 /// leaves other entries readable.
 #[test]

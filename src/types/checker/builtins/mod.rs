@@ -25,7 +25,8 @@ use crate::types::{PhpType, TypeEnv};
 use super::Checker;
 
 pub(crate) use catalog::{
-    canonical_builtin_function_name, is_supported_builtin_function, supported_builtin_function_names,
+    canonical_builtin_function_name, is_php_visible_builtin_function,
+    is_supported_builtin_function, supported_builtin_function_names,
 };
 pub(crate) use callables::{
     callback_supports_complex_descriptor_env, check_preg_replace_callback_first_class_call,

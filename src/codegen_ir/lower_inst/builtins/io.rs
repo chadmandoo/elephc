@@ -150,6 +150,15 @@ fn publish_phar_delete_function_pointer(ctx: &mut FunctionContext<'_>) {
     publish_phar_bridge_entries(ctx, ENTRIES);
 }
 
+/// Publishes the native PHAR compression-control bridge.
+fn publish_phar_set_compression_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_set_compression",
+        "_elephc_phar_set_compression_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
 /// Lowers `hash_file(algo, filename, binary?)` by reading bytes then hashing them.
 pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "hash_file", 2, 3)?;
@@ -3541,6 +3550,64 @@ fn lower_literal_phar_file_put_contents(
             abi::emit_push_reg(ctx.emitter, "rax");
             abi::emit_call_label(ctx.emitter, "__rt_phar_write_finalize");
             abi::emit_pop_reg(ctx.emitter, "rax");
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers the compiler-internal native PHAR compression-control helper.
+pub(super) fn lower_elephc_phar_set_compression(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "__elephc_phar_set_compression", 2)?;
+    let path = expect_operand(inst, 0)?;
+    let compression = expect_operand(inst, 1)?;
+    let fail = ctx.next_label("phar_set_compression_fail");
+    let done = ctx.next_label("phar_set_compression_done");
+    publish_phar_set_compression_function_pointer(ctx);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_result(compression)?;
+            abi::emit_push_reg(ctx.emitter, "x0");
+            load_string_to_result(ctx, path, "__elephc_phar_set_compression path")?;
+            ctx.emitter.instruction("mov x0, x1");                              // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov x1, x2");                              // bridge arg 1 = archive path length
+            abi::emit_pop_reg(ctx.emitter, "x2");
+            abi::emit_symbol_address(ctx.emitter, "x9", "_elephc_phar_set_compression_fn");
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional PHAR compression bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", fail));              // missing bridge makes compression control fail
+            ctx.emitter.instruction("blr x9");                                  // rewrite native-PHAR entry compression flags
+            ctx.emitter.instruction("cmp x0, #0");                              // test the bridge success flag
+            ctx.emitter.instruction("cset x0, ne");                             // normalize bridge result to PHP bool
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("mov x0, #0");                              // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_result(compression)?;
+            abi::emit_push_reg(ctx.emitter, "rax");
+            load_string_to_result(ctx, path, "__elephc_phar_set_compression path")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov rsi, rdx");                            // bridge arg 1 = archive path length
+            abi::emit_pop_reg(ctx.emitter, "rdx");
+            abi::emit_load_symbol_to_reg(
+                ctx.emitter,
+                "r10",
+                "_elephc_phar_set_compression_fn",
+                0,
+            );
+            ctx.emitter.instruction("test r10, r10");                           // test whether the PHAR compression bridge was published
+            ctx.emitter.instruction(&format!("jz {}", fail));                   // missing bridge makes compression control fail
+            ctx.emitter.instruction("call r10");                                // rewrite native-PHAR entry compression flags
+            ctx.emitter.instruction("test rax, rax");                           // test the bridge success flag
+            ctx.emitter.instruction("setne al");                                // normalize bridge result to PHP bool
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized bool
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("xor eax, eax");                            // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
         }
     }
     store_if_result(ctx, inst)
