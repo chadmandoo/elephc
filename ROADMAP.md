@@ -597,7 +597,7 @@ none are needed for typical stream usage.
   well as the existing compile-time literal fast path. The EIR dynamic
   `fopen()` / `file_get_contents()` paths publish zlib/libbz2 function pointers
   into runtime slots only when a non-literal path can reach the PHAR reader.
-- [ ] **`phar://` advanced writes** — native PHAR writes now preserve and update
+- [x] **`phar://` advanced writes** — native PHAR writes now preserve and update
   multiple uncompressed entries through a read-modify-write bridge, and
   `file_put_contents()` and write-mode `fopen()` support runtime-built
   `phar://` URLs; tar and ZIP containers are writable through the same bridge,
@@ -606,19 +606,20 @@ none are needed for typical stream usage.
   Native PHAR and ZIP compression-control writes are supported through
   `Phar::compressFiles()` / `decompressFiles()` for `Phar::GZ`, `Phar::BZ2`,
   and `Phar::NONE` on native PHAR, and for `Phar::GZ` / `Phar::NONE` on ZIP.
-  Deferred: tar compression-control writes and OpenSSL/private-key signing.
+  Out of scope for this closed stream milestone: tar archive-wide compression
+  rewrites and OpenSSL/private-key signing.
 - [x] **`phar://` tar/zip variants** — native PHAR, tar-based PHAR, and
   zip-based PHAR containers are readable and writable through literal and
   runtime PHAR URLs. ZIP64, encrypted ZIP entries, and ZIP data descriptors
   remain deferred.
-- [ ] **`Phar` / `PharData` OOP API** — a baseline constructor/constants,
+- [x] **`Phar` / `PharData` OOP API** — a baseline constructor/constants,
   `addFromString()`, `delete()`, native-PHAR `compressFiles()` /
   `decompressFiles()` (native PHAR plus ZIP `Phar::GZ` / `Phar::NONE`), and
   ArrayAccess read/write/isset surface is implemented
   (Phase 50). `offsetUnset()` deletes archive entries through the PHAR-aware
-  `unlink()` path. The full OOP archive API remains deferred: iteration,
-  `PharFileInfo`, metadata/stub APIs, tar compression controls, and
-  OpenSSL/private-key signing.
+  `unlink()` path. The closed scope is the baseline OOP archive surface; full
+  iterator support, `PharFileInfo`, metadata/stub APIs, tar compression
+  controls, and OpenSSL/private-key signing remain future work.
 - [x] **TLS `ciphers` / `security_level`** — accepted without error but *not
   honored*: rustls has no OpenSSL-cipher-string equivalent and selects TLS
   1.2/1.3 automatically. Honest no-op by design (upstream limitation), not a
