@@ -5143,7 +5143,8 @@ fn is_scalar_merge_element_type(ty: &PhpType) -> bool {
 /// Returns precise builtin return types needed by EIR value materialization.
 fn builtin_return_type_override(name: &str) -> Option<PhpType> {
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "chdir" | "chgrp" | "chmod" | "chown" | "class_alias" | "class_exists" | "copy" | "define" | "defined"
+        "chdir" | "chgrp" | "chmod" | "chown" | "lchgrp" | "lchown"
+        | "class_alias" | "class_exists" | "copy" | "define" | "defined"
         | "empty" | "file_exists" | "fnmatch" | "function_exists" | "is_a" | "is_callable"
         | "fdatasync" | "fflush" | "flock" | "fsync" | "ftruncate" | "interface_exists" | "is_dir"
         | "is_executable" | "is_file" | "is_link" | "is_numeric" | "link" | "mkdir" | "rename"
@@ -5151,7 +5152,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "is_subclass_of" | "is_writeable" | "is_writable" | "settype"
         | "is_resource" | "hash_equals" | "hash_update" | "spl_autoload_register"
         | "spl_autoload_unregister" | "stream_context_set_option" | "stream_context_set_params"
-        | "stream_filter_register" | "stream_filter_remove"
+        | "stream_filter_register" | "stream_filter_remove" | "__elephc_phar_set_compression"
         | "stream_wrapper_register" | "stream_wrapper_restore" | "stream_wrapper_unregister"
         | "stream_isatty" | "stream_is_local" | "stream_set_blocking" | "stream_set_timeout"
         | "stream_socket_enable_crypto" | "stream_socket_shutdown" | "stream_supports_lock" | "symlink" | "touch"
@@ -5174,7 +5175,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "crc32" | "get_resource_id" | "isset" | "linkinfo" | "mktime" | "sleep"
         | "pclose" | "spl_object_id" | "stream_select" | "stream_set_chunk_size"
         | "stream_set_read_buffer" | "stream_set_write_buffer" | "strtotime" | "time"
-        | "umask" | "vfprintf" | "vprintf" => {
+        | "umask" | "vfprintf" | "vprintf" | "realpath_cache_size" => {
             Some(PhpType::Int)
         }
         "spl_object_hash" => Some(PhpType::Str),
@@ -5182,7 +5183,8 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         "stream_context_create" | "stream_context_get_default" | "stream_context_set_default" => {
             Some(PhpType::stream_resource())
         }
-        "stream_context_get_options" | "stream_context_get_params" | "stream_get_meta_data" => Some(PhpType::AssocArray {
+        "realpath_cache_get" | "stream_context_get_options" | "stream_context_get_params"
+        | "stream_get_meta_data" => Some(PhpType::AssocArray {
             key: Box::new(PhpType::Str),
             value: Box::new(PhpType::Mixed),
         }),
@@ -5200,10 +5202,11 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
             Some(PhpType::Mixed)
         }
         "spl_autoload_functions" => Some(PhpType::Array(Box::new(PhpType::Int))),
-        "class_attribute_names" | "explode" | "fgetcsv" | "file" | "get_declared_classes"
-        | "fscanf" | "get_declared_interfaces" | "get_declared_traits" | "glob" | "hash_algos"
-        | "scandir" | "spl_classes" | "str_split" | "stream_get_filters" | "stream_get_transports"
-        | "stream_get_wrappers" | "sscanf" => {
+        "__elephc_phar_list_entries" | "class_attribute_names" | "explode" | "fgetcsv"
+        | "file" | "get_declared_classes" | "fscanf" | "get_declared_interfaces"
+        | "get_declared_traits" | "glob" | "hash_algos" | "scandir" | "spl_classes"
+        | "str_split" | "stream_get_filters" | "stream_get_transports" | "stream_get_wrappers"
+        | "sscanf" => {
             Some(PhpType::Array(Box::new(PhpType::Str)))
         }
         "class_attribute_args" => Some(PhpType::Array(Box::new(PhpType::Mixed))),

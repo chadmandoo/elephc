@@ -1286,6 +1286,8 @@ fn known_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "OutOfRangeException",
         "OverflowException",
         "ParentIterator",
+        "Phar",
+        "PharData",
         "RangeException",
         "RecursiveArrayIterator",
         "RecursiveCachingIterator",
@@ -3822,8 +3824,13 @@ fn emit_property_load(
     match &slot.php_type {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
-            abi::emit_load_from_address(ctx.emitter, ptr_reg, base_reg, slot.offset);
-            abi::emit_load_from_address(ctx.emitter, len_reg, base_reg, slot.offset + 8);
+            if base_reg == ptr_reg {
+                abi::emit_load_from_address(ctx.emitter, len_reg, base_reg, slot.offset + 8);
+                abi::emit_load_from_address(ctx.emitter, ptr_reg, base_reg, slot.offset);
+            } else {
+                abi::emit_load_from_address(ctx.emitter, ptr_reg, base_reg, slot.offset);
+                abi::emit_load_from_address(ctx.emitter, len_reg, base_reg, slot.offset + 8);
+            }
         }
         PhpType::Float => {
             let float_reg = abi::float_result_reg(ctx.emitter);
@@ -4220,11 +4227,16 @@ fn load_property_store_value_to_result(
     let value_ty = ctx.value_php_type(value)?;
     if can_box_value_for_mixed_property(&value_ty, slot_ty) {
         let loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
+        // Property stores do not consume the SSA source; explicit release ops still
+        // own temporary cleanup after `prop_set`.
         emit_box_current_value_as_mixed(ctx.emitter, &loaded_ty);
         return Ok(());
     }
     if can_store_boxed_value_for_mixed_property(&value_ty, slot_ty) {
         ctx.load_value_to_result(value)?;
+        if !ctx.value_can_own_mixed_box_source(value)? {
+            abi::emit_incref_if_refcounted(ctx.emitter, &value_ty);
+        }
         return Ok(());
     }
     if can_convert_indexed_array_to_mixed_property(&value_ty, slot_ty) {
