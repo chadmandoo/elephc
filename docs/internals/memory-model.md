@@ -598,7 +598,7 @@ The naming pattern comes from `static_property_symbol(...)`. Inherited static pr
 | Socket address scratch | `_recvfrom_addr_ptr`, `_recvfrom_addr_len`, `_accept_peer_ptr`, `_accept_peer_len` = 8 bytes each | Stores peer/address strings returned through by-reference socket parameters |
 | Protocol/service lookup buffers | `_protoent_buf` = 32KB, `_servent_buf` = 1MB | Scratch buffers for protocol and service database lookups |
 | User wrapper and filter registries | `_user_wrappers`, `_user_wrapper_handles` = 2048 bytes each; `_user_filter_registry`, `_user_filter_instances` = 4096 bytes each | Registered stream wrappers, active wrapper handles, user filter definitions, and attached filter instances |
-| PHAR writer state | `_phar_write_len`, `_phar_write_tpl_len`, `_phar_write_path_ptr`, `_phar_write_path_len` = 8 bytes each | State paired with the 1MB `_phar_write_out` archive buffer |
+| PHAR writer state | `_phar_write_len`, `_phar_write_tpl_len`, `_phar_write_path_ptr`, `_phar_write_path_len`, `_phar_write_entry_ptr`, `_phar_write_entry_len`, `_phar_write_url_ptr`, `_phar_write_url_len` = 8 bytes each | State paired with the 1MB `_phar_write_out` archive buffer |
 | Data section | No fixed limit | Grows with number of unique literals |
 
 ## Memory management strategy
