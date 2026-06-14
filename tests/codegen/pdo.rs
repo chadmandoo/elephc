@@ -154,6 +154,36 @@ echo "|" . (($same === $into) ? "same" : "different") . ":" . $into->id . ":" . 
     assert_eq!(out, "Row:1:Ada|same:2:Bob");
 }
 
+/// `setFetchMode()` stores the class/object target used by later no-argument
+/// `fetch()` calls for `FETCH_CLASS` and `FETCH_INTO`.
+#[test]
+fn test_pdo_set_fetch_mode_class_and_into_targets() {
+    let out = compile_and_run(
+        r#"<?php
+class Row {
+    public mixed $id;
+    public mixed $name;
+}
+
+$db = new PDO("sqlite::memory:");
+$db->exec("CREATE TABLE t (id INTEGER, name TEXT)");
+$db->exec("INSERT INTO t VALUES (1, 'Ada'), (2, 'Bob')");
+
+$stmt = $db->query("SELECT id, name FROM t WHERE id = 1");
+$stmt->setFetchMode(PDO::FETCH_CLASS, Row::class);
+$row = $stmt->fetch();
+echo (($row instanceof Row) ? "Row" : "not-row") . ":" . $row->id . ":" . $row->name;
+
+$stmt2 = $db->query("SELECT id, name FROM t WHERE id = 2");
+$into = new Row();
+$stmt2->setFetchMode(PDO::FETCH_INTO, $into);
+$same = $stmt2->fetch();
+echo "|" . (($same === $into) ? "same" : "different") . ":" . $into->id . ":" . $into->name;
+"#,
+    );
+    assert_eq!(out, "Row:1:Ada|same:2:Bob");
+}
+
 /// `fetchAll()` drains every row into an array, and `count()` reports the total.
 #[test]
 fn test_pdo_fetch_all() {
