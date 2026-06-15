@@ -150,6 +150,11 @@ pub(crate) struct Checker {
     /// promoting to `AssocArray` like a statically-known string key would. Mirrors
     /// the lowering's `foreach_int_key_locals` lifetime (per function, not popped).
     pub foreach_key_locals: HashSet<String>,
+    /// Whether the active local statement stream has crossed an `eval()` call.
+    ///
+    /// Once set, unknown local reads are treated as dynamic `Mixed` values because
+    /// eval fragments can create caller-scope variables at runtime.
+    pub eval_barrier_active: bool,
     /// Active break/continue target depth in the current function or closure body.
     pub break_continue_depth: usize,
     /// Stacks of break/continue depths at each enclosing `finally` block boundary,

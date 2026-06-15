@@ -50,6 +50,10 @@ const TEST_BRIDGE_STATICLIBS: &[TestBridgeStaticlib] = &[
         lib_name: "elephc_image",
         package: "elephc-image",
     },
+    TestBridgeStaticlib {
+        lib_name: "elephc_eval",
+        package: "elephc-eval",
+    },
 ];
 
 /// Default timeout for executing one compiled codegen fixture binary.
@@ -260,22 +264,12 @@ pub(crate) fn link_binary(
 ) {
     let actual_link_libs = effective_link_libs(extra_link_libs);
 
-    // The bridge staticlibs (elephc-tls, elephc-pdo, elephc-crypto, elephc-phar,
-    // elephc-tz, elephc-image) all live in `<target>/debug` alongside the test
-    // binaries; surface that directory on the linker search path automatically
-    // whenever a compiled program links any bridge, so PDO/crypto/phar/tz/image
-    // tests get the same robust, absolute `-L` as TLS instead of depending on a
-    // cwd-relative lookup. The Docker scripts override CARGO_TARGET_DIR to point at
-    // a shared volume, so honour that envvar before falling back to the in-tree
-    // target/.
-    let needs_bridge_staticlib = actual_link_libs.iter().any(|l| {
-        *l == "elephc_tls"
-            || *l == "elephc_pdo"
-            || *l == "elephc_crypto"
-            || *l == "elephc_phar"
-            || *l == "elephc_tz"
-            || *l == "elephc_image"
-    });
+    // Bridge staticlibs live in `<target>/debug` alongside the test binaries;
+    // surface that directory automatically whenever a compiled program links a
+    // known bridge, so tests get robust absolute `-L` paths instead of depending
+    // on cwd-relative lookup. Docker scripts override CARGO_TARGET_DIR to point
+    // at a shared volume, so honour that envvar before falling back in-tree.
+    let needs_bridge_staticlib = !requested_bridge_staticlibs(&actual_link_libs).is_empty();
     let bridge_staticlib_dir = match std::env::var("CARGO_TARGET_DIR") {
         Ok(dir) if !dir.is_empty() => format!("{}/debug", dir),
         _ => format!("{}/target/debug", env!("CARGO_MANIFEST_DIR")),

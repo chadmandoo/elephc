@@ -99,6 +99,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
 /// longer needed.
 pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
     match name {
+        "eval" => Some(fixed(&["code"])),
+
         "time" | "phpversion" | "json_last_error" | "json_last_error_msg" | "pi"
         | "ptr_null" | "getcwd" | "sys_get_temp_dir" | "tmpfile" | "hash_algos"
         | "date_default_timezone_get" => Some(fixed(&[])),

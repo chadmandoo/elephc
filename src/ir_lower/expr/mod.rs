@@ -1852,6 +1852,9 @@ fn emit_builtin_call_value(
         Some(span),
     );
     release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), span);
+    if php_symbol_key(name.trim_start_matches('\\')) == "eval" {
+        ctx.apply_eval_barrier();
+    }
     call
 }
 
@@ -4044,6 +4047,7 @@ fn lower_builtin_call_args(
     }
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
         "date" => lower_date_args(ctx, sig, args),
+        "eval" => lower_eval_args(ctx, sig, args),
         "json_decode" => lower_json_decode_args(ctx, sig, args),
         "preg_replace_callback"
             if !crate::types::call_args::has_named_args(args)
@@ -4065,6 +4069,24 @@ fn lower_builtin_call_args(
         }
         _ => lower_args_with_signature(ctx, sig, args),
     }
+}
+
+/// Lowers eval's code operand and coerces it through PHP string-conversion rules.
+fn lower_eval_args(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: Option<&FunctionSig>,
+    args: &[Expr],
+) -> Vec<crate::ir::ValueId> {
+    let operands = lower_args_with_signature(ctx, sig, args);
+    let Some(code) = operands.first().copied() else {
+        return operands;
+    };
+    let code_value = LoweredValue {
+        value: code,
+        ir_type: ctx.builder.value_type(code),
+    };
+    let span = args.first().map(|arg| arg.span);
+    vec![coerce_to_string_at_span(ctx, code_value, span).value]
 }
 
 /// Lowers `usort`/`uasort` arguments, typing an unannotated comparator closure

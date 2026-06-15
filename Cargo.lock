@@ -583,6 +583,7 @@ dependencies = [
  "bitflags 2.13.0",
  "bzip2-rs",
  "elephc-crypto",
+ "elephc-eval",
  "elephc-image",
  "elephc-pdo",
  "elephc-phar",
@@ -614,6 +615,10 @@ dependencies = [
  "sha3",
  "whirlpool",
 ]
+
+[[package]]
+name = "elephc-eval"
+version = "0.1.0"
 
 [[package]]
 name = "elephc-image"

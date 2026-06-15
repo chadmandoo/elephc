@@ -82,6 +82,13 @@ impl Checker {
             args
         };
 
+        if name == "eval" {
+            if let Some(arg) = args.first() {
+                self.infer_type(arg, env)?;
+            }
+            return Ok(Some(PhpType::Mixed));
+        }
+
         // Registry-first: if the builtin is registered, use its spec to check arity
         // and derive the return type (or call the spec's check hook for refined types).
         // Falls through to the legacy per-area dispatch when the name is not registered.

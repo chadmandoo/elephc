@@ -27,6 +27,7 @@ mod buffers;
 pub(crate) mod class_relations;
 pub(crate) mod ctype;
 pub(crate) mod debug;
+mod eval;
 pub(crate) mod io;
 mod isset;
 pub(crate) mod is_numeric;
@@ -57,6 +58,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
     }
     match key.as_str() {
         "closure_bind" => lower_closure_bind(ctx, inst),
+        "eval" => eval::lower_eval(ctx, inst),
         "buffer_len" => buffers::lower_buffer_len(ctx, inst),
         "buffer_free" => buffers::lower_buffer_free(ctx, inst),
 
