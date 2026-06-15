@@ -34,7 +34,7 @@ function repeat(string $label, int $count): string {
 - Typed parameters can use default values
 - Function, method, constructor, closure, and arrow-function parameter hints are checked
 - Function, method, closure, and arrow-function return type hints are checked
-- Variadic parameters may carry a type hint (`function f(int ...$xs)`), including on methods, closures, and arrow functions; the collected array's element type is inferred from the passed arguments.
+- Variadic parameters may carry a type hint (`function f(int ...$xs)`), including on methods, closures, and arrow functions; every argument collected into the variadic is checked against the declared element type, just like a regular typed parameter. An untyped variadic accepts heterogeneous arguments.
 - Non-`void` declared return types must return a value on every reachable path; `throw`, `exit()`/`die()`, and infinite loops count as non-returning paths
 - Bare `return;` is valid only for `void` returns; use `return null;` for nullable return types
 - Named arguments are supported for known-signature calls: user-defined functions, methods, closures, built-ins, and extern functions

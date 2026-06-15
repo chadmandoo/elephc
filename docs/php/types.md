@@ -71,7 +71,7 @@ function render(Renderable&Cacheable $widget): string {
 }
 ```
 
-The `&` is recognized as an intersection only when it is followed by another type; a `&` before a variable (`int &$x`) remains the by-reference marker.
+The `&` is recognized as an intersection only when it is followed by another type; a `&` before a variable (`int &$x`) remains the by-reference marker. The nullable shorthand cannot be combined with an intersection: `?A&B` is rejected, matching PHP.
 
 Current limitation: the value is typed as its **first** listed member, so member access resolves against that member (`$widget->render()` above, from `Renderable`). Methods declared only on later members are not yet resolved, and argument compatibility is checked against the first member. Full structural intersection resolution is planned.
 
