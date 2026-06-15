@@ -323,7 +323,7 @@ pub(crate) fn propagate_stmt(stmt: Stmt, env: ConstantEnv) -> (Stmt, ConstantEnv
                     name,
                     backing_type,
                     implements,
-                    methods,
+                    methods: methods.into_iter().map(propagate_method).collect(),
                     constants,
                     cases: cases.into_iter().map(propagate_enum_case).collect(),
                 },

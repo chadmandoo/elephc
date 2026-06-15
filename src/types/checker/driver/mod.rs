@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use crate::codegen::platform::Platform;
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
-use crate::parser::ast::{ClassMethod, Program, StmtKind};
+use crate::parser::ast::{ClassMethod, Program, Stmt, StmtKind};
 use crate::types::{
     traits::{flatten_classes, FlattenedClass},
     TypeEnv,
@@ -249,7 +249,12 @@ pub(super) fn check_types_impl(
     let (global_env, initial_top_level_errors) = checker.check_top_level_program(program);
 
     checker.resolve_unchecked_functions(&mut errors);
-    checker.type_check_methods_until_stable(&flattened_classes, &global_env, &mut errors)?;
+    // Enum method bodies are not part of `flattened_classes` (enums are registered separately via
+    // the enum schema pass), so they would otherwise skip body checking entirely. Flatten them
+    // into method-checkable units here — their signatures already live in `checker.classes`.
+    let mut methods_to_check = flattened_classes.clone();
+    methods_to_check.extend(flatten_enum_methods(program));
+    checker.type_check_methods_until_stable(&methods_to_check, &global_env, &mut errors)?;
     patch_builtin_spl_storage_signatures(&mut checker);
     apply_implicit_stringable_interfaces(&mut checker.classes);
 
@@ -281,6 +286,42 @@ pub(super) fn check_types_impl(
 /// Because trait methods are already merged into the using class at this point, a trait method's
 /// `self` correctly resolves to the using class rather than the trait. Annotations with no
 /// relative type are left untouched.
+/// Builds method-checkable `FlattenedClass` units for every `enum` in the program so their method
+/// bodies go through the same validation as class methods. Enum signatures are already registered
+/// in `checker.classes` by the enum schema pass; these units only carry the names and method
+/// bodies the method-check pass needs. The relative types `self`/`static` resolve to the enum
+/// itself (enums have no parent).
+fn flatten_enum_methods(program: &[Stmt]) -> Vec<FlattenedClass> {
+    let mut units = Vec::new();
+    for stmt in program {
+        if let StmtKind::EnumDecl {
+            name,
+            implements,
+            methods,
+            constants,
+            ..
+        } = &stmt.kind
+        {
+            let mut flattened = FlattenedClass {
+                name: name.clone(),
+                extends: None,
+                implements: implements.iter().map(|name| name.as_str().to_string()).collect(),
+                is_abstract: false,
+                is_final: true,
+                is_readonly_class: false,
+                properties: Vec::new(),
+                methods: methods.clone(),
+                attributes: stmt.attributes.clone(),
+                constants: constants.clone(),
+                used_traits: Vec::new(),
+            };
+            substitute_relative_class_types_in_methods(&mut flattened.methods, name, None);
+            units.push(flattened);
+        }
+    }
+    units
+}
+
 fn substitute_relative_class_types_in_flattened(classes: &mut [FlattenedClass]) {
     for class in classes.iter_mut() {
         let self_class = class.name.clone();

@@ -490,7 +490,14 @@ pub(super) fn resolve_stmt_exprs(
             name,
             backing_type,
             implements,
-            methods,
+            methods: resolve_method_exprs(
+                methods,
+                base_dir,
+                declared_once,
+                include_chain,
+                state,
+                function_variants,
+            )?,
             constants,
             cases: cases
                 .into_iter()
