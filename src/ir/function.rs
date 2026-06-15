@@ -179,6 +179,7 @@ pub enum LocalKind {
     NamedArgTemp,
     IteratorState,
     GeneratorState,
+    EvalContext,
     EvalScope,
 }
 
