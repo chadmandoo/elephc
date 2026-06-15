@@ -80,6 +80,14 @@ pub(super) fn lower_hash_isset(ctx: &mut FunctionContext<'_>, inst: &Instruction
     isset::lower_hash_isset(ctx, inst)
 }
 
+/// Lowers a native call to a zero-argument function declared through `eval()`.
+pub(super) fn lower_eval_function_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    eval::lower_eval_function_call(ctx, inst)
+}
+
 /// Lowers `define("NAME", value)` with the duplicate-name runtime guard.
 pub(crate) fn lower_define(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "define", 2)?;
