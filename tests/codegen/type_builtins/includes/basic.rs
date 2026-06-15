@@ -384,6 +384,57 @@ fn test_require_value_captures_returned_array() {
     assert_eq!(out, "5432");
 }
 
+/// Verifies that an expression-position `require` shares the caller's scope: the included file
+/// can READ a variable defined in the caller (PHP runs includes in the calling scope).
+#[test]
+fn test_require_value_reads_caller_scope() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                "<?php $base = 10; $v = require 'inc.php'; echo $v;",
+            ),
+            ("inc.php", "<?php return $base * 2;"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "20");
+}
+
+/// Verifies that an expression-position `require` shares the caller's scope for WRITES: a value
+/// assigned to an existing caller variable inside the included file is visible after the include.
+#[test]
+fn test_require_value_writes_caller_scope() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                "<?php $acc = 1; $r = require 'inc.php'; echo $acc; echo ':'; echo $r;",
+            ),
+            ("inc.php", "<?php $acc = $acc + 41; return 7;"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "42:7");
+}
+
+/// Verifies that a variable first assigned inside an expression-position `require` leaks into the
+/// caller's scope afterward, matching PHP's shared-scope include semantics.
+#[test]
+fn test_require_value_new_var_leaks_to_caller() {
+    let out = compile_and_run_files(
+        &[
+            (
+                "main.php",
+                "<?php $r = require 'inc.php'; echo $created; echo ':'; echo $r;",
+            ),
+            ("inc.php", "<?php $created = 99; return 1;"),
+        ],
+        "main.php",
+    );
+    assert_eq!(out, "99:1");
+}
+
 /// Verifies that an included file with no top-level `return` yields `1` while still hoisting its
 /// declarations globally.
 #[test]

@@ -41,6 +41,11 @@ pub(crate) fn lower_expr(ctx: &mut LoweringContext<'_, '_>, expr: &Expr) -> Lowe
     }
 
     match &expr.kind {
+        // `IncludeValue` is a transient parser node fully expanded by the resolver;
+        // it can never reach this pass.
+        ExprKind::IncludeValue { .. } => unreachable!(
+            "ExprKind::IncludeValue must be expanded by the resolver"
+        ),
         ExprKind::StringLiteral(value) => lower_string_literal(ctx, value, expr),
         ExprKind::IntLiteral(value) => lower_int_literal(ctx, *value, expr),
         ExprKind::FloatLiteral(value) => lower_float_literal(ctx, *value, expr),
@@ -616,6 +621,11 @@ pub(crate) fn string_op_uses_scratch_storage(op: Op) -> bool {
 /// Returns whether evaluating an expression can reset the caller's concat scratch storage.
 fn expr_can_reset_concat_storage(expr: &Expr) -> bool {
     match &expr.kind {
+        // `IncludeValue` is a transient parser node fully expanded by the resolver;
+        // it can never reach this pass.
+        ExprKind::IncludeValue { .. } => unreachable!(
+            "ExprKind::IncludeValue must be expanded by the resolver"
+        ),
         ExprKind::FunctionCall { .. }
         | ExprKind::ClosureCall { .. }
         | ExprKind::ExprCall { .. }

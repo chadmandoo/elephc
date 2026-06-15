@@ -156,6 +156,11 @@ fn packed_field_refs_pdo(field: &PackedField) -> bool {
 /// exhaustive so a newly added `ExprKind` cannot silently bypass detection.
 fn expr_refs_pdo(expr: &Expr) -> bool {
     match &expr.kind {
+        // `IncludeValue` is a transient parser node fully expanded by the resolver;
+        // it can never reach this pass.
+        ExprKind::IncludeValue { .. } => unreachable!(
+            "ExprKind::IncludeValue must be expanded by the resolver"
+        ),
         // Leaves and identifier-only forms carry no class reference.
         ExprKind::StringLiteral(_)
         | ExprKind::IntLiteral(_)

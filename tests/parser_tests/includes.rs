@@ -151,43 +151,20 @@ fn test_require_with_const_ref_parses() {
 
 // --- Exponentiation ---
 
-/// Asserts that `expr` is the include IIFE `(static function () { include; return 1; })()` and
-/// returns the wrapped `Include`'s `(once, required)` flags for the caller to check.
-fn assert_include_iife(expr: &ExprKind) -> (bool, bool) {
-    let closure = match expr {
-        ExprKind::ExprCall { callee, args } => {
-            assert!(args.is_empty(), "include IIFE takes no arguments");
-            &callee.kind
-        }
-        other => panic!("Expected ExprCall, got {:?}", other),
-    };
-    let body = match closure {
-        ExprKind::Closure {
-            body, is_static, ..
-        } => {
-            assert!(is_static, "include closure should be static");
-            body
-        }
-        other => panic!("Expected Closure, got {:?}", other),
-    };
-    assert_eq!(body.len(), 2, "closure body is [include, return 1]");
-    assert!(
-        matches!(
-            &body[1].kind,
-            StmtKind::Return(Some(value)) if matches!(value.kind, ExprKind::IntLiteral(1))
-        ),
-        "closure falls through to `return 1`",
-    );
-    match &body[0].kind {
-        StmtKind::Include { once, required, .. } => (*once, *required),
-        other => panic!("Expected Include, got {:?}", other),
+/// Asserts that `expr` is the transient `IncludeValue` marker the parser emits for an
+/// expression-position include, returning its `(once, required)` flags for the caller to check.
+/// The resolver later expands this marker into caller-scope statements.
+fn assert_include_value(expr: &ExprKind) -> (bool, bool) {
+    match expr {
+        ExprKind::IncludeValue { once, required, .. } => (*once, *required),
+        other => panic!("Expected IncludeValue, got {:?}", other),
     }
 }
 
-/// Verifies that `return require X;` becomes `return (static fn) { include; return 1; }()`, so
-/// the returned value is the included file's own `return` (or `1` when it has none).
+/// Verifies that `return require X;` parses to `return <IncludeValue>`, carrying the include's
+/// once/required flags for the resolver to expand into the caller's scope.
 #[test]
-fn test_return_require_wraps_in_include_iife() {
+fn test_return_require_parses_as_include_value() {
     let stmts = parse_source("<?php function f() { return require 'helper.php'; }");
     let body = match &stmts[0].kind {
         StmtKind::FunctionDecl { body, .. } => body,
@@ -195,21 +172,21 @@ fn test_return_require_wraps_in_include_iife() {
     };
     match &body[0].kind {
         StmtKind::Return(Some(value)) => {
-            assert_eq!(assert_include_iife(&value.kind), (false, true));
+            assert_eq!(assert_include_value(&value.kind), (false, true));
         }
         other => panic!("Expected Return, got {:?}", other),
     }
 }
 
-/// Verifies that `$x = require_once X;` assigns the include IIFE so `$x` receives the included
-/// file's value, and that the once/required flags are carried through.
+/// Verifies that `$x = require_once X;` assigns the `IncludeValue` marker so the resolver can
+/// expand it, and that the once/required flags are carried through.
 #[test]
-fn test_assign_require_wraps_in_include_iife() {
+fn test_assign_require_parses_as_include_value() {
     let stmts = parse_source("<?php $x = require_once 'helper.php';");
     match &stmts[0].kind {
         StmtKind::Assign { name, value } => {
             assert_eq!(name, "x");
-            assert_eq!(assert_include_iife(&value.kind), (true, true));
+            assert_eq!(assert_include_value(&value.kind), (true, true));
         }
         other => panic!("Expected Assign, got {:?}", other),
     }

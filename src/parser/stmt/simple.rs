@@ -64,11 +64,11 @@ pub(super) fn parse_include(
 ///
 /// PHP allows `include`/`require` in expression position (e.g. `return require X;` or
 /// `$x = require X;`) and the expression evaluates to the included file's `return` value, or `1`
-/// when the file has no explicit `return`. elephc resolves includes at compile time as
-/// statements, so the include is wrapped in an immediately-invoked closure:
-/// `(static function () { <include>; return 1; })()`. The included file's top-level `return`
-/// becomes the closure's return value, while a file with no `return` falls through to `1`.
-/// Declarations in the included file are still hoisted to global scope by the resolver.
+/// when the file has no explicit `return`. The included file runs in the *calling* scope, so it
+/// can read and write the caller's variables. elephc represents this with a transient
+/// `ExprKind::IncludeValue` marker that the resolver expands by inlining the included file's
+/// statements into the caller's statement list (sharing scope) and capturing its top-level
+/// `return` into a hidden temporary.
 pub(in crate::parser::stmt) fn try_parse_value_include(
     tokens: &[(Token, Span)],
     pos: &mut usize,
@@ -92,38 +92,11 @@ pub(in crate::parser::stmt) fn try_parse_value_include(
         expect_token(tokens, pos, &Token::RParen, "Expected ')' after include path")?;
     }
 
-    // Wrap the include in an immediately-invoked static closure so the included file's top-level
-    // `return` becomes the value of the include expression; `return 1` is the fallthrough value
-    // PHP yields for a successful include with no explicit `return`.
-    let include = Stmt::new(
-        StmtKind::Include {
-            path,
+    Ok(Some(Expr::new(
+        ExprKind::IncludeValue {
+            path: Box::new(path),
             once,
             required,
-        },
-        span,
-    );
-    let fallthrough = Stmt::new(
-        StmtKind::Return(Some(Expr::new(ExprKind::IntLiteral(1), span))),
-        span,
-    );
-    let closure = Expr::new(
-        ExprKind::Closure {
-            params: Vec::new(),
-            variadic: None,
-            return_type: None,
-            body: vec![include, fallthrough],
-            is_arrow: false,
-            is_static: true,
-            captures: Vec::new(),
-            capture_refs: Vec::new(),
-        },
-        span,
-    );
-    Ok(Some(Expr::new(
-        ExprKind::ExprCall {
-            callee: Box::new(closure),
-            args: Vec::new(),
         },
         span,
     )))

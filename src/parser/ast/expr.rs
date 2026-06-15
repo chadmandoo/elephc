@@ -110,6 +110,17 @@ pub enum ExprKind {
         name: String,
         value: Box<Expr>,
     },
+    /// A `require`/`include` used in expression position (e.g. `$x = require 'f.php';`).
+    ///
+    /// This is a transient node produced by the parser and fully expanded by the resolver into
+    /// the included file's statements (run in the caller's scope) plus a hidden temporary that
+    /// captures the file's top-level `return` value. It must never survive past resolution; later
+    /// passes never see it.
+    IncludeValue {
+        path: Box<Expr>,
+        once: bool,
+        required: bool,
+    },
     Spread(Box<Expr>),
     ClosureCall {
         var: String,

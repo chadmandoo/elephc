@@ -160,6 +160,15 @@ pub(super) fn walk_expr<P: Pass>(expr: Expr, pass: &mut P) -> Expr {
             name,
             value: Box::new(walk_expr(*value, pass)),
         },
+        ExprKind::IncludeValue {
+            path,
+            once,
+            required,
+        } => ExprKind::IncludeValue {
+            path: Box::new(walk_expr(*path, pass)),
+            once,
+            required,
+        },
         ExprKind::Spread(inner) => ExprKind::Spread(Box::new(walk_expr(*inner, pass))),
         ExprKind::ClosureCall { var, args } => ExprKind::ClosureCall {
             var,

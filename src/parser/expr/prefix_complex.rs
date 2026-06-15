@@ -303,6 +303,9 @@ fn collect_arrow_expr_captures(
         | ExprKind::PostIncrement(name)
         | ExprKind::PreDecrement(name)
         | ExprKind::PostDecrement(name) => push_arrow_capture(name, bound, seen, captures),
+        ExprKind::IncludeValue { path, .. } => {
+            collect_arrow_expr_captures(path, bound, seen, captures);
+        }
         ExprKind::BinaryOp { left, right, .. } => {
             collect_arrow_expr_captures(left, bound, seen, captures);
             collect_arrow_expr_captures(right, bound, seen, captures);
