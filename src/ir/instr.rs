@@ -356,6 +356,7 @@ pub enum Op {
     FunctionVariantCall,
     BuiltinCall,
     EvalFunctionCall,
+    EvalFunctionExists,
     RuntimeCall,
     ExternCall,
     ClosureNew,
@@ -492,6 +493,7 @@ impl Op {
             EnumBackingStringToInt | EnumBackingMixedToInt => {
                 E::READS_HEAP | E::ALLOC_HEAP | E::MAY_THROW
             }
+            EvalFunctionExists => E::READS_GLOBAL,
             Call | FunctionVariantCall | BuiltinCall | EvalFunctionCall | RuntimeCall
             | ClosureCall | ExprCall | CallableDescriptorInvoke | PipeCall | FiberRuntimeCall => {
                 E::all().difference(E::REFCOUNT_OP)
@@ -692,6 +694,7 @@ impl Op {
             FunctionVariantCall => "function_variant_call",
             BuiltinCall => "builtin_call",
             EvalFunctionCall => "eval_function_call",
+            EvalFunctionExists => "eval_function_exists",
             RuntimeCall => "runtime_call",
             ExternCall => "extern_call",
             ClosureNew => "closure_new",
