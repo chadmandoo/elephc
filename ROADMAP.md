@@ -693,7 +693,7 @@ imposed. See `docs/internals/the-ir.md`.
 - [x] EIR → ASM backend producing semantically equivalent output to the legacy backend (no optimizations yet)
 - [x] Default backend switch from AST to EIR, with `--ast-backend` retained as an explicit fallback
 - [x] CI default-EIR gate, frozen fallback smoke coverage, and IR-only benchmark job for parity and regression tracking
-- [ ] Linear-scan register allocator (Poletto-Sarkar) with liveness analysis, live intervals, allocation table, separate int / float pools, and callee-saved preservation across calls
+- [x] Linear-scan register allocator (Poletto-Sarkar) with liveness analysis, live intervals, allocation table, separate int / float pools, and callee-saved preservation across calls
 - [ ] Register-pressure mitigations: caller-saved reuse for non-call-crossing intervals; better spill heuristic
 
 Expected outcome: EIR is the default and only active implementation backend in
