@@ -517,3 +517,9 @@ For runnable language samples, see `examples/`. For the benchmark harness and CI
 ## License
 
 MIT
+
+## Resources
+
+[![Nuno Maduro: PHP Is Getting a Compiler?](https://img.youtube.com/vi/x06307Ui3uY/maxresdefault.jpg)](https://www.youtube.com/watch?v=x06307Ui3uY)
+
+**[Nuno Maduro: PHP Is Getting a Compiler?](https://www.youtube.com/watch?v=x06307Ui3uY)**
