@@ -10,3 +10,4 @@
 
 mod intervals_test;
 mod liveness_test;
+mod regalloc_test;

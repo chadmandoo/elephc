@@ -10,12 +10,16 @@
 //! - Passes are read-only or produce sidecar tables (e.g. liveness, allocation).
 //!   They do not mutate `Function` in place.
 
+mod allocation;
 mod cfg;
 mod intervals;
 mod liveness;
+mod regalloc;
 
 #[cfg(test)]
 mod tests;
 
+pub use allocation::{Allocation, Location};
 pub use intervals::{build_intervals, LiveInterval};
 pub use liveness::{compute_liveness, LivenessInfo};
+pub use regalloc::allocate_registers;
