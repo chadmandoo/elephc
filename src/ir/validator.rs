@@ -273,9 +273,8 @@ fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result
         ConstF64 => require_immediate(inst_id, inst, "f64", |imm| matches!(imm, Imm::F64(_))),
         ConstBool => require_immediate(inst_id, inst, "bool", |imm| matches!(imm, Imm::Bool(_))),
         ConstStr | ConstClassName | DataAddr | Warn | IncludeOnceMark | IncludeOnceGuard
-        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell
-        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell | EvalFunctionExists
-        | EnumBackingStringToInt | EnumBackingMixedToInt => {
+        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell | EvalFunctionCallArray
+        | EvalFunctionExists | EnumBackingStringToInt | EnumBackingMixedToInt => {
             require_immediate(inst_id, inst, "data id", |imm| matches!(imm, Imm::Data(_)))
         }
         LoadLocal | StoreLocal | UnsetLocal | LoadRefCell | StoreRefCell | ReleaseLocalRefCell
@@ -354,11 +353,11 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         | CallableArrayNew | GeneratorNew | InvokerRefArg
         | ErrorSuppressBegin | ErrorSuppressEnd | TryPushHandler | TryPopHandler
         | CatchCurrent | CatchBind | FinallyEnter | FinallyExit | IncludeOnceMark
-        | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | ConcatReset
         | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | EvalFunctionExists
         | ConcatReset | GcCollect | Nop => {
             check_count(inst_id, inst, 0, "0")
         }
+        EvalFunctionCallArray => check_count(inst_id, inst, 1, "1"),
         ClosureNew => Ok(()),
         FirstClassCallableNew => check_count_at_most(inst_id, inst, 1, "0 or 1"),
         ObjectNew => Ok(()),
