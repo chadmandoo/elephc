@@ -50,7 +50,8 @@ pub fn emit_array_fill_str(emitter: &mut Emitter) {
     // -- append count persisted copies of the string --
     emitter.label("__rt_array_fill_str_loop");
     emitter.instruction("ldr x4, [sp, #0]");                                    // reload remaining count
-    emitter.instruction("cbz x4, __rt_array_fill_str_done");                    // finish once the requested count is reached
+    emitter.instruction("cmp x4, #0");                                          // compare remaining count against zero (signed)
+    emitter.instruction("b.le __rt_array_fill_str_done");                       // finish when the count is reached or was negative
     emitter.instruction("ldr x0, [sp, #24]");                                   // reload destination array pointer
     emitter.instruction("ldr x1, [sp, #8]");                                    // reload borrowed string pointer
     emitter.instruction("ldr x2, [sp, #16]");                                   // reload borrowed string length
