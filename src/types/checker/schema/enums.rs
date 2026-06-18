@@ -269,26 +269,33 @@ pub(crate) fn insert_enum_metadata(
     let mut readonly_properties = HashSet::new();
     let reference_properties = HashSet::new();
     if let Some(backing_ty) = &backing_type {
-        properties.push(("value".to_string(), backing_ty.clone()));
-        property_offsets.insert("value".to_string(), 8);
-        property_declaring_classes.insert("value".to_string(), name.to_string());
-        defaults.push(None);
-        property_visibilities.insert("value".to_string(), Visibility::Public);
-        declared_properties.insert("value".to_string());
-        readonly_properties.insert("value".to_string());
+        push_enum_readonly_property(
+            "value",
+            backing_ty.clone(),
+            name,
+            &mut properties,
+            &mut property_offsets,
+            &mut property_declaring_classes,
+            &mut defaults,
+            &mut property_visibilities,
+            &mut declared_properties,
+            &mut readonly_properties,
+        );
     }
-    // Every enum case (pure or backed) exposes a readonly public `name` string holding the case
-    // identifier, mirroring PHP's `UnitEnum::$name`. Append it after any backing `value` so backed
-    // enums keep `value` at offset 8; the offset matches the singleton property slot layout used by
-    // EIR codegen (`8 + index * 16`).
-    let name_offset = 8 + properties.len() * 16;
-    properties.push(("name".to_string(), PhpType::Str));
-    property_offsets.insert("name".to_string(), name_offset);
-    property_declaring_classes.insert("name".to_string(), name.to_string());
-    defaults.push(None);
-    property_visibilities.insert("name".to_string(), Visibility::Public);
-    declared_properties.insert("name".to_string());
-    readonly_properties.insert("name".to_string());
+    // Append `name` after any backing `value` so backed enums keep `value` at
+    // offset 8, matching singleton initialization in codegen.
+    push_enum_readonly_property(
+        "name",
+        PhpType::Str,
+        name,
+        &mut properties,
+        &mut property_offsets,
+        &mut property_declaring_classes,
+        &mut defaults,
+        &mut property_visibilities,
+        &mut declared_properties,
+        &mut readonly_properties,
+    );
 
     let mut static_methods = HashMap::new();
     let mut static_method_visibilities = HashMap::new();
@@ -468,4 +475,28 @@ pub(crate) fn insert_enum_metadata(
     );
     *next_class_id += 1;
     Ok(())
+}
+
+/// Appends one synthetic public readonly enum case property to class metadata.
+fn push_enum_readonly_property(
+    property: &str,
+    php_type: PhpType,
+    enum_name: &str,
+    properties: &mut Vec<(String, PhpType)>,
+    property_offsets: &mut HashMap<String, usize>,
+    property_declaring_classes: &mut HashMap<String, String>,
+    defaults: &mut Vec<Option<crate::parser::ast::Expr>>,
+    property_visibilities: &mut HashMap<String, Visibility>,
+    declared_properties: &mut HashSet<String>,
+    readonly_properties: &mut HashSet<String>,
+) {
+    let offset = 8 + properties.len() * 16;
+    let property = property.to_string();
+    properties.push((property.clone(), php_type));
+    property_offsets.insert(property.clone(), offset);
+    property_declaring_classes.insert(property.clone(), enum_name.to_string());
+    defaults.push(None);
+    property_visibilities.insert(property.clone(), Visibility::Public);
+    declared_properties.insert(property.clone());
+    readonly_properties.insert(property);
 }
