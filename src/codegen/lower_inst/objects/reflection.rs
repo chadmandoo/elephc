@@ -35,6 +35,7 @@ struct ReflectionOwnerMetadata {
     is_interface: bool,
     is_trait: bool,
     is_enum: bool,
+    is_readonly: bool,
     modifiers: i64,
     member_flags: ReflectionMemberFlags,
 }
@@ -128,6 +129,7 @@ pub(super) fn lower_reflection_owner_new(
         emit_reflection_bool_property(ctx, "__is_interface", metadata.is_interface)?;
         emit_reflection_bool_property(ctx, "__is_trait", metadata.is_trait)?;
         emit_reflection_bool_property(ctx, "__is_enum", metadata.is_enum)?;
+        emit_reflection_bool_property(ctx, "__is_readonly", metadata.is_readonly)?;
         emit_reflection_int_property_by_name(ctx, "__modifiers", metadata.modifiers)?;
     }
     emit_reflection_member_flag_properties(ctx, class_name, metadata.member_flags)?;
@@ -566,6 +568,7 @@ fn reflection_class_metadata(
             is_interface: false,
             is_trait: false,
             is_enum,
+            is_readonly: info.is_readonly_class && !is_enum,
             modifiers: reflection_class_modifiers(
                 info.is_final,
                 info.is_abstract,
@@ -637,6 +640,7 @@ fn reflection_method_metadata(
                 is_interface: false,
                 is_trait: false,
                 is_enum: false,
+                is_readonly: false,
                 modifiers: 0,
                 member_flags: reflection_method_member_flags(info, &method_key)?,
             })
@@ -672,6 +676,7 @@ fn reflection_property_metadata(
                 is_interface: false,
                 is_trait: false,
                 is_enum: false,
+                is_readonly: false,
                 modifiers: 0,
                 member_flags: reflection_property_member_flags(info, &property_name)?,
             })
@@ -708,6 +713,7 @@ fn reflection_class_constant_metadata(
             is_interface: false,
             is_trait: false,
             is_enum: false,
+            is_readonly: false,
             modifiers: 0,
             member_flags: ReflectionMemberFlags::default(),
         });
@@ -738,6 +744,7 @@ fn reflection_class_constant_metadata(
                     is_interface: false,
                     is_trait: false,
                     is_enum: false,
+                    is_readonly: false,
                     modifiers: 0,
                     member_flags: ReflectionMemberFlags::default(),
                 }
@@ -775,6 +782,7 @@ fn reflection_enum_case_metadata(
                 is_interface: false,
                 is_trait: false,
                 is_enum: false,
+                is_readonly: false,
                 modifiers: 0,
                 member_flags: ReflectionMemberFlags::default(),
             })
@@ -1111,6 +1119,7 @@ fn class_like_reflection_metadata(
         is_interface,
         is_trait,
         is_enum,
+        is_readonly: false,
         modifiers: if is_enum { 32 } else { 0 },
         member_flags: ReflectionMemberFlags::default(),
     }
@@ -1159,6 +1168,7 @@ fn empty_reflection_metadata() -> ReflectionOwnerMetadata {
         is_interface: false,
         is_trait: false,
         is_enum: false,
+        is_readonly: false,
         modifiers: 0,
         member_flags: ReflectionMemberFlags::default(),
     }
