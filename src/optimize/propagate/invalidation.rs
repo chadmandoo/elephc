@@ -255,6 +255,20 @@ pub(crate) fn expr_invalidation(expr: &Expr) -> Invalidation {
                     object, method,
                 )))
         }
+        ExprKind::NullsafeDynamicMethodCall {
+            object,
+            method,
+            args,
+        } => expr_invalidation(object)
+            .union(expr_invalidation(method))
+            .union(args_invalidation(args))
+            .union(call_args_invalidation(None, args, true))
+            .union(top_level_globals_guard(
+                Effect::PURE
+                    .with_side_effects()
+                    .with_may_throw()
+                    .with_writes_globals(),
+            )),
         ExprKind::StaticMethodCall {
             receiver,
             method,
