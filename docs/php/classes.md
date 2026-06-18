@@ -1083,8 +1083,13 @@ echo ($instance instanceof Route) ? "yes" : "no";
 | `ReflectionClass::getName()` | `new ReflectionClass($class_name)` | Return the resolved class-like name |
 | `ReflectionClass::isFinal()` | `new ReflectionClass($class_name)` | Return whether the reflected class-like symbol is final |
 | `ReflectionClass::isAbstract()` | `new ReflectionClass($class_name)` | Return whether the reflected class-like symbol is abstract |
+| `ReflectionClass::isInterface()` | `new ReflectionClass($class_name)` | Return whether the reflected class-like symbol is an interface |
+| `ReflectionClass::isTrait()` | `new ReflectionClass($class_name)` | Return whether the reflected class-like symbol is a trait |
+| `ReflectionClass::isEnum()` | `new ReflectionClass($class_name)` | Return whether the reflected class-like symbol is an enum |
 | `ReflectionClass::getAttributes()` | `new ReflectionClass($class_name)` | Return `ReflectionAttribute` objects for class attributes |
+| `ReflectionMethod::getName()` | `new ReflectionMethod($class_name, $method_name)` | Return the reflected method name |
 | `ReflectionMethod::getAttributes()` | `new ReflectionMethod($class_name, $method_name)` | Return `ReflectionAttribute` objects for method attributes |
+| `ReflectionProperty::getName()` | `new ReflectionProperty($class_name, $property_name)` | Return the reflected property name |
 | `ReflectionProperty::getAttributes()` | `new ReflectionProperty($class_name, $property_name)` | Return `ReflectionAttribute` objects for property attributes |
 | `ReflectionAttribute::newInstance()` | Internal only | Instantiate the attribute class from captured literal args |
 
@@ -1144,7 +1149,7 @@ Limitations today:
 - A symbolic reference that elephc cannot resolve — for example a built-in class constant such as `Attribute::TARGET_CLASS`, which is not registered — is treated as unsupported metadata: the attribute still parses and compiles and `class_attribute_names()` still lists it, but its arguments are not reflectable through `getAttributes()`/`class_get_attributes()`/`class_attribute_args()`.
 - The flat `class_attribute_args()` helper returns a positional array of scalars only; it rejects attributes whose arguments are keyed (named arguments or associative arrays, at any depth) or contain a symbolic reference. Use `ReflectionClass::getAttributes()->getArguments()` for those.
 - When several attributes share a name on the same class, `class_attribute_args()` returns the args of the first match; `class_get_attributes()` does expose every occurrence as a separate `ReflectionAttribute` in source order.
-- `ReflectionClass` supports `getName()`, `getAttributes()`, `isFinal()`, and `isAbstract()`. `ReflectionMethod` and `ReflectionProperty` currently support `getName()` and `getAttributes()`; broader APIs such as `getProperties()`, `getMethods()`, and object construction through `ReflectionClass::newInstance()` are not yet available.
+- `ReflectionClass` supports `getName()`, `getAttributes()`, `isFinal()`, `isAbstract()`, `isInterface()`, `isTrait()`, and `isEnum()`. `ReflectionMethod` and `ReflectionProperty` currently support `getName()` and `getAttributes()` only; broader APIs such as `getProperties()`, `getMethods()`, and object construction through `ReflectionClass::newInstance()` are not yet available.
 - `ReflectionFunction`/`ReflectionParameter` reflect named functions only (the constructor argument must be a compile-time function-name string). `ReflectionParameter::getType()` resolves a single named type (including a nullable `?T`); union and intersection parameter types, default-value reflection (`getDefaultValue()`), and per-parameter attribute reflection are not yet available. An explicit `mixed` hint is reported as untyped.
 
 ### Class constants

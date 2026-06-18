@@ -27,6 +27,9 @@ struct ReflectionOwnerMetadata {
     attr_args: Vec<Option<Vec<AttrArgEntry>>>,
     is_final: bool,
     is_abstract: bool,
+    is_interface: bool,
+    is_trait: bool,
+    is_enum: bool,
 }
 
 /// Returns true for reflection owner classes that need metadata-aware construction.
@@ -81,6 +84,9 @@ pub(super) fn lower_reflection_owner_new(
     if class_name == "ReflectionClass" {
         emit_reflection_bool_property(ctx, "__is_final", metadata.is_final)?;
         emit_reflection_bool_property(ctx, "__is_abstract", metadata.is_abstract)?;
+        emit_reflection_bool_property(ctx, "__is_interface", metadata.is_interface)?;
+        emit_reflection_bool_property(ctx, "__is_trait", metadata.is_trait)?;
+        emit_reflection_bool_property(ctx, "__is_enum", metadata.is_enum)?;
     }
     let result = inst
         .result
@@ -486,13 +492,23 @@ fn reflection_class_metadata(
             attr_args: info.attribute_args.clone(),
             is_final: info.is_final,
             is_abstract: info.is_abstract,
+            is_interface: false,
+            is_trait: false,
+            is_enum: is_reflection_enum(ctx, class_name),
         });
     }
     if let Some(interface_name) = resolve_reflection_interface(ctx, &reflected_class) {
-        return Ok(class_like_reflection_metadata(interface_name));
+        return Ok(class_like_reflection_metadata(
+            interface_name,
+            true,
+            false,
+            false,
+        ));
     }
     if let Some(trait_name) = resolve_reflection_trait(ctx, &reflected_class) {
-        return Ok(class_like_reflection_metadata(trait_name));
+        return Ok(class_like_reflection_metadata(
+            trait_name, false, true, false,
+        ));
     }
     Ok(empty_reflection_metadata())
 }
@@ -519,6 +535,9 @@ fn reflection_method_metadata(
                 attr_args: info.method_attribute_args.get(&method_key)?.clone(),
                 is_final: false,
                 is_abstract: false,
+                is_interface: false,
+                is_trait: false,
+                is_enum: false,
             })
         })
         .unwrap_or_else(empty_reflection_metadata))
@@ -545,6 +564,9 @@ fn reflection_property_metadata(
                 attr_args: info.property_attribute_args.get(&property_name)?.clone(),
                 is_final: false,
                 is_abstract: false,
+                is_interface: false,
+                is_trait: false,
+                is_enum: false,
             })
         })
         .unwrap_or_else(empty_reflection_metadata))
@@ -572,29 +594,37 @@ fn reflection_class_constant_metadata(
             attr_args: case.attribute_args.clone(),
             is_final: false,
             is_abstract: false,
+            is_interface: false,
+            is_trait: false,
+            is_enum: false,
         });
     }
-    Ok(resolve_reflection_class_constant(ctx, &reflected_class, &constant_name)
-        .map(|(_, info)| {
-            let attr_names = info
-                .constant_attribute_names
-                .get(&constant_name)
-                .cloned()
-                .unwrap_or_default();
-            let attr_args = info
-                .constant_attribute_args
-                .get(&constant_name)
-                .cloned()
-                .unwrap_or_default();
-            ReflectionOwnerMetadata {
-                reflected_name: Some(constant_name),
-                attr_names,
-                attr_args,
-                is_final: false,
-                is_abstract: false,
-            }
-        })
-        .unwrap_or_else(empty_reflection_metadata))
+    Ok(
+        resolve_reflection_class_constant(ctx, &reflected_class, &constant_name)
+            .map(|(_, info)| {
+                let attr_names = info
+                    .constant_attribute_names
+                    .get(&constant_name)
+                    .cloned()
+                    .unwrap_or_default();
+                let attr_args = info
+                    .constant_attribute_args
+                    .get(&constant_name)
+                    .cloned()
+                    .unwrap_or_default();
+                ReflectionOwnerMetadata {
+                    reflected_name: Some(constant_name),
+                    attr_names,
+                    attr_args,
+                    is_final: false,
+                    is_abstract: false,
+                    is_interface: false,
+                    is_trait: false,
+                    is_enum: false,
+                }
+            })
+            .unwrap_or_else(empty_reflection_metadata),
+    )
 }
 
 /// Resolves `ReflectionEnumUnitCase/BackedCase(enum, case)` metadata.
@@ -611,15 +641,20 @@ fn reflection_enum_case_metadata(
     };
     let reflected_enum = const_string_or_class_operand(ctx, enum_operand, class_name)?;
     let case_name = const_required_string_operand(ctx, case_operand, class_name)?;
-    Ok(resolve_reflection_enum_case(ctx, &reflected_enum, &case_name)
-        .map(|case| ReflectionOwnerMetadata {
-            reflected_name: Some(case_name),
-            attr_names: case.attribute_names.clone(),
-            attr_args: case.attribute_args.clone(),
-            is_final: false,
-            is_abstract: false,
-        })
-        .unwrap_or_else(empty_reflection_metadata))
+    Ok(
+        resolve_reflection_enum_case(ctx, &reflected_enum, &case_name)
+            .map(|case| ReflectionOwnerMetadata {
+                reflected_name: Some(case_name.clone()),
+                attr_names: case.attribute_names.clone(),
+                attr_args: case.attribute_args.clone(),
+                is_final: false,
+                is_abstract: false,
+                is_interface: false,
+                is_trait: false,
+                is_enum: false,
+            })
+            .unwrap_or_else(empty_reflection_metadata),
+    )
 }
 
 /// Looks up class metadata by PHP-style case-insensitive name.
@@ -659,14 +694,31 @@ fn resolve_reflection_trait<'a>(ctx: &'a FunctionContext<'_>, trait_name: &str) 
         .map(String::as_str)
 }
 
+/// Looks up enum metadata by PHP-style case-insensitive name.
+fn is_reflection_enum(ctx: &FunctionContext<'_>, enum_name: &str) -> bool {
+    let enum_key = php_symbol_key(enum_name.trim_start_matches('\\'));
+    ctx.module
+        .enum_infos
+        .keys()
+        .any(|candidate| php_symbol_key(candidate.trim_start_matches('\\')) == enum_key)
+}
+
 /// Builds empty ReflectionClass metadata for class-like symbols without stored attributes.
-fn class_like_reflection_metadata(class_like_name: &str) -> ReflectionOwnerMetadata {
+fn class_like_reflection_metadata(
+    class_like_name: &str,
+    is_interface: bool,
+    is_trait: bool,
+    is_enum: bool,
+) -> ReflectionOwnerMetadata {
     ReflectionOwnerMetadata {
         reflected_name: Some(class_like_name.to_string()),
         attr_names: Vec::new(),
         attr_args: Vec::new(),
         is_final: false,
         is_abstract: false,
+        is_interface,
+        is_trait,
+        is_enum,
     }
 }
 
@@ -706,6 +758,9 @@ fn empty_reflection_metadata() -> ReflectionOwnerMetadata {
         attr_args: Vec::new(),
         is_final: false,
         is_abstract: false,
+        is_interface: false,
+        is_trait: false,
+        is_enum: false,
     }
 }
 
