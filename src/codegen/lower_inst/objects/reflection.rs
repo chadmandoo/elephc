@@ -36,6 +36,18 @@ struct ReflectionOwnerMetadata {
     is_trait: bool,
     is_enum: bool,
     modifiers: i64,
+    member_flags: ReflectionMemberFlags,
+}
+
+/// Boolean metadata exposed by ReflectionMethod and ReflectionProperty predicates.
+#[derive(Clone, Copy, Default)]
+struct ReflectionMemberFlags {
+    is_static: bool,
+    is_public: bool,
+    is_protected: bool,
+    is_private: bool,
+    is_final: bool,
+    is_abstract: bool,
 }
 
 /// Returns true for reflection owner classes that need metadata-aware construction.
@@ -118,6 +130,7 @@ pub(super) fn lower_reflection_owner_new(
         emit_reflection_bool_property(ctx, "__is_enum", metadata.is_enum)?;
         emit_reflection_int_property_by_name(ctx, "__modifiers", metadata.modifiers)?;
     }
+    emit_reflection_member_flag_properties(ctx, class_name, metadata.member_flags)?;
     let result = inst
         .result
         .ok_or_else(|| CodegenIrError::invalid_module("reflection object_new missing result"))?;
@@ -559,6 +572,7 @@ fn reflection_class_metadata(
                 info.is_readonly_class,
                 is_enum,
             ),
+            member_flags: ReflectionMemberFlags::default(),
         });
     }
     if let Some(interface_name) = resolve_reflection_interface(ctx, &reflected_class) {
@@ -624,6 +638,7 @@ fn reflection_method_metadata(
                 is_trait: false,
                 is_enum: false,
                 modifiers: 0,
+                member_flags: reflection_method_member_flags(info, &method_key)?,
             })
         })
         .unwrap_or_else(empty_reflection_metadata))
@@ -658,6 +673,7 @@ fn reflection_property_metadata(
                 is_trait: false,
                 is_enum: false,
                 modifiers: 0,
+                member_flags: reflection_property_member_flags(info, &property_name)?,
             })
         })
         .unwrap_or_else(empty_reflection_metadata))
@@ -693,6 +709,7 @@ fn reflection_class_constant_metadata(
             is_trait: false,
             is_enum: false,
             modifiers: 0,
+            member_flags: ReflectionMemberFlags::default(),
         });
     }
     Ok(
@@ -722,6 +739,7 @@ fn reflection_class_constant_metadata(
                     is_trait: false,
                     is_enum: false,
                     modifiers: 0,
+                    member_flags: ReflectionMemberFlags::default(),
                 }
             })
             .unwrap_or_else(empty_reflection_metadata),
@@ -758,6 +776,7 @@ fn reflection_enum_case_metadata(
                 is_trait: false,
                 is_enum: false,
                 modifiers: 0,
+                member_flags: ReflectionMemberFlags::default(),
             })
             .unwrap_or_else(empty_reflection_metadata),
     )
@@ -910,6 +929,85 @@ fn reflection_property_visible_from_class(
         .unwrap_or(false)
 }
 
+/// Returns ReflectionMethod predicate flags for a method visible on one class.
+fn reflection_method_member_flags(
+    info: &crate::types::ClassInfo,
+    method_key: &str,
+) -> Option<ReflectionMemberFlags> {
+    if info.methods.contains_key(method_key) {
+        let visibility = info
+            .method_visibilities
+            .get(method_key)
+            .unwrap_or(&Visibility::Public);
+        return Some(reflection_member_flags(
+            false,
+            visibility,
+            info.final_methods.contains(method_key),
+            !info.method_impl_classes.contains_key(method_key),
+        ));
+    }
+    if info.static_methods.contains_key(method_key) {
+        let visibility = info
+            .static_method_visibilities
+            .get(method_key)
+            .unwrap_or(&Visibility::Public);
+        return Some(reflection_member_flags(
+            true,
+            visibility,
+            info.final_static_methods.contains(method_key),
+            !info.static_method_impl_classes.contains_key(method_key),
+        ));
+    }
+    None
+}
+
+/// Returns ReflectionProperty predicate flags for a property visible on one class.
+fn reflection_property_member_flags(
+    info: &crate::types::ClassInfo,
+    property_name: &str,
+) -> Option<ReflectionMemberFlags> {
+    if info
+        .properties
+        .iter()
+        .any(|(name, _)| name == property_name)
+    {
+        let visibility = info
+            .property_visibilities
+            .get(property_name)
+            .unwrap_or(&Visibility::Public);
+        return Some(reflection_member_flags(false, visibility, false, false));
+    }
+    if info
+        .static_properties
+        .iter()
+        .any(|(name, _)| name == property_name)
+    {
+        let visibility = info
+            .static_property_visibilities
+            .get(property_name)
+            .unwrap_or(&Visibility::Public);
+        return Some(reflection_member_flags(true, visibility, false, false));
+    }
+    None
+}
+
+/// Builds common ReflectionMethod/ReflectionProperty predicate flags.
+fn reflection_member_flags(
+    is_static: bool,
+    visibility: &Visibility,
+    is_final: bool,
+    is_abstract: bool,
+) -> ReflectionMemberFlags {
+    ReflectionMemberFlags {
+        is_static,
+        is_public: visibility == &Visibility::Public,
+        is_protected: visibility == &Visibility::Protected,
+        is_private: visibility == &Visibility::Private,
+        is_final,
+        is_abstract,
+    }
+}
+
 /// Returns PHP case-insensitive method names declared by an interface and its parents.
 fn reflection_interface_method_names(
     ctx: &FunctionContext<'_>,
@@ -1014,6 +1112,7 @@ fn class_like_reflection_metadata(
         is_trait,
         is_enum,
         modifiers: if is_enum { 32 } else { 0 },
+        member_flags: ReflectionMemberFlags::default(),
     }
 }
 
@@ -1061,6 +1160,7 @@ fn empty_reflection_metadata() -> ReflectionOwnerMetadata {
         is_trait: false,
         is_enum: false,
         modifiers: 0,
+        member_flags: ReflectionMemberFlags::default(),
     }
 }
 
@@ -1270,32 +1370,90 @@ fn emit_reflection_string_array(ctx: &mut FunctionContext<'_>, names: &[String])
 
 /// Appends ReflectionClass metadata names to the current ARM64 result array.
 fn emit_reflection_string_array_fill_aarch64(ctx: &mut FunctionContext<'_>, names: &[String]) {
-    ctx.emitter.instruction("str x0, [sp, #-16]!");                             // park the metadata-name array while appending strings
+    ctx.emitter.instruction("str x0, [sp, #-16]!"); // park the metadata-name array while appending strings
     for name in names {
         let (label, len) = ctx.data.add_string(name.as_bytes());
-        ctx.emitter.instruction("ldr x0, [sp]");                                // reload the metadata-name array for this append
+        ctx.emitter.instruction("ldr x0, [sp]"); // reload the metadata-name array for this append
         abi::emit_symbol_address(ctx.emitter, "x1", &label);
         abi::emit_load_int_immediate(ctx.emitter, "x2", len as i64);
         abi::emit_call_label(ctx.emitter, "__rt_array_push_str");
-        ctx.emitter.instruction("str x0, [sp]");                                // preserve the possibly-grown metadata-name array
+        ctx.emitter.instruction("str x0, [sp]"); // preserve the possibly-grown metadata-name array
     }
-    ctx.emitter.instruction("ldr x0, [sp], #16");                               // restore the final metadata-name array as the result
+    ctx.emitter.instruction("ldr x0, [sp], #16"); // restore the final metadata-name array as the result
 }
 
 /// Appends ReflectionClass metadata names to the current x86_64 result array.
 fn emit_reflection_string_array_fill_x86_64(ctx: &mut FunctionContext<'_>, names: &[String]) {
-    ctx.emitter.instruction("push rax");                                        // park the metadata-name array while appending strings
-    ctx.emitter.instruction("sub rsp, 8");                                      // keep stack alignment stable across append helper calls
+    ctx.emitter.instruction("push rax"); // park the metadata-name array while appending strings
+    ctx.emitter.instruction("sub rsp, 8"); // keep stack alignment stable across append helper calls
     for name in names {
         let (label, len) = ctx.data.add_string(name.as_bytes());
-        ctx.emitter.instruction("mov rdi, QWORD PTR [rsp + 8]");                // reload the metadata-name array for this append
+        ctx.emitter.instruction("mov rdi, QWORD PTR [rsp + 8]"); // reload the metadata-name array for this append
         abi::emit_symbol_address(ctx.emitter, "rsi", &label);
         abi::emit_load_int_immediate(ctx.emitter, "rdx", len as i64);
         abi::emit_call_label(ctx.emitter, "__rt_array_push_str");
-        ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rax");                // preserve the possibly-grown metadata-name array
+        ctx.emitter.instruction("mov QWORD PTR [rsp + 8], rax"); // preserve the possibly-grown metadata-name array
     }
-    ctx.emitter.instruction("add rsp, 8");                                      // drop the temporary alignment slot
-    ctx.emitter.instruction("pop rax");                                         // restore the final metadata-name array as the result
+    ctx.emitter.instruction("add rsp, 8"); // drop the temporary alignment slot
+    ctx.emitter.instruction("pop rax"); // restore the final metadata-name array as the result
+}
+
+/// Stores ReflectionMethod/ReflectionProperty boolean predicate slots when supported.
+fn emit_reflection_member_flag_properties(
+    ctx: &mut FunctionContext<'_>,
+    class_name: &str,
+    flags: ReflectionMemberFlags,
+) -> Result<()> {
+    match class_name {
+        "ReflectionMethod" => {
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_static", flags.is_static)?;
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_public", flags.is_public)?;
+            emit_reflection_owner_bool_property(
+                ctx,
+                class_name,
+                "__is_protected",
+                flags.is_protected,
+            )?;
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_private", flags.is_private)?;
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_final", flags.is_final)?;
+            emit_reflection_owner_bool_property(
+                ctx,
+                class_name,
+                "__is_abstract",
+                flags.is_abstract,
+            )?;
+        }
+        "ReflectionProperty" => {
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_static", flags.is_static)?;
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_public", flags.is_public)?;
+            emit_reflection_owner_bool_property(
+                ctx,
+                class_name,
+                "__is_protected",
+                flags.is_protected,
+            )?;
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_private", flags.is_private)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Stores one boolean property on the current Reflection owner object result.
+fn emit_reflection_owner_bool_property(
+    ctx: &mut FunctionContext<'_>,
+    class_name: &str,
+    property_name: &str,
+    value: bool,
+) -> Result<()> {
+    let class_info = ctx
+        .module
+        .class_infos
+        .get(class_name)
+        .ok_or_else(|| CodegenIrError::missing_entry("class", 0))?;
+    let low_offset = reflection_property_offset(class_info, property_name)?;
+    emit_reflection_int_property(ctx, i64::from(value), low_offset, low_offset + 8);
+    Ok(())
 }
 
 /// Stores one boolean property on the current ReflectionClass object result.
@@ -1304,14 +1462,7 @@ fn emit_reflection_bool_property(
     property_name: &str,
     value: bool,
 ) -> Result<()> {
-    let class_info = ctx
-        .module
-        .class_infos
-        .get("ReflectionClass")
-        .ok_or_else(|| CodegenIrError::missing_entry("class", 0))?;
-    let low_offset = reflection_property_offset(class_info, property_name)?;
-    emit_reflection_int_property(ctx, i64::from(value), low_offset, low_offset + 8);
-    Ok(())
+    emit_reflection_owner_bool_property(ctx, "ReflectionClass", property_name, value)
 }
 
 /// Stores one integer property on the current ReflectionClass object result.
