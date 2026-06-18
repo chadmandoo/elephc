@@ -837,13 +837,17 @@ fn datetime_instant_compare_operator(op: &BinOp) -> bool {
     )
 }
 
-/// Returns true when `value` is a `DateTime`/`DateTimeImmutable` instance whose instant can be
-/// compared through its `timestamp`/`microsecond` integer properties.
+/// Returns true when `value` is a non-nullable `DateTime`/`DateTimeImmutable` instance whose instant
+/// can be compared through its `timestamp`/`microsecond` integer properties.
+///
+/// Nullable operands (`?DateTime`) are excluded: reading the `timestamp`/`microsecond` properties off
+/// a possible `null` would be invalid, so those fall through to the normal comparison path where
+/// PHP's null-vs-object ordering applies.
 fn is_datetime_family_value(ctx: &LoweringContext<'_, '_>, value: ValueId) -> bool {
     let ty = ctx.builder.value_php_type(value);
     matches!(
         singular_object_class(&ty),
-        Some((name, _))
+        Some((name, false))
             if matches!(name.trim_start_matches('\\'), "DateTime" | "DateTimeImmutable")
     )
 }

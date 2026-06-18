@@ -41,6 +41,7 @@ pub fn emit_getdate(emitter: &mut Emitter) {
             emitter.bl_c("time");                                               // time(NULL) → x0 = current Unix timestamp
             emitter.label("__rt_getdate_have");
             emitter.instruction("str x0, [sp, #0]");                            // save the resolved timestamp (also the [0] entry value)
+            emitter.instruction("bl __rt_tz_init_utc");                         // default the timezone to UTC on first use (PHP-compatible) unless already set
             emitter.instruction("add x0, sp, #0");                              // x0 = &timestamp for localtime()
             emitter.bl_c("localtime");                                          // localtime(&ts) → x0 = struct tm
             emitter.instruction("str x0, [sp, #8]");                            // save the struct tm pointer
@@ -185,6 +186,7 @@ pub fn emit_getdate(emitter: &mut Emitter) {
             emitter.instruction("call time");                                   // time(NULL) → rax = current Unix timestamp
             emitter.label("__rt_getdate_have_x86");
             emitter.instruction("mov QWORD PTR [rbp - 8], rax");                // save the resolved timestamp (also the [0] entry)
+            emitter.instruction("call __rt_tz_init_utc");                       // default the timezone to UTC on first use (PHP-compatible) unless already set
             emitter.instruction("lea rdi, [rbp - 8]");                          // rdi = &timestamp for localtime()
             emitter.instruction("call localtime");                              // localtime(&ts) → rax = struct tm
             emitter.instruction("mov QWORD PTR [rbp - 16], rax");               // save the struct tm pointer

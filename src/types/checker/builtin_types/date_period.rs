@@ -531,17 +531,17 @@ fn date_period_get_iterator() -> ClassMethod {
 /// `Recurrence count must be greater or equal to 1 ...` message for an out-of-range recurrence
 /// (`R0`), and `Unknown or bad format (<input>)` for every other parse failure.
 const CREATE_FROM_ISO8601_SRC: &str = r#"<?php
-$bad = "Unknown or bad format (" . $iso . ")";
+$bad = "Unknown or bad format (" . $specification . ")";
 $badRecur = "DatePeriod::createFromISO8601String(): Recurrence count must be greater or equal to 1 and lower than 2147483640";
-$len = strlen($iso);
+$len = strlen($specification);
 if ($len < 3) { throw new DateMalformedPeriodStringException($bad); }
 $recurrences = 0;
-if ($iso[0] === "R") {
+if ($specification[0] === "R") {
     // The recurrence prefix is Rn where n is a non-empty digit run; R<digits>/ is required
     // (endless "R/" is a bad-format error, and "R0" is a recurrence-count error, per PHP 8.3+).
-    $slash = strpos($iso, "/");
+    $slash = strpos($specification, "/");
     if ($slash === false || $slash < 2) { throw new DateMalformedPeriodStringException($bad); }
-    $prefix = substr($iso, 1, $slash - 1);
+    $prefix = substr($specification, 1, $slash - 1);
     if ($prefix === "") { throw new DateMalformedPeriodStringException($bad); }
     if ($prefix[0] === "0") { throw new DateMalformedPeriodStringException($badRecur); }
     $digits = "0123456789";
@@ -561,10 +561,10 @@ if ($iso[0] === "R") {
     if ($all_digits === 0) { throw new DateMalformedPeriodStringException($bad); }
     $recurrences = (int)$prefix;
     if ($recurrences < 1) { throw new DateMalformedPeriodStringException($badRecur); }
-    $rest = substr($iso, $slash + 1);
+    $rest = substr($specification, $slash + 1);
 } else {
     // No R prefix: start/interval[/end] form.
-    $rest = $iso;
+    $rest = $specification;
 }
 $parts = explode("/", $rest);
 // count()-guarded reads avoid an undefined-key notice on the 2-part (no-end) form.
@@ -584,16 +584,17 @@ try {
 if ($has_end === 1) {
     try { $end_dt = new DateTime($end_str); }
     catch (Exception $e) { throw new DateMalformedPeriodStringException($bad); }
-    return new DatePeriod($start_dt, $iv, $end_dt);
+    return new DatePeriod($start_dt, $iv, $end_dt, $options);
 }
-return new DatePeriod($start_dt, $iv, $recurrences);
+return new DatePeriod($start_dt, $iv, $recurrences, $options);
 "#;
 
-/// Builds the static `createFromISO8601String(string $iso): DatePeriod|false` method.
+/// Builds the static `createFromISO8601String(string $specification, int $options = 0): DatePeriod`
+/// method.
 ///
 /// The body is the parsed `CREATE_FROM_ISO8601_SRC` PHP source. It forwards to the regular
-/// `(start, interval, end|recurrences)` constructor on success and returns `false` on any
-/// malformed input — the same surface the deprecated `new DatePeriod(string)` provided.
+/// `(start, interval, end|recurrences, options)` constructor on success and throws
+/// `DateMalformedPeriodStringException` on malformed input (PHP 8.3+ never returns `false`).
 fn date_period_create_from_iso8601_string() -> ClassMethod {
     let tokens = crate::lexer::tokenize(CREATE_FROM_ISO8601_SRC)
         .expect("createFromISO8601String body source must tokenize");
@@ -606,7 +607,10 @@ fn date_period_create_from_iso8601_string() -> ClassMethod {
         is_abstract: false,
         is_final: false,
         has_body: true,
-        params: vec![param("iso", Some(TypeExpr::Str), None)],
+        params: vec![
+            param("specification", Some(TypeExpr::Str), None),
+            param("options", Some(TypeExpr::Int), Some(int_lit(0))),
+        ],
         variadic: None,
         variadic_type: None,
         // PHP 8.3+: returns a `DatePeriod` or throws (never `false`).

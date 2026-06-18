@@ -2326,3 +2326,106 @@ echo is_array($e) ? "arr" : "no", "|", ($e["error_count"] > 0 ? "err" : "ok");
     );
     assert_eq!(out, "arr|err");
 }
+
+/// Regression: `createFromTimestamp()` keeps the fractional second as microseconds (PHP 8.4),
+/// using `floor()` for the whole-second part so negative fractional timestamps round toward -inf.
+#[test]
+fn test_datetime_create_from_timestamp_microseconds() {
+    let out = compile_and_run(
+        r#"<?php
+date_default_timezone_set("UTC");
+$a = DateTimeImmutable::createFromTimestamp(1.9);
+$b = DateTimeImmutable::createFromTimestamp(-1.5);
+$c = DateTimeImmutable::createFromTimestamp(2);
+echo $a->getTimestamp(), ":", $a->format("u"), "|";
+echo $b->getTimestamp(), ":", $b->format("u"), "|";
+echo $c->getTimestamp(), ":", $c->format("u");
+"#,
+    );
+    assert_eq!(out, "1:900000|-2:500000|2:000000");
+}
+
+/// Regression: `DateInterval::__construct()` requires a leading `P`; a missing or lowercase `P`
+/// throws `DateMalformedIntervalStringException`, matching PHP. Well-formed input still parses.
+#[test]
+fn test_date_interval_requires_leading_p() {
+    let out = compile_and_run(
+        r#"<?php
+$r = "";
+try { $x = new DateInterval("1Y"); $r .= "a"; } catch (DateMalformedIntervalStringException $e) { $r .= "t"; }
+try { $x = new DateInterval("p1y"); $r .= "a"; } catch (DateMalformedIntervalStringException $e) { $r .= "t"; }
+try { $x = new DateInterval(""); $r .= "a"; } catch (DateMalformedIntervalStringException $e) { $r .= "t"; }
+$ok = new DateInterval("P1Y2M3DT4H");
+$r .= "|" . $ok->y . $ok->m . $ok->d . $ok->h;
+echo $r;
+"#,
+    );
+    assert_eq!(out, "ttt|1234");
+}
+
+/// Regression: `DateTimeInterface::diff()` uses PHP's parameter name `$targetObject`, so the
+/// named-argument form resolves correctly.
+#[test]
+fn test_datetime_diff_named_argument() {
+    let out = compile_and_run(
+        r#"<?php
+date_default_timezone_set("UTC");
+$a = new DateTime("2020-01-01");
+$b = new DateTime("2020-01-10");
+echo $a->diff(targetObject: $b)->days, "|", $a->diff(targetObject: $b, absolute: true)->days;
+"#,
+    );
+    assert_eq!(out, "9|9");
+}
+
+/// Regression: `DatePeriod::createFromISO8601String()` accepts the optional `int $options`
+/// argument (PHP 8.4) and honours `EXCLUDE_START_DATE`, dropping the start element.
+#[test]
+fn test_date_period_create_from_iso8601_options() {
+    let out = compile_and_run(
+        r#"<?php
+date_default_timezone_set("UTC");
+$p = DatePeriod::createFromISO8601String("R3/2020-01-01T00:00:00Z/P1D", DatePeriod::EXCLUDE_START_DATE);
+$n = 0;
+foreach ($p as $d) { $n++; }
+echo $n;
+"#,
+    );
+    assert_eq!(out, "3");
+}
+
+/// Regression: `getdate()` and `localtime()` default to UTC (PHP's default timezone) when no
+/// `date_default_timezone_set()` has run, instead of using the host's local time. Timestamp 0 must
+/// decompose to 1970-01-01 00:00:00 UTC.
+#[test]
+fn test_getdate_localtime_default_utc() {
+    let out = compile_and_run(
+        r#"<?php
+$g = getdate(0);
+$l = localtime(0, true);
+echo $g["year"], "-", $g["mon"], "-", $g["mday"], " ", $g["hours"], ":", $g["minutes"];
+echo "|", ($l["tm_year"] + 1900), "-", $l["tm_hour"];
+"#,
+    );
+    assert_eq!(out, "1970-1-1 0:0|1970-0");
+}
+
+/// Regression: the instant-key comparison rewrite is restricted to non-nullable
+/// `DateTime`/`DateTimeImmutable` operands (so it never reads `->timestamp`/`->microsecond` off a
+/// possible `null`). This guards that ordinary non-nullable DateTime comparisons still order by the
+/// absolute instant after that restriction.
+#[test]
+fn test_datetime_instant_comparison_non_nullable() {
+    let out = compile_and_run(
+        r#"<?php
+date_default_timezone_set("UTC");
+$a = new DateTime("2020-01-01");
+$b = new DateTime("2020-01-02");
+echo ($a < $b) ? "1" : "0";
+echo ($a > $b) ? "1" : "0";
+echo ($a == $a) ? "1" : "0";
+echo ($a <=> $b);
+"#,
+    );
+    assert_eq!(out, "101-1");
+}

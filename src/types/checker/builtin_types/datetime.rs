@@ -1639,14 +1639,17 @@ fn datetime_create_from_object(method_name: &str, target_class: &str) -> ClassMe
 /// instance set to the given UNIX timestamp. `__CFT_CLASS__` is substituted with the class name.
 const CREATE_FROM_TIMESTAMP_SRC: &str = r#"<?php
 $d = new __CFT_CLASS__();
-$d = $d->setTimestamp(intval($timestamp));
+$secs = intval(floor($timestamp));
+$d = $d->setTimestamp($secs);
+$d = $d->setMicrosecond(intval(round(($timestamp - $secs) * 1000000)));
 return $d;
 "#;
 
 /// Builds the static `createFromTimestamp($timestamp): static` factory for `class_name`. `$timestamp`
-/// is typed `mixed` (PHP accepts int or float; the fraction is dropped — elephc keeps libc's second
-/// resolution) and `intval()` unboxes it. Self-contained parsed source; the return type is declared
-/// as `class_name` since synthetic builtin methods get no body-driven return inference.
+/// is typed `mixed` (PHP accepts int or float). The whole-second part uses `floor()` (so negative
+/// fractional timestamps round toward -inf like PHP) and the remaining fraction becomes microseconds
+/// via `setMicrosecond()`. Self-contained parsed source; the return type is declared as `class_name`
+/// since synthetic builtin methods get no body-driven return inference.
 fn datetime_create_from_timestamp(class_name: &str) -> ClassMethod {
     let src = CREATE_FROM_TIMESTAMP_SRC.replace("__CFT_CLASS__", class_name);
     let tokens =
@@ -3011,7 +3014,8 @@ fn datetime_get_offset() -> ClassMethod {
 ///
 /// Scans `P[nY][nM][nW][nD][T[nH][nM][nS]]`, accumulating each number and assigning it to the
 /// matching component on the unit letter; `M` before `T` is months, after `T` is minutes; `W`
-/// contributes 7 days each. Unrecognized characters (including the leading `P`) are skipped.
+/// contributes 7 days each. The leading `P` is required (a missing/lowercase `P` throws); the
+/// `T` time separator is consumed as a no-op and unknown letters throw.
 fn date_interval_constructor() -> ClassMethod {
     let var = |n: &str| Expr::new(ExprKind::Variable(n.to_string()), dummy());
     let int = |n: i64| Expr::new(ExprKind::IntLiteral(n), dummy());
@@ -3136,6 +3140,21 @@ fn date_interval_constructor() -> ClassMethod {
 
     let body = vec![
         Stmt::assign("len", call("strlen", vec![var("duration")])),
+        // PHP requires the duration to start with a literal `P`; anything else
+        // (e.g. "1Y", "p1y", "") is a DateMalformedIntervalStringException.
+        Stmt::new(
+            StmtKind::If {
+                condition: binop(
+                    call("substr", vec![var("duration"), int(0), int(1)]),
+                    BinOp::StrictNotEq,
+                    strlit("P"),
+                ),
+                then_body: vec![throw_malformed_interval()],
+                elseif_clauses: Vec::new(),
+                else_body: None,
+            },
+            dummy(),
+        ),
         Stmt::assign("num", int(0)),
         Stmt::assign("inTime", int(0)),
         Stmt::assign("units", int(0)),
@@ -3445,7 +3464,7 @@ fn date_interval_format() -> ClassMethod {
 fn datetime_diff_method() -> ClassMethod {
     let target_ts = Expr::new(
         ExprKind::MethodCall {
-            object: Box::new(Expr::new(ExprKind::Variable("target".to_string()), dummy())),
+            object: Box::new(Expr::new(ExprKind::Variable("targetObject".to_string()), dummy())),
             method: "getTimestamp".to_string(),
             args: Vec::new(),
         },
@@ -3455,7 +3474,7 @@ fn datetime_diff_method() -> ClassMethod {
     // promoted it onto DateTimeInterface).
     let target_micro = Expr::new(
         ExprKind::MethodCall {
-            object: Box::new(Expr::new(ExprKind::Variable("target".to_string()), dummy())),
+            object: Box::new(Expr::new(ExprKind::Variable("targetObject".to_string()), dummy())),
             method: "getMicrosecond".to_string(),
             args: Vec::new(),
         },
@@ -3526,7 +3545,7 @@ fn datetime_diff_method() -> ClassMethod {
         "diff",
         vec![
             (
-                "target".to_string(),
+                "targetObject".to_string(),
                 Some(TypeExpr::Named(Name::unqualified("DateTimeInterface"))),
                 None,
                 false,
