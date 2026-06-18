@@ -4,7 +4,7 @@ All notable changes to elephc, a PHP-to-native compiler written in Rust.
 Releases are listed newest first.
 
 ## [Unreleased]
-- PHP date/time, timezone, and calendar parity (EIR backend): `DateTime`, `DateTimeImmutable`, `DateTimeInterface`, `DateTimeZone`, `DateInterval`, and `DatePeriod`, plus the procedural `getdate`/`localtime`/`mktime`/`gmmktime`/`checkdate`/`microtime`/`hrtime`/`strtotime`, `date`/`gmdate` format tokens, and calendar functions — backed by a bundled timezone database (`elephc-tz` crate).
+- PHP date/time, timezone, and calendar parity (EIR backend): `DateTime`, `DateTimeImmutable`, `DateTimeInterface`, `DateTimeZone`, `DateInterval`, and `DatePeriod`, the PHP 8.3 date exception hierarchy, plus the procedural `getdate`/`localtime`/`mktime`/`gmmktime`/`checkdate`/`microtime`/`hrtime`/`strtotime`, `date`/`gmdate` format tokens, solar functions (`date_sun_info`/`date_sunrise`/`date_sunset`), and `ext/calendar` functions — backed by a bundled IANA timezone database (`elephc-tz` crate).
 - Date/time correctness fixes: `getdate()`/`localtime()` default to UTC like PHP, `gmdate("T")` reports `GMT` on every target, `createFromTimestamp()` keeps fractional-second microseconds, `DateInterval` requires a leading `P`, `diff()` and `DatePeriod::createFromISO8601String()` match PHP signatures (`$targetObject`, `$specification` + `$options`).
 - General fixes surfaced by the date/time work: `var_dump` renders heterogeneous indexed-array bodies, `array_fill` terminates on a negative count on ARM64, and user-declared functions/classes are no longer hijacked when their name collides with a procedural date alias.
 
