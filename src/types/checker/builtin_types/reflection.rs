@@ -557,6 +557,10 @@ fn builtin_reflection_parameter() -> FlattenedClass {
             builtin_property("__type", Visibility::Private, Some(mixed_type()), null_lit()),
         ],
         methods: vec![
+            builtin_reflection_owner_constructor_method(vec![
+                ("function", Some(mixed_type()), None, false),
+                ("param", Some(mixed_type()), None, false),
+            ]),
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
             builtin_reflection_slot_getter("getPosition", "__position", TypeExpr::Int),
             builtin_reflection_slot_getter("isOptional", "__optional", TypeExpr::Bool),
