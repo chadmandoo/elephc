@@ -901,6 +901,7 @@ fn reflection_class_constant_metadata(
     Ok(
         resolve_reflection_class_constant(ctx, &reflected_class, &constant_name)
             .map(|(declaring_class_name, info)| {
+                let is_final = info.final_constants.contains(&constant_name);
                 let attr_names = info
                     .constant_attribute_names
                     .get(&constant_name)
@@ -928,7 +929,7 @@ fn reflection_class_constant_metadata(
                     parent_class_name: Some(declaring_class_name.to_string()),
                     parameter_members: Vec::new(),
                     required_parameter_count: 0,
-                    is_final: false,
+                    is_final,
                     is_abstract: false,
                     is_interface: false,
                     is_trait: false,
@@ -936,7 +937,10 @@ fn reflection_class_constant_metadata(
                     is_readonly: false,
                     is_instantiable: false,
                     modifiers: 0,
-                    member_flags: ReflectionMemberFlags::default(),
+                    member_flags: ReflectionMemberFlags {
+                        is_final,
+                        ..ReflectionMemberFlags::default()
+                    },
                 }
             })
             .unwrap_or_else(empty_reflection_metadata),
@@ -1288,6 +1292,7 @@ fn reflection_class_constant_reflection_members(
                 class_name,
                 case.attribute_names.clone(),
                 case.attribute_args.clone(),
+                false,
                 &mut members,
                 &mut seen,
             );
@@ -1316,6 +1321,7 @@ fn reflection_class_constant_reflection_members(
                     .get(constant_name)
                     .cloned()
                     .unwrap_or_default(),
+                current_info.final_constants.contains(constant_name),
                 &mut members,
                 &mut seen,
             );
@@ -1363,6 +1369,7 @@ fn collect_interface_constant_reflection_members(
             interface_name,
             Vec::new(),
             Vec::new(),
+            interface_info.final_constants.contains(constant_name),
             members,
             seen,
         );
@@ -1386,6 +1393,7 @@ fn reflection_trait_constant_reflection_members(
                     trait_name,
                     Vec::new(),
                     Vec::new(),
+                    false,
                     &mut members,
                     &mut seen,
                 );
@@ -1401,6 +1409,7 @@ fn push_unique_constant_reflection_member(
     declaring_class_name: &str,
     attr_names: Vec<String>,
     attr_args: Vec<Option<Vec<AttrArgEntry>>>,
+    is_final: bool,
     members: &mut Vec<ReflectionListedMember>,
     seen: &mut std::collections::HashSet<String>,
 ) {
@@ -1412,7 +1421,10 @@ fn push_unique_constant_reflection_member(
         declaring_class_name: Some(declaring_class_name.to_string()),
         attr_names,
         attr_args,
-        flags: ReflectionMemberFlags::default(),
+        flags: ReflectionMemberFlags {
+            is_final,
+            ..ReflectionMemberFlags::default()
+        },
         required_parameter_count: 0,
         parameters: Vec::new(),
     });
@@ -3662,6 +3674,9 @@ fn emit_reflection_member_flag_properties(
                 "__is_readonly",
                 flags.is_readonly,
             )?;
+        }
+        "ReflectionClassConstant" => {
+            emit_reflection_owner_bool_property(ctx, class_name, "__is_final", flags.is_final)?;
         }
         _ => {}
     }
