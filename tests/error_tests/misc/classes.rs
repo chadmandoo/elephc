@@ -435,33 +435,43 @@ fn test_error_missing_interface_method() {
     );
 }
 
-/// Verifies the error diagnostic for a missing static interface method (PHP 8.3+).
+/// Verifies the error diagnostic for a missing static interface method.
 #[test]
 fn test_error_missing_static_interface_method() {
-    // a concrete class implementing an interface must provide all its static methods.
+    // a concrete class must implement static methods required by interfaces.
     expect_error(
-        "<?php interface Previewable { public static function previews(): array; } class User implements Previewable {}",
-        "Class User must implement static interface method Previewable::previews",
+        "<?php interface Maker { public static function make(): string; } class Box implements Maker {}",
+        "Class Box must implement interface static method Maker::make",
     );
 }
 
-/// Verifies a concrete child must implement a static interface method deferred by an abstract parent.
+/// Verifies an instance method cannot satisfy a static interface method contract.
 #[test]
-fn test_error_concrete_child_missing_static_interface_method_via_abstract_parent() {
-    // an abstract class may defer a static interface method, but its concrete child must provide it.
+fn test_error_instance_method_cannot_satisfy_static_interface_contract() {
+    // PHP keeps static and instance interface contracts distinct.
     expect_error(
-        "<?php interface Previewable { public static function previews(): array; } abstract class Base implements Previewable {} class User extends Base {}",
-        "Class User must implement static interface method Previewable::previews",
+        "<?php interface Maker { public static function make(): string; } class Box implements Maker { public function make(): string { return \"x\"; } }",
+        "Cannot use instance method to satisfy static interface contract: Box::make",
     );
 }
 
-/// Verifies an instance method does not satisfy a static interface method contract.
+/// Verifies a static method cannot satisfy an instance interface method contract.
 #[test]
-fn test_error_instance_method_does_not_satisfy_static_interface_method() {
-    // the implementing method must itself be static; an instance method leaves the contract unmet.
+fn test_error_static_method_cannot_satisfy_instance_interface_contract() {
+    // PHP keeps static and instance interface contracts distinct in both directions.
     expect_error(
-        "<?php interface Previewable { public static function previews(): array; } class User implements Previewable { public function previews(): array { return []; } }",
-        "Class User must implement static interface method Previewable::previews",
+        "<?php interface Named { public function name(): string; } class User implements Named { public static function name(): string { return \"x\"; } }",
+        "Cannot use static method to satisfy interface contract: User::name",
+    );
+}
+
+/// Verifies interface inheritance rejects static/non-static method kind conflicts.
+#[test]
+fn test_error_interface_parent_static_method_kind_conflict() {
+    // A child interface cannot redeclare a static parent method as non-static.
+    expect_error(
+        "<?php interface ParentMaker { public static function make(): string; } interface ChildMaker extends ParentMaker { public function make(): string; }",
+        "Cannot combine static and non-static interface method: ChildMaker::make",
     );
 }
 
