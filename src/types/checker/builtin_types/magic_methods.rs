@@ -23,7 +23,7 @@ use super::super::Checker;
 /// For `__set`: parameter 0 is `PhpType::Str`, parameter 1 is `PhpType::Mixed`.
 /// For `__call`/`__callStatic`: parameter 0 is `PhpType::Str`, parameter 1 is
 /// `PhpType::Array` of `PhpType::Never` (the forwarded argument list).
-/// Declared `__isset` return types are validated separately.
+/// Declared `__isset`/`__unset` return types are validated separately.
 /// Does nothing for classes that do not declare these methods.
 pub(crate) fn patch_magic_method_signatures(checker: &mut Checker) {
     for class_info in checker.classes.values_mut() {
@@ -43,6 +43,11 @@ pub(crate) fn patch_magic_method_signatures(checker: &mut Checker) {
             }
         }
         if let Some(sig) = class_info.methods.get_mut("__isset") {
+            if let Some(param) = sig.params.get_mut(0) {
+                param.1 = PhpType::Str;
+            }
+        }
+        if let Some(sig) = class_info.methods.get_mut("__unset") {
             if let Some(param) = sig.params.get_mut(0) {
                 param.1 = PhpType::Str;
             }
@@ -198,6 +203,39 @@ pub(crate) fn validate_magic_method_contracts(checker: &Checker) -> Result<(), C
                         ));
                     }
                 }
+                "__unset" => {
+                    if method.is_static {
+                        errors.push(CompileError::new(
+                            method.span,
+                            &format!("Magic method must be non-static: {}::__unset", class_name),
+                        ));
+                        continue;
+                    }
+                    if method.visibility != Visibility::Public {
+                        errors.push(CompileError::new(
+                            method.span,
+                            &format!("Magic method must be public: {}::__unset", class_name),
+                        ));
+                        continue;
+                    }
+                    if method.params.len() != 1 || method.variadic.is_some() {
+                        errors.push(CompileError::new(
+                            method.span,
+                            &format!("Magic method must take 1 argument: {}::__unset", class_name),
+                        ));
+                        continue;
+                    }
+                    if method
+                        .return_type
+                        .as_ref()
+                        .is_some_and(|return_type| !matches!(return_type, TypeExpr::Void))
+                    {
+                        errors.push(CompileError::new(
+                            method.span,
+                            &format!("Magic method must return void: {}::__unset", class_name),
+                        ));
+                    }
+                }
                 "__call" => {
                     if method.is_static {
                         errors.push(CompileError::new(
@@ -256,30 +294,6 @@ pub(crate) fn validate_magic_method_contracts(checker: &Checker) -> Result<(), C
                                 "Magic method must take 0 arguments: {}::__destruct",
                                 class_name
                             ),
-                        ));
-                    }
-                }
-                "__unset" => {
-                    // `isset($obj->prop)`/`unset($obj->prop)` on an undeclared
-                    // property dispatch here; both take the property name only.
-                    if method.is_static {
-                        errors.push(CompileError::new(
-                            method.span,
-                            &format!("Magic method must be non-static: {}::__unset", class_name),
-                        ));
-                        continue;
-                    }
-                    if method.visibility != Visibility::Public {
-                        errors.push(CompileError::new(
-                            method.span,
-                            &format!("Magic method must be public: {}::__unset", class_name),
-                        ));
-                        continue;
-                    }
-                    if method.params.len() != 1 || method.variadic.is_some() {
-                        errors.push(CompileError::new(
-                            method.span,
-                            &format!("Magic method must take 1 argument: {}::__unset", class_name),
                         ));
                     }
                 }

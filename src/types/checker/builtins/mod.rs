@@ -65,7 +65,8 @@ impl Checker {
         // undeclared property routed to `__isset`/`__unset`, which must not be
         // eagerly inferred by argument normalization. Their handlers inspect the
         // raw operands directly.
-        let is_lazy_construct = matches!(name, "isset" | "unset");
+        let builtin_key = crate::names::php_symbol_key(name.trim_start_matches('\\'));
+        let is_lazy_construct = matches!(builtin_key.as_str(), "isset" | "unset");
         let normalized_args;
         let args = if let Some(sig) =
             (!is_lazy_construct).then(|| crate::types::builtin_call_sig(name)).flatten()
