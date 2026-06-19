@@ -200,6 +200,28 @@ echo User::where("active", 1), "|", User::first();
     assert_eq!(out, "where(2)|first(0)");
 }
 
+/// Verifies `__callStatic` does not intercept an existing static method.
+#[test]
+fn test_magic_callstatic_leaves_existing_static_method_direct() {
+    let out = compile_and_run(
+        r#"<?php
+class StaticProxy {
+    public static function present() {
+        return "present";
+    }
+
+    public static function __callStatic($method, $args) {
+        return "static:" . $method . ":" . implode(",", $args);
+    }
+}
+echo StaticProxy::present();
+echo ":";
+echo StaticProxy::doSomething(1, 2, 3);
+"#,
+    );
+    assert_eq!(out, "present:static:doSomething:1,2,3");
+}
+
 /// Verifies `isset($obj->prop)` on an undeclared property dispatches to `__isset`
 /// and uses its boolean result for both present and absent names.
 #[test]

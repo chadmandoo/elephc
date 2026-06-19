@@ -10245,19 +10245,23 @@ fn lower_static_method_call(
             return emit_closure_bind(ctx, closure.value, new_this.value, expr);
         }
     }
-    let sig = static_method_implementation_signature(ctx, receiver, method)
-        .or_else(|| lexical_instance_static_call_signature(ctx, receiver, method))
+
+    let magic_args;
+    let (dispatch_method, call_args) = if let Some(args) =
+        magic_static_call_dispatch_args(ctx, receiver, method, args, expr.span)
+    {
+        magic_args = args;
+        ("__callStatic", magic_args.as_slice())
+    } else {
+        (method, args)
+    };
+    let sig = static_method_implementation_signature(ctx, receiver, dispatch_method)
+        .or_else(|| lexical_instance_static_call_signature(ctx, receiver, dispatch_method))
         .cloned();
-    // PHP `__callStatic`: an undefined static method forwards to the class's
-    // `__callStatic($name, $args)` when the class declares one.
-    if sig.is_none() {
-        if let Some(class_name) = magic_callstatic_receiver_class(ctx, receiver, method) {
-            return lower_magic_callstatic(ctx, &class_name, method, args, expr);
-        }
-    }
-    let operands = lower_args_with_signature(ctx, sig.as_ref(), args);
-    let operands = coerce_int_backed_enum_string_argument(ctx, receiver, method, operands, expr);
-    let name = format!("{}::{}", receiver_name(receiver), method);
+    let operands = lower_args_with_signature(ctx, sig.as_ref(), call_args);
+    let operands =
+        coerce_int_backed_enum_string_argument(ctx, receiver, dispatch_method, operands, expr);
+    let name = format!("{}::{}", receiver_name(receiver), dispatch_method);
     let data = ctx.intern_string(&name);
     let result_type = sig
         .as_ref()
@@ -10337,57 +10341,29 @@ fn coerce_int_backed_enum_string_argument(
     operands
 }
 
-/// Resolves the class whose `__callStatic` should handle an otherwise-undefined
-/// static call `Receiver::method(...)`. Returns `None` when the receiver already
-/// has a real static method of that name or declares no `__callStatic`.
-fn magic_callstatic_receiver_class(
+/// Builds synthetic `__callStatic` arguments when a class lacks the requested static method.
+fn magic_static_call_dispatch_args(
     ctx: &LoweringContext<'_, '_>,
     receiver: &StaticReceiver,
     method: &str,
-) -> Option<String> {
-    let class_name = static_receiver_class_name(ctx, receiver)?;
-    let class_info = ctx.classes.get(class_name.as_str())?;
-    if class_info.static_methods.contains_key(&php_symbol_key(method)) {
+    args: &[Expr],
+    span: Span,
+) -> Option<Vec<Expr>> {
+    if static_method_implementation_signature(ctx, receiver, method).is_some()
+        || lexical_instance_static_call_signature(ctx, receiver, method).is_some()
+    {
         return None;
     }
-    class_info
-        .static_methods
-        .contains_key("__callstatic")
-        .then_some(class_name)
-}
-
-/// Lowers `Class::method(args)` as a forward to `Class::__callStatic("method", [args])`.
-fn lower_magic_callstatic(
-    ctx: &mut LoweringContext<'_, '_>,
-    class_name: &str,
-    method: &str,
-    args: &[Expr],
-    expr: &Expr,
-) -> LoweredValue {
-    let sig = ctx
-        .classes
-        .get(class_name)
-        .and_then(|info| info.static_methods.get("__callstatic"))
-        .cloned();
-    let magic_args = vec![
-        Expr::new(ExprKind::StringLiteral(method.to_string()), expr.span),
-        Expr::new(ExprKind::ArrayLiteral(args.to_vec()), expr.span),
-    ];
-    let operands = lower_args_with_signature(ctx, sig.as_ref(), &magic_args);
-    let name = format!("{}::__callStatic", class_name);
-    let data = ctx.intern_string(&name);
-    let result_type = sig
-        .as_ref()
-        .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
-        .unwrap_or_else(|| fallback_expr_type(expr));
-    ctx.emit_value(
-        Op::StaticMethodCall,
-        operands,
-        Some(Immediate::Data(data)),
-        result_type,
-        Op::StaticMethodCall.default_effects(),
-        Some(expr.span),
-    )
+    let class_name = static_receiver_class_name(ctx, receiver)?;
+    let class_info = ctx.classes.get(class_name.as_str())?;
+    if class_info.methods.contains_key(&php_symbol_key(method)) {
+        return None;
+    }
+    static_method_implementation_signature(ctx, receiver, "__callStatic")?;
+    Some(vec![
+        Expr::new(ExprKind::StringLiteral(method.to_string()), span),
+        Expr::new(ExprKind::ArrayLiteral(args.to_vec()), span),
+    ])
 }
 
 /// Lowers a static-method callable-array call through a descriptor invoker.
