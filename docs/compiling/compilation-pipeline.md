@@ -21,25 +21,28 @@ PHP source
   -> (conditional)     apply compiler ifdef branches from --define
   -> autoload-build    discover autoload rules
   -> resolve           resolve include/require and declarations
-  -> pdo-prelude       inject the PDO prelude when used
-  -> name-resolve      apply namespace/use rules, canonicalize names
-  -> autoload-run      run autoload insertion
-  -> opt-fold          AST constant folding
-  -> typecheck         Type checker / warnings
-  -> exports-scan      collect #[Export] functions (cdylib)
-  -> opt-prop          AST constant propagation
-  -> opt-post          prune constant control flow
-  -> opt-norm          control-flow normalization
-  -> dce               AST dead-code elimination
-  -> ir-lower          AST -> EIR lowering + EIR validation
-  -> ir-opt            EIR optimization passes (fixed-point driver)
-  -> ir-print          print EIR and stop (with --emit-ir)
-  -> runtime-cache     build/reuse the prebuilt runtime object
-  -> codegen-ir        EIR -> target assembly
-  -> write-asm         write the generated assembly
-  -> source-map        write the .map sidecar (with --source-map)
-  -> assemble          assembler: assembly -> object file
-  -> link              linker: object files -> binary
+  -> pdo-prelude        inject the PDO prelude when used
+  -> tz-prelude         inject the timezone-introspection prelude when used
+  -> list-id-prelude    inject the DateTimeZone identifier-list prelude when used
+  -> var-export-prelude inject the var_export prelude when used
+  -> name-resolve       apply namespace/use rules, canonicalize names
+  -> autoload-run       run autoload insertion
+  -> opt-fold           AST constant folding
+  -> typecheck          Type checker / warnings
+  -> exports-scan       collect #[Export] functions (cdylib)
+  -> opt-prop           AST constant propagation
+  -> opt-post           prune constant control flow
+  -> opt-norm           control-flow normalization
+  -> dce                AST dead-code elimination
+  -> ir-lower           AST -> EIR lowering + EIR validation
+  -> ir-opt             EIR optimization passes (fixed-point driver)
+  -> ir-print           print EIR and stop (with --emit-ir)
+  -> runtime-cache      build/reuse the prebuilt runtime object
+  -> codegen-ir         EIR -> target assembly
+  -> write-asm          write the generated assembly
+  -> source-map         write the .map sidecar (with --source-map)
+  -> assemble           assembler: assembly -> object file
+  -> link               linker: object files -> binary
 ```
 
 ## Front end: source to checked AST
@@ -51,9 +54,12 @@ PHP source
   substituted before any later pass sees them.
 - **conditional compilation** — `ifdef` branches are resolved using the symbols
   passed with [`--define`](linking-and-conditional-compilation.md#conditional-compilation).
-- **resolve / name-resolve** — `include`/`require` are resolved, declarations are
-  discovered, and namespace/`use` rules rewrite references to fully-qualified
-  names. Autoloading is wired in around these steps.
+- **resolve / prelude injection / name-resolve** — `include`/`require` are
+  resolved, declarations are discovered, demand-loaded PHP preludes for PDO,
+  timezone introspection, `DateTimeZone::listIdentifiers()`, and `var_export()`
+  are injected only when referenced, and namespace/`use` rules rewrite
+  references to fully-qualified names. Autoloading is wired in around these
+  steps.
 - **typecheck** — the [Type Checker](../internals/the-type-checker.md) infers and
   validates types and emits warnings.
 

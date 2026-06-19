@@ -402,6 +402,12 @@ src/
 ├── name_resolver/       # Namespace/use resolution to canonical names
 ├── pdo_prelude.rs       # PDO standard-library prelude (PHP source) injection entry point
 ├── pdo_prelude/         # PDO driver detection from the DSN prefix (sqlite/pgsql/mysql)
+├── tz_prelude.rs        # Timezone-introspection prelude injection entry point
+├── tz_prelude/          # Timezone-introspection prelude usage detection
+├── list_id_prelude.rs   # DateTimeZone identifier-list prelude injection entry point
+├── list_id_prelude/     # Identifier-list prelude detection and baked table data
+├── var_export_prelude.rs # var_export prelude injection entry point
+├── var_export_prelude/  # var_export prelude usage detection
 │
 ├── lexer/               # Source text → token stream
 │   ├── token.rs         # Token enum

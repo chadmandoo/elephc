@@ -116,6 +116,13 @@ In this example, there's nothing to resolve — the AST passes through unchanged
 
 **File:** `src/name_resolver/`
 
+Between include resolution and name resolution, elephc injects demand-loaded PHP
+preludes for built-in surfaces that need helper declarations: PDO,
+timezone-introspection APIs, `DateTimeZone::listIdentifiers()` filtering, and
+`var_export()`. These passes run after includes so usage inside included files is
+detected, and before name resolution so injected declarations participate in the
+same canonical-name pipeline as user code.
+
 After includes are flattened, elephc resolves namespace-aware names. This pass applies the current `namespace`, any `use` / `use function` / `use const` imports, and rewrites references to their canonical fully-qualified names before semantic analysis.
 
 In this example there are no namespaces or imports, so the AST still passes through unchanged.
@@ -388,6 +395,8 @@ The binary runs directly on the CPU. There is no PHP interpreter or VM at runtim
                     ▼ Conditional (ifdef no-op here)
                     │
                     ▼ Resolver (no-op here)
+                    │
+                    ▼ Demand-loaded preludes (no-op here)
                     │
                     ▼ NameResolver (no-op here)
                     │
