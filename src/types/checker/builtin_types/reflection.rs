@@ -602,6 +602,12 @@ fn builtin_reflection_parameter() -> FlattenedClass {
                 Some(mixed_type()),
                 null_lit(),
             ),
+            builtin_property(
+                "__declaring_function",
+                Visibility::Private,
+                Some(mixed_type()),
+                null_lit(),
+            ),
         ],
         methods: vec![
             builtin_reflection_owner_constructor_method(vec![
@@ -627,6 +633,11 @@ fn builtin_reflection_parameter() -> FlattenedClass {
             ),
             builtin_reflection_parameter_get_default_value_method(),
             builtin_reflection_slot_getter("getDeclaringClass", "__declaring_class", mixed_type()),
+            builtin_reflection_slot_getter(
+                "getDeclaringFunction",
+                "__declaring_function",
+                mixed_type(),
+            ),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
