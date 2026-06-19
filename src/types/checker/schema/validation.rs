@@ -86,6 +86,7 @@ pub(crate) fn build_method_sig(
             .map(|(_, type_ann, _, _)| type_ann.clone())
             .chain(method.variadic.iter().map(|_| method.variadic_type.clone()))
             .collect(),
+        param_attributes: method.param_attributes.clone(),
         defaults,
         return_type,
         declared_return: method.return_type.is_some(),
@@ -95,7 +96,12 @@ pub(crate) fn build_method_sig(
             .params
             .iter()
             .map(|(_, type_ann, _, _)| type_ann.is_some())
-            .chain(method.variadic.iter().map(|_| method.variadic_type.is_some()))
+            .chain(
+                method
+                    .variadic
+                    .iter()
+                    .map(|_| method.variadic_type.is_some()),
+            )
             .collect(),
         variadic: method.variadic.clone(),
         deprecation: extract_deprecation(&method.attributes),
@@ -123,9 +129,7 @@ pub(crate) fn build_method_sig(
 /// marker, with `reason` set to the attribute's first string argument (or an
 /// empty string if absent). Match is case-insensitive on the last segment of
 /// the attribute name.
-pub(crate) fn extract_deprecation(
-    groups: &[crate::parser::ast::AttributeGroup],
-) -> Option<String> {
+pub(crate) fn extract_deprecation(groups: &[crate::parser::ast::AttributeGroup]) -> Option<String> {
     for group in groups {
         for attr in &group.attributes {
             if !matches_global_builtin_attribute(attr, "Deprecated") {
@@ -331,7 +335,11 @@ pub(crate) fn validate_override_signature(
         ));
     }
     if parent_sig.declared_return
-        && !declared_return_type_compatible(checker, &parent_sig.return_type, &child_sig.return_type)
+        && !declared_return_type_compatible(
+            checker,
+            &parent_sig.return_type,
+            &child_sig.return_type,
+        )
     {
         return Err(CompileError::new(
             method.span,

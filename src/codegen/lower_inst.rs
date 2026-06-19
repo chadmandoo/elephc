@@ -614,6 +614,7 @@ fn function_signature_from_eir_with_param_count(
             .map(|param| (param.name.clone(), param.php_type.clone()))
             .collect(),
         param_type_exprs: vec![None; param_count],
+        param_attributes: Vec::new(),
         defaults: function
             .params
             .iter()

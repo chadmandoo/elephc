@@ -9,7 +9,7 @@
 //! Key details:
 //! - Builtin signatures must match PHP so named arguments, first-class callables, and mutation semantics stay coherent.
 
-use crate::parser::ast::{Expr, ExprKind, TypeExpr};
+use crate::parser::ast::{AttributeGroup, Expr, ExprKind, TypeExpr};
 use crate::span::Span;
 
 use super::PhpType;
@@ -23,6 +23,7 @@ use super::PhpType;
 pub struct FunctionSig {
     pub params: Vec<(String, PhpType)>,
     pub param_type_exprs: Vec<Option<TypeExpr>>,
+    pub param_attributes: Vec<Vec<AttributeGroup>>,
     pub defaults: Vec<Option<Expr>>,
     pub return_type: PhpType,
     pub declared_return: bool,
@@ -60,6 +61,12 @@ pub(crate) fn callable_wrapper_sig(sig: &FunctionSig) -> FunctionSig {
         }
     }
 
+    let variadic_attributes = if wrapper_sig.param_attributes.len() > wrapper_sig.params.len() {
+        wrapper_sig.param_attributes.remove(wrapper_sig.params.len())
+    } else {
+        Vec::new()
+    };
+
     wrapper_sig.params.push((
         variadic_name.clone(),
         PhpType::Array(Box::new(PhpType::Mixed)),
@@ -68,6 +75,7 @@ pub(crate) fn callable_wrapper_sig(sig: &FunctionSig) -> FunctionSig {
     wrapper_sig.ref_params.push(false);
     wrapper_sig.declared_params.push(false);
     wrapper_sig.param_type_exprs.push(None);
+    wrapper_sig.param_attributes.push(variadic_attributes);
     wrapper_sig
 }
 
@@ -708,6 +716,7 @@ fn legacy_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         "strlen" => Some(FunctionSig {
             params: vec![("string".to_string(), PhpType::Str)],
             param_type_exprs: vec![None],
+            param_attributes: vec![Vec::new()],
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
@@ -726,6 +735,7 @@ fn legacy_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
                 },
             )],
             param_type_exprs: vec![None],
+            param_attributes: vec![Vec::new()],
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
@@ -738,6 +748,7 @@ fn legacy_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         "buffer_len" => Some(FunctionSig {
             params: vec![("buffer".to_string(), PhpType::Buffer(Box::new(PhpType::Int)))],
             param_type_exprs: vec![None],
+            param_attributes: vec![Vec::new()],
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
@@ -1145,6 +1156,7 @@ fn make_sig(params: &[&str], defaults: Vec<Option<Expr>>, variadic: Option<&str>
             .map(|name| ((*name).to_string(), PhpType::Mixed))
             .collect(),
         param_type_exprs: vec![None; params.len()],
+        param_attributes: vec![Vec::new(); params.len()],
         defaults,
         return_type: PhpType::Mixed,
         declared_return: false,
@@ -1185,6 +1197,7 @@ mod tests {
         FunctionSig {
             defaults: vec![None; params.len()],
             param_type_exprs: vec![None; params.len()],
+            param_attributes: vec![Vec::new(); params.len()],
             return_type: PhpType::Mixed,
             declared_return: false,
             by_ref_return: false,

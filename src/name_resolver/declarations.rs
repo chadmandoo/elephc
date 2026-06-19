@@ -282,10 +282,7 @@ fn resolve_attribute_groups(
                 .iter()
                 .map(|attr| Attribute {
                     name: resolved_name(resolved_class_name(
-                        &attr.name,
-                        namespace,
-                        imports,
-                        symbols,
+                        &attr.name, namespace, imports, symbols,
                     )),
                     args: attr
                         .args
@@ -314,6 +311,11 @@ fn resolve_methods(
             let body = resolve_stmt_list(&method.body, namespace, imports, symbols)?;
             Ok(ClassMethod {
                 params: resolve_params(&method.params, namespace, imports, symbols),
+                param_attributes: method
+                    .param_attributes
+                    .iter()
+                    .map(|groups| resolve_attribute_groups(groups, namespace, imports, symbols))
+                    .collect(),
                 return_type: method
                     .return_type
                     .as_ref()
@@ -343,12 +345,7 @@ fn resolve_class_consts(
         .iter()
         .map(|constant| ClassConst {
             value: resolve_expr(&constant.value, namespace, imports, symbols),
-            attributes: resolve_attribute_groups(
-                &constant.attributes,
-                namespace,
-                imports,
-                symbols,
-            ),
+            attributes: resolve_attribute_groups(&constant.attributes, namespace, imports, symbols),
             ..constant.clone()
         })
         .collect()
@@ -373,12 +370,7 @@ fn resolve_properties(
                 .default
                 .as_ref()
                 .map(|expr| resolve_expr(expr, namespace, imports, symbols)),
-            attributes: resolve_attribute_groups(
-                &property.attributes,
-                namespace,
-                imports,
-                symbols,
-            ),
+            attributes: resolve_attribute_groups(&property.attributes, namespace, imports, symbols),
             ..property.clone()
         })
         .collect()
@@ -415,16 +407,14 @@ pub(super) fn resolve_trait_use(
                     alias,
                     visibility,
                 } => Ok(TraitAdaptation::Alias {
-                    trait_name: trait_name
-                        .as_ref()
-                        .map(|name| {
-                            resolved_name(resolved_class_name(
-                                name,
-                                current_namespace,
-                                imports,
-                                symbols,
-                            ))
-                        }),
+                    trait_name: trait_name.as_ref().map(|name| {
+                        resolved_name(resolved_class_name(
+                            name,
+                            current_namespace,
+                            imports,
+                            symbols,
+                        ))
+                    }),
                     method: php_symbol_key(method),
                     alias: alias.as_ref().map(|alias| php_symbol_key(alias)),
                     visibility: visibility.clone(),
@@ -434,16 +424,14 @@ pub(super) fn resolve_trait_use(
                     method,
                     instead_of,
                 } => Ok(TraitAdaptation::InsteadOf {
-                    trait_name: trait_name
-                        .as_ref()
-                        .map(|name| {
-                            resolved_name(resolved_class_name(
-                                name,
-                                current_namespace,
-                                imports,
-                                symbols,
-                            ))
-                        }),
+                    trait_name: trait_name.as_ref().map(|name| {
+                        resolved_name(resolved_class_name(
+                            name,
+                            current_namespace,
+                            imports,
+                            symbols,
+                        ))
+                    }),
                     method: php_symbol_key(method),
                     instead_of: instead_of
                         .iter()
