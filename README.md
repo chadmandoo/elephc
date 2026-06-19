@@ -24,6 +24,10 @@
   A PHP-to-native compiler that takes a subset of PHP and compiles it directly to native assembly, producing standalone binaries for <strong>macOS ARM64</strong>, <strong>Linux ARM64</strong>, and <strong>Linux x86_64</strong>. No opcode fallback, just real machine code.
 </p>
 
+<p align="center">
+  <a href="https://elephc.dev"><strong>Official Website</strong></a>
+</p>
+
 ---
 
 ## Support the project
