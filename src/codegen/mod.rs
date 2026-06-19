@@ -542,6 +542,7 @@ fn seed_runtime_throwable_class_names(module: &Module, names: &mut HashSet<Strin
         "Exception",
         "LogicException",
         "RuntimeException",
+        "ReflectionException",
         "JsonException",
         "InvalidArgumentException",
         "OutOfBoundsException",

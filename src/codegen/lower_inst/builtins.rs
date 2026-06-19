@@ -348,7 +348,7 @@ pub(crate) fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instru
     store_if_result(ctx, inst)
 }
 
-/// Lowers AOT class/interface/enum existence checks for literal names.
+/// Lowers AOT class/interface/enum existence checks for literal or dynamic string names.
 pub(crate) fn lower_class_like_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -356,22 +356,125 @@ pub(crate) fn lower_class_like_exists(
 ) -> Result<()> {
     ensure_arg_count_between(inst, name, 1, 2)?;
     let value = expect_operand(inst, 0)?;
-    let symbol_name = const_string_operand(ctx, value)?;
-    let exists = match name {
-        "class_exists" => contains_folded(
-            ctx.module
-                .class_infos
-                .keys()
-                .filter(|class_name| !is_internal_synthetic_class_name(class_name)),
-            &symbol_name,
-        ),
-        "interface_exists" => contains_folded(ctx.module.interface_infos.keys(), &symbol_name),
-        "trait_exists" => contains_folded(ctx.module.trait_table.names.iter(), &symbol_name),
-        "enum_exists" => contains_folded(ctx.module.enum_infos.keys(), &symbol_name),
-        _ => false,
-    };
-    emit_static_bool(ctx, exists);
+    if let Some(symbol_name) = maybe_const_string_operand(ctx, value)? {
+        let exists = match name {
+            "class_exists" => contains_folded(
+                ctx.module
+                    .class_infos
+                    .keys()
+                    .filter(|class_name| !is_internal_synthetic_class_name(class_name)),
+                &symbol_name,
+            ),
+            "interface_exists" => contains_folded(ctx.module.interface_infos.keys(), &symbol_name),
+            "trait_exists" => contains_folded(ctx.module.trait_table.names.iter(), &symbol_name),
+            "enum_exists" => contains_folded(ctx.module.enum_infos.keys(), &symbol_name),
+            _ => false,
+        };
+        emit_static_bool(ctx, exists);
+    } else {
+        lower_dynamic_class_like_exists(ctx, name, value)?;
+    }
     store_if_result(ctx, inst)
+}
+
+/// Lowers a dynamic string `class_exists()`-family lookup against known AOT metadata.
+fn lower_dynamic_class_like_exists(
+    ctx: &mut FunctionContext<'_>,
+    name: &str,
+    value: ValueId,
+) -> Result<()> {
+    if ctx.value_php_type(value)?.codegen_repr() != PhpType::Str {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} with non-string dynamic name",
+            name
+        )));
+    }
+    let candidates = dynamic_class_like_exists_candidates(ctx, name);
+    if candidates.is_empty() {
+        emit_static_bool(ctx, false);
+        return Ok(());
+    }
+
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(value, ptr_reg, len_reg)?;
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+
+    let matched_label = ctx.next_label(&format!("{}_dynamic_match", name));
+    let done_label = ctx.next_label(&format!("{}_dynamic_done", name));
+    for candidate in candidates {
+        emit_branch_if_dynamic_class_like_exists_candidate(ctx, &candidate, &matched_label);
+    }
+    emit_static_bool(ctx, false);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&matched_label);
+    emit_static_bool(ctx, true);
+
+    ctx.emitter.label(&done_label);
+    abi::emit_release_temporary_stack(ctx.emitter, 16);
+    Ok(())
+}
+
+/// Collects deterministic class-like name candidates for a dynamic existence lookup.
+fn dynamic_class_like_exists_candidates(ctx: &FunctionContext<'_>, name: &str) -> Vec<String> {
+    let mut candidates = BTreeSet::new();
+    match name {
+        "class_exists" => {
+            candidates.extend(
+                ctx.module
+                    .class_infos
+                    .keys()
+                    .filter(|class_name| !is_internal_synthetic_class_name(class_name))
+                    .cloned(),
+            );
+        }
+        "interface_exists" => candidates.extend(ctx.module.interface_infos.keys().cloned()),
+        "trait_exists" => candidates.extend(ctx.module.trait_table.names.iter().cloned()),
+        "enum_exists" => candidates.extend(ctx.module.enum_infos.keys().cloned()),
+        _ => {}
+    }
+    candidates.into_iter().collect()
+}
+
+/// Branches when the saved dynamic class-like string matches a metadata candidate.
+fn emit_branch_if_dynamic_class_like_exists_candidate(
+    ctx: &mut FunctionContext<'_>,
+    candidate: &str,
+    matched_label: &str,
+) {
+    let bare_candidate = candidate.trim_start_matches('\\');
+    emit_dynamic_class_like_exists_compare(ctx, bare_candidate.as_bytes(), matched_label);
+    let qualified_candidate = format!("\\{}", bare_candidate);
+    emit_dynamic_class_like_exists_compare(ctx, qualified_candidate.as_bytes(), matched_label);
+}
+
+/// Emits one case-insensitive comparison for the saved dynamic class-like lookup.
+fn emit_dynamic_class_like_exists_compare(
+    ctx: &mut FunctionContext<'_>,
+    candidate: &[u8],
+    matched_label: &str,
+) {
+    let (candidate_label, candidate_len) = ctx.data.add_string(candidate);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x2", 8);
+            abi::emit_symbol_address(ctx.emitter, "x3", &candidate_label);
+            abi::emit_load_int_immediate(ctx.emitter, "x4", candidate_len as i64);
+            abi::emit_call_label(ctx.emitter, "__rt_strcasecmp");
+            ctx.emitter.instruction("cmp x0, #0");                              // did the dynamic class-like name match this metadata entry?
+            ctx.emitter.instruction(&format!("b.eq {}", matched_label));        // report existence when the runtime name matches case-insensitively
+        }
+        Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdi", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rsi", 8);
+            abi::emit_symbol_address(ctx.emitter, "rdx", &candidate_label);
+            abi::emit_load_int_immediate(ctx.emitter, "rcx", candidate_len as i64);
+            abi::emit_call_label(ctx.emitter, "__rt_strcasecmp");
+            ctx.emitter.instruction("test rax, rax");                           // did the dynamic class-like name match this metadata entry?
+            ctx.emitter.instruction(&format!("je {}", matched_label));          // report existence when the runtime name matches case-insensitively
+        }
+    }
 }
 
 /// Lowers `is_callable(value)` through static lookup or runtime callable-shape helpers.
@@ -1157,23 +1260,26 @@ fn is_internal_synthetic_class_name(name: &str) -> bool {
 
 /// Returns a string literal value defined by a `ConstStr` instruction.
 fn const_string_operand(ctx: &FunctionContext<'_>, value: ValueId) -> Result<String> {
+    maybe_const_string_operand(ctx, value)?.ok_or_else(|| {
+        CodegenIrError::unsupported("function_exists with non-literal function name")
+    })
+}
+
+/// Returns a string literal operand when a value is produced by `ConstStr`.
+fn maybe_const_string_operand(ctx: &FunctionContext<'_>, value: ValueId) -> Result<Option<String>> {
     let value_ref = ctx
         .function
         .value(value)
         .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))?;
     let ValueDef::Instruction { inst, .. } = value_ref.def else {
-        return Err(CodegenIrError::unsupported(
-            "function_exists with non-literal function name",
-        ));
+        return Ok(None);
     };
     let inst_ref = ctx
         .function
         .instruction(inst)
         .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
     if inst_ref.op != Op::ConstStr {
-        return Err(CodegenIrError::unsupported(
-            "function_exists with non-literal function name",
-        ));
+        return Ok(None);
     }
     let Some(Immediate::Data(data)) = inst_ref.immediate else {
         return Err(CodegenIrError::invalid_module(
@@ -1185,6 +1291,7 @@ fn const_string_operand(ctx: &FunctionContext<'_>, value: ValueId) -> Result<Str
         .strings
         .get(data.as_raw() as usize)
         .cloned()
+        .map(Some)
         .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))
 }
 
