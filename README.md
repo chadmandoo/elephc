@@ -17,11 +17,11 @@
 </p>
 
 <p align="center">
-  <strong>3 native targets &middot; no interpreter &middot; no VM &middot; no Zend Engine &middot; zero runtime dependencies &middot; single standalone binary</strong>
+  <strong>3 native targets &middot; no Zend Engine &middot; zero runtime dependencies &middot; single standalone binary</strong>
 </p>
 
 <p align="center">
-  A PHP-to-native compiler that takes a subset of PHP and compiles it directly to native assembly, producing standalone binaries for <strong>macOS ARM64</strong>, <strong>Linux ARM64</strong>, and <strong>Linux x86_64</strong>. No opcode fallback &mdash; just real machine code that runs DOOM and a native async HTTP server.
+  A PHP-to-native compiler that takes a subset of PHP and compiles it directly to native assembly, producing standalone binaries for <strong>macOS ARM64</strong>, <strong>Linux ARM64</strong>, and <strong>Linux x86_64</strong>. No opcode fallback, just real machine code.
 </p>
 
 ---
