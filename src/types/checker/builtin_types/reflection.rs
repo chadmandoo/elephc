@@ -38,7 +38,6 @@ pub(crate) fn inject_builtin_reflection(
         "ReflectionFunction",
         "ReflectionMethod",
         "ReflectionProperty",
-        "ReflectionFunction",
         "ReflectionParameter",
         "ReflectionNamedType",
         "ReflectionClassConstant",
@@ -103,14 +102,7 @@ pub(crate) fn inject_builtin_reflection(
         },
     );
     class_map.insert("ReflectionClass".to_string(), builtin_reflection_class());
-    class_map.insert(
-        "ReflectionFunction".to_string(),
-        builtin_reflection_owner_class(
-            "ReflectionFunction",
-            true,
-            vec![("function", Some(TypeExpr::Str), None, false)],
-        ),
-    );
+    class_map.insert("ReflectionFunction".to_string(), builtin_reflection_function());
     class_map.insert(
         "ReflectionMethod".to_string(),
         builtin_reflection_owner_class(
@@ -133,15 +125,11 @@ pub(crate) fn inject_builtin_reflection(
             ],
         ),
     );
-    class_map.insert("ReflectionFunction".to_string(), builtin_reflection_function());
     class_map.insert(
         "ReflectionParameter".to_string(),
         builtin_reflection_parameter(),
     );
-    class_map.insert(
-        "ReflectionNamedType".to_string(),
-        builtin_reflection_named_type(),
-    );
+    class_map.insert("ReflectionNamedType".to_string(), builtin_reflection_named_type());
     for class_name in [
         "ReflectionClassConstant",
         "ReflectionEnumUnitCase",
@@ -478,7 +466,7 @@ fn builtin_reflection_function_constructor_method() -> ClassMethod {
         is_abstract: false,
         is_final: false,
         has_body: true,
-        params: vec![("name".to_string(), Some(TypeExpr::Str), None, false)],
+        params: vec![("function".to_string(), Some(TypeExpr::Str), None, false)],
         variadic: None,
         variadic_type: None,
         return_type: None,
@@ -489,9 +477,9 @@ fn builtin_reflection_function_constructor_method() -> ClassMethod {
     }
 }
 
-/// Builds the `ReflectionFunction` shell with private name/short-name and
-/// parameter-count slots plus public accessors. The slots are populated at
-/// codegen from the reflected function's signature.
+/// Builds the `ReflectionFunction` shell with private name/short-name,
+/// attribute, and parameter slots. Codegen populates these from the reflected
+/// function's signature and attribute metadata.
 fn builtin_reflection_function() -> FlattenedClass {
     FlattenedClass {
         name: "ReflectionFunction".to_string(),
@@ -502,27 +490,41 @@ fn builtin_reflection_function() -> FlattenedClass {
         is_readonly_class: false,
         properties: vec![
             builtin_property("__name", Visibility::Private, Some(TypeExpr::Str), empty_string()),
-            builtin_property("__short", Visibility::Private, Some(TypeExpr::Str), empty_string()),
-            builtin_property("__num_params", Visibility::Private, Some(TypeExpr::Int), int_lit(0)),
             builtin_property(
-                "__num_required",
+                "__short_name",
+                Visibility::Private,
+                Some(TypeExpr::Str),
+                empty_string(),
+            ),
+            builtin_property(
+                "__parameters",
+                Visibility::Private,
+                Some(object_array_type("ReflectionParameter")),
+                empty_array(),
+            ),
+            builtin_property(
+                "__required_parameter_count",
                 Visibility::Private,
                 Some(TypeExpr::Int),
                 int_lit(0),
             ),
-            builtin_property("__params", Visibility::Private, Some(array_type()), empty_array()),
+            builtin_property("__attrs", Visibility::Private, Some(array_type()), empty_array()),
         ],
         methods: vec![
             builtin_reflection_function_constructor_method(),
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
-            builtin_reflection_slot_getter("getShortName", "__short", TypeExpr::Str),
-            builtin_reflection_slot_getter("getNumberOfParameters", "__num_params", TypeExpr::Int),
-            builtin_reflection_slot_getter(
+            builtin_reflection_slot_getter("getShortName", "__short_name", TypeExpr::Str),
+            builtin_reflection_parameter_count_method(),
+            builtin_reflection_class_int_method(
                 "getNumberOfRequiredParameters",
-                "__num_required",
-                TypeExpr::Int,
+                "__required_parameter_count",
             ),
-            builtin_reflection_slot_getter("getParameters", "__params", array_type()),
+            builtin_reflection_class_array_method(
+                "getParameters",
+                "__parameters",
+                object_array_type("ReflectionParameter"),
+            ),
+            builtin_reflection_owner_get_attributes_method(),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -543,6 +545,7 @@ fn builtin_reflection_parameter() -> FlattenedClass {
         is_readonly_class: false,
         properties: vec![
             builtin_property("__name", Visibility::Private, Some(TypeExpr::Str), empty_string()),
+            builtin_property("__attrs", Visibility::Private, Some(array_type()), empty_array()),
             builtin_property("__position", Visibility::Private, Some(TypeExpr::Int), int_lit(0)),
             builtin_property(
                 "__optional",
@@ -601,6 +604,7 @@ fn builtin_reflection_named_type() -> FlattenedClass {
         is_readonly_class: false,
         properties: vec![
             builtin_property("__name", Visibility::Private, Some(TypeExpr::Str), empty_string()),
+            builtin_property("__attrs", Visibility::Private, Some(array_type()), empty_array()),
             builtin_property(
                 "__allows_null",
                 Visibility::Private,
@@ -608,16 +612,17 @@ fn builtin_reflection_named_type() -> FlattenedClass {
                 bool_lit(false),
             ),
             builtin_property(
-                "__builtin",
+                "__is_builtin",
                 Visibility::Private,
                 Some(TypeExpr::Bool),
                 bool_lit(false),
             ),
         ],
         methods: vec![
+            builtin_reflection_private_constructor_method(),
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
             builtin_reflection_slot_getter("allowsNull", "__allows_null", TypeExpr::Bool),
-            builtin_reflection_slot_getter("isBuiltin", "__builtin", TypeExpr::Bool),
+            builtin_reflection_slot_getter("isBuiltin", "__is_builtin", TypeExpr::Bool),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -1807,6 +1812,7 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
         "ReflectionMethod",
         "ReflectionProperty",
         "ReflectionParameter",
+        "ReflectionNamedType",
         "ReflectionClassConstant",
         "ReflectionEnumUnitCase",
         "ReflectionEnumBackedCase",
@@ -1822,6 +1828,7 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
                     | "ReflectionMethod"
                     | "ReflectionProperty"
                     | "ReflectionParameter"
+                    | "ReflectionNamedType"
                     | "ReflectionClassConstant"
                     | "ReflectionEnumUnitCase"
                     | "ReflectionEnumBackedCase"
@@ -1951,6 +1958,16 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
                     sig.return_type = PhpType::Int;
                 }
                 for method_name in ["isoptional", "isvariadic", "ispassedbyreference", "hastype"] {
+                    if let Some(sig) = class_info.methods.get_mut(method_name) {
+                        sig.return_type = PhpType::Bool;
+                    }
+                }
+                if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getType")) {
+                    sig.return_type = PhpType::Mixed;
+                }
+            }
+            if class_name == "ReflectionNamedType" {
+                for method_name in ["allowsnull", "isbuiltin"] {
                     if let Some(sig) = class_info.methods.get_mut(method_name) {
                         sig.return_type = PhpType::Bool;
                     }

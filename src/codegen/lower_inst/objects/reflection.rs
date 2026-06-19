@@ -76,6 +76,15 @@ struct ReflectionParameterMember {
     is_variadic: bool,
     is_passed_by_reference: bool,
     has_type: bool,
+    type_metadata: Option<ReflectionNamedTypeMetadata>,
+}
+
+/// Metadata for one `ReflectionNamedType` returned by `ReflectionParameter::getType()`.
+#[derive(Clone)]
+struct ReflectionNamedTypeMetadata {
+    name: String,
+    allows_null: bool,
+    is_builtin: bool,
 }
 
 /// Metadata for one constant entry returned by `ReflectionClass::getConstants()`.
@@ -225,6 +234,9 @@ fn emit_reflection_owner_object(
                 "ReflectionProperty",
                 &metadata.property_members,
             )?;
+        } else if class_name == "ReflectionFunction" {
+            let (_, short_name) = reflection_name_parts(reflected_name);
+            emit_reflection_string_property_by_name(ctx, "__short_name", short_name)?;
         }
     }
     emit_reflection_attrs_property(ctx, class_name, &metadata.attr_names, &metadata.attr_args)?;
@@ -261,160 +273,6 @@ fn emit_reflection_owner_object(
     Ok(())
 }
 
-/// Lowers `new ReflectionFunction("name")` by populating its name and
-/// parameter-count slots from the reflected function's signature. The slot
-/// layout is `__name` (8/16), `__short` (24/32), `__num_params` (40/48),
-/// `__num_required` (56/64).
-pub(super) fn lower_reflection_function_new(
-    ctx: &mut FunctionContext<'_>,
-    inst: &Instruction,
-) -> Result<()> {
-    let (full_name, short_name, num_params, num_required) = reflection_function_metadata(ctx, inst)?;
-    let (class_id, property_count, uninitialized_marker_offsets, name_off, short_off, np_off, nr_off) = {
-        let class_info = ctx
-            .module
-            .class_infos
-            .get("ReflectionFunction")
-            .ok_or_else(|| CodegenIrError::unsupported("unknown class ReflectionFunction"))?;
-        let slot = |name: &str| -> Result<usize> {
-            class_info
-                .property_offsets
-                .get(name)
-                .copied()
-                .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))
-        };
-        (
-            class_info.class_id,
-            class_info.properties.len(),
-            super::uninitialized_property_marker_offsets(class_info),
-            slot("__name")?,
-            slot("__short")?,
-            slot("__num_params")?,
-            slot("__num_required")?,
-        )
-    };
-    super::emit_object_allocation(
-        ctx,
-        class_id,
-        property_count,
-        false,
-        &uninitialized_marker_offsets,
-        &[],
-    )?;
-    emit_reflection_string_property(ctx, &full_name, name_off, name_off + 8);
-    emit_reflection_string_property(ctx, &short_name, short_off, short_off + 8);
-    emit_reflection_int_property(ctx, num_params, np_off, np_off + 8);
-    emit_reflection_int_property(ctx, num_required, nr_off, nr_off + 8);
-
-    // Build the `ReflectionParameter[]` array and store it into `__params`.
-    let params_off = ctx
-        .module
-        .class_infos
-        .get("ReflectionFunction")
-        .and_then(|ci| ci.property_offsets.get("__params").copied())
-        .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))?;
-    let param_infos = reflection_function_param_infos(ctx, &full_name);
-    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type) = {
-        let ci = ctx
-            .module
-            .class_infos
-            .get("ReflectionParameter")
-            .ok_or_else(|| CodegenIrError::unsupported("unknown class ReflectionParameter"))?;
-        let slot = |n: &str| -> Result<usize> {
-            ci.property_offsets
-                .get(n)
-                .copied()
-                .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))
-        };
-        (
-            ci.class_id,
-            ci.properties.len(),
-            super::uninitialized_property_marker_offsets(ci),
-            slot("__name")?,
-            slot("__position")?,
-            slot("__optional")?,
-            slot("__variadic")?,
-            slot("__type")?,
-            slot("__has_type")?,
-        )
-    };
-    let result_reg = abi::int_result_reg(ctx.emitter);
-    let object_reg = abi::symbol_scratch_reg(ctx.emitter);
-    abi::emit_push_reg(ctx.emitter, result_reg);
-    abi::emit_load_temporary_stack_slot(ctx.emitter, object_reg, 0);
-    abi::emit_load_from_address(ctx.emitter, result_reg, object_reg, params_off);
-    abi::emit_call_label(ctx.emitter, "__rt_decref_array");
-    emit_reflection_parameter_array(
-        ctx,
-        &param_infos,
-        rp_class_id,
-        rp_prop_count,
-        &rp_markers,
-        rp_name,
-        rp_pos,
-        rp_opt,
-        rp_var,
-        rp_type,
-        rp_has_type,
-    )?;
-    abi::emit_pop_reg(ctx.emitter, object_reg);
-    abi::emit_store_to_address(ctx.emitter, result_reg, object_reg, params_off);
-    abi::emit_load_int_immediate(ctx.emitter, abi::secondary_scratch_reg(ctx.emitter), 4);
-    abi::emit_store_to_address(
-        ctx.emitter,
-        abi::secondary_scratch_reg(ctx.emitter),
-        object_reg,
-        params_off + 8,
-    );
-    abi::emit_push_reg(ctx.emitter, object_reg);
-    abi::emit_pop_reg(ctx.emitter, result_reg);
-
-    let result = inst
-        .result
-        .ok_or_else(|| CodegenIrError::invalid_module("reflection object_new missing result"))?;
-    ctx.store_result_value(result)
-}
-
-/// Resolves `ReflectionFunction(name)` to its full name, short name, and
-/// parameter counts from the reflected function's lowered signature.
-fn reflection_function_metadata(
-    ctx: &FunctionContext<'_>,
-    inst: &Instruction,
-) -> Result<(String, String, i64, i64)> {
-    let Some(name_operand) = inst.operands.first().copied() else {
-        return Ok((String::new(), String::new(), 0, 0));
-    };
-    let function_name = const_required_string_operand(ctx, name_operand, "ReflectionFunction")?;
-    let key = php_symbol_key(function_name.trim_start_matches('\\'));
-    let signature = ctx
-        .module
-        .functions
-        .iter()
-        .find(|function| php_symbol_key(function.name.trim_start_matches('\\')) == key)
-        .and_then(|function| function.signature.as_ref());
-    let (num_params, num_required) = signature
-        .map(|sig| {
-            let total = sig.params.len() as i64;
-            let required = sig
-                .params
-                .iter()
-                .zip(sig.defaults.iter().chain(std::iter::repeat(&None)))
-                .filter(|((name, _), default)| {
-                    default.is_none() && sig.variadic.as_deref() != Some(name.as_str())
-                })
-                .count() as i64;
-            (total, required)
-        })
-        .unwrap_or((0, 0));
-    let short_name = function_name
-        .trim_start_matches('\\')
-        .rsplit('\\')
-        .next()
-        .unwrap_or(&function_name)
-        .to_string();
-    Ok((function_name.clone(), short_name, num_params, num_required))
-}
-
 /// Stores an integer immediate into a Reflection object's property slot.
 fn emit_reflection_int_property(
     ctx: &mut FunctionContext<'_>,
@@ -428,201 +286,6 @@ fn emit_reflection_int_property(
     abi::emit_store_to_address(ctx.emitter, scratch, object_reg, low_offset);
     abi::emit_load_int_immediate(ctx.emitter, scratch, 0);
     abi::emit_store_to_address(ctx.emitter, scratch, object_reg, high_offset);
-}
-
-/// Per-parameter reflection metadata for one function parameter.
-struct ReflectionParamInfo {
-    name: String,
-    optional: bool,
-    variadic: bool,
-    /// `Some((type_name, is_builtin, allows_null))` when the parameter declares a
-    /// single named type; `None` for an untyped parameter (`getType()` is null).
-    type_info: Option<(String, bool, bool)>,
-}
-
-/// Maps a declared parameter type to `ReflectionNamedType` metadata
-/// `(name, is_builtin, allows_null)`, or `None` for an unsupported/union shape.
-fn reflection_named_type_info(ty: &crate::types::PhpType) -> Option<(String, bool, bool)> {
-    use crate::types::PhpType;
-    match ty {
-        PhpType::Int => Some(("int".to_string(), true, false)),
-        PhpType::Str => Some(("string".to_string(), true, false)),
-        PhpType::Float => Some(("float".to_string(), true, false)),
-        PhpType::Bool => Some(("bool".to_string(), true, false)),
-        PhpType::Array(_) | PhpType::AssocArray { .. } => Some(("array".to_string(), true, false)),
-        PhpType::Callable => Some(("callable".to_string(), true, false)),
-        PhpType::Iterable => Some(("iterable".to_string(), true, false)),
-        // Bare `Mixed` is how an *untyped* parameter is represented in the EIR
-        // signature (and `declared_params` is unreliable here — it is also set
-        // for boxed-ABI params). PHP reports untyped parameters as having no
-        // type, so map `Mixed` to no named type. An explicit `mixed` hint is
-        // the only case this under-reports, which is an accepted edge case.
-        PhpType::Object(class) => Some((class.trim_start_matches('\\').to_string(), false, false)),
-        PhpType::Union(members) => {
-            let has_null = members.iter().any(|m| matches!(m, PhpType::Void));
-            let mut non_null = members.iter().filter(|m| !matches!(m, PhpType::Void));
-            let single = non_null.next();
-            // Only `T|null` (a single non-null member) maps to a named type.
-            match (single, non_null.next()) {
-                (Some(member), None) => reflection_named_type_info(member)
-                    .map(|(name, builtin, _)| (name, builtin, has_null)),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Extracts per-parameter reflection metadata from a function's lowered
-/// signature. A parameter is optional once a default or the variadic is seen
-/// (matching PHP's `isOptional`).
-fn reflection_function_param_infos(
-    ctx: &FunctionContext<'_>,
-    function_name: &str,
-) -> Vec<ReflectionParamInfo> {
-    let key = php_symbol_key(function_name.trim_start_matches('\\'));
-    let Some(signature) = ctx
-        .module
-        .functions
-        .iter()
-        .find(|function| php_symbol_key(function.name.trim_start_matches('\\')) == key)
-        .and_then(|function| function.signature.as_ref())
-    else {
-        return Vec::new();
-    };
-    let mut seen_optional = false;
-    signature
-        .params
-        .iter()
-        .enumerate()
-        .map(|(idx, (name, ty))| {
-            let variadic = signature.variadic.as_deref() == Some(name.as_str());
-            let has_default = signature.defaults.get(idx).map_or(false, Option::is_some);
-            if has_default || variadic {
-                seen_optional = true;
-            }
-            let declared = signature.declared_params.get(idx).copied().unwrap_or(false);
-            let type_info = if declared {
-                reflection_named_type_info(ty)
-            } else {
-                None
-            };
-            ReflectionParamInfo {
-                name: name.clone(),
-                optional: seen_optional,
-                variadic,
-                type_info,
-            }
-        })
-        .collect()
-}
-
-/// Allocates a fresh indexed array sized for `count` object handles (8-byte stride).
-fn emit_alloc_object_array(ctx: &mut FunctionContext<'_>, count: usize) {
-    match ctx.emitter.target.arch {
-        Arch::AArch64 => {
-            abi::emit_load_int_immediate(ctx.emitter, "x0", count.max(1) as i64);
-            abi::emit_load_int_immediate(ctx.emitter, "x1", 8);
-        }
-        Arch::X86_64 => {
-            abi::emit_load_int_immediate(ctx.emitter, "rdi", count.max(1) as i64);
-            abi::emit_load_int_immediate(ctx.emitter, "rsi", 8);
-        }
-    }
-    abi::emit_call_label(ctx.emitter, "__rt_array_new");
-}
-
-/// Pops a freshly built object and the result array off the stack and appends
-/// the object handle to the array (leaving the array pointer in the result reg).
-fn emit_append_object_to_array(ctx: &mut FunctionContext<'_>) {
-    match ctx.emitter.target.arch {
-        Arch::AArch64 => {
-            abi::emit_pop_reg(ctx.emitter, "x1");
-            abi::emit_pop_reg(ctx.emitter, "x0");
-        }
-        Arch::X86_64 => {
-            abi::emit_pop_reg(ctx.emitter, "rsi");
-            abi::emit_pop_reg(ctx.emitter, "rdi");
-        }
-    }
-    abi::emit_call_label(ctx.emitter, "__rt_array_push_int");
-}
-
-/// Builds an indexed array of `ReflectionParameter` objects (one per function
-/// parameter), leaving the array pointer in the result register. Stack-balanced.
-#[allow(clippy::too_many_arguments)]
-fn emit_reflection_parameter_array(
-    ctx: &mut FunctionContext<'_>,
-    params: &[ReflectionParamInfo],
-    class_id: u64,
-    property_count: usize,
-    markers: &[usize],
-    name_off: usize,
-    pos_off: usize,
-    opt_off: usize,
-    var_off: usize,
-    type_off: usize,
-    has_type_off: usize,
-) -> Result<()> {
-    // ReflectionNamedType layout for building per-parameter type objects.
-    let named_type = ctx.module.class_infos.get("ReflectionNamedType").map(|ci| {
-        let off = |n: &str| ci.property_offsets.get(n).copied().unwrap_or(0);
-        (
-            ci.class_id,
-            ci.properties.len(),
-            super::uninitialized_property_marker_offsets(ci),
-            off("__name"),
-            off("__allows_null"),
-            off("__builtin"),
-        )
-    });
-    emit_alloc_object_array(ctx, params.len());
-    crate::codegen::emit_array_value_type_stamp(
-        ctx.emitter,
-        abi::int_result_reg(ctx.emitter),
-        &crate::types::PhpType::Object("ReflectionParameter".to_string()),
-    );
-    for (position, param) in params.iter().enumerate() {
-        abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
-        super::emit_object_allocation(ctx, class_id, property_count, false, markers, &[])?;
-        abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
-        emit_reflection_string_property(ctx, &param.name, name_off, name_off + 8);
-        emit_reflection_int_property(ctx, position as i64, pos_off, pos_off + 8);
-        emit_reflection_int_property(ctx, param.optional as i64, opt_off, opt_off + 8);
-        emit_reflection_int_property(ctx, param.variadic as i64, var_off, var_off + 8);
-        if let (Some((type_name, builtin, allows_null)), Some((nt_id, nt_count, nt_markers, nt_name, nt_anull, nt_builtin))) =
-            (&param.type_info, &named_type)
-        {
-            // Build a ReflectionNamedType (result reg); the parameter object is
-            // safe on the stack at slot 0 across this balanced construction.
-            super::emit_object_allocation(ctx, *nt_id, *nt_count, false, nt_markers, &[])?;
-            emit_reflection_string_property(ctx, type_name, *nt_name, *nt_name + 8);
-            emit_reflection_int_property(ctx, *builtin as i64, *nt_builtin, *nt_builtin + 8);
-            emit_reflection_int_property(ctx, *allows_null as i64, *nt_anull, *nt_anull + 8);
-            // `__type` is a `mixed` property, so its value must be a *boxed*
-            // Mixed cell (the receiver later dispatches `getType()->...` through
-            // the Mixed unbox path). Box the freshly built object pointer (still
-            // in the result reg) into a cell, then store it as a Mixed slot:
-            // boxed-cell pointer in the low word, 0 in the high word. The slot
-            // was zero-initialized at allocation, so no decref of an old value
-            // is required.
-            crate::codegen::emit_box_current_value_as_mixed(
-                ctx.emitter,
-                &crate::types::PhpType::Object("ReflectionNamedType".to_string()),
-            );
-            let cell_reg = abi::int_result_reg(ctx.emitter);
-            let param_reg = abi::symbol_scratch_reg(ctx.emitter);
-            let flag_reg = abi::secondary_scratch_reg(ctx.emitter);
-            abi::emit_load_temporary_stack_slot(ctx.emitter, param_reg, 0);
-            abi::emit_store_to_address(ctx.emitter, cell_reg, param_reg, type_off);
-            abi::emit_store_zero_to_address(ctx.emitter, param_reg, type_off + 8);
-            abi::emit_load_int_immediate(ctx.emitter, flag_reg, 1);
-            abi::emit_store_to_address(ctx.emitter, flag_reg, param_reg, has_type_off);
-            abi::emit_store_zero_to_address(ctx.emitter, param_reg, has_type_off + 8);
-        }
-        emit_append_object_to_array(ctx);
-    }
-    Ok(())
 }
 
 /// Stores namespace-aware name parts for a statically materialized ReflectionClass.
@@ -1939,8 +1602,9 @@ fn reflection_parameter_members(sig: &FunctionSig) -> Vec<ReflectionParameterMem
     sig.params
         .iter()
         .enumerate()
-        .map(|(index, (name, _))| {
+        .map(|(index, (name, ty))| {
             let is_variadic = sig.variadic.as_deref() == Some(name.as_str());
+            let has_type = sig.declared_params.get(index).copied().unwrap_or(false);
             ReflectionParameterMember {
                 name: name.clone(),
                 position: index as i64,
@@ -1952,10 +1616,57 @@ fn reflection_parameter_members(sig: &FunctionSig) -> Vec<ReflectionParameterMem
                         .unwrap_or(false),
                 is_variadic,
                 is_passed_by_reference: sig.ref_params.get(index).copied().unwrap_or(false),
-                has_type: sig.declared_params.get(index).copied().unwrap_or(false),
+                has_type,
+                type_metadata: reflection_named_type_metadata(ty).filter(|_| has_type),
             }
         })
         .collect()
+}
+
+/// Converts a normalized parameter type into the simple `ReflectionNamedType` subset.
+fn reflection_named_type_metadata(ty: &PhpType) -> Option<ReflectionNamedTypeMetadata> {
+    match ty {
+        PhpType::Int => Some(reflection_builtin_named_type("int", false)),
+        PhpType::Float => Some(reflection_builtin_named_type("float", false)),
+        PhpType::Str => Some(reflection_builtin_named_type("string", false)),
+        PhpType::Bool => Some(reflection_builtin_named_type("bool", false)),
+        PhpType::Iterable => Some(reflection_builtin_named_type("iterable", false)),
+        PhpType::Mixed => Some(reflection_builtin_named_type("mixed", true)),
+        PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            Some(reflection_builtin_named_type("array", false))
+        }
+        PhpType::Callable => Some(reflection_builtin_named_type("callable", false)),
+        PhpType::Object(name) => Some(ReflectionNamedTypeMetadata {
+            name: name.clone(),
+            allows_null: false,
+            is_builtin: false,
+        }),
+        PhpType::Union(members) => reflection_nullable_named_type_metadata(members),
+        _ => None,
+    }
+}
+
+/// Builds metadata for one builtin named type.
+fn reflection_builtin_named_type(name: &str, allows_null: bool) -> ReflectionNamedTypeMetadata {
+    ReflectionNamedTypeMetadata {
+        name: name.to_string(),
+        allows_null,
+        is_builtin: true,
+    }
+}
+
+/// Handles `T|null` unions while leaving broader union types for future `ReflectionUnionType`.
+fn reflection_nullable_named_type_metadata(
+    members: &[PhpType],
+) -> Option<ReflectionNamedTypeMetadata> {
+    let mut non_null_members = members.iter().filter(|member| !matches!(member, PhpType::Void));
+    let first = non_null_members.next()?;
+    if non_null_members.next().is_some() {
+        return None;
+    }
+    let mut metadata = reflection_named_type_metadata(first)?;
+    metadata.allows_null = true;
+    Some(metadata)
 }
 
 /// Returns the `__construct` member object metadata when the reflected class-like symbol has one.
@@ -3034,6 +2745,80 @@ fn emit_reflection_parameter_properties(
         "ReflectionParameter",
         "__has_type",
         parameter.has_type,
+    )?;
+    emit_reflection_parameter_type_property(ctx, parameter)?;
+    Ok(())
+}
+
+/// Writes one ReflectionParameter object's nullable `ReflectionNamedType` slot.
+fn emit_reflection_parameter_type_property(
+    ctx: &mut FunctionContext<'_>,
+    parameter: &ReflectionParameterMember,
+) -> Result<()> {
+    let type_offset = {
+        let class_info = ctx
+            .module
+            .class_infos
+            .get("ReflectionParameter")
+            .ok_or_else(|| CodegenIrError::missing_entry("class", 0))?;
+        reflection_property_offset(class_info, "__type")?
+    };
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    let object_reg = abi::secondary_scratch_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, result_reg);
+    if let Some(type_metadata) = parameter.type_metadata.as_ref() {
+        emit_reflection_named_type_object(ctx, type_metadata)?;
+        emit_box_current_value_as_mixed(
+            ctx.emitter,
+            &PhpType::Object("ReflectionNamedType".to_string()),
+        );
+    } else {
+        emit_boxed_null_literal_to_result(ctx);
+    }
+    abi::emit_pop_reg(ctx.emitter, object_reg);
+    abi::emit_store_to_address(ctx.emitter, result_reg, object_reg, type_offset);
+    abi::emit_store_zero_to_address(ctx.emitter, object_reg, type_offset + 8);
+    abi::emit_reg_move(ctx.emitter, result_reg, object_reg);
+    Ok(())
+}
+
+/// Allocates and populates one `ReflectionNamedType` object.
+fn emit_reflection_named_type_object(
+    ctx: &mut FunctionContext<'_>,
+    type_metadata: &ReflectionNamedTypeMetadata,
+) -> Result<()> {
+    let (class_id, property_count, uninitialized_marker_offsets, name_offset) = {
+        let class_info = ctx
+            .module
+            .class_infos
+            .get("ReflectionNamedType")
+            .ok_or_else(|| CodegenIrError::unsupported("unknown class ReflectionNamedType"))?;
+        (
+            class_info.class_id,
+            class_info.properties.len(),
+            super::uninitialized_property_marker_offsets(class_info),
+            reflection_property_offset(class_info, "__name")?,
+        )
+    };
+    super::emit_object_allocation(
+        ctx,
+        class_id,
+        property_count,
+        false,
+        &uninitialized_marker_offsets,
+    )?;
+    emit_reflection_string_property(ctx, &type_metadata.name, name_offset, name_offset + 8);
+    emit_reflection_owner_bool_property(
+        ctx,
+        "ReflectionNamedType",
+        "__allows_null",
+        type_metadata.allows_null,
+    )?;
+    emit_reflection_owner_bool_property(
+        ctx,
+        "ReflectionNamedType",
+        "__is_builtin",
+        type_metadata.is_builtin,
     )?;
     Ok(())
 }

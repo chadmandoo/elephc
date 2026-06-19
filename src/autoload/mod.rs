@@ -79,6 +79,7 @@ const BUILTIN_CLASS_LIKE_NAMES: &[&str] = &[
     "ReflectionEnumUnitCase",
     "ReflectionFunction",
     "ReflectionMethod",
+    "ReflectionNamedType",
     "ReflectionParameter",
     "ReflectionProperty",
     "RuntimeException",

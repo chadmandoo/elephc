@@ -105,9 +105,6 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
     if is_fiber_class(&class_name) {
         return lower_fiber_new(ctx, inst);
     }
-    if class_name == "ReflectionFunction" {
-        return reflection::lower_reflection_function_new(ctx, inst);
-    }
     if reflection::is_reflection_owner_class(&class_name) {
         return reflection::lower_reflection_owner_new(ctx, inst, &class_name);
     }
@@ -1384,6 +1381,7 @@ fn supported_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "ReflectionEnumUnitCase",
         "ReflectionFunction",
         "ReflectionMethod",
+        "ReflectionNamedType",
         "ReflectionParameter",
         "ReflectionProperty",
         "RuntimeException",
@@ -1453,6 +1451,7 @@ fn known_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "ReflectionException",
         "ReflectionFunction",
         "ReflectionMethod",
+        "ReflectionNamedType",
         "ReflectionParameter",
         "ReflectionProperty",
         "RegexIterator",
