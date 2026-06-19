@@ -260,6 +260,11 @@ fn bool_type() -> TypeExpr {
 
 /// Returns a private parameterless `__construct` method for `ReflectionAttribute`.
 fn builtin_reflection_attribute_constructor_method() -> ClassMethod {
+    builtin_reflection_private_constructor_method()
+}
+
+/// Returns a private parameterless `__construct` for internally materialized reflection objects.
+fn builtin_reflection_private_constructor_method() -> ClassMethod {
     let dummy_span = crate::span::Span::dummy();
     ClassMethod {
         name: "__construct".to_string(),
@@ -533,6 +538,12 @@ fn builtin_reflection_parameter() -> FlattenedClass {
                 Some(TypeExpr::Bool),
                 bool_lit(false),
             ),
+            builtin_property(
+                "__is_passed_by_reference",
+                Visibility::Private,
+                Some(TypeExpr::Bool),
+                bool_lit(false),
+            ),
             builtin_property("__has_type", Visibility::Private, Some(TypeExpr::Bool), bool_lit(false)),
             builtin_property("__type", Visibility::Private, Some(mixed_type()), null_lit()),
         ],
@@ -541,6 +552,11 @@ fn builtin_reflection_parameter() -> FlattenedClass {
             builtin_reflection_slot_getter("getPosition", "__position", TypeExpr::Int),
             builtin_reflection_slot_getter("isOptional", "__optional", TypeExpr::Bool),
             builtin_reflection_slot_getter("isVariadic", "__variadic", TypeExpr::Bool),
+            builtin_reflection_slot_getter(
+                "isPassedByReference",
+                "__is_passed_by_reference",
+                TypeExpr::Bool,
+            ),
             builtin_reflection_slot_getter("hasType", "__has_type", TypeExpr::Bool),
             builtin_reflection_slot_getter("getType", "__type", mixed_type()),
         ],
@@ -1017,6 +1033,19 @@ fn builtin_reflection_owner_class(
         methods.push(builtin_reflection_class_string_method("getName", "__name"));
     }
     add_reflection_member_flag_methods(name, &mut properties, &mut methods);
+    if name == "ReflectionMethod" {
+        properties.push(builtin_property(
+            "__parameters",
+            Visibility::Private,
+            Some(object_array_type("ReflectionParameter")),
+            empty_array(),
+        ));
+        methods.push(builtin_reflection_class_array_method(
+            "getParameters",
+            "__parameters",
+            object_array_type("ReflectionParameter"),
+        ));
+    }
     properties.push(builtin_property(
         "__attrs",
         Visibility::Private,
@@ -1163,6 +1192,7 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
         "ReflectionClass",
         "ReflectionMethod",
         "ReflectionProperty",
+        "ReflectionParameter",
         "ReflectionClassConstant",
         "ReflectionEnumUnitCase",
         "ReflectionEnumBackedCase",
@@ -1176,6 +1206,7 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
                 "ReflectionClass"
                     | "ReflectionMethod"
                     | "ReflectionProperty"
+                    | "ReflectionParameter"
                     | "ReflectionClassConstant"
                     | "ReflectionEnumUnitCase"
                     | "ReflectionEnumBackedCase"
@@ -1243,6 +1274,26 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
             }
             if class_name == "ReflectionMethod" {
                 for method_name in ["isfinal", "isabstract"] {
+                    if let Some(sig) = class_info.methods.get_mut(method_name) {
+                        sig.return_type = PhpType::Bool;
+                    }
+                }
+                if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getParameters")) {
+                    sig.return_type = PhpType::Array(Box::new(PhpType::Object(
+                        "ReflectionParameter".to_string(),
+                    )));
+                }
+            }
+            if class_name == "ReflectionParameter" {
+                if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getPosition")) {
+                    sig.return_type = PhpType::Int;
+                }
+                for method_name in [
+                    "isoptional",
+                    "isvariadic",
+                    "ispassedbyreference",
+                    "hastype",
+                ] {
                     if let Some(sig) = class_info.methods.get_mut(method_name) {
                         sig.return_type = PhpType::Bool;
                     }

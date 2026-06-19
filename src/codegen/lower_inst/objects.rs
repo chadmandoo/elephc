@@ -1322,6 +1322,7 @@ fn known_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "ReflectionEnumBackedCase",
         "ReflectionEnumUnitCase",
         "ReflectionMethod",
+        "ReflectionParameter",
         "ReflectionProperty",
         "RegexIterator",
         "RuntimeException",
