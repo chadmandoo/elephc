@@ -123,9 +123,35 @@ operation built on it. Constants surfaced by identity arithmetic feed it too:
 (identity), then `0 + 5` → `5`, then `5 * 5` → `const_i64 25` (this pass), with
 the three `imul`s eliminated.
 
+### Common subexpression elimination
+
+The fourth registered pass removes a pure computation when an identical one is
+already available on every path to it, redirecting its uses to the earlier
+value. It does both per-block and cross-block elimination in one dominator-tree
+value-numbering traversal: a scoped table maps each pure instruction's
+`(op, result type, immediate, operands)` to the value that first computed it, and
+because blocks are visited in dominator-tree order the table holds exactly the
+definitions that dominate the current block. A match is therefore an earlier,
+dominating value, so the redirection is safe; the redundant instruction becomes a
+`nop`.
+
+Only pure (side-effect-free) instructions that have at least one operand and a
+`NonHeap` or `Persistent` result are eligible — their value depends on their
+operands alone and they carry no owned-heap cleanup, so the rewrite is
+refcount-neutral. SSA operands are equal-by-value, so identical pure ops on
+identical operands compute identical results. Bare constant and address
+materializations (`const_*`, `data_addr`) are *not* deduplicated: they are
+cheaper to rematerialize than to keep live, so CSE only targets computations.
+Functions that use exception handling are skipped, because a dominator over the
+terminator graph can be bypassed at runtime by a throw to a handler.
+
+Combined with the peephole's load forwarding, `($n + 1) * ($n + 1)` loads `$n`
+once and computes `$n + 1` once. The redundant instructions it neutralizes leave
+dead operands that dead-instruction elimination then removes.
+
 ### Dead instruction elimination
 
-The fourth registered pass computes CFG liveness and neutralizes unused
+The fifth registered pass computes CFG liveness and neutralizes unused
 result-producing instructions whose effect metadata says they are pure. This
 cleans up dead values exposed by earlier EIR rewrites. For example, identity
 folding can turn `$argc + 0` into `$argc`; dead-instruction elimination then
@@ -146,7 +172,7 @@ elephc --emit-ir --no-ir-opt app.php
 
 ### Dead store elimination
 
-The fifth registered pass removes `store_local` writes whose value is never read
+The sixth registered pass removes `store_local` writes whose value is never read
 before the slot is overwritten or the function exits. It computes backward,
 CFG-aware liveness over local slots (a `load_local` makes a slot live, a
 `store_local` kills it) so a dead store is dropped even when the overwrite is in a
@@ -162,7 +188,7 @@ left untouched to keep reference counting and aliasing semantics intact.
 
 ### Branch simplification
 
-The sixth registered pass prunes the control-flow graph three ways:
+The seventh registered pass prunes the control-flow graph three ways:
 
 - **Constant-condition folding** — a `cond_br` whose condition is a constant
   (`const_bool`, non-zero `const_i64`, or `const_null`) becomes an unconditional

@@ -21,6 +21,7 @@ use crate::ir::{DataPool, Function, Module};
 
 use super::branch_simplify::BranchSimplify;
 use super::const_fold::ConstFold;
+use super::cse::Cse;
 use super::dead_inst::DeadInst;
 use super::dead_store::DeadStore;
 use super::identity_arith::IdentityArith;
@@ -47,21 +48,26 @@ pub trait IrPass {
 }
 
 /// Builds the ordered set of transformation passes run on every function:
-/// identity arithmetic folding, peephole rewrites, constant folding, dead
-/// instruction elimination, dead store elimination, and branch simplification.
-/// Later v0.25.x passes (CSE, LICM, …) register here.
+/// identity arithmetic folding, peephole rewrites, constant folding,
+/// common-subexpression elimination, dead instruction elimination, dead store
+/// elimination, and branch simplification. Later v0.25.x passes (LICM, inlining,
+/// …) register here.
 ///
 /// Constant folding runs after peephole so the scalar load/store forwarding has
 /// already moved constants stored to local slots onto their `load_local` uses,
-/// exposing constant-operand operations for this pass to fold; the resulting
-/// dead constant producers are then cleaned up by dead instruction elimination
-/// and any folded branch condition by branch simplification, all converging
-/// through the fixed-point loop.
+/// exposing constant-operand operations for it to fold. CSE then runs after
+/// folding so it deduplicates pure computations over the already-canonicalized
+/// constants (the constants themselves are left for the backend to
+/// rematerialize); the redundant instructions it neutralizes leave dead operands
+/// that dead instruction elimination removes, and any folded branch condition is
+/// collapsed by branch simplification — all converging through the fixed-point
+/// loop.
 fn default_passes() -> Vec<Box<dyn IrPass>> {
     vec![
         Box::new(IdentityArith),
         Box::new(Peephole),
         Box::new(ConstFold),
+        Box::new(Cse),
         Box::new(DeadInst),
         Box::new(DeadStore),
         Box::new(BranchSimplify),

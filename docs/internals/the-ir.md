@@ -977,9 +977,39 @@ surfaced by identity arithmetic feed it too (`$argc * 0` → `const_i64 0` →
 downstream folds), and dead constant producers are cleaned up by dead
 instruction elimination.
 
+### Common Subexpression Elimination
+
+The fourth registered transform (`src/ir_passes/cse.rs`) removes a pure
+computation whose identical predecessor already dominates it, redirecting the
+redundant result to the earlier value (RAUW) and neutralizing it to `nop`. It
+covers per-block and cross-block redundancy in one dominator-tree value-numbering
+traversal: a scoped hash table maps each pure instruction's key
+`(op, result type, immediate, canonicalized operands)` to the value that first
+computed it. Because blocks are visited in dominator-tree preorder, the table
+holds exactly the definitions that dominate the current block — its own earlier
+instructions plus those of dominating blocks — so a match is always a dominating
+value, making the redirect dominance-safe. Entries a block inserts are removed
+when its whole subtree is done.
+
+Only **pure** (`Effects::PURE`) instructions that have at least one operand and
+whose result is `NonHeap` or `Persistent` are eligible: purity makes the value a
+function of its operands alone (no memory/state dependence, no fault), and the
+ownership restriction keeps the rewrite refcount-neutral — the same value class
+dead-instruction elimination is allowed to drop. Since SSA operands are
+equal-by-value, identical pure ops on identical operand values compute identical
+results. Nullary constant and address materializations (`const_*`, `data_addr`)
+are deliberately not deduplicated: they are cheaper to rematerialize at each use
+than to keep live across the span, so CSE only targets computations.
+Functions with exception handlers are skipped: their handler blocks are reachable
+through implicit edges absent from the terminator graph, so a terminator-graph
+dominator can be bypassed at runtime by a throw, which would make a cross-block
+redirect unsound — the same restriction branch simplification uses. CSE uses the
+[Dominance Analysis](#dominance-analysis) and shares
+`cfg::has_exception_handlers` with branch simplification.
+
 ### Dead Instruction Elimination
 
-The fourth registered transform (`src/ir_passes/dead_inst.rs`) removes
+The fifth registered transform (`src/ir_passes/dead_inst.rs`) removes
 result-producing instructions whose values are not live over the CFG and whose
 effect metadata says they are pure. It computes liveness with successor live-in
 sets, initializes each block's backward walk with those live-out values plus
@@ -995,7 +1025,7 @@ through the fixed-point pass driver after liveness is recomputed.
 
 ### Dead Store Elimination
 
-The fifth registered transform (`src/ir_passes/dead_store.rs`) removes
+The sixth registered transform (`src/ir_passes/dead_store.rs`) removes
 `store_local` instructions whose stored value is never read on any path before
 the slot is overwritten or the function exits. Unlike dead instruction
 elimination, which works at SSA-value granularity, this pass reasons about local
@@ -1040,7 +1070,7 @@ instruction elimination on a later driver sweep.
 
 ### Branch Simplification
 
-The sixth registered transform (`src/ir_passes/branch_simplify.rs`) prunes the
+The seventh registered transform (`src/ir_passes/branch_simplify.rs`) prunes the
 CFG in three ways:
 
 - **Constant-condition folding** — a `cond_br` whose condition resolves to a

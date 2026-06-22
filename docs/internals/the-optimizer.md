@@ -435,8 +435,11 @@ acquire/release cancellation, string-literal concat folding, redundant
 operations whose operands are all compile-time constants (`5 * 5` → `25`,
 `0 < 5` → `true`) into a single constant — which, composed with the peephole's
 scalar load/store forwarding, propagates constants through EIR value ids and
-local slots — followed by CFG-aware dead instruction elimination for
-unused pure result-producing EIR instructions, CFG-aware dead store elimination
+local slots — then dominance-aware common-subexpression elimination that reuses a
+pure computation already available on every path (per-block and cross-block via a
+dominator-tree value numbering), followed by CFG-aware dead instruction
+elimination for unused pure result-producing EIR instructions, CFG-aware dead
+store elimination
 for `store_local` writes to scalar PHP local slots that are never read before
 being overwritten, and branch simplification (constant-condition `cond_br`/`switch`
 folding, empty-block jump threading, and unreachable-block neutralization). These

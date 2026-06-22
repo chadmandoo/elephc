@@ -10,6 +10,7 @@
 
 mod branch_simplify_test;
 mod const_fold_test;
+mod cse_test;
 mod dead_inst_test;
 mod dead_store_test;
 mod dominance_test;
