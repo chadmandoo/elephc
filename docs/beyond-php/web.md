@@ -93,6 +93,10 @@ later phases:
   the server and is not forwarded to the script body.
 - **No intra-worker concurrency** — one slow request occupies its worker until
   it completes. Use `--workers` to increase throughput.
+- **Only scalar/string `echo`/`print` output is captured** — `var_dump`,
+  `print_r`, and any output produced by the Mixed/Resource/Iterable runtime
+  writers writes to the worker's stdout instead of the HTTP response body and
+  will not appear in Phase 1 responses.
 - **Not supported in this release (all phases):** multipart/form-data, file
   uploads, cookies, sessions, static file serving, in-process TLS, HTTP/2–3.
 
