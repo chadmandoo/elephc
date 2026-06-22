@@ -25,7 +25,11 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
     match term {
         Terminator::Return { value: None } => {
             if ctx.is_main {
-                frame::emit_main_epilogue(ctx);
+                if ctx.web {
+                    frame::emit_web_handler_epilogue(ctx);
+                } else {
+                    frame::emit_main_epilogue(ctx);
+                }
             } else {
                 jump_to_function_epilogue(ctx)?;
             }

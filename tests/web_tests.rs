@@ -59,10 +59,35 @@ fn compile_web(dir: &Path, source: &str, stem: &str) -> PathBuf {
     dir.join(stem)
 }
 
+/// Runs the compiled binary with the given args, returns (stdout, exit code).
+fn run_bin(bin: &Path, args: &[&str]) -> (String, i32) {
+    let output = Command::new(bin)
+        .args(args)
+        .output()
+        .expect("failed to spawn compiled web binary");
+    (
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        output.status.code().unwrap_or(-1),
+    )
+}
+
 /// Verifies a trivial program compiles under --web and produces an executable file.
 #[test]
 fn web_compile_produces_binary() {
     let dir = make_test_dir("web_compile");
     let bin = compile_web(&dir, "<?php echo \"Hello World\";", "app");
     assert!(bin.exists(), "expected binary at {}", bin.display());
+}
+
+/// Verifies the restructured entry runs the top-level body once via the bridge
+/// scaffold (server loop arrives in Task 7). Output flows top-level body →
+/// `_elephc_web_handler` → `elephc_web_run` scaffold → stdout, and the entry
+/// stub exits with the bridge's return code (0).
+#[test]
+fn web_scaffold_runs_handler_once() {
+    let dir = make_test_dir("web_scaffold");
+    let bin = compile_web(&dir, "<?php echo \"Hello World\";", "app");
+    let (stdout, code) = run_bin(&bin, &[]);
+    assert_eq!(stdout, "Hello World");
+    assert_eq!(code, 0);
 }

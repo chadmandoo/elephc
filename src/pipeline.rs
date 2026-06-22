@@ -337,6 +337,7 @@ pub(crate) fn compile(config: CliConfig) {
             emit,
             &exported_functions,
             regalloc_linear,
+            web,
         ) {
             Ok(asm) => asm,
             Err(err) => {
