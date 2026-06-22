@@ -1,9 +1,10 @@
 //! Purpose:
-//! Control-flow-graph helpers shared by the IR-level passes: successor lookup
-//! and reverse-postorder block ordering.
+//! Control-flow-graph helpers shared by the IR-level passes: successor lookup,
+//! predecessor lists, and reverse-postorder block ordering.
 //!
 //! Called from:
-//! - `crate::ir_passes::liveness` and `crate::ir_passes::intervals`.
+//! - `crate::ir_passes::liveness`, `crate::ir_passes::intervals`, and
+//!   `crate::ir_passes::dominance`.
 //!
 //! Key details:
 //! - Reverse postorder visits a definition before its dominated uses on
@@ -33,6 +34,24 @@ pub(super) fn successors(term: &Terminator) -> Vec<BlockId> {
         | Terminator::Fatal { .. }
         | Terminator::Unreachable => Vec::new(),
     }
+}
+
+/// Builds the predecessor list for every block: `preds[b]` holds each block
+/// whose terminator branches to `b`, in block-index order.
+///
+/// Indexed by raw block id over all blocks (including unreachable ones), so a
+/// block with no incoming edges has an empty list. Used by dominance analysis,
+/// which filters out unreachable predecessors.
+pub(super) fn predecessors(func: &Function) -> Vec<Vec<BlockId>> {
+    let mut preds: Vec<Vec<BlockId>> = vec![Vec::new(); func.blocks.len()];
+    for block in &func.blocks {
+        if let Some(term) = &block.terminator {
+            for succ in successors(term) {
+                preds[succ.as_raw() as usize].push(block.id);
+            }
+        }
+    }
+    preds
 }
 
 /// Computes the reverse-postorder traversal of `func`'s reachable blocks

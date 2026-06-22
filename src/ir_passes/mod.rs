@@ -19,6 +19,7 @@ mod clobber;
 mod const_fold;
 mod dead_inst;
 mod dead_store;
+mod dominance;
 mod driver;
 mod identity_arith;
 mod intervals;
@@ -31,6 +32,7 @@ mod rewrite;
 mod tests;
 
 pub use allocation::{Allocation, Location};
+pub use dominance::{compute_dominance, DominanceInfo};
 pub use driver::optimize_module;
 pub use intervals::{build_intervals, LiveInterval};
 pub use liveness::{compute_liveness, LivenessInfo};

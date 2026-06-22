@@ -12,6 +12,7 @@ mod branch_simplify_test;
 mod const_fold_test;
 mod dead_inst_test;
 mod dead_store_test;
+mod dominance_test;
 mod driver_test;
 mod identity_arith_test;
 mod intervals_test;

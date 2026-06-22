@@ -948,9 +948,38 @@ phase commits them, sharing `replace_all_uses`, `resolve_chains`, and
   `persistent` so cleanup never frees the literal. Nested concats converge across
   driver sweeps.
 
+### Constant Folding
+
+The third registered transform (`src/ir_passes/const_fold.rs`) folds operations
+whose operands are all compile-time constants into a single `const_*`
+instruction, rewriting the instruction in place and keeping its result value id
+(no use-rewrite needed). A single forward scan over the instruction table tracks
+the constant carried by each value — constants in SSA are program-wide, so one
+sweep discovers constant operands and collapses chains like `(2 + 3) * 4` at
+once. It folds integer `iadd`/`isub`/`imul`, bitwise `and`/`or`/`xor`, in-range
+(`0..=63`) `ishl`/`ishr_a`, unary `ineg`/`ibit_not`, float
+`fadd`/`fsub`/`fmul`/`fneg`, signed `icmp`, and the `is_null`/`is_truthy`
+predicates.
+
+Each fold reproduces exactly what the op's lowering computes at runtime, so the
+compiled result is unchanged: integers wrap at 64 bits (matching native
+`add`/`sub`/`mul`), shifts fold only for in-range counts, and floats use exact
+IEEE-754. The trapping integer division/modulo, float division (PHP's
+`DivisionByZeroError` versus IEEE infinity), and `NaN`-sensitive `fcmp` are left
+unfolded, the same conservatism as identity arithmetic.
+
+Propagation through local slots is realized by composition with the peephole's
+scalar load/store value-numbering, which forwards a constant stored to a local
+onto its later `load_local` uses; this pass then folds the resulting
+constant-operand operation. Together, under the fixed-point driver, they form
+per-block constant propagation over EIR value ids and local slots. Constants
+surfaced by identity arithmetic feed it too (`$argc * 0` → `const_i64 0` →
+downstream folds), and dead constant producers are cleaned up by dead
+instruction elimination.
+
 ### Dead Instruction Elimination
 
-The third registered transform (`src/ir_passes/dead_inst.rs`) removes
+The fourth registered transform (`src/ir_passes/dead_inst.rs`) removes
 result-producing instructions whose values are not live over the CFG and whose
 effect metadata says they are pure. It computes liveness with successor live-in
 sets, initializes each block's backward walk with those live-out values plus
@@ -966,7 +995,7 @@ through the fixed-point pass driver after liveness is recomputed.
 
 ### Dead Store Elimination
 
-The fourth registered transform (`src/ir_passes/dead_store.rs`) removes
+The fifth registered transform (`src/ir_passes/dead_store.rs`) removes
 `store_local` instructions whose stored value is never read on any path before
 the slot is overwritten or the function exits. Unlike dead instruction
 elimination, which works at SSA-value granularity, this pass reasons about local
@@ -1011,7 +1040,7 @@ instruction elimination on a later driver sweep.
 
 ### Branch Simplification
 
-The fifth registered transform (`src/ir_passes/branch_simplify.rs`) prunes the
+The sixth registered transform (`src/ir_passes/branch_simplify.rs`) prunes the
 CFG in three ways:
 
 - **Constant-condition folding** — a `cond_br` whose condition resolves to a
@@ -1041,6 +1070,28 @@ terminator graph, so terminator-only reachability could wrongly neutralize a liv
 handler. Removing edges only enlarges dominator sets and threaded forwarding blocks
 carry no definitions, so simplification never invalidates a use that was valid
 before; cross-block cascades converge through the fixed-point driver.
+
+## Dominance Analysis
+
+`src/ir_passes/dominance.rs` is a read-only sidecar analysis (like liveness, not
+a driver transform) that builds each function's dominator tree, the foundation
+for the dominance-aware cross-block passes that follow (common-subexpression
+elimination, natural-loop detection, loop-invariant code motion).
+
+`compute_dominance` uses the Cooper–Harvey–Kennedy iterative algorithm: it walks
+reachable blocks in reverse postorder and recomputes each block's immediate
+dominator as the intersection of its already-processed predecessors' idoms — a
+two-finger walk over postorder numbers — until a fixed point. It converges for
+arbitrary CFGs and is fast on the small functions EIR produces.
+
+The resulting `DominanceInfo` answers `immediate_dominator`, reflexive
+`dominates` / `strictly_dominates`, dominator-tree `children` (top-down
+traversal), `nearest_common_dominator`, and `is_reachable`. Only blocks reachable
+from the entry participate; unreachable blocks (which branch simplification
+neutralizes in place but leaves in the table) are excluded from the tree and
+answer `false`/`None`. The internal idom table is self-rooted at the entry so the
+intersect and dominance walks terminate without special cases. The analysis uses
+the shared `cfg::predecessors` helper.
 
 ## AST Lowering Catalogue
 
