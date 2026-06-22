@@ -2338,11 +2338,11 @@ fn builtin_reflection_class_bool_method(method_name: &str, property: &str) -> Cl
     }
 }
 
-/// Returns a public Reflection boolean method that always reports one literal value.
-fn builtin_reflection_constant_bool_method(method_name: &str, value: bool) -> ClassMethod {
+/// Returns `ReflectionProperty::isDefault()` backed by the dynamic-property slot.
+fn builtin_reflection_property_is_default_method() -> ClassMethod {
     let dummy_span = crate::span::Span::dummy();
     ClassMethod {
-        name: method_name.to_string(),
+        name: "isDefault".to_string(),
         visibility: Visibility::Public,
         is_static: false,
         is_abstract: false,
@@ -2354,7 +2354,13 @@ fn builtin_reflection_constant_bool_method(method_name: &str, value: bool) -> Cl
         variadic_type: None,
         return_type: Some(bool_type()),
         body: vec![Stmt::new(
-            StmtKind::Return(if value { true_bool() } else { false_bool() }),
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::Not(Box::new(reflection_this_property(
+                    "__is_dynamic",
+                    dummy_span,
+                ))),
+                dummy_span,
+            ))),
             dummy_span,
         )],
         span: dummy_span,
@@ -2921,7 +2927,7 @@ fn add_reflection_member_flag_methods(
             "isPrivateSet",
             4096,
         ));
-        methods.push(builtin_reflection_constant_bool_method("isDefault", true));
+        methods.push(builtin_reflection_property_is_default_method());
         methods.push(builtin_reflection_class_mixed_method(
             "getDefaultValue",
             "__default_value",

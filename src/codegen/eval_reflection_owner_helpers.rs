@@ -112,6 +112,8 @@ struct ReflectionOwnerLayout {
     is_promoted_hi: Option<usize>,
     is_virtual_lo: Option<usize>,
     is_virtual_hi: Option<usize>,
+    is_dynamic_lo: Option<usize>,
+    is_dynamic_hi: Option<usize>,
     default_value_lo: Option<usize>,
     default_value_hi: Option<usize>,
     default_value_constant_name_lo: Option<usize>,
@@ -273,6 +275,7 @@ fn reflection_owner_layout(info: &ClassInfo, has_name: bool) -> Option<Reflectio
         reflection_property_offset(info, "__is_default_value_constant");
     let is_promoted_lo = reflection_property_offset(info, "__is_promoted");
     let is_virtual_lo = reflection_property_offset(info, "__is_virtual");
+    let is_dynamic_lo = reflection_property_offset(info, "__is_dynamic");
     let default_value_lo = reflection_property_offset(info, "__default_value");
     let default_value_constant_name_lo =
         reflection_property_offset(info, "__default_value_constant_name");
@@ -373,6 +376,8 @@ fn reflection_owner_layout(info: &ClassInfo, has_name: bool) -> Option<Reflectio
         is_promoted_hi: is_promoted_lo.map(|offset| offset + 8),
         is_virtual_lo,
         is_virtual_hi: is_virtual_lo.map(|offset| offset + 8),
+        is_dynamic_lo,
+        is_dynamic_hi: is_dynamic_lo.map(|offset| offset + 8),
         default_value_lo,
         default_value_hi: default_value_lo.map(|offset| offset + 8),
         default_value_constant_name_lo,
@@ -1260,6 +1265,7 @@ fn emit_set_owner_class_flags_property_x86_64(
 }
 
 /// Stores incoming ARM64 ReflectionMethod/ReflectionProperty boolean flags.
+#[rustfmt::skip]
 fn emit_set_owner_member_flags_property_aarch64(
     emitter: &mut Emitter,
     layout: &ReflectionOwnerLayout,
@@ -1340,6 +1346,13 @@ fn emit_set_owner_member_flags_property_aarch64(
         abi::emit_store_to_address(emitter, "x10", "x9", is_virtual_lo);
         abi::emit_store_zero_to_address(emitter, "x9", is_virtual_hi);
     }
+    if let (Some(is_dynamic_lo), Some(is_dynamic_hi)) = (layout.is_dynamic_lo, layout.is_dynamic_hi)
+    {
+        emitter.instruction("lsr x10, x11, #13");                               // move the dynamic-property bit into position
+        emitter.instruction("and x10, x10, #1");                                // extract the dynamic-property flag as a boolean
+        abi::emit_store_to_address(emitter, "x10", "x9", is_dynamic_lo);
+        abi::emit_store_zero_to_address(emitter, "x9", is_dynamic_hi);
+    }
     if let (Some(modifiers_lo), Some(modifiers_hi)) = (layout.modifiers_lo, layout.modifiers_hi) {
         if layout.required_parameter_count_lo.is_some() {
             emitter.instruction("ldr x10, [sp, #72]"); // reload PHP ReflectionMethod::getModifiers() bitmask
@@ -1381,6 +1394,7 @@ fn emit_set_owner_low_bit_final_property_aarch64(
 }
 
 /// Stores incoming x86_64 ReflectionMethod/ReflectionProperty boolean flags.
+#[rustfmt::skip]
 fn emit_set_owner_member_flags_property_x86_64(
     emitter: &mut Emitter,
     layout: &ReflectionOwnerLayout,
@@ -1470,6 +1484,14 @@ fn emit_set_owner_member_flags_property_x86_64(
         emitter.instruction("and rax, 1"); // extract the virtual-property flag as a boolean
         abi::emit_store_to_address(emitter, "rax", "r10", is_virtual_lo);
         abi::emit_store_zero_to_address(emitter, "r10", is_virtual_hi);
+    }
+    if let (Some(is_dynamic_lo), Some(is_dynamic_hi)) = (layout.is_dynamic_lo, layout.is_dynamic_hi)
+    {
+        emitter.instruction("mov rax, r11");                                    // copy flags before extracting the dynamic-property bit
+        emitter.instruction("shr rax, 13");                                     // move the dynamic-property bit into position
+        emitter.instruction("and rax, 1");                                      // extract the dynamic-property flag as a boolean
+        abi::emit_store_to_address(emitter, "rax", "r10", is_dynamic_lo);
+        abi::emit_store_zero_to_address(emitter, "r10", is_dynamic_hi);
     }
     if let (Some(modifiers_lo), Some(modifiers_hi)) = (layout.modifiers_lo, layout.modifiers_hi) {
         if layout.required_parameter_count_lo.is_some() {
