@@ -190,6 +190,11 @@ elephc app.php -l sqlite3 -L /opt/homebrew/lib --framework Cocoa
 # Supported targets today: macos-aarch64, linux-aarch64, linux-x86_64
 elephc --target linux-aarch64 hello.php
 elephc --target linux-x86_64 hello.php
+
+# Compile a standalone prefork HTTP server binary (Phase 1: echo → body, fresh per-request state)
+elephc --web app.php
+./app --listen 127.0.0.1:8080
+./app --listen 0.0.0.0:8080 --workers 4
 ```
 
 Or via cargo:

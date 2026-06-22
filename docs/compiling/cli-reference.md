@@ -29,9 +29,27 @@ binary is written next to it, named after the source without its extension.
 | `--emit-ir` | — | off | Print the EIR textual form and stop. |
 | `--check` | — | off | Run front-end checks only; write nothing. |
 | `--source-map` | — | off | Emit a `.map` sidecar next to the assembly. |
+| `--web` | — | off | Compile a prefork HTTP server binary instead of a CLI executable. See [Web Server](../beyond-php/web.md). |
 
-`--emit-ir`, `--emit-asm`, and `--check` are mutually exclusive. See
+`--emit-ir`, `--emit-asm`, and `--check` are mutually exclusive. `--web` cannot
+be combined with `--check`, `--emit cdylib`, `--emit-asm`, or `--emit-ir`. See
 [Output formats and diagnostics](output-and-diagnostics.md).
+
+## Web server binary runtime arguments
+
+When a program is compiled with `--web`, the produced binary accepts these
+runtime arguments (not elephc compiler flags):
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--listen host:port` | Yes | — | Address and port to bind. Missing `--listen` exits non-zero. |
+| `--workers N` | No | CPU count | Number of prefork worker processes. Minimum 1. |
+
+```bash
+elephc --web app.php
+./app --listen 127.0.0.1:8080
+./app --listen 0.0.0.0:8080 --workers 4
+```
 
 ## Targets
 

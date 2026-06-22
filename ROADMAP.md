@@ -776,6 +776,28 @@ and 0.x validation rather than by speculative pass work.
 These are valuable product directions that build on the stabilized 0.x compiler
 and runtime foundation.
 
+## Web server (`--web`) — product track
+
+`elephc --web app.php` compiles a standard PHP file into a standalone prefork
+HTTP server binary. The produced binary uses `SO_REUSEPORT` prefork workers; each
+request re-runs the top-level PHP body from a fresh state (globals, function
+statics, and static class properties all reset between requests). Run it with
+`--listen host:port` (required) and optionally `--workers N` (default: CPU count).
+
+- [x] **Phase 1** — core serve loop: `elephc --web` compile flag; `--listen`/`--workers`
+  runtime args; `_elephc_web_handler` entry restructure for per-request invocation;
+  `__rt_stdout_write` capture to the response body buffer; `__rt_web_reset`
+  per-request state reset (function statics, static properties, concat buffer);
+  `elephc-web` bridge staticlib with prefork/`SO_REUSEPORT` supervisor and
+  per-worker hyper HTTP server. Every Phase 1 response is `200 OK` with the
+  echoed body.
+- [ ] **Phase 2** — request input superglobals: `$_SERVER`, `$_GET`, `$_POST`,
+  `$_REQUEST`, `php://input`, and request headers available to the script body.
+- [ ] **Phase 3** — response control: `header()`, `http_response_code()`, custom
+  status codes and response headers.
+- [ ] **Phase 4** — hardening: worker respawn on crash, graceful shutdown, and
+  additional robustness work.
+
 ## v0.27.x — Shared and static libraries (C ABI)
 
 - [x] `--emit cdylib` flag, export PHP functions as C-callable symbols via `#[Export]` (shipped early; supersedes the planned `--lib` spelling)
