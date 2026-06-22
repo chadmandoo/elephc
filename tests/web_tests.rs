@@ -80,14 +80,65 @@ fn web_compile_produces_binary() {
 }
 
 /// Verifies the restructured entry runs the top-level body once via the bridge
-/// scaffold (server loop arrives in Task 7). Output flows top-level body →
-/// `_elephc_web_handler` → `elephc_web_run` scaffold → stdout, and the entry
-/// stub exits with the bridge's return code (0).
+/// scaffold (server loop arrives in Task 7). Now that per-request output capture
+/// is active and the scaffold runs the handler TWICE, both runs' bytes flow
+/// top-level body → `_elephc_web_handler` → `elephc_web_write` capture buffer,
+/// which the scaffold flushes to stdout once, so `"Hello World"` appears twice.
+/// The entry stub exits with the bridge's return code (0).
 #[test]
 fn web_scaffold_runs_handler_once() {
     let dir = make_test_dir("web_scaffold");
     let bin = compile_web(&dir, "<?php echo \"Hello World\";", "app");
     let (stdout, code) = run_bin(&bin, &[]);
-    assert_eq!(stdout, "Hello World");
+    assert_eq!(stdout, "Hello WorldHello World");
+    assert_eq!(code, 0);
+}
+
+/// Verifies per-request reset of top-level PHP variables: a global mutated each
+/// run does not accumulate across the scaffold's two handler invocations. Note:
+/// top-level `$g` is a handler LOCAL, so this passes via the handler prologue's
+/// per-request zero-init, NOT via `__rt_web_reset`; it does not isolate the
+/// static-state reset (the two tests below do).
+#[test]
+fn web_reset_clears_globals_between_runs() {
+    let dir = make_test_dir("web_reset");
+    // $g is a top-level handler local: reset to "" then appended each run, so it
+    // yields "x" both runs, not "x" then "xx". (elephc rejects reading an
+    // undefined variable, so the var is written before it is read.)
+    let src = "<?php $g = \"\"; $g = $g . \"x\"; echo $g;";
+    let bin = compile_web(&dir, src, "app");
+    let (stdout, code) = run_bin(&bin, &[]);
+    assert_eq!(stdout, "xx"); // scaffold runs handler twice; each run prints "x"
+    assert_eq!(code, 0);
+}
+
+/// Verifies per-request reset of a FUNCTION STATIC local: `static $n` must be
+/// re-initialized to 0 each request, so each of the scaffold's two handler runs
+/// prints `"1"`. Without `__rt_web_reset` the init marker would persist and `$n`
+/// would accumulate (`"1"` then `"2"` → `"12"`); the reset makes it `"11"`.
+#[test]
+fn web_reset_clears_function_static() {
+    let dir = make_test_dir("web_reset_static");
+    let src = "<?php function c() { static $n = 0; $n++; return $n; } echo c();";
+    let bin = compile_web(&dir, src, "app");
+    let (stdout, code) = run_bin(&bin, &[]);
+    assert_eq!(stdout, "11");
+    assert_eq!(code, 0);
+}
+
+/// Verifies per-request reset of a STATIC CLASS PROPERTY: `C::$n` must read fresh
+/// each request, so each of the scaffold's two handler runs prints `"1"`. The
+/// handler re-runs the property initializer every request, and `__rt_web_reset`
+/// releases the previous request's value first (no leak); without per-request
+/// re-init the property would accumulate (`"1"` then `"2"` → `"12"`).
+#[test]
+fn web_reset_clears_static_property() {
+    let dir = make_test_dir("web_reset_prop");
+    // elephc supports `C::$n = C::$n + 1` but not `C::$n++` on a static property,
+    // so the increment is written out longhand.
+    let src = "<?php class C { public static int $n = 0; } C::$n = C::$n + 1; echo C::$n;";
+    let bin = compile_web(&dir, src, "app");
+    let (stdout, code) = run_bin(&bin, &[]);
+    assert_eq!(stdout, "11");
     assert_eq!(code, 0);
 }

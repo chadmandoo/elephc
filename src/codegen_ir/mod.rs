@@ -21,6 +21,7 @@ mod literal_defaults;
 mod lower_inst;
 mod lower_term;
 pub mod value_placement;
+mod web;
 
 use std::collections::{HashMap, HashSet};
 use std::error::Error;

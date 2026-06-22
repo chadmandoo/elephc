@@ -91,7 +91,15 @@ pub(super) fn emit_module(
         requires_elephc_tls,
         regalloc_linear,
         web,
-    )
+    )?;
+    // Generate the per-request reset routine only for `--web`, and only after the
+    // handler body is emitted so every function static local (including any in the
+    // main body) has been recorded into `data`. The handler prologue's
+    // `bl __rt_web_reset` forward-references the label emitted here.
+    if web {
+        super::web::emit_web_reset(emitter, module, data);
+    }
+    Ok(())
 }
 
 /// Emits the static EIR Fiber wrappers needed for closure callbacks.

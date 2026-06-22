@@ -47,7 +47,8 @@ pub fn emit_stdout_write(emitter: &mut Emitter, web: bool) {
 
     if web {
         // -- web build: route through elephc_web_write when capture is enabled --
-        crate::codegen::abi::emit_symbol_address(emitter, "x9", "_elephc_web_capture");
+        let capture_symbol = emitter.target.extern_symbol("elephc_web_capture");
+        crate::codegen::abi::emit_symbol_address(emitter, "x9", &capture_symbol);
         emitter.instruction("ldrb w9, [x9]");                                   // load the low byte of the output-capture flag
         emitter.instruction("cbz x9, __rt_stdout_write_syscall");               // capture disabled — fall through to the plain write syscall
         emitter.bl_c("elephc_web_write");                                       // capture enabled — append the bytes to the current request's response body (ptr=x0, len=x1)
@@ -83,7 +84,8 @@ fn emit_stdout_write_x86_64(emitter: &mut Emitter, web: bool) {
 
     if web {
         // -- web build: route through elephc_web_write when capture is enabled --
-        crate::codegen::abi::emit_symbol_address(emitter, "r11", "_elephc_web_capture");
+        let capture_symbol = emitter.target.extern_symbol("elephc_web_capture");
+        crate::codegen::abi::emit_symbol_address(emitter, "r11", &capture_symbol);
         emitter.instruction("movzx r11d, BYTE PTR [r11]");                      // load the low byte of the output-capture flag, zero-extended
         emitter.instruction("test r11d, r11d");                                 // is per-request output capture enabled?
         emitter.instruction("jz __rt_stdout_write_syscall");                    // capture disabled — fall through to the plain write syscall
@@ -154,8 +156,8 @@ mod tests {
                 arch
             );
             assert!(
-                !asm.contains("_elephc_web_capture"),
-                "non-web {:?}/{:?} must not reference _elephc_web_capture",
+                !asm.contains("elephc_web_capture"),
+                "non-web {:?}/{:?} must not reference the capture flag",
                 platform,
                 arch
             );
@@ -163,7 +165,10 @@ mod tests {
     }
 
     /// Verifies web emission loads the capture flag and calls the bridge symbol,
-    /// with the macOS underscore-prefix convention applied via `bl_c`.
+    /// with the platform C-ABI mangling applied via `extern_symbol`/`bl_c`. The
+    /// capture flag and the `elephc_web_write` symbol both carry the leading
+    /// underscore on macOS and drop it on Linux, so the runtime references match
+    /// the bridge's `extern "C"` declarations on every target.
     #[test]
     fn web_references_capture_flag_and_bridge() {
         let mac = render(Platform::MacOS, Arch::AArch64, true);
@@ -171,11 +176,13 @@ mod tests {
         assert!(mac.contains("bl _elephc_web_write"));
 
         let linux_arm = render(Platform::Linux, Arch::AArch64, true);
-        assert!(linux_arm.contains("_elephc_web_capture"));
+        assert!(linux_arm.contains("elephc_web_capture"));
+        assert!(!linux_arm.contains("_elephc_web_capture"));
         assert!(linux_arm.contains("bl elephc_web_write"));
 
         let linux_x86 = render(Platform::Linux, Arch::X86_64, true);
-        assert!(linux_x86.contains("_elephc_web_capture"));
+        assert!(linux_x86.contains("elephc_web_capture"));
+        assert!(!linux_x86.contains("_elephc_web_capture"));
         assert!(linux_x86.contains("call elephc_web_write"));
     }
 

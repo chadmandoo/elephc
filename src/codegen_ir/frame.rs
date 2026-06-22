@@ -251,6 +251,13 @@ pub(super) fn emit_web_handler_prologue(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.blank();
     ctx.emitter.label_global(WEB_HANDLER_SYMBOL);
     abi::emit_frame_prologue(ctx.emitter, ctx.frame_size);
+    // Reset all process-persistent state (function static locals, refcounted
+    // static property values, and `_concat_off`) BEFORE this frame captures the
+    // concat base and BEFORE the body's re-run static/enum initializers, so each
+    // request sees clean state. `__rt_web_reset` is generated per program after
+    // every function is emitted; the call here forward-references its label.
+    ctx.emitter.comment("reset per-request persistent state");
+    abi::emit_call_label(ctx.emitter, "__rt_web_reset");
     capture_concat_base(ctx);
     emit_callee_saved_saves(ctx);
     zero_initialize_main_cleanup_locals(ctx);

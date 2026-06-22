@@ -13,7 +13,13 @@
 //! - One process per prefork worker means no shared-thread state: per-worker
 //!   request/response data lives in plain process statics, not behind a mutex.
 
+mod request_state;
 mod server;
+
+// Re-exported so the compiled `--web` runtime's `__rt_stdout_write` capture
+// branch links against the real per-request output sink (defined in
+// `request_state`), which replaced the Phase-1 no-op stub.
+pub use request_state::elephc_web_write;
 
 /// Returns the elephc-web C ABI version. Bumped when the exported symbol set or
 /// any symbol's signature changes shape.
@@ -21,18 +27,6 @@ mod server;
 pub extern "C" fn elephc_web_version() -> i32 {
     1
 }
-
-/// Appends response-body bytes for the current request. Phase 1 stub: a no-op
-/// until Task 6 wires the per-worker response buffer. The compiled `--web`
-/// runtime references this symbol from `__rt_stdout_write`'s capture branch, so
-/// it must resolve at link time even before the buffer exists. Because
-/// `_elephc_web_capture` defaults to 0, the capture branch is never taken at
-/// runtime in Phase 1, so echo still reaches stdout via the syscall path.
-///
-/// # Safety
-/// `ptr` must point to `len` valid bytes for the duration of the call.
-#[no_mangle]
-pub unsafe extern "C" fn elephc_web_write(_ptr: *const u8, _len: usize) {}
 
 #[cfg(test)]
 mod tests {
