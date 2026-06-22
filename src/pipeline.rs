@@ -288,12 +288,17 @@ pub(crate) fn compile(config: CliConfig) {
         None
     };
 
-    let runtime_features = ir_module
+    let mut runtime_features = ir_module
         .as_ref()
         .map(|module| module.required_runtime_features)
         .unwrap_or_else(|| {
             codegen::runtime_features_for_program_and_classes(&ast, &check_result.classes)
         });
+    // `--web` selects the output-capture variant of `__rt_stdout_write`. This is the
+    // sole driver of the web runtime feature: it is CLI-driven, not derived from the
+    // program, so the runtime cache (keyed on the generated assembly hash) keeps the
+    // web and non-web runtime objects distinct automatically.
+    runtime_features.web = web;
 
     if web && !extra_link_libs.iter().any(|lib| lib == "elephc_web") {
         extra_link_libs.push("elephc_web".to_string());

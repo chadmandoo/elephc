@@ -71,6 +71,12 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize) -> String {
     out.push_str(".comm _fiber_main_saved_exc, 8, 3\n");
     out.push_str(".comm _fiber_main_saved_call_frame, 8, 3\n");
     out.push_str(".comm _rt_diag_suppression, 8, 3\n");
+    // _elephc_web_capture: per-request output-capture mode flag read by
+    // __rt_stdout_write. Zero (the default) routes echo output to the plain
+    // write(1, …) syscall; non-zero (set only by the --web bridge) routes it to
+    // elephc_web_write so the response body can be captured per request. Only the
+    // low byte is used, but the 8-byte/align-3 house style keeps it word-aligned.
+    out.push_str(".comm _elephc_web_capture, 8, 3\n");
     out.push_str(&format!(".comm _heap_buf, {}, 3\n", heap_size));
     out.push_str(".comm _heap_off, 8, 3\n");
     out.push_str(".comm _heap_free_list, 8, 3\n");

@@ -322,6 +322,9 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     buffers::emit_buffer_use_after_free(emitter);
 
     // I/O runtime functions
+    // The terminal-stdout indirection every echo/print travels through. Always
+    // emitted (every program can echo); its body differs for `--web` builds.
+    io::emit_stdout_write(emitter, features.web);
     io::emit_cstr(emitter);
     io::emit_disk_space(emitter);
     io::emit_fopen(emitter);

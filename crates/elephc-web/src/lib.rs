@@ -20,6 +20,18 @@ pub extern "C" fn elephc_web_version() -> i32 {
     1
 }
 
+/// Appends response-body bytes for the current request. Phase 1 stub: a no-op
+/// until Task 6 wires the per-worker response buffer. The compiled `--web`
+/// runtime references this symbol from `__rt_stdout_write`'s capture branch, so
+/// it must resolve at link time even before the buffer exists. Because
+/// `_elephc_web_capture` defaults to 0, the capture branch is never taken at
+/// runtime in Phase 1, so echo still reaches stdout via the syscall path.
+///
+/// # Safety
+/// `ptr` must point to `len` valid bytes for the duration of the call.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_write(_ptr: *const u8, _len: usize) {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
