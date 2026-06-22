@@ -485,6 +485,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         class_label,
         &layouts.class,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -493,6 +494,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         function_label,
         &layouts.function,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -500,6 +502,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         emitter,
         method_label,
         &layouts.method,
+        true,
         true,
         fail_label,
         box_label,
@@ -509,6 +512,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         property_label,
         &layouts.property,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -517,6 +521,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         class_constant_label,
         &layouts.class_constant,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -525,6 +530,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         enum_unit_case_label,
         &layouts.enum_unit_case,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -533,6 +539,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         enum_backed_case_label,
         &layouts.enum_backed_case,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -541,6 +548,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         parameter_label,
         &layouts.parameter,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -549,6 +557,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         named_type_label,
         &layouts.named_type,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -557,6 +566,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         union_type_label,
         &layouts.union_type,
         false,
+        false,
         fail_label,
         box_label,
     );
@@ -564,6 +574,7 @@ fn emit_reflection_owner_new_aarch64(emitter: &mut Emitter, layouts: &Reflection
         emitter,
         intersection_type_label,
         &layouts.intersection_type,
+        false,
         false,
         fail_label,
         box_label,
@@ -655,6 +666,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         class_label,
         &layouts.class,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -663,6 +675,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         function_label,
         &layouts.function,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -670,6 +683,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         emitter,
         method_label,
         &layouts.method,
+        true,
         true,
         fail_label,
         box_label,
@@ -679,6 +693,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         property_label,
         &layouts.property,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -687,6 +702,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         class_constant_label,
         &layouts.class_constant,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -695,6 +711,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         enum_unit_case_label,
         &layouts.enum_unit_case,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -703,6 +720,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         enum_backed_case_label,
         &layouts.enum_backed_case,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -711,6 +729,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         parameter_label,
         &layouts.parameter,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -719,6 +738,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         named_type_label,
         &layouts.named_type,
         true,
+        false,
         fail_label,
         box_label,
     );
@@ -727,6 +747,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         union_type_label,
         &layouts.union_type,
         false,
+        false,
         fail_label,
         box_label,
     );
@@ -734,6 +755,7 @@ fn emit_reflection_owner_new_x86_64(emitter: &mut Emitter, layouts: &ReflectionO
         emitter,
         intersection_type_label,
         &layouts.intersection_type,
+        false,
         false,
         fail_label,
         box_label,
@@ -758,6 +780,7 @@ fn emit_aarch64_owner_kind_body(
     label: &str,
     layout: &ReflectionOwnerLayout,
     set_name: bool,
+    is_method: bool,
     fail_label: &str,
     box_label: &str,
 ) {
@@ -768,7 +791,7 @@ fn emit_aarch64_owner_kind_body(
         emit_set_owner_name_property_aarch64(emitter, layout);
     }
     emit_set_owner_class_flags_property_aarch64(emitter, layout);
-    emit_set_owner_member_flags_property_aarch64(emitter, layout);
+    emit_set_owner_member_flags_property_aarch64(emitter, layout, is_method);
     emit_set_owner_constant_value_property_aarch64(emitter, layout, fail_label);
     emit_set_owner_backing_value_property_aarch64(emitter, layout, fail_label);
     emit_set_owner_required_parameter_count_property_aarch64(emitter, layout);
@@ -791,6 +814,7 @@ fn emit_x86_64_owner_kind_body(
     label: &str,
     layout: &ReflectionOwnerLayout,
     set_name: bool,
+    is_method: bool,
     fail_label: &str,
     box_label: &str,
 ) {
@@ -801,7 +825,7 @@ fn emit_x86_64_owner_kind_body(
         emit_set_owner_name_property_x86_64(emitter, layout);
     }
     emit_set_owner_class_flags_property_x86_64(emitter, layout);
-    emit_set_owner_member_flags_property_x86_64(emitter, layout);
+    emit_set_owner_member_flags_property_x86_64(emitter, layout, is_method);
     emit_set_owner_constant_value_property_x86_64(emitter, layout, fail_label);
     emit_set_owner_backing_value_property_x86_64(emitter, layout, fail_label);
     emit_set_owner_required_parameter_count_property_x86_64(emitter, layout);
@@ -1293,6 +1317,7 @@ fn emit_set_owner_class_flags_property_x86_64(
 fn emit_set_owner_member_flags_property_aarch64(
     emitter: &mut Emitter,
     layout: &ReflectionOwnerLayout,
+    is_method: bool,
 ) {
     let (
         Some(is_public_lo),
@@ -1378,8 +1403,16 @@ fn emit_set_owner_member_flags_property_aarch64(
         abi::emit_store_zero_to_address(emitter, "x9", is_dynamic_hi);
     }
     if let (Some(modifiers_lo), Some(modifiers_hi)) = (layout.modifiers_lo, layout.modifiers_hi) {
-        if layout.required_parameter_count_lo.is_some() {
-            emitter.instruction("ldr x10, [sp, #72]"); // reload PHP ReflectionMethod::getModifiers() bitmask
+        if is_method {
+            emitter.instruction("ldr x11, [sp, #48]");                          // reload ReflectionMethod predicate flags
+            emitter.instruction("and x10, x11, #14");                           // keep public/protected/private visibility flags
+            emitter.instruction("lsr x10, x10, #1");                            // shift visibility flags into PHP modifier bit positions
+            emitter.instruction("and x12, x11, #1");                            // isolate the static-method flag
+            emitter.instruction("lsl x12, x12, #4");                            // move static into PHP modifier bit 16
+            emitter.instruction("orr x10, x10, x12");                           // merge static into the method modifier bitmask
+            emitter.instruction("and x12, x11, #48");                           // keep final/abstract method flags
+            emitter.instruction("lsl x12, x12, #1");                            // move final/abstract into PHP modifier bit positions
+            emitter.instruction("orr x10, x10, x12");                           // merge final/abstract into the method modifier bitmask
         } else {
             emitter.instruction("ldr x10, [sp, #96]"); // reload PHP Reflection member getModifiers() bitmask
         }
@@ -1422,6 +1455,7 @@ fn emit_set_owner_low_bit_final_property_aarch64(
 fn emit_set_owner_member_flags_property_x86_64(
     emitter: &mut Emitter,
     layout: &ReflectionOwnerLayout,
+    is_method: bool,
 ) {
     let (
         Some(is_public_lo),
@@ -1518,8 +1552,18 @@ fn emit_set_owner_member_flags_property_x86_64(
         abi::emit_store_zero_to_address(emitter, "r10", is_dynamic_hi);
     }
     if let (Some(modifiers_lo), Some(modifiers_hi)) = (layout.modifiers_lo, layout.modifiers_hi) {
-        if layout.required_parameter_count_lo.is_some() {
-            emitter.instruction("mov rax, QWORD PTR [rbp - 80]"); // reload PHP ReflectionMethod::getModifiers() bitmask
+        if is_method {
+            emitter.instruction("mov rax, r11");                                // copy ReflectionMethod predicate flags for visibility
+            emitter.instruction("and rax, 14");                                 // keep public/protected/private visibility flags
+            emitter.instruction("shr rax, 1");                                  // shift visibility flags into PHP modifier bit positions
+            emitter.instruction("mov rdx, r11");                                // copy ReflectionMethod predicate flags for static
+            emitter.instruction("and rdx, 1");                                  // isolate the static-method flag
+            emitter.instruction("shl rdx, 4");                                  // move static into PHP modifier bit 16
+            emitter.instruction("or rax, rdx");                                 // merge static into the method modifier bitmask
+            emitter.instruction("mov rdx, r11");                                // copy ReflectionMethod predicate flags for final/abstract
+            emitter.instruction("and rdx, 48");                                 // keep final/abstract method flags
+            emitter.instruction("shl rdx, 1");                                  // move final/abstract into PHP modifier bit positions
+            emitter.instruction("or rax, rdx");                                 // merge final/abstract into the method modifier bitmask
         } else {
             emitter.instruction("mov rax, QWORD PTR [rbp - 104]"); // reload PHP Reflection member getModifiers() bitmask
         }
