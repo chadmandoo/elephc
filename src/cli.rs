@@ -46,8 +46,6 @@ pub(crate) struct CliConfig {
     pub(crate) extra_link_paths: Vec<String>,
     pub(crate) extra_frameworks: Vec<String>,
     pub(crate) defines: HashSet<String>,
-    // used in a later pipeline task; suppress dead_code until consumed
-    #[allow(dead_code)]
     pub(crate) web: bool,
 }
 

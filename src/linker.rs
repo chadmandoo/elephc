@@ -99,6 +99,17 @@ const BRIDGES: &[BridgeStaticlib] = &[
         // Rust runtime/unwinder symbols, like the other bridges.
         needs_libdl: true,
     },
+    BridgeStaticlib {
+        lib_name: "elephc_web",
+        env_var: "ELEPHC_WEB_LIB_DIR",
+        crate_name: "elephc-web",
+        // The bridge owns the program entry (elephc_web_run) and tokio/hyper
+        // link-time machinery, so the whole archive is force-loaded.
+        whole_archive: true,
+        macos_frameworks: &[],
+        // Rust runtime/unwinder symbols, like the other bridges.
+        needs_libdl: true,
+    },
 ];
 
 impl BridgeStaticlib {

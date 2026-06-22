@@ -55,7 +55,7 @@ pub(crate) fn compile(config: CliConfig) {
         extra_link_paths,
         extra_frameworks,
         defines,
-        web: _,
+        web,
     } = config;
     let filename = filename.as_str();
     codegen::set_null_repr(null_repr);
@@ -294,6 +294,10 @@ pub(crate) fn compile(config: CliConfig) {
         .unwrap_or_else(|| {
             codegen::runtime_features_for_program_and_classes(&ast, &check_result.classes)
         });
+
+    if web && !extra_link_libs.iter().any(|lib| lib == "elephc_web") {
+        extra_link_libs.push("elephc_web".to_string());
+    }
 
     let requires_elephc_tls = extra_link_libs.iter().any(|lib| lib == "elephc_tls")
         || check_result
