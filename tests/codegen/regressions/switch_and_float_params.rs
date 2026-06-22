@@ -6,6 +6,11 @@
 //! 2. An `int`/`bool` argument passed to a `float` parameter was deposited in an
 //!    integer register and read back as garbage from a floating-point slot, because
 //!    no int→float widening happened at the call boundary.
+//! 3. Loose equality between a float and an int (`1.5 == 1`, and `switch (1.5)`)
+//!    either failed to compile (`loose_eq for PHP types Float and Int` was an
+//!    unsupported backend feature) or truncated the float subject to int in the
+//!    dynamic switch dispatch, so `switch (1.5) { case 1.5; }` wrongly matched
+//!    `case 1`.
 //!
 //! Called from:
 //! - `cargo test` through Rust's test harness.
@@ -16,6 +21,11 @@
 //!   for genuinely integer-typed subjects.
 //! - Bug 2 fix: `coerce_operands_to_params` widens int/bool operands bound to pure
 //!   `float` parameters before the call is emitted.
+//! - Bug 3 fix: `lower_loose_eq` promotes a float-vs-int pair to float and compares
+//!   numerically, and the dynamic switch routes float/numeric pairs through
+//!   `Op::LooseEq` instead of the int jump path. These tests cover statically-typed
+//!   float operands; an untyped (`Mixed`) float subject is a separate, broader
+//!   loose-equality limitation (issue #397) and is intentionally not asserted here.
 
 use crate::support::*;
 
@@ -142,4 +152,57 @@ echo f(true), " ", f(false);
 "#,
     );
     assert_eq!(out, "1.25 0.25");
+}
+
+/// Loose equality between a float and an int compiles and compares numerically
+/// (`1.5 == 1` is false, `1.0 == 1` is true) — previously an unsupported backend
+/// feature. Operands come from runtime-typed locals so the compare survives folding.
+#[test]
+fn test_float_int_loose_equality() {
+    let out = compile_and_run(
+        r#"<?php
+function eq(float $a, int $b): string { return ($a == $b) ? "1" : "0"; }
+echo eq(1.5, 1), eq(1.0, 1), eq(2.0, 2), eq(2.5, 2);
+"#,
+    );
+    assert_eq!(out, "0110");
+}
+
+/// A `switch` over a typed `float` subject matches by PHP loose equality, so a
+/// fractional subject does not truncate into an integer case label.
+#[test]
+fn test_float_switch_matches_numeric_case() {
+    let out = compile_and_run(
+        r#"<?php
+function classify(float $x): string {
+    switch ($x) {
+        case 1:   return "int-one";
+        case 1.5: return "onefive";
+        case 2.0: return "two";
+        default:  return "other";
+    }
+}
+echo classify(1.5), "|", classify(1.0), "|", classify(2.0), "|", classify(3.7);
+"#,
+    );
+    assert_eq!(out, "onefive|int-one|two|other");
+}
+
+/// A `switch` over an integer subject still matches a fractional case only when
+/// numerically equal (`2` matches `case 2.0` but not `case 2.5`).
+#[test]
+fn test_int_switch_with_float_case_labels() {
+    let out = compile_and_run(
+        r#"<?php
+function pick(int $n): string {
+    switch ($n) {
+        case 2.5: return "twofive";
+        case 2.0: return "two";
+        default:  return "none";
+    }
+}
+echo pick(2), "|", pick(3);
+"#,
+    );
+    assert_eq!(out, "two|none");
 }

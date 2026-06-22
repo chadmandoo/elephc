@@ -1092,10 +1092,10 @@ fn lower_switch(
         .map(|_| ctx.builder.create_named_block("switch.case", Vec::new()))
         .collect::<Vec<_>>();
 
-    // The compact integer jump table requires an integer scrutinee. A non-integer
-    // subject (string, float, mixed) must use the source-ordered dynamic path so it
-    // compares with PHP's loose-equality (`==`) semantics instead of being coerced
-    // to int — coercing a string subject collapses every case to `0 == 0`.
+    // The compact integer jump table is valid only for an integer scrutinee with
+    // integer case labels. Any other subject (string, float, mixed) takes the
+    // source-ordered dynamic path — see `lower_dynamic_switch_dispatch` for how it
+    // picks PHP loose-equality vs the integer fast path per subject/case pair.
     if subject.ir_type == IrType::I64 && can_lower_static_switch(cases) {
         let subject = coerce_to_int(ctx, subject, None);
         lower_static_switch_dispatch(ctx, subject, cases, &blocks, default_block);
@@ -1143,9 +1143,10 @@ fn lower_static_switch_dispatch(
 /// Emits source-ordered dynamic switch pattern checks for non-literal case expressions.
 ///
 /// PHP `switch` compares the subject against each case with loose equality (`==`).
-/// String subjects (and string case labels) are dispatched through `Op::LooseEq` so
-/// the comparison honors PHP string/numeric/bool coercion rules; purely integer
-/// subject-and-case pairs keep the cheaper `coerce_to_int` + `ICmp` fast path.
+/// String subjects/labels and float/numeric pairs are dispatched through `Op::LooseEq`
+/// so the comparison honors PHP string/numeric coercion rules (`switch (1.5)` matching
+/// `case 1.5`, not `case 1`); purely integer-like subject-and-case pairs keep the
+/// cheaper `coerce_to_int` + `ICmp` fast path.
 fn lower_dynamic_switch_dispatch(
     ctx: &mut LoweringContext<'_, '_>,
     subject: LoweredValue,
@@ -1160,9 +1161,16 @@ fn lower_dynamic_switch_dispatch(
     for ((case_exprs, _), case_block) in cases.iter().zip(blocks) {
         for case_expr in case_exprs {
             let case_value = lower_expr(ctx, case_expr);
-            let matched = if subject_is_str || case_value.ir_type == IrType::Str {
-                // Loose equality handles string/string, string/scalar, and mixed cases
-                // exactly as PHP's `==` would inside an equivalent if/elseif chain.
+            // Strings and floats must use loose equality: coercing a string to int
+            // collapses every case to `0 == 0`, and coercing a float to int would
+            // truncate the subject (so `switch (1.5) { case 1.5; }` would wrongly
+            // match `case 1`). The cheap ICmp fast path stays for integer-like pairs.
+            let use_loose_eq = subject_is_str
+                || case_value.ir_type == IrType::Str
+                || float_loose_eq_pair(subject.ir_type, case_value.ir_type);
+            let matched = if use_loose_eq {
+                // Loose equality handles string/string, string/scalar, float/numeric,
+                // and mixed cases exactly as PHP's `==` would inside an if/elseif chain.
                 ctx.emit_value(
                     Op::LooseEq,
                     vec![subject.value, case_value.value],
@@ -1195,6 +1203,19 @@ fn lower_dynamic_switch_dispatch(
     }
     branch_to(ctx, default_block);
     ctx.clear_static_callable_locals();
+}
+
+/// Returns true when a switch subject/case pair must compare via float loose equality:
+/// at least one side is a statically-typed float and both are numeric (`int`/`float`).
+/// These pairs route through `Op::LooseEq`, which promotes both operands to float, so the
+/// subject is not truncated to int (the backend supports float-vs-int loose equality).
+///
+/// An untyped (`Mixed`) subject holding a float is not covered here: it still takes the
+/// integer fast path and truncates, a separate pre-existing loose-equality limitation that
+/// needs a tag-aware runtime comparison helper (tracked in issue #397).
+fn float_loose_eq_pair(subject_ty: IrType, case_ty: IrType) -> bool {
+    let numeric = |ty: IrType| matches!(ty, IrType::I64 | IrType::F64);
+    (subject_ty == IrType::F64 || case_ty == IrType::F64) && numeric(subject_ty) && numeric(case_ty)
 }
 
 /// Lowers switch case/default bodies and preserves PHP fallthrough between adjacent bodies.
