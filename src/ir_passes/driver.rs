@@ -9,8 +9,9 @@
 //!
 //! Key details:
 //! - Passes operate on a single `Function`; `optimize_module` drives every
-//!   function-like body in the module. A future cross-function pass (e.g. an
-//!   inliner) would add its own module-level phase instead of using this loop.
+//!   function-like body in the module. The cross-function small-function inliner
+//!   runs as its own module-level phase (`super::inline`) before this per-function
+//!   loop, so the per-function passes see the already-expanded bodies.
 //! - Validation after each pass and the non-convergence panic are gated on
 //!   `debug_assertions`, so they are active in `cargo build`/`cargo test` and
 //!   compile out of `--release` builds — exactly "validation after each pass in
@@ -82,7 +83,18 @@ fn default_passes() -> Vec<Box<dyn IrPass>> {
 /// The module is destructured so the function tables and the shared literal
 /// `data` pool can be borrowed disjointly: each function is mutated in place
 /// while passes intern new literals into the same pool.
+///
+/// A module-level inliner (cross-function) is invoked before the per-function
+/// fixed-point loop so that inlined bodies are visible to subsequent passes.
 pub fn optimize_module(module: &mut Module) {
+    // Module-level inliner first (eligible small direct calls only).
+    let _ = super::inline::inline_small_functions(module);
+
+    #[cfg(debug_assertions)]
+    if let Err(e) = crate::ir::validate_module(module) {
+        panic!("inline_small_functions produced invalid module: {:?}", e);
+    }
+
     let passes = default_passes();
     if passes.is_empty() {
         return;
