@@ -201,3 +201,29 @@ fn web_server_multiple_workers() {
     assert!(r1.ends_with("ok"), "first response: {:?}", r1);
     assert!(r2.ends_with("ok"), "second response: {:?}", r2);
 }
+
+/// Sends one HTTP/1.1 request with a method/body and returns the full raw response.
+fn http_request(addr: &str, method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> String {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(addr).unwrap();
+    let mut req = format!("{} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n", method, path, addr);
+    for (k, v) in headers { req.push_str(&format!("{}: {}\r\n", k, v)); }
+    req.push_str(&format!("Content-Length: {}\r\n\r\n{}", body.len(), body));
+    s.write_all(req.as_bytes()).unwrap();
+    let mut buf = String::new();
+    s.read_to_string(&mut buf).unwrap();
+    buf
+}
+
+/// Verifies the extern getters are callable from --web PHP and return request data.
+#[test]
+fn web_extern_method_getter() {
+    let dir = make_test_dir("web_extern_method");
+    let bin = compile_web(&dir, "<?php echo elephc_web_method();", "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let resp = http_request(&addr, "POST", "/", &[], "");
+    let _ = child.kill(); let _ = child.wait();
+    assert!(resp.ends_with("POST"), "body: {:?}", resp);
+}
