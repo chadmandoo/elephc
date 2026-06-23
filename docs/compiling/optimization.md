@@ -25,7 +25,12 @@ trade-offs.
 
 After the AST is lowered to EIR and validated, a fixed-point pass driver runs the
 registered transformation passes over each function until none reports a change.
-The passes are **on by default**.
+The whole pipeline runs to a **module-level fixed point**: each round runs the
+cross-function [small-function inliner](#small-function-inlining) and then drives the
+per-function passes to convergence on every function, repeating until neither the
+inliner nor any function pass changes anything. Interleaving lets the two layers feed
+each other — inlined bodies expose new constants and dead code, and the simplified
+functions expose new (smaller) inline candidates. The passes are **on by default**.
 
 ```bash
 # Default: EIR optimization passes enabled
@@ -228,10 +233,11 @@ are reachable through implicit edges that the terminator graph does not show.
 
 ### Small-function inlining
 
-Before the per-function fixed-point loop runs, a module-level pass inlines calls to
-small user functions directly into their callers, so the per-function passes then
-optimize the expanded bodies. A callee is inlined only when **all** of the following
-hold:
+As part of the module-level fixed point, a cross-function pass inlines calls to small
+user functions directly into their callers; the per-function passes then optimize the
+expanded bodies, and because the pipeline iterates, a callee that only becomes small
+enough after that optimization is inlined on a later round. A callee is inlined only
+when **all** of the following hold:
 
 - its body is at most **24** non-`nop` instructions;
 - it is **non-recursive**, directly *or* mutually — a call-graph cycle analysis
