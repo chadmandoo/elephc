@@ -52,7 +52,9 @@ elephc --web app.php
 ```
 
 The served program receives the HTTP request through the standard superglobals
-`$_SERVER`, `$_GET`, `$_POST`, and `php://input`. See [Web Server](../beyond-php/web.md#request-input).
+`$_SERVER`, `$_GET`, `$_POST`, and `php://input`, and controls the response
+status and headers with `http_response_code()` and `header()`. See
+[Web Server](../beyond-php/web.md#request-input).
 
 ## Targets
 

@@ -38,9 +38,10 @@ The produced binary accepts these arguments at runtime:
 
 The request model follows PHP-FPM / `php -S`: each incoming HTTP request
 re-runs the program's top-level code from a completely fresh state. Whatever
-the script writes via `echo` or `print` becomes the HTTP response body, returned
-as `200 OK` with no `Content-Type` or other custom headers set. Custom status
-codes and response headers (`header()`, `http_response_code()`) arrive in Phase 3.
+the script writes via `echo` or `print` becomes the HTTP response body. The
+default response is `200 OK` with no `Content-Type` set; the program controls
+the status and headers with `http_response_code()` and `header()` (see
+[Response control](#response-control)).
 
 ```php
 <?php
@@ -78,6 +79,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 See `examples/web-request/` for a runnable demo covering `$_SERVER`, `$_GET`,
 `$_POST`, and `php://input`.
 
+## Response control
+
+The response status and headers are controlled with the standard PHP builtins,
+behaving as they do under PHP-FPM:
+
+- **`http_response_code(int $code = 0): int`** — with a code, sets the response
+  status and returns the previous code; with no argument (or `0`), returns the
+  current status without changing it. The default status is `200`.
+- **`header(string $header, bool $replace = true, int $response_code = 0): void`** —
+  adds a response header. The argument is the full `"Name: Value"` line, exactly
+  as in PHP:
+  - By default (`$replace = true`) a later `header()` with the same field name
+    replaces earlier ones; pass `$replace = false` to send duplicates.
+  - A `"HTTP/1.1 404 ..."` or `"Status: 404 ..."` line sets the status code
+    instead of adding a header.
+  - A `"Location: ..."` header also sets the status to `302`, unless the status
+    is already `201`/`3xx` or the third `$response_code` argument overrides it.
+  - The third `$response_code` argument, when non-zero, forces the status.
+
+```php
+<?php
+header('Content-Type: application/json');
+if (!isset($_GET['id'])) {
+    http_response_code(400);
+    echo '{"error":"missing id"}';
+} else {
+    echo '{"id":' . (int) $_GET['id'] . '}';
+}
+```
+
+`Content-Type` is **not** set automatically — the program chooses it (PHP-FPM
+defaults to `text/html`; elephc-web sets nothing unless you call `header()`).
+
+See `examples/web-response/` for a runnable demo.
+
 ## Per-request fresh state
 
 Between requests, the runtime resets all process-persistent state so request
@@ -105,14 +141,14 @@ count; a slow request occupies exactly one worker for its duration.
 
 ## Limitations
 
-The serve loop, per-request fresh state, and request input (`$_SERVER` / `$_GET`
-/ `$_POST` / `php://input`) are available. The following are not yet available:
+The serve loop, per-request fresh state, request input (`$_SERVER` / `$_GET` /
+`$_POST` / `php://input`), and response control (`http_response_code()` /
+`header()`) are available. The following are not yet available:
 
-- **No response control** — `header()` and `http_response_code()` are not yet
-  available. Every response is `200 OK` with no `Content-Type` or other headers
-  set; custom status codes and headers arrive in Phase 3.
 - **`$argc` / `$argv` not populated** — the binary's own argv is consumed by the
   server and is not forwarded to the script body.
+- **Top-level `return` does not halt the request** — use `if`/`else` to skip
+  code rather than an early top-level `return` (a known handler-model gap).
 - **`$_POST` only for urlencoded bodies** — `multipart/form-data` and file
   uploads are not parsed; read the raw body via `php://input` if you need it.
 - **No intra-worker concurrency** — one slow request occupies its worker until

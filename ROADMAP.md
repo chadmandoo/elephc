@@ -798,8 +798,12 @@ statics, and static class properties all reset between requests). Run it with
   `_eir_global_*` storage); output-capture completeness so echoed Mixed/array/
   resource values reach the response body; superglobals released per request. Not
   included: `$_REQUEST`, multipart/form-data.
-- [ ] **Phase 3** — response control: `header()`, `http_response_code()`, custom
-  status codes and response headers.
+- [x] **Phase 3** — response control: `http_response_code()` (set/read status,
+  returns previous on set) and `header()`, fully PHP-compatible — replace-vs-append,
+  `HTTP/`/`Status:` status lines, `Location:`→302, and the third `$response_code`
+  argument, all handled in the `elephc-web` bridge. Web-gated `__rt_http_response_code`
+  / `__rt_header` forward to the bridge under `--web` and are no-ops otherwise.
+  Not included: `Content-Type` is not set automatically (the program controls it).
 - [ ] **Phase 4** — hardening: worker respawn on crash, graceful shutdown, and
   additional robustness work.
 
