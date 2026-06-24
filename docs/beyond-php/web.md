@@ -69,8 +69,12 @@ every request and readable inside any function scope (no `global` needed):
   `GATEWAY_INTERFACE`, and `SERVER_SOFTWARE`.
 - **`$_GET`** — the query string parsed into a string-keyed array, percent-decoded.
 - **`$_POST`** — an `application/x-www-form-urlencoded` request body parsed the
-  same way. Other content types leave `$_POST` empty — read the raw body via
-  `php://input` instead.
+  same way; a `multipart/form-data` body also fills `$_POST` from its text fields.
+  Other content types leave `$_POST` empty — read the raw body via `php://input`.
+- **`$_FILES`** — `multipart/form-data` file uploads, each as
+  `['name' => …, 'type' => …, 'tmp_name' => …, 'error' => 0, 'size' => …]`. The
+  upload is written to a temp file at `tmp_name`; read it with
+  `file_get_contents()` (or `move_uploaded_file()`).
 - **`$_COOKIE`** — the `Cookie` request header parsed into a string-keyed array
   (values percent-decoded).
 - **`$_REQUEST`** — `$_GET` overlaid with `$_POST` (POST wins on key collision),
@@ -181,14 +185,6 @@ available. The following are not yet available:
 
 - **`$argc` / `$argv` not populated** — the binary's own argv is consumed by the
   server and is not forwarded to the script body (PHP-FPM does not set them either).
-- **Reading uploaded files needs care** — `multipart/form-data` is parsed into
-  `$_FILES` (name/type/size/tmp_name), but a builtin that pulls in a second Rust
-  bridge (e.g. `file_get_contents()`/`move_uploaded_file()` on a *dynamic* path,
-  which enables the stream-wrapper/`https://` path and links `elephc-tls`) does
-  not yet co-link with the `--web` bridge — both bundle `std`, producing duplicate
-  symbols at link time. The same limitation applies to any `--web` program using
-  the `https://` client or dynamic stream wrappers. Workaround: front with a
-  reverse proxy for outbound HTTPS, or read request bodies via `php://input`.
 - **No intra-worker concurrency** — `handler()` runs synchronously, so one slow
   request occupies its worker until it completes (idle keep-alive connections no
   longer block the accept loop, but an in-flight handler does). Use `--workers`.

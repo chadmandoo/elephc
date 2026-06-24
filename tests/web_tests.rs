@@ -861,3 +861,28 @@ fn web_multipart_post_and_files() {
     let _ = child.wait();
     assert!(resp.ends_with("hello|up.txt|text/plain|12"), "multipart parse: {:?}", resp);
 }
+
+/// Verifies an uploaded file can be READ back via file_get_contents on its
+/// tmp_name. This exercises both A5 and the multi-bridge link fix: a dynamic
+/// file_get_contents pulls in the TLS bridge, which must co-link with the web
+/// bridge without duplicate-symbol errors.
+#[test]
+fn web_multipart_file_contents_readable() {
+    let dir = make_test_dir("web_upload_read");
+    let src = "<?php $f = $_FILES['doc']['tmp_name'] ?? ''; echo $f === '' ? 'NOFILE' : file_get_contents($f);";
+    let bin = compile_web(&dir, src, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let boundary = "Zbnd";
+    let body = format!(
+        "--{b}\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"d.txt\"\r\n\
+         Content-Type: application/octet-stream\r\n\r\nUPLOAD-CONTENT-OK\r\n--{b}--\r\n",
+        b = boundary
+    );
+    let ct = format!("multipart/form-data; boundary={}", boundary);
+    let resp = http_request(&addr, "POST", "/", &[("Content-Type", &ct)], &body);
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(resp.ends_with("UPLOAD-CONTENT-OK"), "upload content not read back: {:?}", resp);
+}
