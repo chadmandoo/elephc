@@ -51,7 +51,7 @@ pub fn serve(listen: &str, handler: extern "C" fn(), max_body: usize) {
     rt.block_on(async move {
         let listener = TcpListener::from_std(std_listener).expect("from_std");
         loop {
-            let (stream, _) = match listener.accept().await {
+            let (stream, peer) = match listener.accept().await {
                 Ok(pair) => pair,
                 Err(_) => continue,
             };
@@ -66,6 +66,7 @@ pub fn serve(listen: &str, handler: extern "C" fn(), max_body: usize) {
                     let uri = req.uri().to_string();
                     let path = req.uri().path().to_string();
                     let query = req.uri().query().unwrap_or("").to_string();
+                    let protocol = format!("{:?}", req.version());
                     let headers: Vec<(String, String)> = req
                         .headers()
                         .iter()
@@ -94,7 +95,14 @@ pub fn serve(listen: &str, handler: extern "C" fn(), max_body: usize) {
                             return Ok::<_, Infallible>(resp);
                         }
                     };
-                    request_state::set_request(method, uri, path, query, headers, body);
+                    let meta = request_state::RequestMeta {
+                        remote_addr: peer.ip().to_string(),
+                        remote_port: peer.port(),
+                        server_addr: addr.ip().to_string(),
+                        server_port: addr.port(),
+                        protocol,
+                    };
+                    request_state::set_request(method, uri, path, query, headers, body, meta);
                     let resp_body = run_handler(handler);
                     let status = request_state::take_status();
                     let mut builder = Response::builder().status(status);

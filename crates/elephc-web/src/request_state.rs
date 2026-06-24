@@ -212,6 +212,25 @@ static mut REQ_PATH: Option<CString> = None;
 static mut REQ_QUERY: Option<CString> = None;
 static mut REQ_HEADERS: Vec<(CString, CString)> = Vec::new();
 static mut REQ_BODY: Vec<u8> = Vec::new();
+/// Connection/server metadata for the current request, backing the rest of the
+/// `$_SERVER` keys (`REMOTE_ADDR`, `SERVER_PORT`, `SERVER_PROTOCOL`, …).
+static mut REQ_REMOTE_ADDR: Option<CString> = None;
+static mut REQ_REMOTE_PORT: i64 = 0;
+static mut REQ_SERVER_ADDR: Option<CString> = None;
+static mut REQ_SERVER_PORT: i64 = 0;
+static mut REQ_PROTOCOL: Option<CString> = None;
+/// Request start time in whole Unix seconds (backs `$_SERVER['REQUEST_TIME']`).
+static mut REQ_TIME: i64 = 0;
+
+/// Connection/server metadata passed to `set_request` alongside the HTTP fields.
+pub(crate) struct RequestMeta {
+    pub remote_addr: String,
+    pub remote_port: u16,
+    pub server_addr: String,
+    pub server_port: u16,
+    /// HTTP protocol string, e.g. "HTTP/1.1".
+    pub protocol: String,
+}
 
 /// Stores the parsed request for the current worker thread. Called by the
 /// worker before invoking the PHP handler. Non-UTF8 / interior-NUL bytes in
@@ -224,10 +243,15 @@ pub(crate) fn set_request(
     query: String,
     headers: Vec<(String, String)>,
     body: Vec<u8>,
+    meta: RequestMeta,
 ) {
     fn cstr(s: &str) -> CString {
         CString::new(s.replace('\0', "")).unwrap_or_default()
     }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     unsafe {
         core::ptr::write(core::ptr::addr_of_mut!(REQ_METHOD), Some(cstr(&method)));
         core::ptr::write(core::ptr::addr_of_mut!(REQ_URI), Some(cstr(&uri)));
@@ -237,6 +261,12 @@ pub(crate) fn set_request(
             headers.iter().map(|(n, v)| (cstr(n), cstr(v))).collect();
         core::ptr::write(core::ptr::addr_of_mut!(REQ_HEADERS), hs);
         core::ptr::write(core::ptr::addr_of_mut!(REQ_BODY), body);
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_REMOTE_ADDR), Some(cstr(&meta.remote_addr)));
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_REMOTE_PORT), meta.remote_port as i64);
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_SERVER_ADDR), Some(cstr(&meta.server_addr)));
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_SERVER_PORT), meta.server_port as i64);
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_PROTOCOL), Some(cstr(&meta.protocol)));
+        core::ptr::write(core::ptr::addr_of_mut!(REQ_TIME), now);
     }
 }
 
@@ -319,6 +349,42 @@ pub unsafe extern "C" fn elephc_web_body_len() -> i64 {
     (*core::ptr::addr_of!(REQ_BODY)).len() as i64
 }
 
+/// Returns the client IP address (e.g. "127.0.0.1"); backs `$_SERVER['REMOTE_ADDR']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_remote_addr() -> *const c_char {
+    opt_ptr(core::ptr::addr_of!(REQ_REMOTE_ADDR))
+}
+
+/// Returns the client TCP port; backs `$_SERVER['REMOTE_PORT']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_remote_port() -> i64 {
+    *core::ptr::addr_of!(REQ_REMOTE_PORT)
+}
+
+/// Returns the bound server IP address; backs `$_SERVER['SERVER_ADDR']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_server_addr() -> *const c_char {
+    opt_ptr(core::ptr::addr_of!(REQ_SERVER_ADDR))
+}
+
+/// Returns the bound server port; backs `$_SERVER['SERVER_PORT']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_server_port() -> i64 {
+    *core::ptr::addr_of!(REQ_SERVER_PORT)
+}
+
+/// Returns the HTTP protocol string (e.g. "HTTP/1.1"); backs `$_SERVER['SERVER_PROTOCOL']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_protocol() -> *const c_char {
+    opt_ptr(core::ptr::addr_of!(REQ_PROTOCOL))
+}
+
+/// Returns the request start time in whole Unix seconds; backs `$_SERVER['REQUEST_TIME']`.
+#[no_mangle]
+pub unsafe extern "C" fn elephc_web_request_time() -> i64 {
+    *core::ptr::addr_of!(REQ_TIME)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,6 +400,13 @@ mod tests {
             "x=1".into(),
             vec![("Content-Type".into(), "text/plain".into())],
             b"hello".to_vec(),
+            RequestMeta {
+                remote_addr: "10.0.0.7".into(),
+                remote_port: 54321,
+                server_addr: "127.0.0.1".into(),
+                server_port: 8080,
+                protocol: "HTTP/1.1".into(),
+            },
         );
         unsafe {
             assert_eq!(CStr::from_ptr(elephc_web_method()).to_str().unwrap(), "POST");
@@ -346,6 +419,12 @@ mod tests {
             assert_eq!(elephc_web_body_len(), 5);
             let body = std::slice::from_raw_parts(elephc_web_body_ptr(), 5);
             assert_eq!(body, b"hello");
+            assert_eq!(CStr::from_ptr(elephc_web_remote_addr()).to_str().unwrap(), "10.0.0.7");
+            assert_eq!(elephc_web_remote_port(), 54321);
+            assert_eq!(CStr::from_ptr(elephc_web_server_addr()).to_str().unwrap(), "127.0.0.1");
+            assert_eq!(elephc_web_server_port(), 8080);
+            assert_eq!(CStr::from_ptr(elephc_web_protocol()).to_str().unwrap(), "HTTP/1.1");
+            assert!(elephc_web_request_time() > 0);
         }
     }
 
