@@ -414,3 +414,42 @@ fn web_response_control_combined() {
     assert!(lower.contains("x-a: 2") && !lower.contains("x-a: 1"), "replace failed: {:?}", resp);
     assert!(resp.ends_with("{\"ok\":true}"), "body: {:?}", resp);
 }
+
+/// Verifies a top-level `return` halts the --web handler: code after it must not run.
+#[test]
+fn web_top_level_return_halts_handler() {
+    let dir = make_test_dir("web_return");
+    let src = "<?php echo \"before\"; return; http_response_code(500); echo \"after\";";
+    let bin = compile_web(&dir, src, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let resp = http_request(&addr, "GET", "/", &[], "");
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(resp.starts_with("HTTP/1.1 200"), "status must stay 200: {:?}", resp);
+    assert!(resp.ends_with("before"), "body must be exactly 'before': {:?}", resp);
+    assert!(!resp.contains("after"), "code after return must not run: {:?}", resp);
+}
+
+/// Verifies the validate-then-return pattern: a conditional early `return` halts
+/// the handler so the rest of the body does not run (the failing case from the
+/// web-response example).
+#[test]
+fn web_conditional_early_return_halts() {
+    let dir = make_test_dir("web_early_return");
+    let src = "<?php if (!isset($_GET['ok'])) { http_response_code(400); echo \"bad\"; return; } echo \"good\";";
+    let bin = compile_web(&dir, src, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let bad = http_request(&addr, "GET", "/", &[], "");
+    let good = http_request(&addr, "GET", "/?ok=1", &[], "");
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(bad.starts_with("HTTP/1.1 400"), "no-ok status: {:?}", bad);
+    assert!(bad.ends_with("bad"), "no-ok body must be 'bad': {:?}", bad);
+    assert!(!bad.contains("good"), "no-ok must not run code after return: {:?}", bad);
+    assert!(good.starts_with("HTTP/1.1 200"), "ok status: {:?}", good);
+    assert!(good.ends_with("good"), "ok body must be 'good': {:?}", good);
+}

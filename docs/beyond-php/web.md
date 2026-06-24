@@ -147,8 +147,6 @@ The serve loop, per-request fresh state, request input (`$_SERVER` / `$_GET` /
 
 - **`$argc` / `$argv` not populated** — the binary's own argv is consumed by the
   server and is not forwarded to the script body.
-- **Top-level `return` does not halt the request** — use `if`/`else` to skip
-  code rather than an early top-level `return` (a known handler-model gap).
 - **`$_POST` only for urlencoded bodies** — `multipart/form-data` and file
   uploads are not parsed; read the raw body via `php://input` if you need it.
 - **No intra-worker concurrency** — one slow request occupies its worker until

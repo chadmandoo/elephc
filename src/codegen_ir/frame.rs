@@ -216,10 +216,14 @@ fn capture_concat_base(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Emits frame teardown and exits the process with status 0.
+///
+/// The top-level body emits this epilogue INLINE at every `return` terminator
+/// (it has no shared epilogue label to jump to, unlike user functions). It must
+/// therefore emit a full self-contained epilogue on EVERY call — a one-shot guard
+/// would leave all but the first `return` falling through into later blocks. The
+/// trailing caller in `block_emit` is already gated on `!epilogue_emitted`, so the
+/// final epilogue is still emitted at most once when the body has no `return`.
 pub(super) fn emit_main_epilogue(ctx: &mut FunctionContext<'_>) {
-    if ctx.epilogue_emitted {
-        return;
-    }
     ctx.emitter.blank();
     ctx.emitter.comment("epilogue + exit(0)");
     emit_main_local_epilogue_cleanup(ctx);
@@ -271,9 +275,6 @@ pub(super) fn emit_web_handler_prologue(ctx: &mut FunctionContext<'_>) {
 /// frame, but it `ret`s instead of exiting and skips the process-end gc-stats and
 /// heap-debug diagnostics, which are wrong to report per request.
 pub(super) fn emit_web_handler_epilogue(ctx: &mut FunctionContext<'_>) {
-    if ctx.epilogue_emitted {
-        return;
-    }
     ctx.emitter.blank();
     ctx.emitter.comment("web handler epilogue + ret");
     emit_main_local_epilogue_cleanup(ctx);
