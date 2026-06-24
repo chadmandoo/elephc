@@ -768,3 +768,34 @@ fn web_uncaught_exception_returns_500() {
     assert!(boom.starts_with("HTTP/1.1 500"), "uncaught exception must be 500: {:?}", boom);
     assert!(after.ends_with("ok"), "server must keep serving after a 500: {:?}", after);
 }
+
+/// Verifies --max-execution-time kills a runaway handler (and the master respawns
+/// the worker so the server recovers) (B3).
+#[test]
+fn web_max_execution_time_kills_runaway_handler() {
+    let dir = make_test_dir("web_exectime");
+    let src = "<?php if (($_SERVER['REQUEST_URI'] ?? '') === '/slow') { while (true) {} } echo 'fast';";
+    let bin = compile_web(&dir, src, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = Command::new(&bin)
+        .args(["--listen", &addr, "--workers", "1", "--max-execution-time", "1"])
+        .spawn()
+        .expect("spawn");
+    wait_until_ready(&addr);
+    assert!(http_request(&addr, "GET", "/", &[], "").ends_with("fast"));
+    // The runaway request is killed by the watchdog (dropped connection); tolerate it.
+    let _ = try_http_get(&addr, "/slow");
+    // The master must respawn the worker; / serves again within a few seconds.
+    let mut recovered = false;
+    for _ in 0..40 {
+        if try_http_get(&addr, "/").ends_with("fast") {
+            recovered = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    assert!(recovered, "worker did not recover after a runaway handler was killed");
+}

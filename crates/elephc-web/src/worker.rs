@@ -12,7 +12,7 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use http_body_util::{BodyExt, Full, Limited};
@@ -45,6 +45,32 @@ fn reuseport_listener(addr: SocketAddr) -> std::io::Result<std::net::TcpListener
 /// Process-local (each forked worker has its own copy starting at 0).
 static SERVED: AtomicUsize = AtomicUsize::new(0);
 
+/// Per-request handler time limit in seconds (`0` = none), read by `run_handler`
+/// to arm a `SIGALRM` watchdog around the blocking `handler()` call.
+static MAX_EXEC_SECS: AtomicU32 = AtomicU32::new(0);
+
+/// `SIGALRM` handler: a handler that ran past `--max-execution-time` is killed so
+/// the master respawns the worker (a runaway handler would otherwise pin the
+/// single worker thread forever). Async-signal-safe: only `write` + `_exit`.
+extern "C" fn handle_exec_timeout(_sig: libc::c_int) {
+    const MSG: &[u8] = b"elephc-web: handler exceeded --max-execution-time; recycling worker\n";
+    unsafe {
+        libc::write(2, MSG.as_ptr() as *const libc::c_void, MSG.len());
+        libc::_exit(1);
+    }
+}
+
+/// Installs the `SIGALRM` execution-timeout handler in this worker.
+fn install_exec_timeout_handler() {
+    unsafe {
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = handle_exec_timeout as extern "C" fn(libc::c_int) as libc::sighandler_t;
+        libc::sigemptyset(&mut sa.sa_mask);
+        sa.sa_flags = 0;
+        libc::sigaction(libc::SIGALRM, &sa, std::ptr::null_mut());
+    }
+}
+
 /// Serves HTTP on `listen` (host:port) in this worker process. Builds a
 /// current-thread tokio runtime and loops accepting connections, serving each
 /// with the PHP handler. `max_body` caps the request body in bytes (`0` =
@@ -56,7 +82,12 @@ pub fn serve(
     max_body: usize,
     max_requests: usize,
     access_log: bool,
+    max_exec_secs: u32,
 ) {
+    if max_exec_secs > 0 {
+        MAX_EXEC_SECS.store(max_exec_secs, Ordering::Relaxed);
+        install_exec_timeout_handler();
+    }
     let addr: SocketAddr = match listen.parse() {
         Ok(a) => a,
         Err(_) => {
@@ -178,7 +209,15 @@ fn run_handler(handler: extern "C" fn()) -> Vec<u8> {
     request_state::set_capture(true);
     request_state::clear_body();
     request_state::reset_response();
+    // Arm the execution-timeout watchdog around the blocking handler, if enabled.
+    let secs = MAX_EXEC_SECS.load(Ordering::Relaxed);
+    if secs > 0 {
+        unsafe { libc::alarm(secs); }
+    }
     handler();
+    if secs > 0 {
+        unsafe { libc::alarm(0); }
+    }
     SERVED.fetch_add(1, Ordering::Relaxed);
     request_state::take_body()
 }
