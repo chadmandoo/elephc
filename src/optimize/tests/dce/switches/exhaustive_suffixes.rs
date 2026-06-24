@@ -25,6 +25,7 @@ fn test_eliminate_dead_code_prunes_negated_strict_switch_true_case() {
         StmtKind::FunctionDecl {
             name: "main".into(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
             variadic_type: None,
             return_type: None,
@@ -80,6 +81,7 @@ fn test_eliminate_dead_code_prunes_exhaustive_negated_and_switch_true_default() 
         StmtKind::FunctionDecl {
             name: "main".into(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
             variadic_type: None,
             return_type: None,
@@ -126,6 +128,7 @@ fn test_eliminate_dead_code_prunes_exhaustive_negated_or_switch_true_default() {
         StmtKind::FunctionDecl {
             name: "main".into(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
             variadic_type: None,
             return_type: None,
@@ -174,6 +177,7 @@ fn test_eliminate_dead_code_prunes_switch_true_suffix_after_exhaustive_multi_pat
         StmtKind::FunctionDecl {
             name: "main".into(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
             variadic_type: None,
             return_type: None,
@@ -221,6 +225,7 @@ fn test_eliminate_dead_code_prunes_scalar_switch_suffix_after_exhaustive_multi_p
         StmtKind::FunctionDecl {
             name: "main".into(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
             variadic_type: None,
             return_type: None,
