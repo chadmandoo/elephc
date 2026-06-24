@@ -175,16 +175,27 @@ count; a slow request occupies exactly one worker for its duration.
 ## Limitations
 
 The serve loop, per-request fresh state, request input (`$_SERVER` / `$_GET` /
-`$_POST` / `php://input`), and response control (`http_response_code()` /
-`header()`) are available. The following are not yet available:
+`$_POST` / `$_COOKIE` / `$_REQUEST` / `$_ENV` / `$_FILES` / `php://input`), and
+response control (`http_response_code()` / `header()` / `setcookie()`) are
+available. The following are not yet available:
 
 - **`$argc` / `$argv` not populated** — the binary's own argv is consumed by the
   server and is not forwarded to the script body (PHP-FPM does not set them either).
-- **`$_POST` only for urlencoded bodies** — `multipart/form-data` and file
-  uploads (`$_FILES`) are not parsed; read the raw body via `php://input` if you
-  need it.
-- **No intra-worker concurrency** — one slow request occupies its worker until
-  it completes. Use `--workers` to increase throughput.
+- **Reading uploaded files needs care** — `multipart/form-data` is parsed into
+  `$_FILES` (name/type/size/tmp_name), but a builtin that pulls in a second Rust
+  bridge (e.g. `file_get_contents()`/`move_uploaded_file()` on a *dynamic* path,
+  which enables the stream-wrapper/`https://` path and links `elephc-tls`) does
+  not yet co-link with the `--web` bridge — both bundle `std`, producing duplicate
+  symbols at link time. The same limitation applies to any `--web` program using
+  the `https://` client or dynamic stream wrappers. Workaround: front with a
+  reverse proxy for outbound HTTPS, or read request bodies via `php://input`.
+- **No intra-worker concurrency** — `handler()` runs synchronously, so one slow
+  request occupies its worker until it completes (idle keep-alive connections no
+  longer block the accept loop, but an in-flight handler does). Use `--workers`.
+- **In-flight requests may drop on shutdown** — `SIGINT`/`SIGTERM` terminate
+  workers promptly; there is no graceful connection drain yet.
+- **No response streaming** — the whole body is buffered before it is sent.
+- **`--listen` is TCP only** — Unix-domain-socket listening is not yet supported.
 - **No sessions** — `$_SESSION` / `session_start()` are not provided. Cookies
   (`$_COOKIE`, `setcookie()`) are, so you can build session handling yourself.
 - **Not supported in this release:** sessions, static file serving, in-process
