@@ -31,6 +31,14 @@
 //!   no object identity). Objects/closures/resources/`mixed`/`iterable` and by-ref
 //!   params are excluded because their cleanup timing or aliasing cannot be
 //!   reproduced by a value-copy splice.
+//! - String arguments add one more call-site condition: PHP concatenation builds
+//!   intermediates in a frame-relative scratch buffer that every function rewinds
+//!   at statement boundaries (`ConcatReset`). A real call's separate frame protects
+//!   the caller's in-flight scratch values, but the spliced body runs the callee's
+//!   `ConcatReset` in the host frame, which would free an in-flight scratch string
+//!   argument before the body reads it. So a site is only inlined when every `Str`
+//!   argument comes from a provably non-scratch source (`const_str`/`load_local`);
+//!   see `call_string_args_are_stable`.
 //! - Returns of the callee become `Br` to a continuation block carrying the
 //!   result via a param when the call produced a value; the original call is
 //!   neutralized and parked in an unreachable block to keep value-def records
@@ -340,6 +348,38 @@ fn call_args_bind_directly(host: &Function, call_inst: &Instruction, callee: &Fu
             host.value(*operand)
                 .is_some_and(|value| value.ir_type == param.ir_type)
         })
+}
+
+/// Returns whether every `Str`-typed argument is a value that provably lives outside the
+/// global string-concat scratch buffer.
+///
+/// PHP string concatenation builds intermediate results in a frame-relative scratch
+/// buffer that every function rewinds at its statement boundaries (`Op::ConcatReset`).
+/// In a real call the callee's own frame protects the caller's in-flight scratch values;
+/// but the inliner binds the argument with `store_local` and the spliced body then runs
+/// the callee's `concat_reset` in the *host* frame, freeing an in-flight scratch string
+/// argument before the body reads it back (a miscompile). A `const_str` literal
+/// (persistent) and a `load_local` (already persisted into a slot) are the only string
+/// sources guaranteed not to be scratch-resident; any other source (e.g. a `str_concat`
+/// result passed directly) is conservatively treated as in-flight and the site is left as
+/// an ordinary call.
+fn call_string_args_are_stable(host: &Function, call_inst: &Instruction, callee: &Function) -> bool {
+    for (operand, param) in call_inst.operands.iter().zip(&callee.params) {
+        if param.ir_type != IrType::Str {
+            continue;
+        }
+        let stable = host
+            .value(*operand)
+            .and_then(|value| match value.def {
+                ValueDef::Instruction { inst, .. } => host.instruction(inst),
+                _ => None,
+            })
+            .is_some_and(|def| matches!(def.op, Op::ConstStr | Op::LoadLocal));
+        if !stable {
+            return false;
+        }
+    }
+    true
 }
 
 /// Returns whether a specific call site can be inlined for `callee`: its return shape
@@ -868,6 +908,7 @@ fn inline_into_function(
                                 if is_eligible_callee(callee, recursive)
                                     && site_is_inlinable(callee, has_result)
                                     && call_args_bind_directly(host, inst, callee)
+                                    && call_string_args_are_stable(host, inst, callee)
                                 {
                                     site = Some((bidx, iid, tname, cidx));
                                     break 'search;

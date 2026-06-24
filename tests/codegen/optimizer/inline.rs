@@ -238,6 +238,57 @@ echo array_sum($p), ":", count($p);
     assert_eq!(on, off, "array-builder output must match with ir-opt on vs off");
 }
 
+/// Regression: a string helper must NOT be inlined when a `string` argument is an
+/// in-flight concat-scratch value (here `$s . "B"`, passed directly). The inliner binds
+/// arguments with `store_local` and runs the callee's `concat_reset` in the host frame,
+/// which would free that in-flight scratch string before the spliced body reads it back.
+/// The string-arg-stability guard leaves the call in place, so output is correct and
+/// identical with ir-opt on vs off (was AAAA vs AABB before the fix).
+#[test]
+fn test_inline_inflight_string_arg_not_miscompiled() {
+    let src = r#"<?php
+function j(string $a, string $b): string { return $a . $b; }
+$s = "B";
+echo j("AA", $s . "B");
+"#;
+    let on = compile_and_run(src);
+    let off = compile_run_with_ir_opt(src, false);
+    assert_eq!(on, "AABB");
+    assert_eq!(on, off, "in-flight string arg must match with ir-opt on vs off");
+}
+
+/// A single-arg string helper called with an in-flight concat argument (`$x . "!"`) is
+/// likewise left as a call; the result is correct on vs off (was the concat-buffer
+/// corruption `<<<>` before the fix).
+#[test]
+fn test_inline_inflight_string_arg_single_param() {
+    let src = r#"<?php
+function w(string $s): string { return "<" . $s . ">"; }
+$x = "a";
+echo w($x . "!");
+"#;
+    let on = compile_and_run(src);
+    let off = compile_run_with_ir_opt(src, false);
+    assert_eq!(on, "<a!>");
+    assert_eq!(on, off, "in-flight single string arg must match with ir-opt on vs off");
+}
+
+/// Sanity that stable string arguments (a literal and a variable load) still inline and
+/// stay correct — the guard must reject only in-flight scratch strings, not all strings.
+#[test]
+fn test_inline_stable_string_args_still_work() {
+    let src = r#"<?php
+function j(string $a, string $b): string { return $a . $b; }
+$x = "AA";
+$y = "BB";
+echo j($x, $y), ":", j("CC", "DD");
+"#;
+    let on = compile_and_run(src);
+    let off = compile_run_with_ir_opt(src, false);
+    assert_eq!(on, "AABB:CCDD");
+    assert_eq!(on, off, "stable string args must match with ir-opt on vs off");
+}
+
 /// Pipeline integration (fixed-point order): a callee that exceeds the 24-instruction
 /// inline threshold *before* optimization but collapses below it *after* constant
 /// folding and dead-code elimination is inlined only because `optimize_module`
