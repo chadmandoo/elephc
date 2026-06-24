@@ -34,6 +34,9 @@ The produced binary accepts these arguments at runtime:
 | `--listen host:port` | Yes | — | Address and port to bind. Missing `--listen` prints an error to stderr and exits non-zero. |
 | `--workers N` | No | CPU count | Number of worker processes to prefork. Minimum 1. |
 | `--max-body-size N` | No | `8388608` (8 MiB) | Max request body in bytes; `0` means unlimited. A request whose body exceeds the cap gets `413 Payload Too Large` and the PHP handler never runs. |
+| `--max-requests N` | No | `0` (never) | Recycle each worker after serving N requests (the master respawns it), bounding memory growth in long-running servers. |
+| `--access-log` | No | off | Log one line per request to stderr (`<ip> "<method> <path>" <status> <ms>`). |
+| `--help`, `--version` | No | — | Print usage / version and exit 0. |
 
 ## Request model
 
@@ -60,12 +63,19 @@ The HTTP request is exposed through standard PHP superglobals, rebuilt fresh on
 every request and readable inside any function scope (no `global` needed):
 
 - **`$_SERVER`** — `REQUEST_METHOD`, `REQUEST_URI`, `QUERY_STRING`, the request
-  headers as `HTTP_*` keys (e.g. `HTTP_USER_AGENT`), and `CONTENT_TYPE` /
-  `CONTENT_LENGTH` when present.
+  headers as `HTTP_*` keys (e.g. `HTTP_USER_AGENT`), `CONTENT_TYPE` /
+  `CONTENT_LENGTH` when present, plus `REMOTE_ADDR`, `REMOTE_PORT`, `SERVER_ADDR`,
+  `SERVER_PORT`, `SERVER_NAME`, `SERVER_PROTOCOL`, `REQUEST_TIME`, `REQUEST_SCHEME`,
+  `GATEWAY_INTERFACE`, and `SERVER_SOFTWARE`.
 - **`$_GET`** — the query string parsed into a string-keyed array, percent-decoded.
 - **`$_POST`** — an `application/x-www-form-urlencoded` request body parsed the
   same way. Other content types leave `$_POST` empty — read the raw body via
   `php://input` instead.
+- **`$_COOKIE`** — the `Cookie` request header parsed into a string-keyed array
+  (values percent-decoded).
+- **`$_REQUEST`** — `$_GET` overlaid with `$_POST` (POST wins on key collision),
+  matching PHP's default `request_order = "GP"`.
+- **`$_ENV`** — the process environment.
 - **`php://input`** — `file_get_contents('php://input')` returns the raw request
   body (e.g. a JSON payload). An empty body returns `false`.
 
@@ -98,6 +108,14 @@ behaving as they do under PHP-FPM:
   - A `"Location: ..."` header also sets the status to `302`, unless the status
     is already `201`/`3xx` or the third `$response_code` argument overrides it.
   - The third `$response_code` argument, when non-zero, forces the status.
+- **`setcookie(...)` / `setrawcookie(...)`** — emit a `Set-Cookie` header (the
+  classic positional signature `name, value, expires, path, domain, secure,
+  httponly`). `setcookie()` percent-encodes the value; `setrawcookie()` does not.
+  Multiple calls produce multiple `Set-Cookie` headers.
+
+Unlike PHP-FPM, calling `header()` (or `setcookie()`) **after** producing output
+is fine — elephc-web buffers the body and builds the response after the handler
+returns, so there is no "headers already sent" error.
 
 ```php
 <?php
@@ -161,13 +179,23 @@ The serve loop, per-request fresh state, request input (`$_SERVER` / `$_GET` /
 `header()`) are available. The following are not yet available:
 
 - **`$argc` / `$argv` not populated** — the binary's own argv is consumed by the
-  server and is not forwarded to the script body.
+  server and is not forwarded to the script body (PHP-FPM does not set them either).
 - **`$_POST` only for urlencoded bodies** — `multipart/form-data` and file
-  uploads are not parsed; read the raw body via `php://input` if you need it.
+  uploads (`$_FILES`) are not parsed; read the raw body via `php://input` if you
+  need it.
 - **No intra-worker concurrency** — one slow request occupies its worker until
   it completes. Use `--workers` to increase throughput.
-- **Not supported in this release (all phases):** cookies, sessions, static file
-  serving, in-process TLS, HTTP/2–3.
+- **No sessions** — `$_SESSION` / `session_start()` are not provided. Cookies
+  (`$_COOKIE`, `setcookie()`) are, so you can build session handling yourself.
+- **Not supported in this release:** sessions, static file serving, in-process
+  TLS, HTTP/2–3 — front the server with a reverse proxy for these (below).
+
+## Behind a reverse proxy
+
+elephc-web speaks HTTP/1.1 in cleartext only. For TLS, HTTP/2/3, static asset
+serving, or virtual hosting, run it behind a reverse proxy (nginx, Caddy,
+HAProxy) that terminates TLS and forwards to `--listen`. A typical setup binds
+the server to `127.0.0.1:8080` and points the proxy at it.
 
 ## Mutual exclusions
 
