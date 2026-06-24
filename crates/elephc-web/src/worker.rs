@@ -75,7 +75,13 @@ pub fn serve(
         .enable_all()
         .build()
         .expect("failed to build tokio runtime");
-    rt.block_on(async move {
+    // A LocalSet lets each connection run as its own !Send task on this single
+    // thread, so a slow or idle keep-alive connection does not block the accept
+    // loop from taking new connections. The blocking handler() call is synchronous
+    // (no await), so PHP execution still serializes on the one worker thread —
+    // only the async request/response I/O of different connections interleaves.
+    let local = tokio::task::LocalSet::new();
+    local.block_on(&rt, async move {
         let listener = match TcpListener::from_std(std_listener) {
             Ok(l) => l,
             Err(e) => {
@@ -84,14 +90,17 @@ pub fn serve(
             }
         };
         loop {
+            // --max-requests recycling: stop accepting once the cap is reached so
+            // the master respawns a fresh worker (bounds memory growth over time).
+            if max_requests > 0 && SERVED.load(Ordering::Relaxed) >= max_requests {
+                break;
+            }
             let (stream, peer) = match listener.accept().await {
                 Ok(pair) => pair,
                 Err(_) => continue,
             };
             let io = TokioIo::new(stream);
-            // Serve this connection on the current thread; the blocking handler
-            // call below holds the thread, serializing requests in this worker.
-            if let Err(_e) = http1::Builder::new()
+            tokio::task::spawn_local(http1::Builder::new()
                 .timer(TokioTimer::new())
                 .header_read_timeout(Duration::from_secs(30))
                 .serve_connection(io, service_fn(move |req: Request<hyper::body::Incoming>| async move {
@@ -159,16 +168,7 @@ pub fn serve(
                         );
                     }
                     Ok::<_, Infallible>(response)
-                }))
-                .await
-            {
-                // Connection-level errors are non-fatal to the worker.
-            }
-            // --max-requests recycling: stop accepting once the cap is reached so
-            // the master respawns a fresh worker (bounds memory growth over time).
-            if max_requests > 0 && SERVED.load(Ordering::Relaxed) >= max_requests {
-                break;
-            }
+                })));
         }
     });
 }
