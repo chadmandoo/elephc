@@ -33,6 +33,7 @@ The produced binary accepts these arguments at runtime:
 |---|---|---|---|
 | `--listen host:port` | Yes | — | Address and port to bind. Missing `--listen` prints an error to stderr and exits non-zero. |
 | `--workers N` | No | CPU count | Number of worker processes to prefork. Minimum 1. |
+| `--max-body-size N` | No | `8388608` (8 MiB) | Max request body in bytes; `0` means unlimited. A request whose body exceeds the cap gets `413 Payload Too Large` and the PHP handler never runs. |
 
 ## Request model
 
@@ -138,6 +139,20 @@ Each worker is a separate process with its own copy of the runtime. Within a
 single worker, requests are served **one at a time** — the PHP body runs to
 completion before the next request is accepted. Parallelism equals the worker
 count; a slow request occupies exactly one worker for its duration.
+
+## Robustness
+
+- **Graceful shutdown** — the master shuts down cleanly on `SIGINT` (Ctrl-C) and
+  `SIGTERM`: it forwards termination to the workers, reaps them, and exits `0`. An
+  in-flight request may be dropped when shutdown arrives.
+- **Worker respawn** — a worker that dies unexpectedly (a crash, or PHP calling
+  `exit()`) is replaced so the pool stays at `--workers` N.
+- **Request body cap** — see `--max-body-size`; oversized bodies are rejected with
+  `413` before the handler runs.
+- **Slow-connection bound** — HTTP/1.1 keep-alive is enabled, but a connection that
+  does not send the next request's headers within 30 s is closed. Because a worker
+  serves one connection at a time, a kept-alive connection holds a worker until it
+  closes or times out — size `--workers` accordingly.
 
 ## Limitations
 

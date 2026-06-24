@@ -804,8 +804,10 @@ statics, and static class properties all reset between requests). Run it with
   argument, all handled in the `elephc-web` bridge. Web-gated `__rt_http_response_code`
   / `__rt_header` forward to the bridge under `--web` and are no-ops otherwise.
   Not included: `Content-Type` is not set automatically (the program controls it).
-- [ ] **Phase 4** — hardening: worker respawn on crash, graceful shutdown, and
-  additional robustness work.
+- [x] **Phase 4** — hardening: `--max-body-size` request body cap (413 on overflow),
+  graceful `SIGINT`/`SIGTERM` shutdown (forward to workers, reap, exit 0), worker
+  respawn on unexpected death, and a 30s header-read timeout bounding slow/idle
+  keep-alive connections. Out of v1 scope: cookies, sessions, TLS, HTTP/2–3, multipart.
 
 ## v0.27.x — Shared and static libraries (C ABI)
 

@@ -6,7 +6,7 @@ Releases are listed newest first.
 ## [Unreleased]
 - EIR dead store elimination over PHP local slots: a CFG-liveness pass that drops `store_local` writes to scalar locals that are never read before being overwritten or the function exits, gated by `--ir-opt`. Refcounted and by-reference-aliased slots are left untouched to preserve ownership and aliasing semantics.
 - EIR branch simplification: folds constant-condition `cond_br`/`switch` terminators to unconditional branches (e.g. `while (true)` loops), threads predecessors through empty forwarding blocks, and neutralizes unreachable blocks, gated by `--ir-opt`.
-- `--web` flag: compile a PHP program into a standalone prefork HTTP server binary that serves each request's `echo`/`print` scalar output as the HTTP response body; `--listen host:port` and `--workers N` runtime args control the bind address and worker count.
+- `--web` flag: compile a PHP program into a standalone prefork HTTP server binary. Each request re-runs the top-level code from fresh state; `echo`/`print` output becomes the response body. Request input is exposed through `$_SERVER`/`$_GET`/`$_POST` and `php://input`; response status and headers are controlled with `http_response_code()` and `header()` (PHP-compatible, including status lines and `Location:`→302). Runtime args: `--listen host:port`, `--workers N`, `--max-body-size N` (413 on overflow). The prefork master shuts down cleanly on `SIGINT`/`SIGTERM`, respawns workers that die, and bounds slow/idle keep-alive connections with a header-read timeout.
 
 ## [0.25.0] - 2026-06-19
 - EIR dead instruction elimination over CFG liveness, registered after identity and peephole passes and gated by `--ir-opt`.
