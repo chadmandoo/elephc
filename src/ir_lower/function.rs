@@ -264,11 +264,12 @@ pub(crate) fn lower_class_method(
     fiber_return_sigs: &std::collections::HashMap<String, FunctionSig>,
 ) {
     let fallback = signature_from_ast(params, return_type);
-    let signature = check_result
-        .classes
+    let signature = module
+        .class_infos
         .get(class_name)
         .and_then(|class| method_signature(class, method_name, is_static))
-        .unwrap_or(&fallback);
+        .cloned()
+        .unwrap_or(fallback);
     let name = format!("{}::{}", class_name, method_name);
     // Generator methods lower their body as a Mixed-returning coroutine; see
     // `generator_body_return_type`.
@@ -284,9 +285,9 @@ pub(crate) fn lower_class_method(
         by_ref_return: signature.by_ref_return,
         ..FunctionFlags::default()
     };
-    function.source_signature = Some(source_signature(&name, signature));
-    function.signature = Some(eir_runtime_metadata_signature(signature));
-    let mut env = env_from_signature(signature);
+    function.source_signature = Some(source_signature(&name, &signature));
+    function.signature = Some(eir_runtime_metadata_signature(&signature));
+    let mut env = env_from_signature(&signature);
     let mut body_params = signature.params.clone();
     if is_static {
         let hidden_called_class = (CALLED_CLASS_ID_PARAM.to_string(), PhpType::Int);
@@ -311,7 +312,7 @@ pub(crate) fn lower_class_method(
         env.insert("this".to_string(), this_type.clone());
         body_params.insert(0, ("this".to_string(), this_type));
     }
-    function.params.extend(function_params(signature));
+    function.params.extend(function_params(&signature));
     attach_generator_source_if_needed(&mut function, body, body_params.len());
     let closures = lower_body_into_function(
         &mut function,
@@ -868,7 +869,7 @@ fn function_params(signature: &FunctionSig) -> Vec<FunctionParam> {
 }
 
 /// Returns an EIR ABI signature that keeps dynamic untyped PHP parameters boxed.
-fn eir_signature_with_php_param_contracts(
+pub(crate) fn eir_signature_with_php_param_contracts(
     owner_name: &str,
     signature: &FunctionSig,
     callable_param_sigs: &std::collections::HashMap<(String, String), FunctionSig>,
