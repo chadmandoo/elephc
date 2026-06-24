@@ -27,11 +27,7 @@ fn compile_run_with_ir_opt(src: &str, ir_opt_on: bool) -> String {
     fs::write(&php_path, src).unwrap();
     let _bin_path: PathBuf = dir.join("t");
     // Invoke the built binary (assumes cargo test has a recent build) with flag.
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
     let mut cmd = Command::new(&elephc);
     cmd.arg(&php_path);
     if !ir_opt_on {
@@ -108,11 +104,7 @@ fn test_inline_emits_no_call_for_typed_scalar_helper() {
     )
     .unwrap();
 
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
     let ir = Command::new(&elephc)
         .arg("--emit-ir")
         .arg(&php_path)
@@ -323,11 +315,7 @@ echo calc($argc);
     fs::create_dir_all(&dir).unwrap();
     let php_path: PathBuf = dir.join("t.php");
     fs::write(&php_path, src).unwrap();
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
     let ir = Command::new(&elephc)
         .arg("--emit-ir")
         .arg(&php_path)
@@ -392,11 +380,7 @@ fn test_inline_emits_no_call_for_string_helper() {
     )
     .unwrap();
 
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
     let ir = Command::new(&elephc)
         .arg("--emit-ir")
         .arg(&php_path)
@@ -465,11 +449,7 @@ function helper($x) { return $x + 41; }
 
     // Now drive --emit-ir on the same multi-file layout and assert no FVC opcode
     // for the small helper remains in the IR text (inlining happened).
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
     let ir_out = Command::new(&elephc)
         .arg("--emit-ir")
         .arg(&main_path)

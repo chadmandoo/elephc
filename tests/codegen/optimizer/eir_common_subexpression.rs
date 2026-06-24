@@ -66,11 +66,7 @@ fn test_cse_collapses_constant_operand_subexpression() {
     fs::create_dir_all(&dir).unwrap();
     let php_path: PathBuf = dir.join("t.php");
     fs::write(&php_path, "<?php $n = $argc; echo ($n + 1) * ($n + 1);\n").unwrap();
-    let elephc = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("elephc")))
-        .filter(|p| p.exists())
-        .unwrap_or_else(|| PathBuf::from("target/debug/elephc"));
+    let elephc = elephc_cli_bin();
 
     let count_iadds = |extra: &[&str]| -> usize {
         let mut cmd = Command::new(&elephc);
