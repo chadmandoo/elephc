@@ -10,7 +10,7 @@
 //!   fork); each child builds its own current-thread runtime in worker::serve.
 //! - --listen host:port is required; without it the process errors and exits.
 
-use std::ffi::CStr;
+use std::ffi::{c_char, CStr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -118,21 +118,21 @@ enum ParsedArgs {
 }
 
 /// Collects argv into owned strings.
-fn collect_args(argc: i32, argv: *const *const u8) -> Vec<String> {
+fn collect_args(argc: i32, argv: *const *const c_char) -> Vec<String> {
     (0..argc as isize)
         .filter_map(|i| unsafe {
             let p = *argv.offset(i);
             if p.is_null() {
                 return None;
             }
-            Some(CStr::from_ptr(p as *const i8).to_string_lossy().into_owned())
+            Some(CStr::from_ptr(p).to_string_lossy().into_owned())
         })
         .collect()
 }
 
 /// Parses argv into a runnable config or an early-exit. Handles `--help` /
 /// `--version` (print + exit 0) and a missing `--listen` (error + exit 2).
-fn parse_args(argc: i32, argv: *const *const u8) -> ParsedArgs {
+fn parse_args(argc: i32, argv: *const *const c_char) -> ParsedArgs {
     let args = collect_args(argc, argv);
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!("{}", HELP);
@@ -211,7 +211,7 @@ fn spawn_worker(listen: &str, handler: extern "C" fn(), cfg: WorkerConfig) -> li
 #[no_mangle]
 pub extern "C" fn elephc_web_run(
     argc: i32,
-    argv: *const *const u8,
+    argv: *const *const c_char,
     handler: extern "C" fn(),
 ) -> i32 {
     let args = match parse_args(argc, argv) {
