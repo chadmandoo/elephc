@@ -2,7 +2,7 @@
 title: "inet_pton()"
 description: "Lowers `inet_ntop()` and `inet_pton()` and boxes invalid-address results as PHP false."
 sidebar:
-  order: 342
+  order: 344
 ---
 
 # inet_pton()

@@ -25,9 +25,8 @@ sidebar:
 ## Runtime helpers
 
 The following runtime helpers are referenced:
-- `__rt_gmmktime`
 - `__rt_hrtime`
-- `__rt_mktime`
+- `__rt_http_response_code`
 
 ## Signature summary
 

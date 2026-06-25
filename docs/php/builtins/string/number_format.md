@@ -2,7 +2,7 @@
 title: "number_format()"
 description: "Lowers `number_format()` by arranging its runtime helper arguments."
 sidebar:
-  order: 349
+  order: 351
 ---
 
 # number_format()

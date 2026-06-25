@@ -2,7 +2,7 @@
 title: "preg_replace_callback()"
 description: "Lowers `preg_replace_callback(pattern, callback, subject)` through supported direct callbacks."
 sidebar:
-  order: 295
+  order: 297
 ---
 
 # preg_replace_callback()

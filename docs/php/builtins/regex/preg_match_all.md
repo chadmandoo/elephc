@@ -2,7 +2,7 @@
 title: "preg_match_all()"
 description: "Lowers `preg_match_all(pattern, subject)` through the shared regex runtime helper."
 sidebar:
-  order: 293
+  order: 295
 ---
 
 # preg_match_all()

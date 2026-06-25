@@ -2,7 +2,7 @@
 title: "settype()"
 description: "Lowers `settype($local, \"type\")` by mutating the resolved local slot and returning true."
 sidebar:
-  order: 408
+  order: 410
 ---
 
 # settype()

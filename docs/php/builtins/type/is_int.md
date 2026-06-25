@@ -2,7 +2,7 @@
 title: "is_int()"
 description: "is_int() — type builtin supported by Elephc."
 sidebar:
-  order: 400
+  order: 402
 ---
 
 # is_int()

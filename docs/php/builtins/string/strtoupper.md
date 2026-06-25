@@ -2,7 +2,7 @@
 title: "strtoupper()"
 description: "Lowers a one-argument string builtin that directly delegates to a runtime helper."
 sidebar:
-  order: 375
+  order: 377
 ---
 
 # strtoupper()

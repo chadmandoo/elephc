@@ -2,7 +2,7 @@
 title: "spl_autoload_functions()"
 description: "Lowers `spl_autoload_functions()` to an indexed array of AOT rule placeholders."
 sidebar:
-  order: 303
+  order: 305
 ---
 
 # spl_autoload_functions()

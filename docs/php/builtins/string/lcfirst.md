@@ -2,7 +2,7 @@
 title: "lcfirst()"
 description: "Lowers `lcfirst()` by copying the string and lowercasing the first ASCII byte."
 sidebar:
-  order: 344
+  order: 346
 ---
 
 # lcfirst()

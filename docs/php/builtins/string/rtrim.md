@@ -2,7 +2,7 @@
 title: "rtrim()"
 description: "rtrim() — string builtin supported by Elephc."
 sidebar:
-  order: 354
+  order: 356
 ---
 
 # rtrim()

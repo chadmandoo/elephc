@@ -2,7 +2,7 @@
 title: "stream_bucket_append()"
 description: "stream_bucket_append() — streams builtin supported by Elephc."
 sidebar:
-  order: 311
+  order: 313
 ---
 
 # stream_bucket_append()

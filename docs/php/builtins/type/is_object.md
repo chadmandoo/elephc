@@ -2,7 +2,7 @@
 title: "is_object()"
 description: "Lowers `is_object()`: true for statically-known objects, or a boxed Mixed/Union value whose"
 sidebar:
-  order: 404
+  order: 406
 ---
 
 # is_object()

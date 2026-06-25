@@ -22,6 +22,7 @@ sidebar:
 
 The following runtime helpers are referenced:
 - `__rt_file_get_contents_maybe_url`
+- `__rt_php_input`
 
 ## Signature summary
 

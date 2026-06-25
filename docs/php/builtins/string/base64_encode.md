@@ -2,7 +2,7 @@
 title: "base64_encode()"
 description: "Lowers a one-argument string builtin that directly delegates to a runtime helper."
 sidebar:
-  order: 317
+  order: 319
 ---
 
 # base64_encode()

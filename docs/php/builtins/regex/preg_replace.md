@@ -2,7 +2,7 @@
 title: "preg_replace()"
 description: "Lowers `preg_replace(pattern, replacement, subject)` through the regex replacement helper."
 sidebar:
-  order: 294
+  order: 296
 ---
 
 # preg_replace()

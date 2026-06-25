@@ -2,7 +2,7 @@
 title: "strstr() — internals"
 description: "Compiler internals for strstr(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 376
+  order: 378
 ---
 
 # `strstr()` — internals

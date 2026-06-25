@@ -2,7 +2,7 @@
 title: "stream_bucket_prepend()"
 description: "stream_bucket_prepend() — streams builtin supported by Elephc."
 sidebar:
-  order: 312
+  order: 314
 ---
 
 # stream_bucket_prepend()

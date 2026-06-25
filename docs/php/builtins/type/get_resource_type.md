@@ -2,7 +2,7 @@
 title: "get_resource_type()"
 description: "Lowers `get_resource_type(resource)` to elephc's current resource type label."
 sidebar:
-  order: 393
+  order: 395
 ---
 
 # get_resource_type()
