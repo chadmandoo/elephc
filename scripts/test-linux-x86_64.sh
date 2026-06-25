@@ -69,7 +69,8 @@ trap cleanup EXIT INT TERM
 
 # Run tests with the project mounted as a volume. Build the bridge staticlib
 # crates first so libelephc_tls.a / libelephc_pdo.a / libelephc_crypto.a /
-# libelephc_phar.a / libelephc_tz.a / libelephc_image.a exist in the target dir —
+# libelephc_phar.a / libelephc_tz.a / libelephc_image.a / libelephc_web.a
+# exist in the target dir —
 # `cargo test` alone never emits the staticlib crate-type.
 if [ "$TEST_ARG_COUNT" -eq 0 ]; then
     echo "Running all tests on Linux x86_64 with RUST_TEST_THREADS=$TEST_THREADS using temporary target volume '$TARGET_VOLUME'..."
