@@ -358,7 +358,7 @@ fn main_cleanup_locals(ctx: &FunctionContext<'_>) -> Vec<(String, LocalSlotId, P
         .function
         .locals
         .iter()
-        .filter(|local| local.kind == LocalKind::PhpLocal)
+        .filter(|local| local_kind_needs_epilogue_cleanup(local.kind))
         .filter(|local| !promoted_ref_cell_local_slots(ctx.function).contains(&local.id))
         .filter(|local| {
             local
@@ -580,7 +580,7 @@ fn function_cleanup_locals(
         .function
         .locals
         .iter()
-        .filter(|local| local.kind == LocalKind::PhpLocal)
+        .filter(|local| local_kind_needs_epilogue_cleanup(local.kind))
         .filter(|local| !promoted_ref_cell_local_slots(ctx.function).contains(&local.id))
         .filter(|local| {
             local
@@ -605,6 +605,14 @@ fn function_cleanup_locals(
         .collect::<Vec<_>>();
     locals.sort_by_key(|(_, _, _, offset)| *offset);
     locals
+}
+
+/// Returns whether a local kind can own values through ordinary `StoreLocal`.
+fn local_kind_needs_epilogue_cleanup(kind: LocalKind) -> bool {
+    matches!(
+        kind,
+        LocalKind::PhpLocal | LocalKind::HiddenTemp | LocalKind::NamedArgTemp
+    )
 }
 
 /// Returns local slots whose loaded value is returned directly by any terminator.

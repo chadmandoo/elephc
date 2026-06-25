@@ -1058,6 +1058,14 @@ fn lower_foreach(
     branch_to(ctx, header);
     ctx.builder.position_at_end(exit);
     ctx.clear_static_callable_locals();
+    // Release the source when it is a fresh owning temporary (e.g. `foreach
+    // (explode(...) as $p)` or a literal array): the iterator borrows it for the
+    // duration of the loop, so nothing else frees it once iteration ends. (For an
+    // array the iterator aliases the source, so it must NOT be released separately
+    // — that would double-free.)
+    if ctx.value_is_owning_temporary(source) {
+        crate::ir_lower::ownership::release_if_owned(ctx, source, Some(array.span));
+    }
 }
 
 /// Returns the by-value foreach local type when Phase 04 can keep a concrete element.
@@ -1090,6 +1098,15 @@ fn initialize_foreach_mixed_local_if_needed(
     if !needs_init {
         return;
     }
+    // This setup runs once per outer-loop iteration at runtime, overwriting the
+    // loop variable. PHP keeps the variable's last binding live after a foreach,
+    // so on a re-entry the slot still owns the previous iteration's final element
+    // (or key). Release it before the null box overwrites it, or it leaks once per
+    // outer iteration. The slot is zero-initialized in the prologue, so the first
+    // entry releases a null payload harmlessly.
+    let slot = ctx.declare_local(name, PhpType::Mixed);
+    ctx.set_local_type(name, PhpType::Mixed);
+    ctx.release_stored_local_value(name, slot, Some(span));
     let null = emit_null_value(ctx, Some(span));
     let boxed = ctx.emit_value(
         Op::MixedBox,

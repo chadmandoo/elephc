@@ -504,6 +504,60 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         LoweredValue { value, ir_type }
     }
 
+    /// Emits a load using the local slot's concrete frame-storage type.
+    ///
+    /// This is for cleanup paths that must release the value already present in
+    /// a slot. Normal expression reads should use `load_local`, which preserves
+    /// the narrower logical type facts from the checker.
+    fn load_local_storage(
+        &mut self,
+        name: &str,
+        slot: LocalSlotId,
+        php_type: PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        let ir_type = value_ir_type(&php_type);
+        let ownership = Ownership::for_php_type(&php_type);
+        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let uses_global = self.uses_global_storage(name, kind);
+        let is_ref_bound = self.is_ref_bound_local(name) && !uses_global && kind == LocalKind::PhpLocal;
+        let op = match (is_ref_bound, uses_global, kind) {
+            (true, _, _) => Op::LoadRefCell,
+            (false, true, _) => Op::LoadGlobal,
+            (false, false, LocalKind::StaticLocal) => Op::LoadStaticLocal,
+            _ => Op::LoadLocal,
+        };
+        let immediate = if uses_global {
+            Some(Immediate::GlobalName(self.intern_global_name(name)))
+        } else {
+            Some(Immediate::LocalSlot(slot))
+        };
+        let value = self
+            .builder
+            .emit_with_effects(
+                op,
+                Vec::new(),
+                immediate,
+                ir_type,
+                php_type,
+                ownership,
+                op.default_effects(),
+                span,
+            )
+            .expect("storage-typed local load produces a value");
+        LoweredValue { value, ir_type }
+    }
+
+    /// Releases the value currently stored in a local slot using frame-storage metadata.
+    pub(crate) fn release_stored_local_value(&mut self, name: &str, slot: LocalSlotId, span: Option<Span>) {
+        let storage_type = self.builder.local_php_type(slot);
+        if !Ownership::php_type_needs_lifetime_tracking(&storage_type) {
+            return;
+        }
+        let previous = self.load_local_storage(name, slot, storage_type, span);
+        crate::ir_lower::ownership::release_if_owned(self, previous, span);
+    }
+
     /// Emits a store to a PHP local slot, updates type facts, and returns the stored value.
     pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) -> LoweredValue {
         self.clear_static_callable_local(name);
@@ -522,17 +576,18 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, previous_kind);
         let slot = self.declare_local(name, php_type.clone());
+        // Backend frame layout uses the final widened slot type for every load
+        // and store, so cleanup loads must be typed after this store's widening.
+        self.builder.widen_local_storage_type(slot, php_type.clone());
         let source = value;
         let release_source_after_store = self.value_is_owning_temporary(value);
         let transfer_callable_source_to_store = release_source_after_store
             && matches!(php_type.codegen_repr(), PhpType::Callable);
         if !uses_global
-            && previous_kind == LocalKind::PhpLocal
+            && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
-            && Ownership::php_type_needs_lifetime_tracking(&previous_type)
         {
-            let previous = self.load_local(name, span);
-            crate::ir_lower::ownership::release_if_owned(self, previous, span);
+            self.release_stored_local_value(name, slot, span);
         }
         // A first syntactic store inside a loop body (main or function) can still
         // overwrite a prior runtime iteration's value: the slot has no straight-line
@@ -542,13 +597,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         // zero-initialized in the prologue, so the first iteration safely releases a null
         // slot; subsequent iterations release the prior value.
         if !uses_global
-            && previous_kind == LocalKind::PhpLocal
+            && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_none()
             && !self.loop_stack.is_empty()
-            && Ownership::php_type_needs_lifetime_tracking(&php_type)
         {
-            let previous = self.load_local(name, span);
-            crate::ir_lower::ownership::release_if_owned(self, previous, span);
+            self.release_stored_local_value(name, slot, span);
         }
         let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
             && !transfer_callable_source_to_store
@@ -572,7 +625,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             _ => Op::StoreLocal,
         };
         if is_ref_bound {
-            self.store_ref_cell_slot(slot, value, previous_type.clone(), span);
+            self.store_ref_cell_slot(slot, value, previous_type, span);
         } else {
             self.store_slot_with_op(slot, value, op, span);
         }
@@ -759,12 +812,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if !self.initialized_slots.contains(&slot) {
             return;
         }
-        let previous_type = self.local_type(name);
-        if !Ownership::php_type_needs_lifetime_tracking(&previous_type) {
-            return;
-        }
-        let previous = self.load_local(name, span);
-        crate::ir_lower::ownership::release_if_owned(self, previous, span);
+        self.release_stored_local_value(name, slot, span);
     }
 
     /// Releases a promoted fallback ref-cell owner if the variable still owns one.
@@ -841,6 +889,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::IteratorMethodCall
                     | Op::SplRuntimeCall
                     | Op::FiberRuntimeCall
+                    // By-value foreach binds a fresh OWNED copy of the current
+                    // element/key; without this `store_local` re-acquires it and
+                    // never releases the copy, leaking on every iteration.
+                    | Op::IterCurrentValue
+                    | Op::IterCurrentKey
             )
         )
     }
@@ -1052,6 +1105,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             span,
         )
     }
+}
+
+/// Returns true for addressable local kinds whose `StoreLocal` overwrites owned storage.
+fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
+    matches!(
+        kind,
+        LocalKind::PhpLocal | LocalKind::HiddenTemp | LocalKind::NamedArgTemp
+    )
 }
 
 /// Returns true when a builtin result must be released after a retaining consumer.

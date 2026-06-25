@@ -852,6 +852,51 @@ run();
     );
 }
 
+/// Regression test: assigning a by-value foreach element into another local should
+/// release the target slot using its widened Mixed storage representation.
+#[test]
+fn test_regression_foreach_mixed_value_assignment_releases_old_slot_storage() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+for ($n = 0; $n < 50; $n++) {
+    foreach (["x", "y", "z"] as $p) {
+        $k = $p;
+    }
+}
+echo "x";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "x");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test: refcounted hidden ternary merge temps must be released when
+/// reassigned across loop iterations and during function/main epilogue cleanup.
+#[test]
+fn test_regression_refcounted_hidden_ternary_temp_released() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+for ($i = 0; $i < 50; $i++) {
+    $a = ["a" => "b"];
+    $x = isset($a["missing"]) ? $a["missing"] : "";
+}
+echo "x";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "x");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test for the array-to-string echo fix: echoing an owned temporary array
 /// stringifies to "Array" and releases the temporary, keeping GC allocs and frees balanced
 /// (no leak from the discarded array, no premature/double free).
