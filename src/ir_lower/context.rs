@@ -1622,6 +1622,7 @@ fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
             | "array_column"
             | "array_combine"
             | "array_diff"
+            | "eval"
             | "array_fill"
             | "array_fill_keys"
             | "array_intersect"
