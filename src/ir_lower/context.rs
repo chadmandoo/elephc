@@ -1237,7 +1237,7 @@ fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
 fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
     matches!(
         php_symbol_key(name.trim_start_matches('\\')).as_str(),
-        // Array-returning builtins that allocate a fresh result array.
+        // Array/mixed-returning builtins that allocate fresh result storage.
         "array_chunk"
             | "array_column"
             | "array_combine"
@@ -1249,9 +1249,11 @@ fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
             | "array_map"
             | "array_merge"
             | "array_pad"
+            | "array_pop"
             | "array_replace"
             | "array_replace_recursive"
             | "array_reverse"
+            | "array_shift"
             | "array_slice"
             | "array_unique"
             | "array_values"
