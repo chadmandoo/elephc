@@ -30,9 +30,9 @@ use crate::types::{ClassInfo, InterfaceInfo, PhpType};
 use super::super::context::FunctionContext;
 use super::{
     callables, cast_loaded_mixed_pointer_to_result, direct_call_stack_pad_bytes, expect_data,
-    coerce_loaded_value_to_tagged_scalar, emit_loaded_indexed_array_to_mixed,
-    emit_mixed_string_for_persistent_store, emit_ref_arg_writebacks, expect_operand, iterators,
-    load_value_to_first_int_arg,
+    coerce_loaded_value_to_tagged_scalar, emit_loaded_assoc_array_to_mixed,
+    emit_loaded_indexed_array_to_mixed, emit_mixed_string_for_persistent_store,
+    emit_ref_arg_writebacks, expect_operand, iterators, load_value_to_first_int_arg,
     materialize_direct_call_args_with_refs,
     materialize_method_call_args_with_receiver_reg_and_refs, resolve_method_call_target,
     store_if_result, store_method_call_result,
@@ -4827,6 +4827,9 @@ fn ensure_property_value_supported(
     if can_convert_indexed_array_to_mixed_property(value_ty, &slot.php_type) {
         return Ok(());
     }
+    if can_store_assoc_array_as_mixed_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
     if can_store_value_as_tagged_scalar_property(value_ty, &slot.php_type) {
         return Ok(());
     }
@@ -5037,6 +5040,18 @@ fn can_convert_indexed_array_to_mixed_property(value_ty: &PhpType, slot_ty: &Php
         return false;
     };
     slot_elem.codegen_repr() == PhpType::Mixed && value_elem.codegen_repr() != PhpType::Mixed
+}
+
+/// Returns true when associative-array storage can satisfy a generic `array` property.
+fn can_store_assoc_array_as_mixed_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    let PhpType::AssocArray { .. } = value_ty.codegen_repr() else {
+        return false;
+    };
+    match slot_ty.codegen_repr() {
+        PhpType::Array(slot_elem) => slot_elem.codegen_repr() == PhpType::Mixed,
+        PhpType::AssocArray { value, .. } => value.codegen_repr() == PhpType::Mixed,
+        _ => false,
+    }
 }
 
 /// Returns true when a value can initialize a pointer-sized slot as null.
@@ -5591,6 +5606,29 @@ fn load_property_store_value_to_result(
         };
         emit_loaded_indexed_array_to_mixed(ctx, &source_elem.codegen_repr());
         abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Array(Box::new(PhpType::Mixed)));
+        return Ok(());
+    }
+    if can_store_assoc_array_as_mixed_property(&value_ty, slot_ty) {
+        let PhpType::AssocArray {
+            key: source_key,
+            value: source_value,
+        } = ctx.load_value_to_result(value)?.codegen_repr()
+        else {
+            return Err(CodegenIrError::unsupported(format!(
+                "property associative-array widening from PHP type {:?}",
+                value_ty
+            )));
+        };
+        if source_value.codegen_repr() != PhpType::Mixed {
+            emit_loaded_assoc_array_to_mixed(ctx);
+        }
+        abi::emit_incref_if_refcounted(
+            ctx.emitter,
+            &PhpType::AssocArray {
+                key: source_key,
+                value: Box::new(PhpType::Mixed),
+            },
+        );
         return Ok(());
     }
     if can_store_value_as_tagged_scalar_property(&value_ty, slot_ty) {
