@@ -40,7 +40,10 @@ impl Checker {
                 return self
                     .infer_method_call_on_interface_type(class_name, method, args, expr, env);
             }
-            return self.infer_method_call_on_class_type(class_name, method, args, expr, env);
+            let return_ty = self.infer_method_call_on_class_type(class_name, method, args, expr, env)?;
+            return Ok(self
+                .tracked_reflection_class_method_return_type(object, method)
+                .unwrap_or(return_ty));
         }
         // Method calls on a union object type are allowed when the union has a
         // single object class. `?Foo` / `Foo|null` faults on a null receiver as in
@@ -64,7 +67,11 @@ impl Checker {
                         env,
                     );
                 }
-                return self.infer_method_call_on_class_type(&class_name, method, args, expr, env);
+                let return_ty =
+                    self.infer_method_call_on_class_type(&class_name, method, args, expr, env)?;
+                return Ok(self
+                    .tracked_reflection_class_method_return_type(object, method)
+                    .unwrap_or(return_ty));
             }
             // Union of two or more distinct object classes (`A|B`, `A|B|false`):
             // the method must exist on every object member; codegen dispatches on
@@ -162,6 +169,24 @@ impl Checker {
             None
         } else {
             Some(self.normalize_union_type(candidates))
+        }
+    }
+
+    /// Returns a concrete reflected object type for tracked `ReflectionClass` construction helpers.
+    fn tracked_reflection_class_method_return_type(
+        &self,
+        object: &Expr,
+        method: &str,
+    ) -> Option<PhpType> {
+        let ExprKind::Variable(name) = &object.kind else {
+            return None;
+        };
+        let reflected_class = self.reflection_class_targets.get(name)?;
+        match php_symbol_key(method).as_str() {
+            "newinstance" | "newinstanceargs" | "newinstancewithoutconstructor" => {
+                Some(PhpType::Object(reflected_class.clone()))
+            }
+            _ => None,
         }
     }
 
