@@ -53,8 +53,11 @@ pub(crate) fn check_class_like_exists(cx: &mut BuiltinCheckCtx) -> Result<PhpTyp
 /// This hook is called with `lazy_check: true` so inference happens here, not in the common path.
 pub(crate) fn check_class_relation(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let first_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
+    let dynamic_eval_target = cx.checker.eval_barrier_active
+        && matches!(first_ty.codegen_repr(), PhpType::Mixed | PhpType::Str);
     if !matches!(first_ty, PhpType::Object(_))
         && !matches!(cx.args[0].kind, ExprKind::StringLiteral(_))
+        && !dynamic_eval_target
     {
         return Err(CompileError::new(
             cx.span,
