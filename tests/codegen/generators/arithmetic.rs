@@ -13,15 +13,16 @@ use crate::support::*;
 
 /// Verifies that integer division in a yield expression is evaluated correctly.
 ///
-/// `$i / 2 * 2 == $i` is true exactly when `$i` is even (signed integer division
-/// truncates toward zero). The generator should emit only even numbers.
+/// `intdiv($i, 2) * 2 == $i` is true exactly when `$i` is even, so the generator
+/// emits only even numbers. (Plain `/` is float division in PHP — `$i / 2 * 2`
+/// always equals `$i` — so `intdiv` is used to exercise truncating division.)
 #[test]
 fn test_generator_int_division_in_yield_expr() {
     let out = compile_and_run(
         r#"<?php
 function gen(int $n) {
     for ($i = 0; $i < $n; $i++) {
-        if ($i == $i / 2 * 2) {
+        if ($i == intdiv($i, 2) * 2) {
             yield $i;
         }
     }
