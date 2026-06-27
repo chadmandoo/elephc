@@ -341,6 +341,7 @@ pub enum Op {
     MethodLookup,
     MethodCall,
     StaticMethodCall,
+    EvalStaticMethodCall,
     /// Coerces a PHP numeric string operand to its integer value for an int-backed enum
     /// `from()`/`tryFrom()` call. Operand: the string. Immediate: data id of the PHP
     /// `TypeError` message thrown when the string is not numeric. Result: `I64`.
@@ -513,7 +514,7 @@ impl Op {
                 E::READS_GLOBAL | E::READS_HEAP | E::WRITES_HEAP | E::REFCOUNT_OP | E::MAY_FATAL
             }
             Call | FunctionVariantCall | BuiltinCall | EvalFunctionCall | EvalFunctionCallArray
-            | EvalObjectNew | RuntimeCall
+            | EvalObjectNew | EvalStaticMethodCall | RuntimeCall
             | ClosureCall | ExprCall | CallableDescriptorInvoke | PipeCall | FiberRuntimeCall => {
                 E::all().difference(E::REFCOUNT_OP)
             }
@@ -540,6 +541,7 @@ impl Op {
                 | Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
                 | Op::EvalObjectNew
+                | Op::EvalStaticMethodCall
                 | Op::RuntimeCall
                 | Op::ExternCall
                 | Op::MethodCall
@@ -712,6 +714,7 @@ impl Op {
             MethodLookup => "method_lookup",
             MethodCall => "method_call",
             StaticMethodCall => "static_method_call",
+            EvalStaticMethodCall => "eval_static_method_call",
             EnumBackingStringToInt => "enum_backing_string_to_int",
             EnumBackingMixedToInt => "enum_backing_mixed_to_int",
             ClassConstant => "class_constant",
