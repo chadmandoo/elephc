@@ -270,6 +270,21 @@ fn emit_generator_function(
     let body_label = format!("{}__genbody", entry_label);
     let callback_label = format!("{}__gencb", entry_label);
     let param_types = generator_param_types(function);
+    // Parameters (and closure captures, which arrive as call arguments) are boxed into the
+    // coroutine's fixed `start_args` slots; there are only `FIBER_START_ARGS_MAX` of them.
+    // Reject overflow with a clear diagnostic instead of silently writing past the slots into
+    // adjacent fiber fields.
+    let max_params = crate::codegen::runtime::FIBER_START_ARGS_MAX as usize;
+    if param_types.len() > max_params {
+        return Err(CodegenIrError::unsupported(format!(
+            "generator '{}' has {} parameters including closure captures; \
+             generators support at most {} because parameters are stored in the \
+             coroutine's start-argument slots",
+            function.name,
+            param_types.len(),
+            max_params
+        )));
+    }
     emit_generator_constructor(emitter, entry_label, &callback_label, &param_types);
     emit_generator_body(module, function, &body_label, emitter, data, regalloc_linear)?;
     emit_generator_callback(emitter, &callback_label, &body_label, &param_types);
@@ -322,8 +337,10 @@ fn gen_param_kind(ty: &PhpType) -> GenParamKind {
 const GEN_SAVE_OFF: usize = 16;
 
 /// Returns the frame-pointer-relative byte offset of the scratch slot for
-/// generator parameter `idx`. Each parameter reserves 16 bytes (string pairs use
-/// both halves: pointer at the slot, length 8 bytes below it).
+/// generator parameter `idx`. Each parameter reserves a contiguous 16-byte cell
+/// `[slot - 8, slot + 8)`: the primary value (pointer/scalar/float) sits at `slot`
+/// and the string length / tagged tag at `slot - 8`, matching the secondary-word
+/// convention of `emit_store_incoming_param` and the outgoing call helpers.
 fn gen_param_slot(idx: usize) -> usize {
     32 + idx * 16
 }
@@ -358,7 +375,6 @@ fn emit_generator_constructor(
         Arch::AArch64 => "x19",
         Arch::X86_64 => "r12",
     };
-    let assignments = abi::build_outgoing_arg_assignments_for_target(target, param_types, 0);
 
     emitter.blank();
     emitter.comment(&format!("--- generator constructor {} ---", entry_label));
@@ -366,29 +382,15 @@ fn emit_generator_constructor(
     abi::emit_frame_prologue(emitter, frame_size);
     abi::store_at_offset(emitter, gen_cache, GEN_SAVE_OFF); // preserve the caller's callee-saved generator-object cache register
 
-    // -- spill the incoming parameter registers before __rt_fiber_construct clobbers them --
+    // -- spill the incoming parameters into frame slots before __rt_fiber_construct clobbers them --
+    // `emit_store_incoming_param` consumes the argument registers in ABI order and falls back to the
+    // caller stack once the integer/float register budget is exhausted (e.g. a 7th integer parameter
+    // on x86_64 SysV), so stack-passed parameters survive instead of being dropped. The register reads
+    // must happen before the construct call; caller-stack reads are frame-pointer-relative and remain
+    // valid across it.
+    let mut cursor = abi::IncomingArgCursor::for_target(target, 0);
     for (idx, ty) in param_types.iter().enumerate() {
-        let slot = gen_param_slot(idx);
-        let asg = &assignments[idx];
-        if !asg.in_register() {
-            continue; // stack-passed argument: handled after register arguments are stable
-        }
-        match gen_param_kind(ty) {
-            GenParamKind::Float => {
-                abi::store_at_offset(emitter, abi::float_arg_reg_name(target, asg.start_reg), slot);
-            }
-            GenParamKind::Str => {
-                abi::store_at_offset(emitter, abi::int_arg_reg_name(target, asg.start_reg), slot);
-                abi::store_at_offset(
-                    emitter,
-                    abi::int_arg_reg_name(target, asg.start_reg + 1),
-                    slot + 8,
-                );
-            }
-            GenParamKind::IntLike | GenParamKind::Mixed => {
-                abi::store_at_offset(emitter, abi::int_arg_reg_name(target, asg.start_reg), slot);
-            }
-        }
+        abi::emit_store_incoming_param(emitter, &format!("arg{idx}"), ty, gen_param_slot(idx), false, &mut cursor);
     }
 
     // -- allocate the Generator coroutine object --
@@ -432,12 +434,12 @@ fn emit_generator_constructor(
             GenParamKind::Str => match target.arch {
                 Arch::AArch64 => {
                     abi::load_at_offset(emitter, "x1", slot);
-                    abi::load_at_offset(emitter, "x2", slot + 8);
+                    abi::load_at_offset(emitter, "x2", slot - 8);
                     crate::codegen::emit_box_current_value_as_mixed(emitter, &PhpType::Str);
                 }
                 Arch::X86_64 => {
                     abi::load_at_offset(emitter, "rax", slot);
-                    abi::load_at_offset(emitter, "rdx", slot + 8);
+                    abi::load_at_offset(emitter, "rdx", slot - 8);
                     crate::codegen::emit_box_current_value_as_mixed(emitter, &PhpType::Str);
                 }
             },
@@ -575,51 +577,80 @@ fn emit_generator_callback(
             }
             (GenParamKind::Str, Arch::AArch64) => {
                 abi::store_at_offset(emitter, "x1", slot);
-                abi::store_at_offset(emitter, "x2", slot + 8);
+                abi::store_at_offset(emitter, "x2", slot - 8);
             }
             (GenParamKind::Str, Arch::X86_64) => {
                 abi::store_at_offset(emitter, "rdi", slot);
-                abi::store_at_offset(emitter, "rdx", slot + 8);
+                abi::store_at_offset(emitter, "rdx", slot - 8);
             }
             (_, Arch::AArch64) => abi::store_at_offset(emitter, "x1", slot),
             (_, Arch::X86_64) => abi::store_at_offset(emitter, "rdi", slot),
         }
     }
 
-    // -- materialize the unboxed values into the body's parameter registers --
+    // -- forward the unboxed parameters to the body through the normal call ABI --
+    // Push each parameter onto the temporary call stack in source order, then let
+    // `materialize_outgoing_args` place them into argument registers and the caller-stack
+    // overflow area exactly as an ordinary call would. This routes parameters beyond the
+    // ABI register budget (e.g. a 7th integer parameter on x86_64 SysV) through the stack
+    // instead of dropping them.
     for (idx, ty) in param_types.iter().enumerate() {
         let slot = gen_param_slot(idx);
-        let asg = &assignments[idx];
-        if !asg.in_register() {
-            continue; // stack-passed argument: handled after register arguments are stable
-        }
         match gen_param_kind(ty) {
             GenParamKind::Float => {
-                abi::load_at_offset(emitter, abi::float_arg_reg_name(target, asg.start_reg), slot);
+                let freg = match target.arch {
+                    Arch::AArch64 => "d0",
+                    Arch::X86_64 => "xmm0",
+                };
+                abi::load_at_offset(emitter, freg, slot);
+                abi::emit_push_float_reg(emitter, freg);                        // stage the float parameter on the temporary call stack
             }
             GenParamKind::Str => {
-                abi::load_at_offset(emitter, abi::int_arg_reg_name(target, asg.start_reg), slot);
-                abi::load_at_offset(
-                    emitter,
-                    abi::int_arg_reg_name(target, asg.start_reg + 1),
-                    slot + 8,
-                );
+                let (lo, hi) = match target.arch {
+                    Arch::AArch64 => ("x9", "x10"),
+                    Arch::X86_64 => ("r10", "r11"),
+                };
+                abi::load_at_offset(emitter, lo, slot);
+                abi::load_at_offset(emitter, hi, slot - 8);
+                abi::emit_push_reg_pair(emitter, lo, hi);                       // stage the string pointer/length pair on the temporary call stack
             }
             GenParamKind::IntLike | GenParamKind::Mixed => {
-                abi::load_at_offset(emitter, abi::int_arg_reg_name(target, asg.start_reg), slot);
+                let reg = match target.arch {
+                    Arch::AArch64 => "x9",
+                    Arch::X86_64 => "r10",
+                };
+                abi::load_at_offset(emitter, reg, slot);
+                abi::emit_push_reg(emitter, reg);                               // stage the scalar/pointer parameter on the temporary call stack
             }
         }
     }
+    let overflow_bytes = abi::materialize_outgoing_args(emitter, &assignments);
+    // ARM64 keeps a 16-byte nested-call save slot below the outgoing stack arguments;
+    // x86_64 needs no such pad because the call instruction itself pushes the return address.
+    let call_pad = if overflow_bytes > 0 && target.arch == Arch::AArch64 {
+        16
+    } else {
+        0
+    };
+    abi::emit_reserve_temporary_stack(emitter, call_pad);
 
     // -- run the body, park its return value, and yield a null fiber transfer value --
     match target.arch {
         Arch::AArch64 => {
             emitter.instruction(&format!("bl {}", body_label));                 // run the generator body to completion; x0 = boxed return value
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("call {}", body_label));               // run the generator body to completion; rax = boxed return value
+        }
+    }
+    abi::emit_release_temporary_stack(emitter, call_pad); // drop the ARM64 nested-call alignment pad
+    abi::emit_release_temporary_stack(emitter, overflow_bytes); // drop any stack-passed parameters after the body returns
+    match target.arch {
+        Arch::AArch64 => {
             emitter.instruction(&format!("str x0, [x19, #{}]", GEN_RETURN_VALUE_OFFSET)); // park the body return value for getReturn()
             emitter.instruction("mov x0, #0");                                  // hand the fiber transfer value a null so it does not alias the return
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("call {}", body_label));               // run the generator body to completion; rax = boxed return value
             emitter.instruction(&format!("mov QWORD PTR [r12 + {}], rax", GEN_RETURN_VALUE_OFFSET)); // park the body return value for getReturn()
             emitter.instruction("xor eax, eax");                                // hand the fiber transfer value a null so it does not alias the return
         }

@@ -401,7 +401,9 @@ symbols:
   Generator coroutine object (`__rt_fiber_construct`), boxes the call
   arguments and closure captures into the object's `start_args` slots, and
   returns the object. The body does not run yet — it starts lazily on the
-  first accessor.
+  first accessor. The `start_args` storage has room for **7** boxed values,
+  so a generator may declare at most 7 parameters (counting closure
+  captures); a generator with more is rejected at compile time.
 - `_fn_<f>__genbody` — the **body**, compiled by the normal backend as a
   Mixed-returning function. Its `return` value is what `getReturn()`
   surfaces.
