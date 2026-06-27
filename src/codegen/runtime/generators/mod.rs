@@ -16,6 +16,7 @@
 //!    stores them in frame slots, so `current`/`key`/`getReturn` are pure
 //!    load-and-return paths with no allocation.
 
+pub(crate) mod coro;
 pub(crate) mod frame;
 
 use crate::codegen::emit::Emitter;
@@ -27,6 +28,9 @@ use frame as f;
 /// Routes to x86_64-specific emitters when on that architecture,
 /// otherwise emits the default ARM64 implementations.
 pub(crate) fn emit_generator_runtime(emitter: &mut Emitter) {
+    // Fiber-backed generator coroutine primitives (target-aware internally).
+    coro::emit_gen_suspend(emitter);
+
     if emitter.target.arch == Arch::X86_64 {
         emit_generator_runtime_x86_64(emitter);
         return;
