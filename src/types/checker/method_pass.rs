@@ -64,11 +64,32 @@ impl Checker {
                     };
                     for (i, (pname, type_ann, _, _)) in method.params.iter().enumerate() {
                         let ty = if let Some(type_ann) = type_ann {
-                            self.resolve_declared_param_type_hint(
+                            let declared = self.resolve_declared_param_type_hint(
                                 type_ann,
                                 method.span,
                                 &format!("Method parameter ${}", pname),
-                            )?
+                            )?;
+                            // A generic `array` hint is sharpened to the call-site array shape
+                            // recorded on the stored signature, mirroring how free-function
+                            // `array` parameters are specialized (issue #406). Without this a
+                            // method `array` parameter stays an integer-indexed list and rejects
+                            // string-key access / mis-encodes associative arrays.
+                            if Self::is_generic_array_hint(&declared) {
+                                sig_params
+                                    .as_ref()
+                                    .and_then(|p| p.get(i))
+                                    .map(|(_, t)| t.clone())
+                                    .filter(|t| {
+                                        matches!(
+                                            t,
+                                            PhpType::Array(_) | PhpType::AssocArray { .. }
+                                        )
+                                    })
+                                    .map(|t| Self::specialize_generic_array_hint(&declared, &t))
+                                    .unwrap_or(declared)
+                            } else {
+                                declared
+                            }
                         } else {
                             sig_params
                                 .as_ref()
@@ -93,6 +114,7 @@ impl Checker {
                     self.current_class = Some(class.name.clone());
                     self.current_method = Some(method_key.clone());
                     self.current_method_is_static = method.is_static;
+                    self.current_by_ref_return = method.by_ref_return;
                     let method_ref_params: Vec<String> = method
                         .params
                         .iter()
@@ -117,6 +139,7 @@ impl Checker {
                     self.current_class = None;
                     self.current_method = None;
                     self.current_method_is_static = false;
+                    self.current_by_ref_return = false;
                 }
             }
 

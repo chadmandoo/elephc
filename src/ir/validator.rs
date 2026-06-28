@@ -273,10 +273,11 @@ fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result
         ConstF64 => require_immediate(inst_id, inst, "f64", |imm| matches!(imm, Imm::F64(_))),
         ConstBool => require_immediate(inst_id, inst, "bool", |imm| matches!(imm, Imm::Bool(_))),
         ConstStr | ConstClassName | DataAddr | Warn | IncludeOnceMark | IncludeOnceGuard
-        | FunctionVariantMark | FunctionVariantDispatch => {
+        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell => {
             require_immediate(inst_id, inst, "data id", |imm| matches!(imm, Imm::Data(_)))
         }
         LoadLocal | StoreLocal | UnsetLocal | LoadRefCell | StoreRefCell | ReleaseLocalRefCell
+        | BindRefCellPtr
         | LoadStaticLocal | StoreStaticLocal | InitStaticLocal | InvokerRefArg => require_immediate(inst_id, inst, "local slot", |imm| {
             matches!(imm, Imm::LocalSlot(_))
         }),
@@ -351,7 +352,8 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         | CallableArrayNew | GeneratorNew | InvokerRefArg
         | ErrorSuppressBegin | ErrorSuppressEnd | TryPushHandler | TryPopHandler
         | CatchCurrent | CatchBind | FinallyEnter | FinallyExit | IncludeOnceMark
-        | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | ConcatReset | Nop => {
+        | IncludeOnceGuard | FunctionVariantMark | FunctionVariantDispatch | ConcatReset
+        | GcCollect | Nop => {
             check_count(inst_id, inst, 0, "0")
         }
         ClosureNew => Ok(()),
@@ -393,7 +395,7 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
             check_count(inst_id, inst, 0, "0")
         }
         StoreLocal | StoreGlobal | StoreStaticLocal | InitStaticLocal | StoreStaticProperty | ExternGlobalStore
-        | StoreRefCell | Acquire | Release | Move | Borrow | EnsureOwned
+        | StoreRefCell | BindRefCellPtr | Acquire | Release | Move | Borrow | EnsureOwned
         | EchoValue | PrintValue | WriteStdout | WriteStrStdout | VarDump | PrintR
         | ThrowException | GeneratorReturn | PtrCheckNonnull => {
             check_count(inst_id, inst, 1, "1")
@@ -404,13 +406,15 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         HashUnion => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)"),
         ArrayHashUnion => check_array_hash_union(function, inst_id, inst),
         HashArrayUnion => check_hash_array_union(function, inst_id, inst),
-        ArrayLen | ArrayGet | ArraySet | ArrayPush | ArrayEnsureUnique | ArrayCloneShallow
-        | ArrayToHash | ArraySetMixedKey => check_first_heap(function, inst_id, inst, IrHeapKind::Array, "Heap(Array)"),
+        ArrayLen | ArrayGet | ArrayIsset | ArraySet | ArrayPush | ArrayEnsureUnique
+        | ArrayCloneShallow | ArrayToHash | ArraySetMixedKey => {
+            check_first_heap(function, inst_id, inst, IrHeapKind::Array, "Heap(Array)")
+        }
         MixedArrayAppend => {
             check_count(inst_id, inst, 2, "2")?;
             check_operand_type(function, inst_id, inst, 0, IrType::Heap(IrHeapKind::Mixed), "Heap(Mixed)")
         }
-        HashLen | HashGet | HashSet | HashAppend | HashEnsureUnique | HashCloneShallow => {
+        HashLen | HashGet | HashIsset | HashSet | HashAppend | HashEnsureUnique | HashCloneShallow => {
             check_first_heap(function, inst_id, inst, IrHeapKind::Hash, "Heap(Hash)")
         }
         IterCurrentValueRef => check_count(inst_id, inst, 1, "1"),
@@ -418,7 +422,7 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         BufferLen | BufferGet | BufferSet | BufferFree => {
             check_first_heap(function, inst_id, inst, IrHeapKind::Buffer, "Heap(Buffer)")
         }
-        PropGet | PropSet | DynamicPropGet | DynamicPropSet | NullsafePropGet
+        PropGet | PropSet | LoadPropRefCell | DynamicPropGet | DynamicPropSet | NullsafePropGet
         | NullsafeMethodCall | MethodLookup | MethodCall | InstanceOf | InstanceOfDynamic => {
             check_count_at_least(inst_id, inst, 1, "at least 1")
         }

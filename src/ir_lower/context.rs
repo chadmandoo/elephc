@@ -37,6 +37,14 @@ pub(crate) struct LoweredValue {
 pub(crate) struct LoopFrame {
     pub break_block: BlockId,
     pub continue_block: BlockId,
+    pub cleanup: Option<LoopCleanup>,
+}
+
+/// Cleanup that must run when control leaves a loop without visiting its exit block.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LoopCleanup {
+    pub value: LoweredValue,
+    pub span: Span,
 }
 
 /// Active `finally` body that must run before selected control-flow exits.
@@ -116,6 +124,9 @@ pub(crate) struct LoweringContext<'m, 'f> {
     foreach_int_key_locals: HashSet<String>,
     pub return_type: IrType,
     pub return_php_type: PhpType,
+    /// `true` when the function/closure being lowered returns by reference (`function &f()`),
+    /// so a `return $obj->prop` yields the property's ref-cell pointer instead of a value copy.
+    pub by_ref_return: bool,
     pub in_main: bool,
     pub all_global_var_names: HashSet<String>,
     owner_name: String,
@@ -177,6 +188,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             foreach_int_key_locals: HashSet::new(),
             return_type,
             return_php_type,
+            by_ref_return: false,
             in_main,
             all_global_var_names,
             owner_name,
@@ -257,7 +269,15 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Returns the checker-known top-level type for a `global` alias name.
+    ///
+    /// Request superglobals resolve to their fixed `AssocArray{Str, Mixed}` type
+    /// directly: inside a function the `top_level_env` snapshot may not carry
+    /// them, but their global slot must still be a Hash pointer (not a boxed
+    /// Mixed cell) so the function read agrees with the prelude's StoreGlobal.
     pub(crate) fn global_alias_type(&self, name: &str) -> PhpType {
+        if crate::superglobals::is_superglobal(name) {
+            return crate::superglobals::superglobal_type();
+        }
         self.top_level_env
             .get(name)
             .cloned()
@@ -402,6 +422,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         name
     }
 
+    /// Declares a one-shot hidden expression-result temporary.
+    pub(crate) fn declare_owned_hidden_temp(&mut self, php_type: PhpType) -> String {
+        let name = format!("__eir_tmp{}", self.hidden_temp_counter);
+        self.hidden_temp_counter += 1;
+        self.declare_local_with_kind(&name, php_type, LocalKind::OwnedTemp);
+        name
+    }
+
     /// Declares a parser-reserved hidden temporary slot.
     pub(crate) fn declare_hidden_temp_with_name(
         &mut self,
@@ -478,7 +506,13 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if let Some(php_type) = self.extern_global_type(name) {
             return self.load_extern_global(name, php_type, span);
         }
-        let php_type = self.local_type(name);
+        // Superglobals carry a fixed `AssocArray{Str, Mixed}` type in every scope
+        // so the global-storage load is a Hash pointer, not a boxed Mixed cell.
+        let php_type = if crate::superglobals::is_superglobal(name) {
+            self.global_alias_type(name)
+        } else {
+            self.local_type(name)
+        };
         let slot = self.declare_local(name, php_type.clone());
         let ir_type = value_ir_type(&php_type);
         let ownership = Ownership::for_php_type(&php_type);
@@ -512,6 +546,60 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         LoweredValue { value, ir_type }
     }
 
+    /// Emits a load using the local slot's concrete frame-storage type.
+    ///
+    /// This is for cleanup paths that must release the value already present in
+    /// a slot. Normal expression reads should use `load_local`, which preserves
+    /// the narrower logical type facts from the checker.
+    fn load_local_storage(
+        &mut self,
+        name: &str,
+        slot: LocalSlotId,
+        php_type: PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        let ir_type = value_ir_type(&php_type);
+        let ownership = Ownership::for_php_type(&php_type);
+        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let uses_global = self.uses_global_storage(name, kind);
+        let is_ref_bound = self.is_ref_bound_local(name) && !uses_global && kind == LocalKind::PhpLocal;
+        let op = match (is_ref_bound, uses_global, kind) {
+            (true, _, _) => Op::LoadRefCell,
+            (false, true, _) => Op::LoadGlobal,
+            (false, false, LocalKind::StaticLocal) => Op::LoadStaticLocal,
+            _ => Op::LoadLocal,
+        };
+        let immediate = if uses_global {
+            Some(Immediate::GlobalName(self.intern_global_name(name)))
+        } else {
+            Some(Immediate::LocalSlot(slot))
+        };
+        let value = self
+            .builder
+            .emit_with_effects(
+                op,
+                Vec::new(),
+                immediate,
+                ir_type,
+                php_type,
+                ownership,
+                op.default_effects(),
+                span,
+            )
+            .expect("storage-typed local load produces a value");
+        LoweredValue { value, ir_type }
+    }
+
+    /// Releases the value currently stored in a local slot using frame-storage metadata.
+    pub(crate) fn release_stored_local_value(&mut self, name: &str, slot: LocalSlotId, span: Option<Span>) {
+        let storage_type = self.builder.local_php_type(slot);
+        if !Ownership::php_type_needs_lifetime_tracking(&storage_type) {
+            return;
+        }
+        let previous = self.load_local_storage(name, slot, storage_type, span);
+        crate::ir_lower::ownership::release_if_owned(self, previous, span);
+    }
+
     /// Emits a store to a PHP local slot, updates type facts, and returns the stored value.
     pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) -> LoweredValue {
         self.clear_static_callable_local(name);
@@ -530,17 +618,28 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, previous_kind);
         let slot = self.declare_local(name, php_type.clone());
+        // Backend frame layout uses the final widened slot type for every load
+        // and store, so cleanup loads must be typed after this store's widening.
+        self.builder.widen_local_storage_type(slot, php_type.clone());
         let source = value;
-        let release_source_after_store = self.value_is_owning_temporary(value);
-        let transfer_callable_source_to_store = release_source_after_store
+        let source_is_owning_temporary = self.value_is_owning_temporary(value);
+        let release_source_after_store = self.value_needs_release_after_retaining_store(value);
+        let transfer_callable_source_to_store = source_is_owning_temporary
             && matches!(php_type.codegen_repr(), PhpType::Callable);
         if !uses_global
-            && previous_kind == LocalKind::PhpLocal
+            && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
-            && Ownership::php_type_needs_lifetime_tracking(&previous_type)
         {
-            let previous = self.load_local(name, span);
-            crate::ir_lower::ownership::release_if_owned(self, previous, span);
+            self.release_stored_local_value(name, slot, span);
+        }
+        // A loop-carried slot can exist globally without being definitely initialized
+        // on this CFG path. Release the runtime occupant before overwriting it.
+        if !uses_global
+            && local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value(name, slot, span);
         }
         // A first syntactic store inside a loop body (main or function) can still
         // overwrite a prior runtime iteration's value: the slot has no straight-line
@@ -550,13 +649,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         // zero-initialized in the prologue, so the first iteration safely releases a null
         // slot; subsequent iterations release the prior value.
         if !uses_global
-            && previous_kind == LocalKind::PhpLocal
+            && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_none()
             && !self.loop_stack.is_empty()
-            && Ownership::php_type_needs_lifetime_tracking(&php_type)
         {
-            let previous = self.load_local(name, span);
-            crate::ir_lower::ownership::release_if_owned(self, previous, span);
+            self.release_stored_local_value(name, slot, span);
         }
         let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
             && !transfer_callable_source_to_store
@@ -580,6 +677,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             _ => Op::StoreLocal,
         };
         if is_ref_bound {
+            let value = self.box_typed_array_for_mixed_ref_cell(value, &previous_type, span);
             self.store_ref_cell_slot(slot, value, previous_type.clone(), span);
         } else {
             self.store_slot_with_op(slot, value, op, span);
@@ -591,6 +689,35 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             crate::ir_lower::ownership::release_if_owned(self, source, span);
         }
         value
+    }
+
+    /// Boxes a typed-array source to `Array(Mixed)` before it is stored through a reference
+    /// cell whose element type is `Mixed`.
+    ///
+    /// `$ref = [1, 2]` where `$ref` aliases an object's `array` (Mixed-element) property stores
+    /// the literal's pointer into the shared cell. Without conversion the cell would hold an
+    /// `Array(Int)` payload but every read goes through the property's `Array(Mixed)` view, so
+    /// element reads (`implode`, `$prop[0]`) would misinterpret the raw scalar slots. Converting
+    /// with `ArrayToMixed` boxes each element so the stored array matches the cell's element
+    /// type. Empty / `Never`-element sources are left untouched (no elements to box).
+    fn box_typed_array_for_mixed_ref_cell(
+        &mut self,
+        value: LoweredValue,
+        cell_ty: &PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        let value_ty = self.builder.value_php_type(value.value);
+        if !ref_cell_needs_mixed_array_conversion(cell_ty, &value_ty) {
+            return value;
+        }
+        self.emit_value(
+            Op::ArrayToMixed,
+            vec![value.value],
+            None,
+            PhpType::Array(Box::new(PhpType::Mixed)),
+            Op::ArrayToMixed.default_effects(),
+            span,
+        )
     }
 
     /// Returns the declared PHP type for an extern global visible as a variable.
@@ -700,6 +827,23 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         null
     }
 
+    /// Clears an owned hidden temp after its value has been loaded into SSA.
+    pub(crate) fn clear_owned_hidden_temp(&mut self, name: &str, span: Option<Span>) {
+        let Some(slot) = self.local_slots.get(name).copied() else {
+            return;
+        };
+        if self.builder.local_kind(slot) != LocalKind::OwnedTemp {
+            return;
+        }
+        self.emit_void(
+            Op::UnsetLocal,
+            Vec::new(),
+            Some(Immediate::LocalSlot(slot)),
+            Op::UnsetLocal.default_effects(),
+            span,
+        );
+    }
+
     /// Promotes an initialized local into a fallback ref-cell for by-reference foreach.
     pub(crate) fn promote_local_ref_cell(&mut self, name: &str, span: Option<Span>) {
         let slot = self.declare_local(name, self.local_type(name));
@@ -755,6 +899,40 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         self.initialized_slots.insert(target_slot);
     }
 
+    /// Binds `target` as a NON-owning reference alias to an already-materialized ref-cell
+    /// pointer (`cell_ptr`), e.g. the cell behind an object reference property (`$x = &$obj->prop`)
+    /// or returned by a by-reference call (`$x = &f()`). `value_type` is the PHP type the cell
+    /// holds, used to type the target and to dereference it on later loads/stores.
+    ///
+    /// Unlike `alias_local_ref_cell`, no hidden owner slot is created and no `ReleaseLocalRefCell`
+    /// is emitted for `target` at scope exit: the cell is owned by the source (the object), so the
+    /// alias must not free it.
+    pub(crate) fn bind_local_ref_cell_ptr(
+        &mut self,
+        target: &str,
+        cell_ptr: LoweredValue,
+        value_type: PhpType,
+        span: Option<Span>,
+    ) {
+        self.clear_static_callable_local(target);
+        self.clear_fiber_start_sig(target);
+        self.release_replaced_local_before_ref_alias(target, span);
+        let target_slot = self.declare_local(target, value_type.clone());
+        self.set_local_type(target, value_type.clone());
+        self.builder.emit_with_effects(
+            Op::BindRefCellPtr,
+            vec![cell_ptr.value],
+            Some(Immediate::LocalSlot(target_slot)),
+            IrType::Void,
+            value_type,
+            Ownership::NonHeap,
+            Op::BindRefCellPtr.default_effects(),
+            span,
+        );
+        self.mark_ref_bound_local(target);
+        self.initialized_slots.insert(target_slot);
+    }
+
     /// Releases storage currently owned by a local before rebinding it as a ref alias.
     fn release_replaced_local_before_ref_alias(&mut self, name: &str, span: Option<Span>) {
         if self.is_ref_bound_local(name) {
@@ -767,12 +945,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if !self.initialized_slots.contains(&slot) {
             return;
         }
-        let previous_type = self.local_type(name);
-        if !Ownership::php_type_needs_lifetime_tracking(&previous_type) {
-            return;
-        }
-        let previous = self.load_local(name, span);
-        crate::ir_lower::ownership::release_if_owned(self, previous, span);
+        self.release_stored_local_value(name, slot, span);
     }
 
     /// Releases a promoted fallback ref-cell owner if the variable still owns one.
@@ -804,6 +977,22 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if self.value_is_owning_builtin_temporary(value.value) {
             return true;
         }
+        if self.value_is_owned_temp_load(value.value) {
+            return true;
+        }
+        if self.value_is_owning_mixed_string_cast(value.value) {
+            return true;
+        }
+        if self.value_is_owning_container_read(value.value) {
+            return true;
+        }
+        if matches!(
+            self.builder.value_defining_op(value.value),
+            Some(Op::PropGet | Op::DynamicPropGet | Op::NullsafePropGet)
+        ) && matches!(php_type.codegen_repr(), PhpType::Mixed | PhpType::Union(_))
+        {
+            return true;
+        }
         matches!(
             self.builder.value_defining_op(value.value),
             Some(
@@ -814,6 +1003,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::MixedBox
                     | Op::ArrayToMixed
                     | Op::HashToMixed
+                    | Op::InvokerRefArg
+                    | Op::MixedNumericBinop
                     | Op::MixedCastString
                     | Op::StrConcat
                     | Op::StrPersist
@@ -836,6 +1027,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::CallableArrayNew
                     | Op::BufferNew
                     | Op::GeneratorNew
+                    // `yield`/`yield from` return owned Mixed cells (the sent
+                    // value from `__rt_gen_suspend`, the delegated return from
+                    // `__rt_gen_delegate`); a discarded result must be released.
+                    | Op::GeneratorYield
+                    | Op::GeneratorYieldFrom
                     | Op::Call
                     | Op::FunctionVariantCall
                     | Op::RuntimeCall
@@ -844,13 +1040,68 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::NullsafeMethodCall
                     | Op::StaticMethodCall
                     | Op::ClosureCall
+                    | Op::CallableDescriptorInvoke
                     | Op::ExprCall
                     | Op::PipeCall
                     | Op::IteratorMethodCall
                     | Op::SplRuntimeCall
                     | Op::FiberRuntimeCall
+                    // By-value foreach binds a fresh OWNED copy of the current
+                    // element/key; without this `store_local` re-acquires it and
+                    // never releases the copy, leaking on every iteration.
+                    | Op::IterCurrentValue
+                    | Op::IterCurrentKey
             )
         )
+    }
+
+    /// Returns whether the value is a read from a one-shot hidden expression temp.
+    fn value_is_owned_temp_load(&self, value: ValueId) -> bool {
+        let Some(inst) = self.builder.value_defining_instruction(value) else {
+            return false;
+        };
+        if inst.op != Op::LoadLocal {
+            return false;
+        }
+        let Some(Immediate::LocalSlot(slot)) = inst.immediate else {
+            return false;
+        };
+        self.builder.local_kind(slot) == LocalKind::OwnedTemp
+    }
+
+    /// Returns whether a generic cast owns a detached string copy of a Mixed operand.
+    fn value_is_owning_mixed_string_cast(&self, value: ValueId) -> bool {
+        let Some(inst) = self.builder.value_defining_instruction(value) else {
+            return false;
+        };
+        if inst.op != Op::Cast || inst.immediate != Some(Immediate::CastTarget(IrType::Str)) {
+            return false;
+        }
+        let Some(source) = inst.operands.first().copied() else {
+            return false;
+        };
+        matches!(
+            self.builder.value_php_type(source).codegen_repr(),
+            PhpType::Mixed | PhpType::Union(_)
+        )
+    }
+
+    /// Returns whether a retained local/global store should release its source value.
+    pub(crate) fn value_needs_release_after_retaining_store(&self, value: LoweredValue) -> bool {
+        self.value_is_owning_temporary(value)
+    }
+
+    /// Returns whether a container read now owns a caller reference.
+    fn value_is_owning_container_read(&self, value: ValueId) -> bool {
+        let php_type = self.builder.value_php_type(value);
+        let php_type = php_type.codegen_repr();
+        let op = self.builder.value_defining_op(value);
+        (matches!(php_type, PhpType::Mixed | PhpType::Union(_))
+            || (php_type.is_refcounted() && php_type != PhpType::Str))
+            && matches!(
+                op,
+                Some(Op::ArrayGet | Op::HashGet)
+            )
     }
 
     /// Returns true for builtin calls whose return value is newly allocated for the caller.
@@ -932,8 +1183,13 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Returns whether the named PHP variable should use program-global storage.
+    ///
+    /// Request superglobals (`$_SERVER`/`$_GET`/`$_POST`) route to the shared
+    /// `_eir_global_*` symbol in EVERY scope — main and functions alike — so a
+    /// function read targets the same storage the top-level `--web` prelude writes.
     fn uses_global_storage(&self, name: &str, kind: LocalKind) -> bool {
         kind == LocalKind::GlobalAlias
+            || crate::superglobals::is_superglobal(name)
             || (self.in_main && self.all_global_var_names.contains(name))
     }
 
@@ -1057,6 +1313,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 }
 
+/// Returns true for addressable local kinds whose `StoreLocal` overwrites owned storage.
+fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
+    matches!(
+        kind,
+        LocalKind::PhpLocal | LocalKind::HiddenTemp | LocalKind::OwnedTemp | LocalKind::NamedArgTemp
+    )
+}
+
 /// Returns true when a builtin result must be released after a retaining consumer.
 ///
 /// The result of a `BuiltinCall` is only released as a temporary when the callee OWNS its
@@ -1068,7 +1332,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
     matches!(
         php_symbol_key(name.trim_start_matches('\\')).as_str(),
-        // Array-returning builtins that allocate a fresh result array.
+        // Array/mixed-returning builtins that allocate fresh result storage.
         "array_chunk"
             | "array_column"
             | "array_combine"
@@ -1080,9 +1344,11 @@ fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
             | "array_map"
             | "array_merge"
             | "array_pad"
+            | "array_pop"
             | "array_replace"
             | "array_replace_recursive"
             | "array_reverse"
+            | "array_shift"
             | "array_slice"
             | "array_unique"
             | "array_values"
@@ -1157,5 +1423,28 @@ fn named_type_expr_to_php_type(name: &str) -> PhpType {
         "callable" => PhpType::Callable,
         "mixed" => PhpType::Mixed,
         _ => PhpType::Object(name.to_string()),
+    }
+}
+
+/// Returns true when a typed-array source must be boxed to `Array(Mixed)` before being stored
+/// through a reference cell.
+///
+/// The cell's element type is `Mixed` (the property is declared `array`) but the source array's
+/// elements are a concrete non-`Mixed` type, so each element must be boxed for the property's
+/// `Array(Mixed)` reads to interpret the slots correctly. Empty / `Never`-element sources have
+/// no element descriptors to box and are excluded.
+fn ref_cell_needs_mixed_array_conversion(cell_ty: &PhpType, value_ty: &PhpType) -> bool {
+    ref_cell_array_element_type(cell_ty)
+        .is_some_and(|elem| elem == PhpType::Mixed)
+        && ref_cell_array_element_type(value_ty)
+            .is_some_and(|elem| !matches!(elem, PhpType::Mixed | PhpType::Never))
+}
+
+/// Returns the element type of an array-shaped PHP type (indexed or associative), if any.
+fn ref_cell_array_element_type(ty: &PhpType) -> Option<PhpType> {
+    match ty.codegen_repr() {
+        PhpType::Array(elem) => Some(elem.codegen_repr()),
+        PhpType::AssocArray { value, .. } => Some(value.codegen_repr()),
+        _ => None,
     }
 }

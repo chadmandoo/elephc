@@ -25,14 +25,40 @@ pub(super) fn lower_terminator(ctx: &mut FunctionContext<'_>, term: &Terminator)
     match term {
         Terminator::Return { value: None } => {
             if ctx.is_main {
-                frame::emit_main_epilogue(ctx);
+                if ctx.web {
+                    frame::emit_web_handler_epilogue(ctx);
+                } else {
+                    frame::emit_main_epilogue(ctx);
+                }
             } else {
                 jump_to_function_epilogue(ctx)?;
             }
             Ok(())
         }
         Terminator::Return { value: Some(value) } => {
+            if ctx.function.flags.by_ref_return {
+                // A by-reference-returning function hands back the reference-cell pointer
+                // (`$x = &f()` aliases it). The pointer is a single machine word regardless of
+                // the aliased element type, so place it in the integer result register rather
+                // than splitting a `Str`/`Float` declared return across the string/float regs.
+                let int_reg = abi::int_result_reg(ctx.emitter);
+                ctx.load_value_to_reg(*value, int_reg)?;
+                jump_to_function_epilogue(ctx)?;
+                return Ok(());
+            }
             let source_ty = ctx.load_value_to_result(*value)?;
+            if ctx.is_main {
+                // The top-level script's return value is discarded (PHP only uses
+                // a top-level `return <expr>;` as an include's return value); the
+                // expression's side effects already ran, so just run the entry
+                // epilogue exactly like a bare `return;`.
+                if ctx.web {
+                    frame::emit_web_handler_epilogue(ctx);
+                } else {
+                    frame::emit_main_epilogue(ctx);
+                }
+                return Ok(());
+            }
             if ctx.function.return_php_type.codegen_repr() == PhpType::TaggedScalar {
                 super::lower_inst::coerce_loaded_value_to_tagged_scalar(ctx, &source_ty)?;
             }

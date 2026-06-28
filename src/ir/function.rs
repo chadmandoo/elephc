@@ -167,6 +167,7 @@ pub enum LocalKind {
     StaticLocal,
     RefCell,
     HiddenTemp,
+    OwnedTemp,
     TryHandler,
     ClosureCapture,
     NamedArgTemp,
@@ -185,4 +186,6 @@ pub struct FunctionFlags {
     pub is_callback_wrapper: bool,
     pub is_runtime_callable_invoker: bool,
     pub is_static: bool,
+    /// `true` when the function/closure returns by reference (`function &f()` / `fn &()`).
+    pub by_ref_return: bool,
 }

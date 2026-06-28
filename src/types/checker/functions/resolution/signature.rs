@@ -36,6 +36,14 @@ impl Checker {
         for (pname, pty) in &param_types {
             local_env.insert(pname.clone(), pty.clone());
         }
+        // Seed the request superglobals so a function body can read/write
+        // `$_SERVER`/`$_GET`/`$_POST` without a `global` declaration. `or_insert`
+        // never clobbers a parameter that happens to share a superglobal name.
+        for name in crate::superglobals::SUPERGLOBALS {
+            local_env
+                .entry((*name).to_string())
+                .or_insert_with(crate::superglobals::superglobal_type);
+        }
         let function_key = name.to_string();
         let callable_param_names: Vec<String> = param_types
             .iter()
@@ -87,6 +95,7 @@ impl Checker {
             defaults: decl.defaults.clone(),
             return_type: PhpType::Int,
             declared_return: decl.return_type.is_some(),
+            by_ref_return: decl.by_ref_return,
             ref_params: decl.ref_params.clone(),
             deprecation: None,
             declared_params: decl
@@ -111,6 +120,8 @@ impl Checker {
             .filter(|(_, is_ref)| **is_ref)
             .map(|(name, _)| name.clone())
             .collect();
+        let prev_by_ref_return = self.current_by_ref_return;
+        self.current_by_ref_return = decl.by_ref_return;
         let body_check_result = self.with_local_storage_context(ref_param_names, |checker| {
             for stmt in &decl.body {
                 if let Err(error) = checker.check_stmt(stmt, &mut local_env) {
@@ -126,6 +137,7 @@ impl Checker {
             }
             Ok(())
         });
+        self.current_by_ref_return = prev_by_ref_return;
         self.callable_param_names = saved_callable_param_names;
         body_check_result?;
         for pname in &callable_param_names {
@@ -218,6 +230,7 @@ impl Checker {
             defaults: decl.defaults.clone(),
             return_type: return_type.clone(),
             declared_return: decl.return_type.is_some(),
+            by_ref_return: decl.by_ref_return,
             ref_params: decl.ref_params.clone(),
             declared_params: decl
                 .param_types

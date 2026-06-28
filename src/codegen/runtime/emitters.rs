@@ -108,6 +108,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     // Callable introspection runtime functions
     callables::emit_is_callable_runtime(emitter);
     callables::emit_callable_descriptor_release(emitter);
+    callables::emit_closure_bind(emitter);
 
     // System runtime functions
     system::emit_build_argv(emitter);
@@ -208,6 +209,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_hash_grow(emitter);
     arrays::emit_hash_may_have_cyclic_values(emitter);
     arrays::emit_hash_set(emitter);
+    arrays::emit_hash_unset(emitter);
     arrays::emit_hash_append(emitter);
     arrays::emit_hash_insert_owned(emitter);
     arrays::emit_hash_get(emitter);
@@ -323,6 +325,16 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     buffers::emit_buffer_use_after_free(emitter);
 
     // I/O runtime functions
+    // The terminal-stdout indirection every echo/print travels through. Always
+    // emitted (every program can echo); its body differs for `--web` builds.
+    io::emit_stdout_write(emitter, features.web);
+    // Backs file_get_contents('php://input'); reads the request body under --web,
+    // returns false (null) otherwise. Always emitted so the EIR call resolves.
+    io::emit_php_input(emitter, features.web);
+    // Back http_response_code()/header(); call the bridge setters under --web,
+    // no-ops otherwise. Always emitted so the EIR calls resolve.
+    io::emit_http_response_code(emitter, features.web);
+    io::emit_header(emitter, features.web);
     io::emit_cstr(emitter);
     io::emit_disk_space(emitter);
     io::emit_fopen(emitter);
@@ -469,6 +481,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     io::emit_realpath(emitter);
     io::emit_pathinfo_str(emitter);
     io::emit_pathinfo_array(emitter);
+    io::emit_principal_lookup(emitter);
     io::emit_modify(emitter);
     io::emit_streams_ext(emitter);
     io::emit_symlink(emitter);
