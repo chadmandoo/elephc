@@ -4,6 +4,7 @@ All notable changes to elephc, a PHP-to-native compiler written in Rust.
 Releases are listed newest first.
 
 ## [Unreleased]
+- Runtime dead stripping: compiled executables now link only the runtime helpers the program actually reaches and drop the rest, shrinking binaries without changing behavior. Works on every supported target — Linux via per-symbol sections and `--gc-sections`, macOS via `.subsections_via_symbols` atoms and `-dead_strip`. Shared libraries (`--emit cdylib`) keep the full runtime.
 - Fixed associative-array property defaults (issue #407): a typed `array` (or untyped) property initialized with an associative literal such as `['a' => 1]` is now stored as associative (hash) storage, so string-key reads and writes (`$this->data['a']`, `$this->data[$key]`) type-check and run instead of failing with "Array index must be integer". The EIR backend also lowers string-keyed associative literal defaults for instance and static properties instead of rejecting them as an unsupported `object_new` feature.
 
 ## [0.25.2] - 2026-06-26
