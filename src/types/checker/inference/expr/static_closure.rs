@@ -193,8 +193,23 @@ fn expr_must_not_use_this(expr: &Expr, span: Span) -> Result<(), CompileError> {
             expr_must_not_use_this(value, span)?;
             expr_must_not_use_this(default, span)
         }
-        ExprKind::FunctionCall { args, .. }
-        | ExprKind::ClosureCall { args, .. }
+        ExprKind::FunctionCall { name, args } => {
+            if name.as_str().eq_ignore_ascii_case("isset") {
+                for arg in args {
+                    if matches!(&arg.kind, ExprKind::This) {
+                        continue;
+                    }
+                    expr_must_not_use_this(arg, span)?;
+                }
+                Ok(())
+            } else {
+                for arg in args {
+                    expr_must_not_use_this(arg, span)?;
+                }
+                Ok(())
+            }
+        }
+        ExprKind::ClosureCall { args, .. }
         | ExprKind::NewObject { args, .. }
         | ExprKind::NewScopedObject { args, .. }
         | ExprKind::StaticMethodCall { args, .. } => {
