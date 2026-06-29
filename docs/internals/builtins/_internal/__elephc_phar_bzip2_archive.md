@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4114](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4114) (`lower_elephc_phar_bzip2_archive`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4120](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4120) (`lower_elephc_phar_bzip2_archive`)
 - **Function symbol**: `lower_elephc_phar_bzip2_archive()`
 
 

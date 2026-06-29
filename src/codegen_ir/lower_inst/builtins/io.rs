@@ -2707,7 +2707,9 @@ pub(super) fn lower_stream_socket_sendto(
 pub(super) fn lower_fclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fclose", 1)?;
     let stream = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, stream)?;
     load_stream_fd_to_result(ctx, stream, "fclose")?;
+    apply_resource_release_sentinel(ctx, captured);
     let success_label = ctx.next_label("fclose_ok");
     let done_label = ctx.next_label("fclose_done");
     let user_wrapper_label = ctx.next_label("fclose_user_wrapper");
@@ -3547,7 +3549,7 @@ pub(super) fn lower_opendir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "opendir path")?;
     abi::emit_call_label(ctx.emitter, "__rt_opendir");
-    box_stream_fd_or_false_result(ctx, "opendir");
+    box_stream_fd_or_false_result_kind(ctx, "opendir", 4);
     store_if_result(ctx, inst)
 }
 
@@ -3570,7 +3572,9 @@ pub(super) fn lower_readdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 pub(super) fn lower_closedir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "closedir", 1)?;
     let handle = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, handle)?;
     load_stream_fd_to_result(ctx, handle, "closedir")?;
+    apply_resource_release_sentinel(ctx, captured);
     lower_directory_handle_dispatch(
         ctx,
         "__rt_closedir",
@@ -3618,7 +3622,7 @@ pub(super) fn lower_popen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_popen");
-    box_stream_fd_or_false_result(ctx, "popen");
+    box_stream_fd_or_false_result_kind(ctx, "popen", 3);
     store_if_result(ctx, inst)
 }
 
@@ -3626,7 +3630,9 @@ pub(super) fn lower_popen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 pub(super) fn lower_pclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "pclose", 1)?;
     let handle = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, handle)?;
     load_stream_fd_to_result(ctx, handle, "pclose")?;
+    apply_resource_release_sentinel(ctx, captured);
     if ctx.emitter.target.arch == Arch::X86_64 {
         ctx.emitter.instruction("mov rdi, rax");                                // pass the pipe descriptor to the runtime close helper
     }
@@ -8049,6 +8055,60 @@ pub(super) fn load_stream_fd_to_result(
     }
 }
 
+/// Stashes the Mixed box pointer of a resource operand on the stack so an
+/// explicit closer (`fclose`/`pclose`/`closedir`) can stamp a release sentinel
+/// into it after the handle is unboxed.
+///
+/// Returns `true` when a box was captured (Mixed/Union-typed operands, which are
+/// the only ones that participate in scope cleanup) and `false` for unboxed
+/// `Resource`-typed handles, which have no Mixed cell. The push keeps the stack
+/// 16-byte aligned across the `__rt_mixed_unbox` call performed during unboxing;
+/// the matching pop lives in `apply_resource_release_sentinel`.
+fn capture_resource_box_for_release(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+) -> Result<bool> {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if !matches!(raw_ty, PhpType::Mixed | PhpType::Union(_)) {
+        return Ok(false);
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(value, "x9")?;
+            ctx.emitter.instruction("str x9, [sp, #-16]!");                     // stash the resource Mixed box pointer across the unbox call
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(value, "r11")?;
+            ctx.emitter.instruction("sub rsp, 16");                             // reserve a 16-byte aligned slot for the stashed box pointer
+            ctx.emitter.instruction("mov QWORD PTR [rsp], r11");                // stash the resource Mixed box pointer across the unbox call
+        }
+    }
+    Ok(true)
+}
+
+/// Pops the stashed Mixed box pointer and writes the `-1` release sentinel into
+/// its low payload word so scope cleanup (`__rt_mixed_free_deep`) skips the
+/// already-closed handle — preventing a second `close`/`pclose`/`closedir` on a
+/// descriptor whose number may have been reused. A no-op when nothing was
+/// captured. Preserves the close result already in the int result register.
+fn apply_resource_release_sentinel(ctx: &mut FunctionContext<'_>, captured: bool) {
+    if !captured {
+        return;
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("ldr x9, [sp], #16");                       // restore the stashed resource Mixed box pointer
+            ctx.emitter.instruction("mov x10, #-1");                            // -1 marks the resource handle as already released
+            ctx.emitter.instruction("str x10, [x9, #8]");                       // overwrite the low payload word so scope cleanup skips it
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                // restore the stashed resource Mixed box pointer
+            ctx.emitter.instruction("add rsp, 16");                             // release the stash slot
+            ctx.emitter.instruction("mov QWORD PTR [r11 + 8], -1");             // overwrite the low payload word so scope cleanup skips it
+        }
+    }
+}
+
 /// Unboxes a Mixed stream resource or emits a fatal TypeError for non-resource values.
 fn emit_unbox_stream_or_type_error(ctx: &mut FunctionContext<'_>, function_name: &str) {
     let ok_label = ctx.next_label("stream_resource_ok");
@@ -8482,7 +8542,24 @@ fn box_stream_string_or_false_on_empty_result(
 }
 
 /// Boxes a non-negative stream descriptor as a PHP resource or false on failure.
+///
+/// The resource is tagged with scope-cleanup kind 1 (native stream fd, closed via
+/// `close()` at scope exit). Callers whose handle needs a different destructor use
+/// `box_stream_fd_or_false_result_kind` instead.
 fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &str) {
+    box_stream_fd_or_false_result_kind(ctx, label_prefix, 1);
+}
+
+/// Boxes a non-negative descriptor as a PHP resource (or false on failure) and
+/// records the scope-cleanup `kind` in the Mixed high payload word so
+/// `__rt_mixed_free_deep` dispatches the right destructor: 1 = native stream fd
+/// (`close`), 3 = `popen` pipe (`__rt_pclose`), 4 = `opendir` stream
+/// (`__rt_closedir`).
+fn box_stream_fd_or_false_result_kind(
+    ctx: &mut FunctionContext<'_>,
+    label_prefix: &str,
+    kind: u64,
+) {
     let false_label = ctx.next_label(&format!("{}_false", label_prefix));
     let done_label = ctx.next_label(&format!("{}_done", label_prefix));
     match ctx.emitter.target.arch {
@@ -8490,7 +8567,7 @@ fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &s
             ctx.emitter.instruction("cmp x0, #0");                              // test whether the stream helper returned a negative descriptor
             ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false when stream creation failed
             ctx.emitter.instruction("mov x1, x0");                              // pass the native stream fd as the Mixed low payload word
-            ctx.emitter.instruction("mov x2, #0");                              // resource Mixed payloads do not use a high word
+            ctx.emitter.instruction(&format!("mov x2, #{}", kind));             // resource-kind subtype in the Mixed high word (1=fd,3=popen,4=dir)
             ctx.emitter.instruction("mov x0, #9");                              // select runtime tag 9 for a stream resource
             abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
             ctx.emitter.instruction(&format!("b {}", done_label));              // skip false boxing after building the resource result
@@ -8505,7 +8582,7 @@ fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &s
             ctx.emitter.instruction("test rax, rax");                           // test whether the stream helper returned a negative descriptor
             ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false when stream creation failed
             ctx.emitter.instruction("mov rdi, rax");                            // pass the native stream fd as the Mixed low payload word
-            ctx.emitter.instruction("xor esi, esi");                            // resource Mixed payloads do not use a high word
+            ctx.emitter.instruction(&format!("mov esi, {}", kind));             // resource-kind subtype in the Mixed high word (1=fd,3=popen,4=dir)
             ctx.emitter.instruction("mov eax, 9");                              // select runtime tag 9 for a stream resource
             abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
             ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip false boxing after building the resource result
