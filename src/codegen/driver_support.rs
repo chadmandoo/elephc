@@ -89,11 +89,12 @@ pub fn generate_runtime_with_features_pic(
     features: RuntimeFeatures,
     pic: bool,
 ) -> String {
-    // macOS executables strip unreachable runtime helpers per-symbol: the
-    // emitter marks internal labels `.alt_entry` and a `.subsections_via_symbols`
-    // footer lets the linker's `-dead_strip` drop whole unreferenced `__rt_*`
-    // helpers as single atoms. cdylibs (pic) never strip, and Linux uses
-    // per-section `--gc-sections` instead, so both keep the monolithic object.
+    // macOS executables strip unreachable runtime helpers per-symbol: internal
+    // labels are renamed to assembler-local (`L`-prefixed) labels and a
+    // `.subsections_via_symbols` footer lets the linker's `-dead_strip` drop
+    // whole unreferenced `__rt_*` helpers as single atoms. cdylibs (pic) never
+    // strip, and Linux uses per-section `--gc-sections` instead, so both keep
+    // the monolithic object.
     let dead_strip = !pic && target.platform == crate::codegen::platform::Platform::MacOS;
     let mut emitter = if pic {
         Emitter::new_pic(target)
@@ -103,7 +104,14 @@ pub fn generate_runtime_with_features_pic(
     emitter.dead_strip = dead_strip;
     emitter.emit_text_prelude();
     runtime::emit_runtime(&mut emitter, features);
-    let mut output = emitter.output();
+    // Rename internal labels to `L`-locals in the runtime text only; the `.data`
+    // below never references them, so it is appended unchanged.
+    let internal_labels = emitter.take_internal_labels();
+    let mut output = if dead_strip {
+        crate::codegen::emit::localize_internal_labels(&emitter.output(), &internal_labels)
+    } else {
+        emitter.output()
+    };
     output.push('\n');
     output.push_str(&runtime::emit_runtime_data_fixed(heap_size, target));
     // The PIC runtime object only ever links into an ELF cdylib, where every

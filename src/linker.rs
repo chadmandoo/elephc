@@ -268,9 +268,9 @@ pub(crate) fn link(
                 Emit::Executable => {
                     cmd.args(["-e", "_main"]);
                     // The runtime object is emitted with `.subsections_via_symbols`
-                    // and `.alt_entry` internal labels, so `-dead_strip` drops
-                    // whole unreferenced `__rt_*` helpers (the macOS analogue of the
-                    // Linux `--gc-sections` path).
+                    // and `L`-prefixed (assembler-local) internal labels, so
+                    // `-dead_strip` drops whole unreferenced `__rt_*` helpers (the
+                    // macOS analogue of the Linux `--gc-sections` path).
                     cmd.arg("-dead_strip");
                 }
                 Emit::Cdylib => {
