@@ -12,18 +12,19 @@
 //!   boxed as a Mixed cell (tag 9, kind 2) exactly like `fopen` boxes a file
 //!   descriptor. `hash_update`/`hash_final`/`hash_copy` receive the already-
 //!   unboxed raw handle (the emitter uses `emit_stream_fd_arg`).
-//! - `__rt_hash_final` consumes+frees the context via `elephc_crypto_final` and
-//!   formats the digest through the shared `__rt_digest_to_string` (hex or raw).
-//! - `__rt_hash_ctx_free` is invoked by `__rt_mixed_free_deep` when an
-//!   unfinalized HashContext leaves scope, closing the leak for contexts that
-//!   are never finalized.
+//! - `__rt_hash_final` finalizes a *clone* of the context via `elephc_crypto_final`
+//!   (the original handle stays live and owned by its Mixed box) and formats the
+//!   digest through the shared `__rt_digest_to_string` (hex or raw).
+//! - `__rt_hash_ctx_free` is the single destructor: `__rt_mixed_free_deep` calls
+//!   it when the boxed HashContext (tag 9, kind 2) leaves scope, freeing both
+//!   never-finalized and already-finalized contexts exactly once.
 //! - An unknown algorithm in `hash_init` throws the same catchable `\ValueError`
 //!   as `hash()`.
-//! - Sharp edge of the resource model: reusing a context after `hash_final()`
-//!   — a second `hash_final()`, or a `hash_update()`/`hash_copy()` on an already-
-//!   finalized handle — is undefined. PHP throws "Supplied resource is not a
-//!   valid Hash Context resource"; elephc instead passes the freed handle straight
-//!   to the crate. Finalize each context exactly once.
+//! - Resource model note: reusing a context after `hash_final()` — a second
+//!   `hash_final()`, or a `hash_update()`/`hash_copy()` on an already-finalized
+//!   handle — is memory-safe (the handle is never freed by `final`), but the
+//!   result is not PHP-equivalent: PHP throws "Supplied resource is not a valid
+//!   Hash Context resource", whereas elephc keeps hashing the still-live context.
 
 use crate::codegen::abi;
 use crate::codegen::builtins::hash_crypto;
@@ -198,11 +199,12 @@ fn emit_hash_update(emitter: &mut Emitter) {
 }
 
 /// `__rt_hash_final` — in: ctx handle + binary flag (AArch64 x0=ctx, x5=binary;
-/// x86_64 rdi=ctx, r10=binary). Finalizes (and frees) the context, then formats
-/// the digest as hex or raw. Out: PHP string (AArch64 x1/x2, x86_64 rax/rdx).
+/// x86_64 rdi=ctx, r10=binary). Finalizes a clone of the context (the original
+/// stays live and owned by its Mixed box, freed at scope exit), then formats the
+/// digest as hex or raw. Out: PHP string (AArch64 x1/x2, x86_64 rax/rdx).
 fn emit_hash_final(emitter: &mut Emitter) {
     emitter.blank();
-    emitter.comment("--- runtime: hash_final (finalize + free a HashContext) ---");
+    emitter.comment("--- runtime: hash_final (finalize a HashContext; box owns/frees it) ---");
     emitter.label_global("__rt_hash_final");
     match emitter.target.arch {
         Arch::AArch64 => {

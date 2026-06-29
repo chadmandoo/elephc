@@ -95,8 +95,9 @@ echo "done\n";
     assert_eq!(out, "done\n");
 }
 
-/// Verifies that an explicitly closed stream does not crash when the scope
-/// cleanup kind-1 path calls close() on the already-closed fd (EBADF harmless).
+/// Verifies that an explicitly closed stream does not crash and is skipped by
+/// scope cleanup: `fclose()` stamps the -1 release sentinel into the Mixed box,
+/// so the kind-1 destructor does not close the descriptor a second time.
 #[test]
 fn test_stream_explicit_close_then_scope_exit() {
     let out = compile_and_run(
@@ -105,8 +106,130 @@ $f = fopen("php://temp", "w+");
 fwrite($f, "test");
 fclose($f);
 echo "ok\n";
-// $f leaves scope with a closed fd — close() again is a harmless no-op.
+// $f leaves scope with a sentinel-marked box — scope cleanup skips it.
 "#,
     );
     assert_eq!(out, "ok\n");
+}
+
+/// Verifies that a finalized HashContext can be finalized again without a
+/// crash: `elephc_crypto_final` finalizes a clone and leaves the original live,
+/// so there is no use-after-free or double-free against scope cleanup. elephc
+/// diverges from PHP here (PHP throws); both finals see the same digest.
+#[test]
+fn test_hash_context_double_final_memory_safe() {
+    let out = compile_and_run(
+        r#"<?php
+$ctx = hash_init("sha256");
+hash_update($ctx, "hello");
+$a = hash_final($ctx);
+$b = hash_final($ctx); // memory-safe: original stays live, same digest
+echo ($a === $b) ? "same\n" : "diff\n";
+"#,
+    );
+    assert_eq!(out, "same\n");
+}
+
+/// Verifies that updating a HashContext after `hash_final()` is memory-safe:
+/// the original handle is never freed by finalize, so it keeps accumulating.
+/// PHP would reject this; elephc instead hashes the still-live context.
+#[test]
+fn test_hash_context_update_after_final_memory_safe() {
+    let out = compile_and_run(
+        r#"<?php
+$ctx = hash_init("sha256");
+hash_update($ctx, "a");
+hash_final($ctx);      // finalizes a clone; original keeps "a"
+hash_update($ctx, "b");
+$got = hash_final($ctx);
+echo ($got === hash("sha256", "ab")) ? "ok\n" : "bad\n";
+"#,
+    );
+    assert_eq!(out, "ok\n");
+}
+
+/// Verifies that a `popen()` pipe never `pclose`d is auto-released at scope exit
+/// through `__rt_mixed_free_deep` tag-9 kind-3 → `__rt_pclose` (which closes the
+/// FILE* and reaps the child) without crashing.
+#[test]
+fn test_popen_auto_closed_on_scope_exit() {
+    let out = compile_and_run(
+        r#"<?php
+$p = popen("printf abc", "r");
+echo fread($p, 16);
+// No pclose() — the pipe is auto-closed and the child reaped at scope exit.
+echo "|done\n";
+"#,
+    );
+    assert_eq!(out, "abc|done\n");
+}
+
+/// Verifies that an explicitly `pclose`d pipe is skipped by scope cleanup (the
+/// release sentinel marks the box) so the child is not reaped / fd closed twice.
+#[test]
+fn test_popen_explicit_pclose_then_scope_exit() {
+    let out = compile_and_run(
+        r#"<?php
+$p = popen("printf xyz", "r");
+echo fread($p, 16);
+echo "|";
+echo pclose($p);
+echo "\n";
+// $p leaves scope sentinel-marked — scope cleanup does not pclose again.
+"#,
+    );
+    assert_eq!(out, "xyz|0\n");
+}
+
+/// Verifies that an `opendir()` stream never `closedir`d is auto-released at
+/// scope exit through tag-9 kind-4 → `__rt_closedir` without crashing.
+#[test]
+fn test_opendir_auto_closed_on_scope_exit() {
+    let out = compile_and_run(
+        r#"<?php
+mkdir("d");
+file_put_contents("d/a.txt", "x");
+$h = opendir("d");
+readdir($h);
+// No closedir() — the directory stream is auto-closed at scope exit.
+echo "done\n";
+"#,
+    );
+    assert_eq!(out, "done\n");
+}
+
+/// Verifies that an explicitly `closedir`d stream is skipped by scope cleanup
+/// (release sentinel) so `closedir` does not run twice.
+#[test]
+fn test_opendir_explicit_closedir_then_scope_exit() {
+    let out = compile_and_run(
+        r#"<?php
+mkdir("d");
+$h = opendir("d");
+closedir($h);
+echo "ok\n";
+// $h leaves scope sentinel-marked — scope cleanup does not closedir again.
+"#,
+    );
+    assert_eq!(out, "ok\n");
+}
+
+/// Verifies that closing a stream and opening another (which may reuse the same
+/// fd number) before scope exit is safe: the closed stream's box is sentinel-
+/// marked, so its scope cleanup cannot close the reused descriptor.
+#[test]
+fn test_stream_fd_reuse_after_close_is_safe() {
+    let out = compile_and_run(
+        r#"<?php
+$a = fopen("php://temp", "w+");
+fclose($a);            // $a's box is sentinel-marked
+$b = fopen("php://temp", "w+"); // may reuse $a's old fd number
+fwrite($b, "reused");
+rewind($b);
+echo fread($b, 16);
+echo "\n";
+// Both leave scope: $a is skipped (sentinel), $b is closed exactly once.
+"#,
+    );
+    assert_eq!(out, "reused\n");
 }
