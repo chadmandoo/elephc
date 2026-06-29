@@ -85,8 +85,10 @@ pub fn emit_htmlspecialchars(emitter: &mut Emitter) {
     emitter.instruction("strb w13, [x9], #1");                                  // write ';'
     emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
 
-    // -- &quot; (6 bytes: &, q, u, o, t, ;) --
+    // -- &quot; (6 bytes: &, q, u, o, t, ;) — only when the ENT double-quote bit is set --
     emitter.label("__rt_htmlsc_quot");
+    emitter.instruction("tst w3, #2");                                          // escape double quotes only when the ENT double-quote bit is set
+    emitter.instruction("b.eq __rt_htmlsc_quot_literal");                       // ENT_NOQUOTES leaves the double quote unescaped
     emitter.instruction("mov w13, #38");                                        // '&'
     emitter.instruction("strb w13, [x9], #1");                                  // write '&'
     emitter.instruction("mov w13, #113");                                       // 'q'
@@ -101,8 +103,18 @@ pub fn emit_htmlspecialchars(emitter: &mut Emitter) {
     emitter.instruction("strb w13, [x9], #1");                                  // write ';'
     emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
 
-    // -- &#039; (6 bytes: &, #, 0, 3, 9, ;) --
+    // -- ENT_NOQUOTES: store the double-quote byte unmodified --
+    emitter.label("__rt_htmlsc_quot_literal");
+    emitter.instruction("strb w12, [x9], #1");                                  // store the literal '\"' byte
+    emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
+
+    // -- apostrophe: skipped (ENT_COMPAT/ENT_NOQUOTES) else &#039; (HTML4.01) or &apos; (HTML5/XHTML/XML) --
     emitter.label("__rt_htmlsc_apos");
+    emitter.instruction("tst w3, #1");                                          // escape single quotes only when the ENT single-quote bit is set
+    emitter.instruction("b.eq __rt_htmlsc_apos_literal");                       // ENT_NOQUOTES/ENT_COMPAT leave the single quote unescaped
+    emitter.instruction("mov w14, #48");                                        // ENT_HTML5/XHTML/XML doctype mask (bits 4-5)
+    emitter.instruction("and w14, w3, w14");                                    // isolate the doctype bits from the flags in w3
+    emitter.instruction("cbnz w14, __rt_htmlsc_apos_html5");                    // non-HTML4.01 doctype -> &apos;
     emitter.instruction("mov w13, #38");                                        // '&'
     emitter.instruction("strb w13, [x9], #1");                                  // write '&'
     emitter.instruction("mov w13, #35");                                        // '#'
@@ -115,6 +127,27 @@ pub fn emit_htmlspecialchars(emitter: &mut Emitter) {
     emitter.instruction("strb w13, [x9], #1");                                  // write '9'
     emitter.instruction("mov w13, #59");                                        // ';'
     emitter.instruction("strb w13, [x9], #1");                                  // write ';'
+    emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
+
+    // -- &apos; (6 bytes: &, a, p, o, s, ;) — HTML5/XHTML/XML single-quote entity --
+    emitter.label("__rt_htmlsc_apos_html5");
+    emitter.instruction("mov w13, #38");                                        // '&'
+    emitter.instruction("strb w13, [x9], #1");                                  // write '&'
+    emitter.instruction("mov w13, #97");                                        // 'a'
+    emitter.instruction("strb w13, [x9], #1");                                  // write 'a'
+    emitter.instruction("mov w13, #112");                                       // 'p'
+    emitter.instruction("strb w13, [x9], #1");                                  // write 'p'
+    emitter.instruction("mov w13, #111");                                       // 'o'
+    emitter.instruction("strb w13, [x9], #1");                                  // write 'o'
+    emitter.instruction("mov w13, #115");                                       // 's'
+    emitter.instruction("strb w13, [x9], #1");                                  // write 's'
+    emitter.instruction("mov w13, #59");                                        // ';'
+    emitter.instruction("strb w13, [x9], #1");                                  // write ';'
+    emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
+
+    // -- ENT_COMPAT/ENT_NOQUOTES: store the single-quote byte unmodified --
+    emitter.label("__rt_htmlsc_apos_literal");
+    emitter.instruction("strb w12, [x9], #1");                                  // store the literal '\'' byte
     emitter.instruction("b __rt_htmlsc_loop");                                  // next byte
 
     // -- &lt; (4 bytes: &, l, t, ;) --
@@ -207,6 +240,8 @@ fn emit_htmlspecialchars_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after expanding one ampersand
 
     emitter.label("__rt_htmlsc_quot_linux_x86_64");
+    emitter.instruction("test rdi, 2");                                         // escape double quotes only when the ENT double-quote bit is set
+    emitter.instruction("je __rt_htmlsc_quot_literal_linux_x86_64");            // ENT_NOQUOTES leaves the double quote unescaped
     emitter.instruction("mov BYTE PTR [r11], 38");                              // write '&' as the first byte of the `&quot;` entity expansion
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the first byte of `&quot;`
     emitter.instruction("mov BYTE PTR [r11], 113");                             // write 'q' as the second byte of the `&quot;` entity expansion
@@ -221,7 +256,16 @@ fn emit_htmlspecialchars_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the final byte of `&quot;`
     emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after expanding one double quote
 
+    emitter.label("__rt_htmlsc_quot_literal_linux_x86_64");
+    emitter.instruction("mov BYTE PTR [r11], dl");                              // store the unescaped double-quote byte directly into concat storage
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after copying the ENT_NOQUOTES double quote
+    emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after leaving a double quote unescaped
+
     emitter.label("__rt_htmlsc_apos_linux_x86_64");
+    emitter.instruction("test rdi, 1");                                         // escape single quotes only when the ENT single-quote bit is set
+    emitter.instruction("je __rt_htmlsc_apos_literal_linux_x86_64");            // ENT_NOQUOTES/ENT_COMPAT leave the single quote unescaped
+    emitter.instruction("test rdi, 48");                                        // are the ENT_HTML5/XHTML/XML doctype bits set in the flags argument?
+    emitter.instruction("jne __rt_htmlsc_apos_html5_linux_x86_64");             // a non-HTML4.01 doctype emits `&apos;` rather than the numeric `&#039;`
     emitter.instruction("mov BYTE PTR [r11], 38");                              // write '&' as the first byte of the `&#039;` entity expansion
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the first byte of `&#039;`
     emitter.instruction("mov BYTE PTR [r11], 35");                              // write '#' as the second byte of the `&#039;` entity expansion
@@ -235,6 +279,26 @@ fn emit_htmlspecialchars_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov BYTE PTR [r11], 59");                              // write ';' as the terminating byte of the `&#039;` entity expansion
     emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the final byte of `&#039;`
     emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after expanding one single quote
+
+    emitter.label("__rt_htmlsc_apos_html5_linux_x86_64");
+    emitter.instruction("mov BYTE PTR [r11], 38");                              // write '&' as the first byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the first byte of `&apos;`
+    emitter.instruction("mov BYTE PTR [r11], 97");                              // write 'a' as the second byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the second byte of `&apos;`
+    emitter.instruction("mov BYTE PTR [r11], 112");                             // write 'p' as the third byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the third byte of `&apos;`
+    emitter.instruction("mov BYTE PTR [r11], 111");                             // write 'o' as the fourth byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the fourth byte of `&apos;`
+    emitter.instruction("mov BYTE PTR [r11], 115");                             // write 's' as the fifth byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the fifth byte of `&apos;`
+    emitter.instruction("mov BYTE PTR [r11], 59");                              // write ';' as the terminating byte of the `&apos;` entity expansion
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after emitting the final byte of `&apos;`
+    emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after expanding one single quote
+
+    emitter.label("__rt_htmlsc_apos_literal_linux_x86_64");
+    emitter.instruction("mov BYTE PTR [r11], dl");                              // store the unescaped single-quote byte directly into concat storage
+    emitter.instruction("add r11, 1");                                          // advance the concat-buffer destination cursor after copying the unescaped single quote
+    emitter.instruction("jmp __rt_htmlsc_loop_linux_x86_64");                   // continue escaping the remaining source bytes after leaving a single quote unescaped
 
     emitter.label("__rt_htmlsc_lt_linux_x86_64");
     emitter.instruction("mov BYTE PTR [r11], 38");                              // write '&' as the first byte of the `&lt;` entity expansion

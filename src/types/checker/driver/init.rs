@@ -53,6 +53,12 @@ impl Checker {
         constants.insert("LOCK_EX".to_string(), PhpType::Int);
         constants.insert("LOCK_UN".to_string(), PhpType::Int);
         constants.insert("LOCK_NB".to_string(), PhpType::Int);
+        for name in [
+            "ENT_QUOTES", "ENT_COMPAT", "ENT_NOQUOTES", "ENT_HTML401", "ENT_XML1",
+            "ENT_XHTML", "ENT_HTML5", "ENT_SUBSTITUTE", "ENT_IGNORE",
+        ] {
+            constants.insert(name.to_string(), PhpType::Int);
+        }
         for (name, _value) in ARRAY_INT_CONSTANTS {
             constants.insert((*name).to_string(), PhpType::Int);
         }

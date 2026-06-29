@@ -420,7 +420,7 @@ pub(super) fn check_builtin(
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Int))
         }
-        "htmlspecialchars" | "htmlentities" | "html_entity_decode" | "urlencode"
+        "html_entity_decode" | "urlencode"
         | "urldecode" | "rawurlencode" | "rawurldecode" | "base64_encode"
         | "base64_decode" => {
             if args.len() != 1 {
@@ -430,6 +430,18 @@ pub(super) fn check_builtin(
                 ));
             }
             checker.infer_type(&args[0], env)?;
+            Ok(Some(PhpType::Str))
+        }
+        "htmlspecialchars" | "htmlentities" => {
+            if args.is_empty() || args.len() > 3 {
+                return Err(CompileError::new(
+                    span,
+                    &format!("{}() takes 1 to 3 arguments", name),
+                ));
+            }
+            for arg in args {
+                checker.infer_type(arg, env)?;
+            }
             Ok(Some(PhpType::Str))
         }
         "gzcompress" | "gzuncompress" | "gzdeflate" | "gzinflate" => {

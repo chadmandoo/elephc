@@ -16,6 +16,13 @@ expect_builtin_arity_error!(
     "strlen() takes exactly 1 argument"
 );
 
+// Tests htmlspecialchars() arity error when called with four arguments (accepts 1 to 3).
+expect_builtin_arity_error!(
+    test_error_htmlspecialchars_too_many_args,
+    "<?php htmlspecialchars(\"x\", ENT_QUOTES, \"UTF-8\", true);",
+    "htmlspecialchars() takes 1 to 3 arguments"
+);
+
 // Tests intval() arity error when called with no arguments.
 expect_builtin_arity_error!(
     test_error_intval_wrong_args,
@@ -216,7 +223,7 @@ expect_builtin_arity_error!(
 expect_builtin_arity_error!(
     test_error_htmlentities_wrong_args,
     "<?php htmlentities();",
-    "htmlentities() takes exactly 1 argument"
+    "htmlentities() takes 1 to 3 arguments"
 );
 
 // Tests html_entity_decode() arity error when called with no arguments.
