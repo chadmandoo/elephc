@@ -576,4 +576,45 @@ mod tests {
             );
         }
     }
+
+    /// Verifies the full macOS AArch64 runtime still assembles once per-symbol
+    /// dead stripping is enabled. With `dead_strip` the emitter marks internal
+    /// labels `.alt_entry` and the object carries a `.subsections_via_symbols`
+    /// footer; under that mode the Mach-O assembler rejects any conditional
+    /// branch whose target is in another atom (another helper). Assembling the
+    /// all-features runtime catches every such cross-helper conditional branch
+    /// at build time rather than letting it slip into a miscompiled binary.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_macos_dead_strip_runtime_assembles() {
+        let mut emitter = Emitter::new(Target::new(Platform::MacOS, Arch::AArch64));
+        emitter.dead_strip = true;
+        emitter.emit_text_prelude();
+        emit_runtime(&mut emitter, RuntimeFeatures::all());
+        let mut asm = emitter.output();
+        asm.push_str(".subsections_via_symbols\n");
+
+        let dir = std::env::temp_dir().join(format!(
+            "elephc_deadstrip_asm_{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let asm_path = dir.join("runtime.s");
+        let obj_path = dir.join("runtime.o");
+        std::fs::write(&asm_path, &asm).expect("write asm");
+
+        let output = std::process::Command::new("as")
+            .args(["-arch", "arm64", "-o"])
+            .arg(&obj_path)
+            .arg(&asm_path)
+            .output()
+            .expect("run as");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            output.status.success(),
+            "macOS dead-strip runtime failed to assemble:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

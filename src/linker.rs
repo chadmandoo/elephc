@@ -267,6 +267,11 @@ pub(crate) fn link(
             match emit {
                 Emit::Executable => {
                     cmd.args(["-e", "_main"]);
+                    // The runtime object is emitted with `.subsections_via_symbols`
+                    // and `.alt_entry` internal labels, so `-dead_strip` drops
+                    // whole unreferenced `__rt_*` helpers (the macOS analogue of the
+                    // Linux `--gc-sections` path).
+                    cmd.arg("-dead_strip");
                 }
                 Emit::Cdylib => {
                     // `-dylib` selects shared-library output and drops the executable

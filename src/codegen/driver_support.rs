@@ -89,11 +89,18 @@ pub fn generate_runtime_with_features_pic(
     features: RuntimeFeatures,
     pic: bool,
 ) -> String {
+    // macOS executables strip unreachable runtime helpers per-symbol: the
+    // emitter marks internal labels `.alt_entry` and a `.subsections_via_symbols`
+    // footer lets the linker's `-dead_strip` drop whole unreferenced `__rt_*`
+    // helpers as single atoms. cdylibs (pic) never strip, and Linux uses
+    // per-section `--gc-sections` instead, so both keep the monolithic object.
+    let dead_strip = !pic && target.platform == crate::codegen::platform::Platform::MacOS;
     let mut emitter = if pic {
         Emitter::new_pic(target)
     } else {
         Emitter::new(target)
     };
+    emitter.dead_strip = dead_strip;
     emitter.emit_text_prelude();
     runtime::emit_runtime(&mut emitter, features);
     let mut output = emitter.output();
@@ -108,6 +115,11 @@ pub fn generate_runtime_with_features_pic(
             &output,
             &std::collections::HashSet::new(),
         );
+    }
+    // Footer that enables atom subdivision for `-dead_strip`. Emitted last so it
+    // applies to the whole runtime object (text helpers and the `.data` table).
+    if dead_strip {
+        output.push_str(".subsections_via_symbols\n");
     }
     output
 }

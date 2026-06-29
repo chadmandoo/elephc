@@ -23,6 +23,13 @@ pub struct Emitter {
     /// addressing. Required for shared-library output, where the loader cannot
     /// resolve cross-object `R_X86_64_PC32` relocations at dlopen time.
     pub pic_data_refs: bool,
+    /// When `true`, macOS runtime emission uses per-symbol dead stripping:
+    /// `label()` marks internal labels `.alt_entry` so that, under the
+    /// `.subsections_via_symbols` footer, each `__rt_*` helper stays a single
+    /// atom and the linker's `-dead_strip` can drop whole unreferenced helpers.
+    /// Only set for the macOS executable runtime object; Linux achieves the same
+    /// via per-section `--gc-sections` and cdylibs never dead-strip.
+    pub dead_strip: bool,
 }
 
 impl Emitter {
@@ -33,6 +40,7 @@ impl Emitter {
             target,
             platform: target.platform,
             pic_data_refs: false,
+            dead_strip: false,
         }
     }
 
@@ -51,7 +59,21 @@ impl Emitter {
     }
 
     /// Emits a local label (name:).
+    /// Under macOS per-symbol dead stripping (`dead_strip`), a named identifier
+    /// label is first marked `.alt_entry` so the `.subsections_via_symbols`
+    /// footer keeps it inside the enclosing helper's atom rather than starting a
+    /// new, separately strippable atom (which would also break in-helper
+    /// conditional branches). Numeric (`1:`/`2:`) and `L`-prefixed labels are
+    /// already assembler-local on Mach-O — they never start an atom — so they are
+    /// emitted as-is (`.alt_entry 1` is not even valid).
     pub fn label(&mut self, name: &str) {
+        if self.dead_strip
+            && self.platform == Platform::MacOS
+            && !name.starts_with('L')
+            && !name.bytes().all(|b| b.is_ascii_digit())
+        {
+            let _ = writeln!(self.buf, ".alt_entry {}", name);
+        }
         let _ = writeln!(self.buf, "{}:", name);
     }
 
