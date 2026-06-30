@@ -181,6 +181,20 @@ pub struct BuiltinSpec {
 inventory::collect!(BuiltinSpec);
 
 #[cfg(test)]
+mod macro_tests {
+    use crate::builtins::spec::*;
+    fn lower(_c: &mut crate::codegen_ir::context::FunctionContext, _i: &crate::ir::Instruction)
+        -> Result<(), crate::codegen_ir::CodegenIrError> { Ok(()) }
+    builtin! { name: "__macro_probe", area: Internal, params: [x: Int], returns: Int, lower: lower, summary: "probe", internal: true }
+
+    /// Verifies a builtin! declaration is collected by inventory.
+    #[test]
+    fn macro_registers_builtin() {
+        assert!(inventory::iter::<BuiltinSpec>.into_iter().any(|s| s.name == "__macro_probe"));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
