@@ -93,24 +93,14 @@ pub(super) fn check_builtin(
             }
             Ok(Some(PhpType::Union(vec![PhpType::Str, PhpType::Bool])))
         }
-        "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "ucwords" | "trim"
-        | "ltrim" | "rtrim" | "chop" | "strrev" | "str_repeat" | "str_replace"
-        | "str_ireplace" | "chr" | "addslashes" | "stripslashes" | "nl2br" | "bin2hex" => {
+        "str_replace" | "str_ireplace" | "chr" | "bin2hex" | "ucwords" => {
             let expected = match name {
-                "str_repeat" => 2,
                 "str_replace" | "str_ireplace" => 3,
                 _ => 1,
             };
             if name == "chr" {
                 if args.len() != 1 {
                     return Err(CompileError::new(span, "chr() takes exactly 1 argument"));
-                }
-            } else if matches!(name, "trim" | "ltrim" | "rtrim" | "chop") {
-                if args.is_empty() || args.len() > 2 {
-                    return Err(CompileError::new(
-                        span,
-                        &format!("{}() takes 1 or 2 arguments", name),
-                    ));
                 }
             } else if args.len() != expected {
                 return Err(CompileError::new(

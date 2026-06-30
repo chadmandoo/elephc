@@ -11,5 +11,18 @@
 //! - Pure-data builtins (no check hook) only need a `lower` fn; the `builtin!`
 //!   `returns:` field provides the declared return type.
 
+pub mod addslashes;
+pub mod chop;
+pub mod lcfirst;
+pub mod ltrim;
+pub mod nl2br;
 pub mod ord;
+pub mod rtrim;
+pub mod str_repeat;
+pub mod stripslashes;
+pub mod strrev;
+pub mod strtolower;
+pub mod strtoupper;
 pub mod substr;
+pub mod trim;
+pub mod ucfirst;

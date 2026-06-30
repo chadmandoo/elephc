@@ -416,21 +416,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_infinite" => math::lower_is_infinite(ctx, inst),
         "is_finite" => math::lower_is_finite(ctx, inst),
         "number_format" => strings::lower_number_format(ctx, inst),
-        "strtolower" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "strtolower",
-            "__rt_strtolower",
-        ),
-        "strtoupper" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "strtoupper",
-            "__rt_strtoupper",
-        ),
-        "strrev" => strings::lower_unary_string_runtime(ctx, inst, "strrev", "__rt_strrev"),
         "grapheme_strrev" => strings::lower_grapheme_strrev(ctx, inst),
-        "str_repeat" => strings::lower_str_repeat(ctx, inst),
         "substr_replace" => strings::lower_substr_replace(ctx, inst),
         "strstr" => strings::lower_strstr(ctx, inst),
         "str_replace" => strings::lower_string_replace(ctx, inst, "str_replace", "__rt_str_replace"),
@@ -441,14 +427,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "implode" => strings::lower_implode(ctx, inst),
         "str_split" => strings::lower_str_split(ctx, inst),
         "sscanf" => strings::lower_sscanf(ctx, inst),
-        "ucfirst" => strings::lower_ucfirst(ctx, inst),
-        "lcfirst" => strings::lower_lcfirst(ctx, inst),
-        "ucwords" => strings::lower_unary_string_runtime(ctx, inst, "ucwords", "__rt_ucwords"),
-        "trim" => strings::lower_trim_like(ctx, inst, "trim", "__rt_trim", "__rt_trim_mask"),
-        "ltrim" => strings::lower_trim_like(ctx, inst, "ltrim", "__rt_ltrim", "__rt_ltrim_mask"),
-        "rtrim" | "chop" => {
-            strings::lower_trim_like(ctx, inst, key.as_str(), "__rt_rtrim", "__rt_rtrim_mask")
-        }
         "strcmp" => strings::lower_binary_string_runtime(ctx, inst, "strcmp", "__rt_strcmp"),
         "strcasecmp" => {
             strings::lower_binary_string_runtime(ctx, inst, "strcasecmp", "__rt_strcasecmp")
@@ -469,19 +447,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
             "__rt_str_ends_with",
         ),
         "chr" => strings::lower_chr(ctx, inst),
-        "addslashes" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "addslashes",
-            "__rt_addslashes",
-        ),
-        "stripslashes" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "stripslashes",
-            "__rt_stripslashes",
-        ),
-        "nl2br" => strings::lower_unary_string_runtime(ctx, inst, "nl2br", "__rt_nl2br"),
+        "ucwords" => strings::lower_unary_string_runtime(ctx, inst, "ucwords", "__rt_ucwords"),
         "wordwrap" => strings::lower_wordwrap(ctx, inst),
         "bin2hex" => strings::lower_unary_string_runtime(ctx, inst, "bin2hex", "__rt_bin2hex"),
         "hex2bin" => strings::lower_unary_string_runtime(ctx, inst, "hex2bin", "__rt_hex2bin"),

@@ -73,7 +73,7 @@ pub(super) enum SprintfSpecCat {
 }
 
 /// Lowers a one-argument string builtin that directly delegates to a runtime helper.
-pub(super) fn lower_unary_string_runtime(
+pub(crate) fn lower_unary_string_runtime(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -93,7 +93,7 @@ pub(super) fn lower_grapheme_strrev(ctx: &mut FunctionContext<'_>, inst: &Instru
 }
 
 /// Lowers `ucfirst()` by copying the string and uppercasing the first ASCII byte.
-pub(super) fn lower_ucfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_ucfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "ucfirst")?;
     abi::emit_call_label(ctx.emitter, "__rt_strcopy");
     emit_first_char_case_adjust(ctx, "ucfirst", 97, 122, FirstCharAdjust::Uppercase);
@@ -101,7 +101,7 @@ pub(super) fn lower_ucfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `lcfirst()` by copying the string and lowercasing the first ASCII byte.
-pub(super) fn lower_lcfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lcfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "lcfirst")?;
     abi::emit_call_label(ctx.emitter, "__rt_strcopy");
     emit_first_char_case_adjust(ctx, "lcfirst", 65, 90, FirstCharAdjust::Lowercase);
@@ -109,7 +109,7 @@ pub(super) fn lower_lcfirst(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `trim()`/`ltrim()`/`rtrim()`/`chop()` for default and explicit masks.
-pub(super) fn lower_trim_like(
+pub(crate) fn lower_trim_like(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -743,7 +743,7 @@ pub(super) fn lower_substr_replace(ctx: &mut FunctionContext<'_>, inst: &Instruc
 }
 
 /// Lowers `str_repeat(string, times)` through the shared runtime helper.
-pub(super) fn lower_str_repeat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_str_repeat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() != 2 {
         return Err(CodegenIrError::invalid_module(format!(
             "str_repeat expected 2 args, got {}",
