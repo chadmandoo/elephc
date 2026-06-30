@@ -20,7 +20,6 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 ///
 /// Dispatches on `name` to validate the call and infer the return `PhpType`.
 /// Calls `checker.infer_type()` on each argument to propagate type constraints.
-/// The `hash_init` arm records a library requirement for the elephc-crypto bridge.
 ///
 /// Returns `Ok(Some(PhpType))` with the inferred return type, `Ok(None)` for unknown
 /// builtins (caller will fall through to other handlers), or `Err(CompileError)` on
@@ -55,18 +54,6 @@ pub(super) fn check_builtin(
             }
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Int))
-        }
-        "hash_init" => {
-            // HASH_HMAC streaming mode (flags/key) is not supported; use hash_hmac().
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Mixed))
         }
         _ => Ok(None),
     }

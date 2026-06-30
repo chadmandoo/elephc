@@ -263,7 +263,7 @@ pub(crate) fn lower_hash_algos(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `hash_init(algo)` and returns a boxed HashContext resource.
-pub(super) fn lower_hash_init(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_init(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "hash_init", 1)?;
     load_string_arg_to_regs(ctx, inst, 0, "hash_init", string_ptr_reg(ctx), string_len_reg(ctx))?;
     crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(

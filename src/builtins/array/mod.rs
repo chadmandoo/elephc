@@ -19,6 +19,8 @@ pub mod array_combine;
 pub mod array_flip;
 pub mod array_is_list;
 pub mod array_keys;
+pub mod array_merge;
+pub mod array_merge_recursive;
 pub mod array_pad;
 pub mod array_reverse;
 pub mod array_slice;

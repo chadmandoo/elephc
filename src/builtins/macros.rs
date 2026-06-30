@@ -18,8 +18,8 @@
 //! - A trailing comma after the last field is optional.
 //!
 //! Canonical field order:
-//!   name, area, params, variadic?, max_args?, returns, by_ref_return?, check?, lower,
-//!   summary, examples?, php_manual?, deprecation?, internal?
+//!   name, area, params, variadic?, min_args?, max_args?, arity_error?, returns, by_ref_return?,
+//!   check?, lower, summary, examples?, php_manual?, deprecation?, internal?
 //!
 //! Example:
 //! ```ignore
@@ -37,11 +37,14 @@
 /// Registers a PHP builtin descriptor into the `inventory`-based registry.
 ///
 /// Fields must appear in canonical order (optional fields may be omitted):
-/// `name`, `area`, `params`, `variadic`?, `max_args`?, `returns`, `by_ref_return`?,
-/// `check`?, `lower`, `summary`, `examples`?, `php_manual`?, `deprecation`?, `internal`?
+/// `name`, `area`, `params`, `variadic`?, `min_args`?, `max_args`?, `arity_error`?,
+/// `returns`, `by_ref_return`?, `check`?, `lower`, `summary`, `examples`?, `php_manual`?,
+/// `deprecation`?, `internal`?
 ///
 /// `max_args` (optional `usize`) caps the maximum argument count enforced by the
 /// registry's `check_arity` only; it does not affect `function_sig` or the parity gate.
+/// `min_args` (optional `usize`) raises the enforced minimum in `check_arity` only.
+/// `arity_error` (optional `&'static str`) overrides the standard arity error message.
 ///
 /// A trailing comma after the last field is optional.
 ///
@@ -59,7 +62,9 @@ macro_rules! builtin {
         area: $area:ident,
         params: [ $($pname:tt : $pty:ident $(= $pdefault:expr)?),* $(,)? ],
         $(variadic: $variadic:expr,)?
+        $(min_args: $min_args:expr,)?
         $(max_args: $max_args:expr,)?
+        $(arity_error: $arity_error:expr,)?
         returns: $returns:ident,
         $(by_ref_return: $by_ref_return:expr,)?
         $(check: $check:expr,)?
@@ -90,6 +95,8 @@ macro_rules! builtin {
                 },
                 variadic: builtin!(@opt_str $($variadic)?),
                 max_args: builtin!(@opt_usize $($max_args)?),
+                min_args: builtin!(@opt_usize $($min_args)?),
+                arity_error: builtin!(@opt_str $($arity_error)?),
                 returns: $crate::builtins::spec::TypeSpec::$returns,
                 by_ref_return: builtin!(@opt_bool $($by_ref_return)?),
                 check: builtin!(@opt_fn $($check)?),

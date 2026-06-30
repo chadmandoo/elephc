@@ -244,6 +244,11 @@ pub fn check_arity(name: &str, arg_count: usize, span: Span) -> Result<(), Compi
         Some(bounds) => bounds,
         None => return Ok(()),
     };
+    // Apply the `min_args` override (if any) to the minimum only.
+    let min = match lookup(name).and_then(|def| def.spec.min_args) {
+        Some(raised) => raised,
+        None => min,
+    };
     // Apply the `max_args` override (if any) to the maximum only. The minimum stays
     // param-derived; the override exists to tighten the accepted maximum for builtins
     // whose legacy CHECK arm was stricter than their declared (golden) signature.
@@ -259,6 +264,12 @@ pub fn check_arity(name: &str, arg_count: usize, span: Span) -> Result<(), Compi
 
     if in_range {
         return Ok(());
+    }
+
+    // Use a custom verbatim message if the spec provides one; otherwise derive
+    // the standard "<name>() takes …" phrasing from the enforced arity bounds.
+    if let Some(msg) = lookup(name).and_then(|def| def.spec.arity_error) {
+        return Err(CompileError::new(span, msg));
     }
 
     let msg = match (min, max) {
@@ -329,6 +340,31 @@ mod tests {
         returns: Int,
         lower: noop_lower,
         summary: "registry capped-arity probe",
+        internal: true,
+    }
+
+    builtin! {
+        name: "__registry_probe_raised_min",
+        area: Internal,
+        params: [],
+        variadic: "__registry_arrays",
+        min_args: 2,
+        returns: Mixed,
+        lower: noop_lower,
+        summary: "registry raised-min probe",
+        internal: true,
+    }
+
+    builtin! {
+        name: "__registry_probe_arity_error",
+        area: Internal,
+        params: [algo: Str, flags: Int = DefaultSpec::Int(0)],
+        min_args: 1,
+        max_args: 1,
+        arity_error: "custom arity error message for probe",
+        returns: Mixed,
+        lower: noop_lower,
+        summary: "registry arity_error probe",
         internal: true,
     }
 
@@ -422,6 +458,50 @@ mod tests {
         );
         // A call within the cap (2 args) is accepted.
         assert!(check_arity("__registry_probe_capped", 2, crate::span::Span::dummy()).is_ok());
+    }
+
+    /// Verifies `min_args` raises the enforced minimum above the param-derived count,
+    /// and `arity_error` overrides the standard message. Both affect ONLY `check_arity`;
+    /// `function_sig` keeps the full param-derived shape unaffected.
+    #[test]
+    fn min_args_and_arity_error_affect_only_check_arity() {
+        // __registry_probe_raised_min: variadic (min=0 param-derived), min_args=2.
+        // Calling with 1 arg is below the raised minimum → arity error.
+        let err = check_arity("__registry_probe_raised_min", 1, crate::span::Span::dummy())
+            .expect_err("1 arg must be below the raised min_args=2");
+        assert!(
+            err.message.contains("__registry_probe_raised_min() takes at least 2 arguments"),
+            "raised-min error mismatch: {}",
+            err.message,
+        );
+        // 2 args passes.
+        assert!(check_arity("__registry_probe_raised_min", 2, crate::span::Span::dummy()).is_ok());
+        // function_sig is unaffected: variadic, 1 param (the variadic param).
+        let sig = function_sig("__registry_probe_raised_min").expect("probe registered");
+        assert!(sig.variadic.is_some(), "function_sig must show variadic unchanged");
+
+        // __registry_probe_arity_error: params [algo, flags=0], min_args=1, max_args=1.
+        // Calling with 0 args → arity error using the custom message.
+        let err = check_arity("__registry_probe_arity_error", 0, crate::span::Span::dummy())
+            .expect_err("0 args must trigger the custom arity error");
+        assert_eq!(
+            err.message, "custom arity error message for probe",
+            "arity_error message mismatch: {}",
+            err.message,
+        );
+        // Calling with 2 args also triggers the custom error (exceeds max_args=1).
+        let err = check_arity("__registry_probe_arity_error", 2, crate::span::Span::dummy())
+            .expect_err("2 args must exceed max_args=1");
+        assert_eq!(
+            err.message, "custom arity error message for probe",
+            "arity_error must be used for all mismatches: {}",
+            err.message,
+        );
+        // 1 arg is in range.
+        assert!(check_arity("__registry_probe_arity_error", 1, crate::span::Span::dummy()).is_ok());
+        // function_sig is unaffected: 2 params (algo + flags).
+        let sig = function_sig("__registry_probe_arity_error").expect("probe registered");
+        assert_eq!(sig.params.len(), 2, "function_sig must report 2 params unchanged");
     }
 
     /// Verifies arity_bounds for a fixed-arity builtin with one optional param.

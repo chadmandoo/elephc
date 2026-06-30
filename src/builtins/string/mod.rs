@@ -34,6 +34,7 @@ pub mod hash_copy;
 pub mod hash_equals;
 pub mod hash_final;
 pub mod hash_hmac;
+pub mod hash_init;
 pub mod hash_update;
 pub mod hex2bin;
 pub mod html_entity_decode;

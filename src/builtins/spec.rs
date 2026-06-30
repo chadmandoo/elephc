@@ -165,6 +165,20 @@ pub struct BuiltinSpec {
     /// preserve a migrated builtin whose legacy CHECK arm enforced a tighter arity
     /// than its declared (golden) signature allowed.
     pub max_args: Option<usize>,
+    /// An optional override for the minimum argument count enforced by the
+    /// registry's `check_arity`. When `Some(n)`, `check_arity` rejects calls
+    /// with fewer than `n` arguments even though the declared parameter list
+    /// would otherwise permit fewer (e.g. a variadic golden with min=0 but the
+    /// legacy CHECK arm required ≥2). This affects ONLY `check_arity`; it does
+    /// not change `function_sig`, `arity_bounds`, or the parity gate.
+    pub min_args: Option<usize>,
+    /// A verbatim error message used by `check_arity` instead of the standard
+    /// derived `"<name>() takes …"` phrasing when an arity mismatch is detected.
+    /// When `None`, `check_arity` uses the standard derived message.
+    /// Affects ONLY `check_arity`; `function_sig`, `arity_bounds`, and the parity
+    /// gate are unaffected.
+    pub arity_error: Option<&'static str>,
+
     /// The PHP-level return type.
     pub returns: TypeSpec,
     /// Whether the function returns by reference.
@@ -213,7 +227,8 @@ mod tests {
         const P: &[ParamSpec] = &[ParamSpec { name: "string", ty: TypeSpec::Str, default: None, by_ref: false }];
         const S: BuiltinSpec = BuiltinSpec {
             name: "strlen", area: Area::String, params: P, variadic: None,
-            max_args: None, returns: TypeSpec::Int, by_ref_return: false, check: None,
+            max_args: None, min_args: None, arity_error: None,
+            returns: TypeSpec::Int, by_ref_return: false, check: None,
             lower: noop_lower, summary: "len", examples: &[], php_manual: None,
             deprecation: None, internal: false,
         };

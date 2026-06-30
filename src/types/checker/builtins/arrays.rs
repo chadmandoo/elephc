@@ -22,12 +22,13 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 /// supported array function (count, array_pop, in_array, sort,
 /// rsort, shuffle, natsort, natcasesort, asort, arsort, ksort, krsort, isset, array_push,
 /// array_shift, array_sum, array_product, array_rand,
-/// array_key_exists, array_search, array_merge, array_diff, array_intersect, array_diff_key,
+/// array_key_exists, array_search, array_diff, array_intersect, array_diff_key,
 /// array_intersect_key, array_unshift, array_fill_keys, array_fill,
 /// array_splice, range). Builtins migrated to the registry (e.g. array_keys,
 /// array_values, array_flip, array_reverse, array_unique, array_slice, array_pad,
-/// array_combine, array_chunk, array_column, array_is_list) are handled by their
-/// `src/builtins/array/` homes before this dispatcher runs.
+/// array_combine, array_chunk, array_column, array_is_list, array_merge,
+/// array_merge_recursive) are handled by their `src/builtins/array/` homes before
+/// this dispatcher runs.
 ///
 /// Returns `Ok(Some(PhpType))` with the inferred return type, `Ok(None)` for unknown
 /// builtins (deferred to caller), or `Err(CompileError)` on arity/type mismatch.
@@ -248,8 +249,7 @@ pub(super) fn check_builtin(
                 _ => Ok(Some(PhpType::Union(vec![PhpType::Int, PhpType::Bool]))),
             }
         }
-        "array_merge" | "array_diff" | "array_intersect" | "array_diff_key"
-        | "array_intersect_key" => {
+        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
             if args.len() != 2 {
                 return Err(CompileError::new(
                     span,
@@ -257,18 +257,14 @@ pub(super) fn check_builtin(
                 ));
             }
             let ty1 = checker.infer_type(&args[0], env)?;
-            let ty2 = checker.infer_type(&args[1], env)?;
+            checker.infer_type(&args[1], env)?;
             if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. }) {
                 return Err(CompileError::new(
                     span,
                     &format!("{}() first argument must be array", name),
                 ));
             }
-            if name == "array_merge" {
-                Ok(Some(array_merge_return_type(ty1, ty2)))
-            } else {
-                Ok(Some(ty1))
-            }
+            Ok(Some(ty1))
         }
         "array_replace" | "array_replace_recursive" => {
             if args.len() != 2 {
@@ -315,31 +311,6 @@ pub(super) fn check_builtin(
                 ));
             }
             Ok(Some(PhpType::two_input_hash_result(&ty1, &ty2)))
-        }
-        "array_merge_recursive" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    "array_merge_recursive() takes exactly 2 arguments",
-                ));
-            }
-            let ty1 = checker.infer_type(&args[0], env)?;
-            let ty2 = checker.infer_type(&args[1], env)?;
-            let accepted = |t: &PhpType| {
-                matches!(t, PhpType::AssocArray { .. }) || t.is_scalar_indexed_array()
-            };
-            if !accepted(&ty1) || !accepted(&ty2) {
-                return Err(CompileError::new(
-                    span,
-                    "array_merge_recursive() arguments must be associative arrays or indexed arrays of scalars",
-                ));
-            }
-            // Scalar collisions combine into lists, so the result value type is always Mixed; the
-            // key widens to Mixed when the two inputs disagree.
-            Ok(Some(PhpType::AssocArray {
-                key: Box::new(PhpType::widen(ty1.hash_key_type(), ty2.hash_key_type())),
-                value: Box::new(PhpType::Mixed),
-            }))
         }
         "array_multisort" => {
             if args.len() != 2 {
@@ -450,36 +421,6 @@ pub(super) fn check_builtin(
         }
         _ => Ok(None),
     }
-}
-
-/// Infers the static return type for `array_merge()`.
-///
-/// Empty indexed arrays carry `Array<Void>` in the checker; when the left operand is empty,
-/// the merged result should use the right operand's element shape instead of preserving
-/// the left operand's void element type.
-fn array_merge_return_type(first: PhpType, second: PhpType) -> PhpType {
-    match first {
-        PhpType::Array(elem) if is_empty_array_element_type(elem.as_ref()) => match second {
-            PhpType::Array(right) if is_scalar_merge_element_type(right.as_ref()) => {
-                PhpType::Array(right)
-            }
-            _ => PhpType::Array(elem),
-        },
-        other => other,
-    }
-}
-
-/// Returns true for the element sentinel used by statically empty indexed arrays.
-fn is_empty_array_element_type(ty: &PhpType) -> bool {
-    matches!(ty.codegen_repr(), PhpType::Void)
-}
-
-/// Returns true for element types copied safely by the scalar merge runtime helper.
-fn is_scalar_merge_element_type(ty: &PhpType) -> bool {
-    matches!(
-        ty.codegen_repr(),
-        PhpType::Int | PhpType::Bool | PhpType::Float | PhpType::Callable | PhpType::Void
-    )
 }
 
 /// Provides the Union member is countable array helper used by the arrays module.

@@ -847,7 +847,7 @@ pub(super) fn lower_array_walk(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `array_merge()` for two compatible indexed arrays with 8-byte payload slots.
-pub(super) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_merge", 2)?;
     let first = expect_operand(inst, 0)?;
     let second = expect_operand(inst, 1)?;
@@ -1363,7 +1363,7 @@ pub(super) fn lower_array_intersect_assoc(
 }
 
 /// Lowers `array_merge_recursive()` (recursive merge with scalar collisions combined into lists).
-pub(super) fn lower_array_merge_recursive(
+pub(crate) fn lower_array_merge_recursive(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
