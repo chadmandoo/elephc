@@ -871,7 +871,7 @@ pub(crate) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instructio
 }
 
 /// Lowers `array_diff()` for two compatible indexed arrays with pointer-sized payload slots.
-pub(super) fn lower_array_diff(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_diff(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_set_op(
         ctx,
         inst,
@@ -882,7 +882,7 @@ pub(super) fn lower_array_diff(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `array_intersect()` for two compatible indexed arrays with pointer-sized payload slots.
-pub(super) fn lower_array_intersect(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_intersect(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_set_op(
         ctx,
         inst,
@@ -893,12 +893,12 @@ pub(super) fn lower_array_intersect(ctx: &mut FunctionContext<'_>, inst: &Instru
 }
 
 /// Lowers `array_diff_key()` for two associative arrays by filtering first-operand keys.
-pub(super) fn lower_array_diff_key(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_diff_key(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_assoc_array_key_set_op(ctx, inst, "array_diff_key", "__rt_array_diff_key")
 }
 
 /// Lowers `array_intersect_key()` for two associative arrays by keeping shared first-operand keys.
-pub(super) fn lower_array_intersect_key(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_intersect_key(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_assoc_array_key_set_op(ctx, inst, "array_intersect_key", "__rt_array_intersect_key")
 }
 
@@ -1325,12 +1325,12 @@ fn lower_two_hash_arg_builtin(
 }
 
 /// Lowers `array_replace()` (right-wins hash merge of two hashes).
-pub(super) fn lower_array_replace(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_replace(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_two_hash_arg_builtin(ctx, inst, "array_replace", "__rt_array_replace", None)
 }
 
 /// Lowers `array_replace_recursive()` (recursive right-wins hash merge).
-pub(super) fn lower_array_replace_recursive(
+pub(crate) fn lower_array_replace_recursive(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1344,12 +1344,12 @@ pub(super) fn lower_array_replace_recursive(
 }
 
 /// Lowers `array_diff_assoc()` via the shared associative diff/intersect helper (mode 0 = diff).
-pub(super) fn lower_array_diff_assoc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_diff_assoc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_two_hash_arg_builtin(ctx, inst, "array_diff_assoc", "__rt_assoc_diff_intersect", Some(0))
 }
 
 /// Lowers `array_intersect_assoc()` via the shared associative diff/intersect helper (mode 1 = intersect).
-pub(super) fn lower_array_intersect_assoc(
+pub(crate) fn lower_array_intersect_assoc(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {

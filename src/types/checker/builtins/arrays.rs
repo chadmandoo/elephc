@@ -22,12 +22,13 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 /// supported array function (count, array_pop, in_array, sort,
 /// rsort, shuffle, natsort, natcasesort, asort, arsort, ksort, krsort, isset, array_push,
 /// array_shift, array_sum, array_product, array_rand,
-/// array_key_exists, array_search, array_diff, array_intersect, array_diff_key,
-/// array_intersect_key, array_unshift, array_fill_keys, array_fill,
+/// array_key_exists, array_search, array_unshift, array_fill_keys, array_fill,
 /// array_splice, range). Builtins migrated to the registry (e.g. array_keys,
 /// array_values, array_flip, array_reverse, array_unique, array_slice, array_pad,
 /// array_combine, array_chunk, array_column, array_is_list, array_merge,
-/// array_merge_recursive) are handled by their `src/builtins/array/` homes before
+/// array_merge_recursive, array_diff, array_intersect, array_diff_key,
+/// array_intersect_key, array_diff_assoc, array_intersect_assoc, array_replace,
+/// array_replace_recursive) are handled by their `src/builtins/array/` homes before
 /// this dispatcher runs.
 ///
 /// Returns `Ok(Some(PhpType))` with the inferred return type, `Ok(None)` for unknown
@@ -248,69 +249,6 @@ pub(super) fn check_builtin(
                 }
                 _ => Ok(Some(PhpType::Union(vec![PhpType::Int, PhpType::Bool]))),
             }
-        }
-        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 2 arguments", name),
-                ));
-            }
-            let ty1 = checker.infer_type(&args[0], env)?;
-            checker.infer_type(&args[1], env)?;
-            if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. }) {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() first argument must be array", name),
-                ));
-            }
-            Ok(Some(ty1))
-        }
-        "array_replace" | "array_replace_recursive" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 2 arguments", name),
-                ));
-            }
-            let ty1 = checker.infer_type(&args[0], env)?;
-            let ty2 = checker.infer_type(&args[1], env)?;
-            let accepted = |t: &PhpType| {
-                matches!(t, PhpType::AssocArray { .. }) || t.is_scalar_indexed_array()
-            };
-            if !accepted(&ty1) || !accepted(&ty2) {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "{}() arguments must be associative arrays or indexed arrays of scalars",
-                        name
-                    ),
-                ));
-            }
-            Ok(Some(PhpType::two_input_hash_result(&ty1, &ty2)))
-        }
-        "array_diff_assoc" | "array_intersect_assoc" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 2 arguments", name),
-                ));
-            }
-            let ty1 = checker.infer_type(&args[0], env)?;
-            let ty2 = checker.infer_type(&args[1], env)?;
-            let accepted = |t: &PhpType| {
-                matches!(t, PhpType::AssocArray { .. }) || t.is_scalar_indexed_array()
-            };
-            if !accepted(&ty1) || !accepted(&ty2) {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "{}() arguments must be associative arrays or indexed arrays of scalars",
-                        name
-                    ),
-                ));
-            }
-            Ok(Some(PhpType::two_input_hash_result(&ty1, &ty2)))
         }
         "array_multisort" => {
             if args.len() != 2 {
