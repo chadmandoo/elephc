@@ -20,7 +20,7 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 ///
 /// Dispatches on `name` to validate the call and infer the return `PhpType`.
 /// Calls `checker.infer_type()` on each argument to propagate type constraints.
-/// For cryptographic builtins (`hash`, `md5`, `sha1`), records a Linux library requirement.
+/// The `hash_init` arm records a library requirement for the elephc-crypto bridge.
 ///
 /// Returns `Ok(Some(PhpType))` with the inferred return type, `Ok(None)` for unknown
 /// builtins (caller will fall through to other handlers), or `Err(CompileError)` on
@@ -170,51 +170,6 @@ pub(super) fn check_builtin(
                 PhpType::Int
             }))
         }
-        "hash" => {
-            if args.len() < 2 || args.len() > 3 {
-                return Err(CompileError::new(span, "hash() takes 2 or 3 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // hash() routes through the elephc-crypto staticlib (full algorithm
-            // set, raw $binary output, catchable ValueError) on every target.
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Str))
-        }
-        "hash_hmac" => {
-            if args.len() < 3 || args.len() > 4 {
-                return Err(CompileError::new(span, "hash_hmac() takes 3 or 4 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // hash_hmac() routes through the elephc-crypto staticlib's
-            // elephc_crypto_hmac entry point (raw $binary output, catchable
-            // ValueError for unknown algo or non-crypto checksum) on every target.
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Str))
-        }
-        "hash_equals" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    "hash_equals() takes exactly 2 arguments",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // Pure timing-safe byte comparison — no crypto library required.
-            Ok(Some(PhpType::Bool))
-        }
-        "hash_algos" => {
-            if !args.is_empty() {
-                return Err(CompileError::new(span, "hash_algos() takes no arguments"));
-            }
-            // Returns the supported-algorithm name list; pure, no crypto library.
-            Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
-        }
         "hash_init" => {
             // HASH_HMAC streaming mode (flags/key) is not supported; use hash_hmac().
             if args.len() != 1 {
@@ -222,34 +177,6 @@ pub(super) fn check_builtin(
                     span,
                     "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
                 ));
-            }
-            checker.infer_type(&args[0], env)?;
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Mixed))
-        }
-        "hash_update" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(span, "hash_update() takes exactly 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Bool))
-        }
-        "hash_final" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(span, "hash_final() takes 1 or 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Str))
-        }
-        "hash_copy" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "hash_copy() takes exactly 1 argument"));
             }
             checker.infer_type(&args[0], env)?;
             checker.require_builtin_library("elephc_crypto");
@@ -263,34 +190,6 @@ pub(super) fn check_builtin(
                 checker.infer_type(arg, env)?;
             }
             Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
-        }
-        "md5" | "sha1" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes 1 or 2 arguments", name),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // md5()/sha1() route through the elephc-crypto staticlib (same path as
-            // hash()), so they honor the $binary flag and no longer depend on the
-            // system crypto library.
-            checker.require_builtin_library("elephc_crypto");
-            Ok(Some(PhpType::Str))
-        }
-        "crc32" => {
-            // crc32() is a pure table-free computation in __rt_crc32; unlike the
-            // md5/sha1 digests it needs no system crypto library and returns int.
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "crc32() takes exactly 1 argument",
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Int))
         }
         "gzcompress" | "gzuncompress" | "gzdeflate" | "gzinflate" => {
             if args.is_empty() || args.len() > 2 {

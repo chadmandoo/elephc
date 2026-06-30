@@ -206,7 +206,7 @@ pub(crate) fn lower_implode(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `hash(algo, data, binary?)` through the shared runtime digest dispatcher.
-pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() < 2 || inst.operands.len() > 3 {
         return Err(CodegenIrError::invalid_module(format!(
             "hash expected 2 or 3 args, got {}",
@@ -225,7 +225,7 @@ pub(super) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 }
 
 /// Lowers `hash_hmac(algo, data, key, binary?)` through the shared HMAC runtime dispatcher.
-pub(super) fn lower_hash_hmac(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_hmac(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() < 3 || inst.operands.len() > 4 {
         return Err(CodegenIrError::invalid_module(format!(
             "hash_hmac expected 3 or 4 args, got {}",
@@ -244,14 +244,14 @@ pub(super) fn lower_hash_hmac(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `hash_equals(known, user)` through the timing-safe runtime compare helper.
-pub(super) fn lower_hash_equals(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_equals(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_binary_string_args(ctx, inst, "hash_equals")?;
     abi::emit_call_label(ctx.emitter, "__rt_hash_equals");
     store_if_result(ctx, inst)
 }
 
 /// Lowers `hash_algos()` through the runtime algorithm-list builder.
-pub(super) fn lower_hash_algos(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_algos(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if !inst.operands.is_empty() {
         return Err(CodegenIrError::invalid_module(format!(
             "hash_algos expected 0 args, got {}",
@@ -274,7 +274,7 @@ pub(super) fn lower_hash_init(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `hash_update(context, data)` through the incremental hash runtime helper.
-pub(super) fn lower_hash_update(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_update(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "hash_update", 2)?;
     let context = expect_operand(inst, 0)?;
     super::io::load_stream_fd_to_result(ctx, context, "hash_update")?;
@@ -299,7 +299,7 @@ pub(super) fn lower_hash_update(ctx: &mut FunctionContext<'_>, inst: &Instructio
 }
 
 /// Lowers `hash_final(context, binary?)` through the incremental hash finalizer.
-pub(super) fn lower_hash_final(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_final(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.is_empty() || inst.operands.len() > 2 {
         return Err(CodegenIrError::invalid_module(format!(
             "hash_final expected 1 or 2 args, got {}",
@@ -330,7 +330,7 @@ pub(super) fn lower_hash_final(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `hash_copy(context)` through the incremental hash clone helper.
-pub(super) fn lower_hash_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "hash_copy", 1)?;
     let context = expect_operand(inst, 0)?;
     super::io::load_stream_fd_to_result(ctx, context, "hash_copy")?;
@@ -345,19 +345,19 @@ pub(super) fn lower_hash_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `crc32(string)` through the shared checksum runtime helper.
-pub(super) fn lower_crc32(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_crc32(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "crc32")?;
     abi::emit_call_label(ctx.emitter, "__rt_crc32");
     store_if_result(ctx, inst)
 }
 
 /// Lowers `md5(data, binary?)` through the shared crypto-backed runtime helper.
-pub(super) fn lower_md5(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_md5(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_fixed_hash(ctx, inst, "md5", "__rt_md5")
 }
 
 /// Lowers `sha1(data, binary?)` through the shared crypto-backed runtime helper.
-pub(super) fn lower_sha1(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_sha1(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_fixed_hash(ctx, inst, "sha1", "__rt_sha1")
 }
 
