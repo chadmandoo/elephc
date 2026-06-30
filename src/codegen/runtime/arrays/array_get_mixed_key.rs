@@ -48,7 +48,7 @@ pub fn emit_array_get_mixed_key(emitter: &mut Emitter) {
     emitter.instruction("and x9, x9, #0xff");                                   // isolate the low byte (kind tag)
     emitter.instruction("cmp x9, #3");                                           // kind 3 = hash storage?
     emitter.instruction("b.eq __rt_array_get_mixed_key_hash");                   // route hash-storage arrays through hash_get
-    emitter.instruction("cmp x9, #4");                                          // kind 4 = indexed storage?
+    emitter.instruction("cmp x9, #2");                                          // kind 2 = indexed storage?
     emitter.instruction("b.ne __rt_array_get_mixed_key_null");                   // unknown kind → null
 
     // -- indexed storage: dispatch on key tag --
@@ -176,7 +176,7 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("and r9, 0xff");                                        // isolate the low byte (kind tag)
     emitter.instruction("cmp r9, 3");                                           // kind 3 = hash storage?
     emitter.instruction("je __rt_array_get_mixed_key_hash");                    // route hash-storage arrays through hash_get
-    emitter.instruction("cmp r9, 4");                                           // kind 4 = indexed storage?
+    emitter.instruction("cmp r9, 2");                                           // kind 2 = indexed storage?
     emitter.instruction("jne __rt_array_get_mixed_key_null");                   // unknown kind → null
 
     // -- indexed storage: dispatch on key tag --
@@ -202,9 +202,9 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("je __rt_array_get_mixed_key_indexed_string");           // string slots need a 16-byte load before boxing
     emitter.instruction("cmp r13, 8");                                          // do indexed slots represent null payloads?
     emitter.instruction("je __rt_array_get_mixed_key_indexed_null");             // null slots have no payload to read
-    emitter.instruction("mov rsi, QWORD PTR [r10 + r12 * 8]");                  // load scalar or pointer payload from the typed indexed slot
-    emitter.instruction("xor rdx, rdx");                                        // typed indexed slots use one payload word except strings
-    emitter.instruction("mov rdi, r13");                                        // rdi = runtime value_type tag for the boxed result
+    emitter.instruction("mov rdi, QWORD PTR [r10 + r12 * 8]");                  // load scalar or pointer payload from the typed indexed slot
+    emitter.instruction("xor rsi, rsi");                                        // typed indexed slots use one payload word except strings
+    emitter.instruction("mov rax, r13");                                        // rax = runtime value_type tag for the boxed result
     emitter.instruction("call __rt_mixed_from_value");                          // box the typed indexed-array element into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
@@ -222,18 +222,18 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_array_get_mixed_key_indexed_string");
     emitter.instruction("shl r12, 4");                                          // convert the element index to a 16-byte string slot offset
     emitter.instruction("add r10, r12");                                        // r10 = address of the selected string slot
-    emitter.instruction("mov rsi, QWORD PTR [r10]");                            // load string pointer from the selected slot
-    emitter.instruction("mov rdx, QWORD PTR [r10 + 8]");                        // load string length from the selected slot
-    emitter.instruction("mov rdi, 1");                                          // rdi = string runtime value_type tag
+    emitter.instruction("mov rdi, QWORD PTR [r10]");                            // load string pointer from the selected slot
+    emitter.instruction("mov rsi, QWORD PTR [r10 + 8]");                        // load string length from the selected slot
+    emitter.instruction("mov rax, 1");                                          // rax = string runtime value_type tag
     emitter.instruction("call __rt_mixed_from_value");                          // box the string indexed-array element into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
     emitter.instruction("ret");                                                 // return Mixed* in rax
 
     emitter.label("__rt_array_get_mixed_key_indexed_null");
-    emitter.instruction("mov rdi, 8");                                          // rdi = null runtime value_type tag
-    emitter.instruction("xor rsi, rsi");                                        // value_lo = 0 for null
-    emitter.instruction("xor rdx, rdx");                                        // value_hi = 0 for null
+    emitter.instruction("mov rax, 8");                                          // rax = null runtime value_type tag
+    emitter.instruction("xor rdi, rdi");                                        // value_lo = 0 for null
+    emitter.instruction("xor rsi, rsi");                                        // value_hi = 0 for null
     emitter.instruction("call __rt_mixed_from_value");                          // box the null indexed-array element into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
@@ -263,7 +263,9 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
     emitter.instruction("ret");                                                 // return Mixed* in rax
     emitter.label("__rt_array_get_mixed_key_hash_box");
-    emitter.instruction("mov rdi, rcx");                                        // rdi = value_tag (mixed_from_value first arg)
+    emitter.instruction("mov rax, rcx");                                        // rax = value_tag (mixed_from_value first arg)
+    emitter.instruction("mov rdi, rsi");                                        // rdi = value_lo from hash_get
+    emitter.instruction("mov rsi, rdx");                                        // rsi = value_hi from hash_get
     emitter.instruction("call __rt_mixed_from_value");                          // box the hash entry into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
@@ -271,9 +273,9 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
 
     // -- return Mixed(null) ---
     emitter.label("__rt_array_get_mixed_key_null");
-    emitter.instruction("mov rdi, 8");                                          // rdi = null runtime value_type tag
-    emitter.instruction("xor rsi, rsi");                                        // value_lo = 0 for null
-    emitter.instruction("xor rdx, rdx");                                        // value_hi = 0 for null
+    emitter.instruction("mov rax, 8");                                          // rax = null runtime value_type tag
+    emitter.instruction("xor rdi, rdi");                                        // value_lo = 0 for null
+    emitter.instruction("xor rsi, rsi");                                        // value_hi = 0 for null
     emitter.instruction("call __rt_mixed_from_value");                          // box null into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
