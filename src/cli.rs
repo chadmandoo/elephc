@@ -197,7 +197,7 @@ pub(crate) fn parse_args(args: &[String]) -> CliConfig {
     }
     if explicit_ast_backend {
         eprintln!(
-            "warning: --ast-backend is deprecated and will be removed in v0.26.0. The EIR backend is now the default. See docs/internals/the-ir.md for details."
+            "warning: --ast-backend is deprecated and will be removed in a future release. The EIR backend is now the default. See docs/internals/the-ir.md for details."
         );
     }
     if web && check_only {
