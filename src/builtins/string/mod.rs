@@ -12,13 +12,24 @@
 //!   `returns:` field provides the declared return type.
 
 pub mod addslashes;
+pub mod base64_decode;
+pub mod base64_encode;
+pub mod bin2hex;
 pub mod chop;
+pub mod chr;
 pub mod explode;
+pub mod grapheme_strrev;
+pub mod hex2bin;
+pub mod html_entity_decode;
+pub mod htmlentities;
+pub mod htmlspecialchars;
 pub mod implode;
 pub mod lcfirst;
 pub mod ltrim;
 pub mod nl2br;
 pub mod ord;
+pub mod rawurldecode;
+pub mod rawurlencode;
 pub mod rtrim;
 pub mod str_contains;
 pub mod str_ends_with;
@@ -38,3 +49,5 @@ pub mod substr;
 pub mod trim;
 pub mod ucfirst;
 pub mod ucwords;
+pub mod urldecode;
+pub mod urlencode;

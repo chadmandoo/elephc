@@ -85,7 +85,7 @@ pub(crate) fn lower_unary_string_runtime(
 }
 
 /// Lowers `grapheme_strrev()` and boxes its `string|false` result as `Mixed`.
-pub(super) fn lower_grapheme_strrev(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_grapheme_strrev(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     load_single_string_arg(ctx, inst, "grapheme_strrev")?;
     abi::emit_call_label(ctx.emitter, "__rt_grapheme_strrev");
     box_grapheme_strrev_result(ctx);
@@ -855,7 +855,7 @@ pub(crate) fn lower_ord(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Re
 }
 
 /// Lowers `chr()` by converting an integer code point into a one-byte string.
-pub(super) fn lower_chr(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chr(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.len() != 1 {
         return Err(CodegenIrError::invalid_module(format!(
             "chr expected 1 arg, got {}",

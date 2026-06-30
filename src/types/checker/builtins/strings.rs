@@ -56,32 +56,9 @@ pub(super) fn check_builtin(
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Int))
         }
-        "grapheme_strrev" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "grapheme_strrev() takes exactly 1 argument",
-                ));
-            }
-            let ty = checker.infer_type(&args[0], env)?;
-            if !matches!(ty, PhpType::Str | PhpType::Mixed | PhpType::Union(_)) {
-                return Err(CompileError::new(
-                    span,
-                    "grapheme_strrev() argument must be string",
-                ));
-            }
-            Ok(Some(PhpType::Union(vec![PhpType::Str, PhpType::Bool])))
-        }
-        "str_replace" | "str_ireplace" | "chr" | "bin2hex" => {
-            let expected = match name {
-                "str_replace" | "str_ireplace" => 3,
-                _ => 1,
-            };
-            if name == "chr" {
-                if args.len() != 1 {
-                    return Err(CompileError::new(span, "chr() takes exactly 1 argument"));
-                }
-            } else if args.len() != expected {
+        "str_replace" | "str_ireplace" => {
+            let expected = 3;
+            if args.len() != expected {
                 return Err(CompileError::new(
                     span,
                     &format!(
@@ -126,13 +103,6 @@ pub(super) fn check_builtin(
                 PhpType::Str,
                 PhpType::Bool,
             ])))
-        }
-        "hex2bin" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "hex2bin() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Str))
         }
         "substr_replace" => {
             if args.len() != 3 && args.len() != 4 {
@@ -321,18 +291,6 @@ pub(super) fn check_builtin(
             }
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Int))
-        }
-        "htmlspecialchars" | "htmlentities" | "html_entity_decode" | "urlencode"
-        | "urldecode" | "rawurlencode" | "rawurldecode" | "base64_encode"
-        | "base64_decode" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 1 argument", name),
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Str))
         }
         "gzcompress" | "gzuncompress" | "gzdeflate" | "gzinflate" => {
             if args.is_empty() || args.len() > 2 {
