@@ -131,6 +131,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "lchgrp",
     "lchown",
     "lstat",
+    "mkdir",
     "passthru",
     "pathinfo",
     "php_uname",
