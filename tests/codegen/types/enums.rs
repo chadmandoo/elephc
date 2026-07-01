@@ -72,6 +72,28 @@ fn test_enum_case_names_may_be_reserved_keywords() {
     assert_eq!(out, "default|print|list");
 }
 
+/// Regression: an enum case used as a parameter DEFAULT value (`E $x = E::Case`) has
+/// the enum object type, not its backing scalar. Modeled on AIC's `HeadAsset`
+/// constructor `public HeadAssetMode $mode = HeadAssetMode::Default`. Previously failed
+/// with "Method parameter $mode expects Object(...), got Str" because purely-syntactic
+/// default-value inference typed every `::` access as Str.
+#[test]
+fn test_enum_case_as_parameter_default_value() {
+    let out = compile_and_run(
+        "<?php
+        enum Mode: string {
+            case Foo = 'foo';
+            case Bar = 'bar';
+        }
+        final class Box {
+            public function __construct(public Mode $mode = Mode::Foo) {}
+        }
+        echo (new Box())->mode->value, '|', (new Box(Mode::Bar))->mode->value;
+        ",
+    );
+    assert_eq!(out, "foo|bar");
+}
+
 /// Verifies `Color::tryFrom(99)` returns `null` for an unknown value (with null coalescing to `Color::Red`),
 /// `Color::cases()` returns all cases, and case index `1` is `Color::Green` by identity.
 #[test]
