@@ -42,6 +42,172 @@ Try to follow the style already used throughout the codebase.
 
 Consistency is generally more important than personal preference.
 
+## Adding a built-in function
+
+elephc's PHP built-in functions are declared **once** in a single-source registry.
+Each builtin has one *home file* at `src/builtins/<area>/<name>.rs` that declares it
+with the `builtin!` macro; all declarations are collected at link time through the
+`inventory` crate. From that single declaration the compiler derives the catalog
+name-set (case-insensitive lookup, `function_exists`, namespace fallback,
+redeclaration checks), the call signature (named arguments, defaults, by-ref params,
+variadic, arity), the type-check entry, the EIR lowering dispatch, and the generated
+documentation.
+
+Do **not** re-add builtin names to the old hand-maintained tables (`catalog.rs`,
+`signatures.rs`, per-area `check_builtin` arms). They are superseded by the registry;
+a builtin is fully wired the moment its home file compiles.
+
+### 1. Create the home file
+
+Add `src/builtins/<area>/<name>.rs` and register it in `src/builtins/<area>/mod.rs`
+with `pub mod <name>;` (keep the list alphabetical). Areas are `string`, `array`,
+`math`, `io`, `system`, `types`, `callables`, `spl`, `pointers` (plus `internal` for
+compiler-internal builtins). One builtin per home file; the file owns its declaration
+plus its `check`/`lower` hooks. Start with the mandatory `//!` module preamble.
+
+### 2. Declare it with `builtin!`
+
+```rust
+builtin! {
+    name: "strlen",
+    area: String,
+    params: [string: Str],
+    returns: Int,
+    check: check,
+    lazy_check: true,
+    lower: lower,
+    summary: "Returns the length of a string.",
+    php_manual: "function.strlen",
+}
+```
+
+Fields must appear in this canonical order; optional fields (marked `?`) may be
+omitted:
+
+`name`, `area`, `params`, `variadic?`, `min_args?`, `max_args?`, `arity_error?`,
+`returns`, `by_ref_return?`, `check?`, `lazy_check?`, `lower`, `summary`, `examples?`,
+`php_manual?`, `deprecation?`, `internal?`.
+
+- **`params`** — `[name: TypeSpec, name: TypeSpec = DefaultSpec::Variant, ...]`. A
+  parameter with `= DefaultSpec::…` is optional; without it, required. Prefix a
+  parameter with `ref` to pass it by reference (mutating builtins):
+  `params: [ref array: Mixed, offset: Int]`. Parameter names become PHP's
+  named-argument keys and must match PHP exactly (Rust keywords work as names via raw
+  identifiers, e.g. `r#type`).
+- **`returns` and param `TypeSpec`** — written as a bare scalar type ident: `Int`,
+  `Float`, `Str`, `Bool`, `Mixed`, `Null`, `Void`. Non-scalar shapes (arrays, unions,
+  resources) are declared as `Mixed`; supply the precise type from a `check` hook when
+  it matters (see the note in step 3).
+- **`DefaultSpec`** — full path form: `DefaultSpec::Null`, `DefaultSpec::Int(0)`,
+  `DefaultSpec::Bool(false)`, `DefaultSpec::Float(1.5)`, `DefaultSpec::Str("…")`,
+  `DefaultSpec::IntMax`, `DefaultSpec::IntMin`, `DefaultSpec::EmptyArray`.
+- **`variadic`** — the PHP name of the trailing variadic parameter, e.g.
+  `variadic: "values"`.
+- **`min_args` / `max_args` / `arity_error`** — override only the arity check (not the
+  derived signature or the parity gate). Use when a builtin's PHP arity is
+  tighter/looser than its declared parameter list, or needs a verbatim error message.
+- **`summary` / `examples` / `php_manual` / `deprecation`** — documentation metadata
+  surfaced by the `gen_builtins` exporter.
+- **`internal: true`** — a compiler-internal builtin that is not PHP-visible and is
+  excluded from catalogs and docs.
+
+A builtin whose return type does not depend on its arguments and needs no extra
+validation can omit `check` entirely — `returns:` is then authoritative for the
+checker.
+
+### 3. The `check` hook (type checking)
+
+Add a `check` hook when the return type depends on argument types/values, or when the
+call needs validation beyond arity and the parameter list:
+
+```rust
+fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
+    let ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
+    if !matches!(ty, PhpType::Str | PhpType::Mixed | PhpType::Union(_)) {
+        return Err(CompileError::new(cx.span, "strlen() argument must be string"));
+    }
+    Ok(PhpType::Int)
+}
+```
+
+The hook receives `BuiltinCheckCtx { checker, name, args, span, env }` and returns the
+call's `PhpType` (or a diagnostic). Its returned type overrides `returns:` for the
+checker.
+
+For a normal builtin the registry already checks arity and infers every argument once
+(for side effects such as variable narrowing and undefined-variable diagnostics)
+before calling the hook. Set **`lazy_check: true`** when the hook must control
+inference order — most importantly when it injects element/parameter type hints into
+an unannotated closure argument *before* that closure is inferred (e.g. `usort`,
+`array_map` with a callback). With `lazy_check: true` the hook is responsible for
+inferring each argument itself.
+
+> **Return typing is a checker-only contract.** The `returns:` field and the `check`
+> hook drive the **type checker** only. The EIR backend derives call return types
+> independently in `call_return_type` (`src/ir_lower/expr/mod.rs`). If you declare
+> `returns: Mixed` + a precise `check` hook (the standard pattern for non-scalar
+> returns), you must also add a matching arm to the EIR return-type derivation, or the
+> checker and EIR will disagree on the value's type. This caveat is documented on the
+> `returns`/`check` fields in `src/builtins/spec.rs`.
+
+### 4. The `lower` hook (EIR codegen)
+
+`lower` is mandatory — it is the builtin's EIR lowering entry point. Keep it a thin
+wrapper that dispatches to the actual emitter:
+
+```rust
+fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
+    crate::codegen_ir::lower_inst::builtins::lower_strlen(ctx, inst)
+}
+```
+
+Write the emitter itself under `src/codegen_ir/lower_inst/builtins/<area>/`, following
+the target-aware codegen conventions in `CLAUDE.md` (support every target through
+`emitter.target`, one emitter per leaf file, an inline `//` comment on every
+`emitter.instruction(...)`). If the builtin needs a runtime routine, add it under
+`src/codegen/runtime/<category>/`. The registry dispatches `spec.lower` first, so no
+match arm needs editing.
+
+### 5. What derives automatically
+
+Once the home file compiles, all of the following see the builtin with no further
+edits: `function_exists()` and case-insensitive/namespaced lookup, the named-argument
+`FunctionSig`, first-class-callable syntax (`strlen(...)`), the arity check and its
+error message, and the `gen_builtins` JSON docs export.
+
+### 6. Surfaces you still wire by hand
+
+The registry single-sources the declaration, signature, checker entry, lowering
+*dispatch*, and docs. These related surfaces are **not** derived and must be updated
+when relevant:
+
+- **The EIR emitter** the `lower` hook calls (and any runtime routine it needs).
+- **EIR return typing** — see the note in step 3.
+- **Optimizer effects** in `src/optimize/effects/builtins.rs` when purity, reads/writes,
+  or thrown/fatal behavior matter for DCE and constant propagation. Never mark a call
+  pure if it can read/write globals, files, the environment, heap state, or emit output.
+- **Runtime-callable wrapper exclusion** — if the builtin cannot be dispatched through
+  the dynamic string-callable wrapper, add it to `runtime_builtin_wrapper_excluded()`
+  in `src/codegen/callable_dispatch.rs`.
+
+### 7. Tests, examples, and docs
+
+- Add codegen tests for normal use (plus at least one case-insensitive or namespaced
+  call for a PHP-visible builtin), and error tests for wrong argument count/types.
+- Add or update an example under `examples/` when the builtin is a notable user-facing
+  feature.
+- Document the PHP surface (signature, parameters, return type, a short example) on the
+  relevant `docs/php/` page.
+- The signature/arity parity gates (`derived_signatures_match_legacy`,
+  `arity_messages_match_legacy` in `src/builtins/parity_tests.rs`) must stay green.
+
+### 8. Not every "builtin" is a function
+
+A small set of PHP language constructs — `isset`, `unset`, `empty`, `exit`, `die`, plus
+the `buffer_*` intrinsics — are l-value/lazy constructs with dedicated EIR paths and are
+intentionally kept in the checker (`numeric`/`arrays` `check_builtin`), not in the
+registry. Do not migrate those into `builtin!`.
+
 ## Adding functionality via a Rust crate (bridge crates)
 
 elephc compiles a static subset of PHP straight to native code, so most features
@@ -133,9 +299,9 @@ type checker record `elephc_<name>` as a required library, which is what links t
 bridge automatically when the feature is used.
 
 - **Core builtins** — when the feature is a set of PHP built-in functions
-  (`md5()`, `hash()`, …). Follow "Adding a new built-in function" in `CLAUDE.md`
-  (catalog, signatures, checker, EIR lowering, runtime), and call
-  `Checker::require_builtin_library("elephc_<name>")` from the checker when a
+  (`md5()`, `hash()`, …). Follow "Adding a built-in function" above (declare each
+  builtin in `src/builtins/<area>/` with its `check`/`lower` hooks), and call
+  `Checker::require_builtin_library("elephc_<name>")` from the `check` hook when a
   builtin that needs the crate is used. The PHP names are always available, so no
   prelude is needed.
 
