@@ -36,7 +36,7 @@ const TOUCH_MTIME_NOW: u8 = 2;
 const TOUCH_BOTH_NOW: u8 = TOUCH_ATIME_NOW | TOUCH_MTIME_NOW;
 
 /// Lowers `file_get_contents(path)` and boxes the runtime string-or-false result.
-pub(super) fn lower_file_get_contents(
+pub(crate) fn lower_file_get_contents(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -284,7 +284,7 @@ fn publish_phar_get_signature_type_function_pointer(ctx: &mut FunctionContext<'_
 }
 
 /// Lowers `hash_file(algo, filename, binary?)` by reading bytes then hashing them.
-pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "hash_file", 2, 3)?;
     let fail = ctx.next_label("hash_file_fail");
     let done = ctx.next_label("hash_file_box");
@@ -297,7 +297,7 @@ pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `readfile(path)` and boxes the runtime byte-count-or-false result.
-pub(super) fn lower_readfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "readfile", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "readfile")?;
@@ -3682,7 +3682,7 @@ pub(super) fn lower_fsockopen(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `file(path)` through the target-aware runtime line-array helper.
-pub(super) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "file", "__rt_file")
 }
 
@@ -3724,7 +3724,7 @@ pub(crate) fn lower_realpath_cache_size(
 }
 
 /// Lowers `file_put_contents(path, data)` through the target-aware runtime writer.
-pub(super) fn lower_file_put_contents(
+pub(crate) fn lower_file_put_contents(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4404,7 +4404,7 @@ pub(crate) fn lower_file_exists(
 }
 
 /// Lowers `unlink(path)` through the target-aware runtime helper.
-pub(super) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "unlink", 1)?;
     let path = expect_operand(inst, 0)?;
     let path_literal = optional_const_string_operand(ctx, path)?;
@@ -4425,72 +4425,72 @@ pub(super) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `mkdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_mkdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_mkdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_single_path_wrapper_op(ctx, inst, "mkdir", "__rt_mkdir", STREAM_WRAPPER_MKDIR_SLOT)
 }
 
 /// Lowers `rmdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_rmdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rmdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_single_path_wrapper_op(ctx, inst, "rmdir", "__rt_rmdir", STREAM_WRAPPER_RMDIR_SLOT)
 }
 
 /// Lowers `chdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_chdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_predicate(ctx, inst, "chdir", "__rt_chdir")
 }
 
 /// Lowers `copy(source, dest)` through the target-aware runtime helper.
-pub(super) fn lower_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "copy", "__rt_copy")
 }
 
 /// Lowers `rename(from, to)` through the target-aware runtime helper.
-pub(super) fn lower_rename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_rename_with_wrapper(ctx, inst)
 }
 
 /// Lowers `tempnam(directory, prefix)` through the target-aware runtime helper.
-pub(super) fn lower_tempnam(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_tempnam(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "tempnam", "__rt_tempnam")
 }
 
 /// Lowers `scandir(path)` through the target-aware runtime directory listing helper.
-pub(super) fn lower_scandir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_scandir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "scandir", "__rt_scandir")
 }
 
 /// Lowers `glob(pattern)` through the target-aware runtime glob expansion helper.
-pub(super) fn lower_glob(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_glob(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "glob", "__rt_glob")
 }
 
 /// Lowers `chmod(path, mode)` through the target-aware runtime helper.
-pub(super) fn lower_chmod(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chmod(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chmod_with_wrapper(ctx, inst)
 }
 
 /// Lowers `chown(path, owner)` for integer UIDs and string user names.
-pub(super) fn lower_chown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chown_or_chgrp(ctx, inst, "chown", PrincipalKind::Owner)
 }
 
 /// Lowers `chgrp(path, group)` for integer GIDs and string group names.
-pub(super) fn lower_chgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chown_or_chgrp(ctx, inst, "chgrp", PrincipalKind::Group)
 }
 
 /// Lowers `lchown(path, owner)` for integer UIDs and string user names without following symlinks.
-pub(super) fn lower_lchown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lchown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_lchown_or_lchgrp(ctx, inst, "lchown", PrincipalKind::Owner)
 }
 
 /// Lowers `lchgrp(path, group)` for integer GIDs and string group names without following symlinks.
-pub(super) fn lower_lchgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lchgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_lchown_or_lchgrp(ctx, inst, "lchgrp", PrincipalKind::Group)
 }
 
 /// Lowers `umask(mask?)` through the target-aware runtime helper.
-pub(super) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "umask", 0, 1)?;
     if inst.operands.is_empty() {
         match ctx.emitter.target.arch {
@@ -4520,7 +4520,7 @@ pub(super) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `touch(path, mtime?, atime?)` through the target-aware runtime helper.
-pub(super) fn lower_touch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_touch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "touch", 1, 3)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "touch path")?;
@@ -5393,14 +5393,14 @@ fn lower_pathinfo_mixed(ctx: &mut FunctionContext<'_>, flag: ValueId) -> Result<
 }
 
 /// Lowers `getcwd()` through the target-aware runtime helper.
-pub(super) fn lower_getcwd(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_getcwd(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "getcwd", 0)?;
     abi::emit_call_label(ctx.emitter, "__rt_getcwd");
     store_if_result(ctx, inst)
 }
 
 /// Lowers `sys_get_temp_dir()` as the project's hardcoded `/tmp` string.
-pub(super) fn lower_sys_get_temp_dir(
+pub(crate) fn lower_sys_get_temp_dir(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -5445,17 +5445,17 @@ pub(crate) fn lower_linkinfo(
 }
 
 /// Lowers `symlink(target, link)` through the target-aware libc wrapper.
-pub(super) fn lower_symlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_symlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "symlink", "__rt_symlink")
 }
 
 /// Lowers `link(oldpath, newpath)` through the target-aware libc wrapper.
-pub(super) fn lower_link(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_link(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "link", "__rt_link")
 }
 
 /// Lowers `readlink(path)` and boxes the owned runtime string-or-false result.
-pub(super) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "readlink", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "readlink")?;

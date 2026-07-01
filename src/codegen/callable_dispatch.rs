@@ -678,6 +678,19 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // is unsuited to generic string-callable dispatch. Direct calls and EIR
             // first-class-callable use still work through the EIR path.
             | "disk_free_space" | "disk_total_space" | "clearstatcache" | "fstat"
+            // These 13 io batch C1 filesystem builtins had no pre-migration
+            // first-class-callable wrapper: general_first_class_callable_builtin_sig
+            // returned None for them (they are not in that table), so no wrapper was
+            // emitted. Registering them in the builtin registry makes
+            // first_class_callable_builtin_sig return Some, which would newly emit a
+            // deferred-closure wrapper; excluding them here restores the exact
+            // pre-migration (no-wrapper) behaviour and is provably behaviour-neutral.
+            // Direct calls and EIR first-class-callable use still work through the EIR
+            // path. (The remaining C1 builtins — file_get_contents, hash_file, file,
+            // getcwd, tempnam, sys_get_temp_dir, chmod, chown, chgrp, touch, symlink,
+            // link, readlink — were already FCC-wrapped pre-migration and stay enabled.)
+            | "file_put_contents" | "copy" | "rename" | "unlink" | "mkdir" | "rmdir"
+            | "chdir" | "scandir" | "glob" | "lchown" | "lchgrp" | "umask" | "readfile"
     )
 }
 
