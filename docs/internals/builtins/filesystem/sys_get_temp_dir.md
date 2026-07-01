@@ -2,7 +2,7 @@
 title: "sys_get_temp_dir() — internals"
 description: "Compiler internals for sys_get_temp_dir(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 130
+  order: 145
 ---
 
 ## `sys_get_temp_dir()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4760](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4760) (`lower_sys_get_temp_dir`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:5403](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L5403) (`lower_sys_get_temp_dir`)
 - **Function symbol**: `lower_sys_get_temp_dir()`
 
 

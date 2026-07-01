@@ -2,7 +2,7 @@
 title: "stream_wrapper_unregister() — internals"
 description: "Compiler internals for stream_wrapper_unregister(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 211
+  order: 226
 ---
 
 ## `stream_wrapper_unregister()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:917](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L917) (`lower_stream_wrapper_unregister`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1030](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1030) (`lower_stream_wrapper_unregister`)
 - **Function symbol**: `lower_stream_wrapper_unregister()`
 
 

@@ -57,6 +57,52 @@ echo $map[2];    // two
 echo $map["02"]; // leading
 ```
 
+## Removing elements with unset
+
+`unset($map[$key])` removes a single entry from an associative array. The removed key's owned
+key and value storage is released, the live `count()` drops by one, and `isset()`, `foreach`,
+and re-insertion all observe the entry as gone. Iteration order follows PHP: surviving entries
+keep their original order, and re-adding a removed key appends it at the end.
+
+```php
+<?php
+$map = ["a" => 1, "b" => 2, "c" => 3];
+unset($map["b"]);
+
+echo count($map);          // 2
+echo isset($map["b"]) ? "y" : "n"; // n
+$map["b"] = 9;             // re-added at the end
+foreach ($map as $k => $v) { echo "$k=$v "; } // a=1 c=3 b=9
+```
+
+`unset()` also works on indexed arrays. PHP removes the key **without renumbering** the survivors,
+so the array becomes sparse (a hole is left). The remaining keys keep their original values, and a
+later `$arr[] = ...` append continues at `max_key + 1`.
+
+```php
+<?php
+$arr = [1, 2, 3];
+unset($arr[1]);
+foreach ($arr as $k => $v) { echo "$k=$v "; } // 0=1 2=3 (no key 1)
+$arr[] = 9;                                    // appended at key 3
+echo isset($arr[1]) ? "y" : "n";               // n
+```
+
+`unset()` respects copy-on-write: removing a key from one array never mutates another array that
+was assigned from it. Unsetting a key that is not present is a no-op.
+
+```php
+<?php
+$a = ["x" => 1, "y" => 2];
+$b = $a;
+unset($b["x"]);
+echo count($a); // 2 — original is untouched
+echo count($b); // 1
+```
+
+> Removing an element from an array passed **by reference** (`function f(array &$a)`) is not yet
+> supported and reports a compile error.
+
 ## Array union
 
 `+` between arrays follows PHP union semantics: keys from the left operand win, and only keys that are missing from the left are copied from the right.
@@ -157,6 +203,9 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `array_splice()` | `array_splice($arr, $offset [, $length]): array` | Remove a slice in place and return the removed elements |
 | `array_chunk()` | `array_chunk($arr, $size): array` | Split into chunks |
 | `array_merge()` | `array_merge($arr1, $arr2): array` | Merge two arrays |
+| `array_merge_recursive()` | `array_merge_recursive($arr1, $arr2): array` | Recursively merge two arrays: integer keys append (renumbered), string keys that collide recurse when both values are arrays and otherwise combine into a list. Accepts associative arrays or **indexed arrays of scalars** (int/float/bool); nested indexed-array values are treated as opaque. |
+| `array_replace()` | `array_replace($arr, $replacements): array` | Overwrite matching keys in `$arr` (in place, keeping position) and append new keys from `$replacements`; later values win. Accepts associative arrays or **indexed arrays of scalars** (int/float/bool). |
+| `array_replace_recursive()` | `array_replace_recursive($arr, $replacements): array` | Like `array_replace()`, but when both values at a key are associative arrays they are merged recursively instead of overwritten. Accepts associative arrays or **indexed arrays of scalars** (int/float/bool); nested indexed arrays are overwritten, not merged. |
 | `array_combine()` | `array_combine($keys, $values): array` | Create array from keys/values |
 | `array_fill()` | `array_fill($start, $num, $value): array` | Fill with values |
 | `array_fill_keys()` | `array_fill_keys($keys, $value): array` | Fill with values using keys |
@@ -166,6 +215,10 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `array_intersect()` | `array_intersect($arr1, $arr2): array` | Values in both |
 | `array_diff_key()` | `array_diff_key($arr1, $arr2): array` | Keys in $arr1 not in $arr2 |
 | `array_intersect_key()` | `array_intersect_key($arr1, $arr2): array` | Keys in both |
+| `array_diff_assoc()` | `array_diff_assoc($arr1, $arr2): array` | Entries of $arr1 whose `(key, value)` pair is absent from $arr2 (values compared as `(string)$a === (string)$b`). Accepts associative arrays or **indexed arrays of scalars** (int/float/bool). |
+| `array_intersect_assoc()` | `array_intersect_assoc($arr1, $arr2): array` | Entries of $arr1 whose `(key, value)` pair is present in $arr2 (values compared as strings). Accepts associative arrays or **indexed arrays of scalars** (int/float/bool). |
+| `array_udiff()` | `array_udiff($arr1, $arr2, $cmp): array` | Values in $arr1 not in $arr2, equality decided by the two-argument comparator (`$cmp($a, $b) === 0`). Supports string / function / non-capturing closure comparators. |
+| `array_uintersect()` | `array_uintersect($arr1, $arr2, $cmp): array` | Values in both arrays, equality decided by the comparator (`$cmp($a, $b) === 0`). |
 | `array_unique()` | `array_unique($arr): array` | Remove duplicates |
 | `array_reverse()` | `array_reverse($arr): array` | Reverse order |
 | `array_flip()` | `array_flip($arr): array` | Exchange keys and values, normalizing integer and numeric-string result keys |
@@ -174,6 +227,9 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `array_sum()` | `array_sum($arr): int\|float` | Sum of values |
 | `array_product()` | `array_product($arr): int\|float` | Product of values |
 | `array_column()` | `array_column($arr, $column_key): array` | Extract column from array of assoc rows |
+| `array_is_list()` | `array_is_list($arr): bool` | `true` if the keys are exactly `0..count-1` in order (the empty array is a list) |
+| `array_key_first()` | `array_key_first($arr): int\|string\|null` | First key in insertion order, or `null` if the array is empty |
+| `array_key_last()` | `array_key_last($arr): int\|string\|null` | Last key in insertion order, or `null` if the array is empty |
 | `sort()` | `sort($arr): void` | Sort ascending (in-place) |
 | `rsort()` | `rsort($arr): void` | Sort descending |
 | `asort()` | `asort($arr): void` | Sort by value, maintain keys |
@@ -183,11 +239,16 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 | `natsort()` | `natsort($arr): void` | Natural order sort |
 | `natcasesort()` | `natcasesort($arr): void` | Case-insensitive natural sort |
 | `shuffle()` | `shuffle($arr): void` | Randomly shuffle (in-place) |
+| `array_multisort()` | `array_multisort($arr1, $arr2): bool` | Sort `$arr1` ascending (stable) and reorder `$arr2` in tandem; both are sorted in place (by reference). **Two indexed arrays of scalar elements**; sort flags, descending order, and >2 arrays are follow-ups. |
 | `array_rand()` | `array_rand($arr): int` | Pick one random key |
 | `array_map()` | `array_map($callback, $arr): array` | Apply callback to each element |
 | `array_filter()` | `array_filter($arr, $callback, $mode = ARRAY_FILTER_USE_VALUE): array` | Filter where callback is truthy; mode selects value, key, or both callback args |
 | `array_reduce()` | `array_reduce($arr, $callback, $init): int` | Reduce to single value |
 | `array_walk()` | `array_walk($arr, $callback): void` | Call callback on each element |
+| `array_walk_recursive()` | `array_walk_recursive($arr, $callback): void` | Apply `$callback` to each non-array leaf value, recursing into nested indexed/associative arrays. Leaf values must share a scalar type (consistent with `array_walk`: leaf passed by value, no key argument). |
+| `array_find()` | `array_find($arr, $callback): mixed` | (PHP 8.4) Returns the first element for which `$callback($value)` is truthy, or `null` if none match. |
+| `array_any()` | `array_any($arr, $callback): bool` | (PHP 8.4) `true` if `$callback($value)` is truthy for at least one element. |
+| `array_all()` | `array_all($arr, $callback): bool` | (PHP 8.4) `true` if `$callback($value)` is truthy for every element. |
 | `usort()` | `usort($arr, $callback): void` | Sort with user comparison |
 | `uksort()` | `uksort($arr, $callback): void` | Sort by key with user comparison |
 | `uasort()` | `uasort($arr, $callback): void` | Sort with user comparison, maintain keys |
@@ -198,7 +259,7 @@ PHP does not allow keyed and unkeyed entries in the same destructuring pattern, 
 
 `array_filter()` accepts `ARRAY_FILTER_USE_VALUE` (`0`), `ARRAY_FILTER_USE_BOTH` (`1`), and `ARRAY_FILTER_USE_KEY` (`2`). Invalid mode values throw `ValueError`.
 
-> Callback arguments can be string literals, runtime string names for user functions, first-class callable values, anonymous functions, arrow functions, or variables holding captured closures. `array_map()`, `array_filter()`, `array_reduce()`, `array_walk()`, `usort()`, `uksort()`, and `uasort()` resolve runtime string callback variables through descriptor dispatch. `array_map()` stores mixed result elements when the selected callback return shape is only known at runtime.
+> Callback arguments can be string literals, runtime string names for user functions, first-class callable values, anonymous functions, arrow functions, or variables holding captured closures. `array_map()`, `array_filter()`, `array_reduce()`, `array_walk()`, `usort()`, `uksort()`, and `uasort()` resolve runtime string callback variables through descriptor dispatch. `array_map()` stores mixed result elements when the selected callback return shape is only known at runtime. `array_map()` also runs over a heterogeneous (boxed `mixed`) input array: each element is passed to the callback as a `mixed` value, so a callback with a `mixed` (or untyped) parameter sees and can return each element with its original runtime type.
 > `call_user_func_array()` also accepts dynamic indexed and associative argument arrays for callbacks with a known signature, including userland variadic callbacks. When a callable value has no single static signature at the call site, elephc emits an AOT runtime dispatch over user functions and closure/FCC wrappers available in that codegen context, then applies the matched target's descriptor metadata: parameter names, defaults, by-reference flags, variadic position, return shape, captures, hidden receiver arguments, and callable shape. Runtime string callback names dispatch over user functions, supported builtins, and public static-method strings by case-insensitive name matching, materialize the matched descriptor, and invoke its generated descriptor invoker. Descriptor invokers receive a temporary boxed Mixed clone of the argument container and inspect its runtime tag to handle indexed arrays and associative hashes through the same signature-level wrapper, so the source `$args` remains usable with its original static layout after the call. String keys bind named parameters; unconsumed string and numeric keys are copied into `...$rest` for variadic callbacks. Dynamic arrays passed to by-reference callback parameters use temporary reference cells, so callback writes do not mutate the source argument array.
 
 `usort()` and `uasort()` sort arrays of **objects** as well as scalars. The comparator receives each element as its object handle, so an unannotated comparator's parameters are typed from the array element automatically — `usort($items, fn($a, $b) => $a->weight <=> $b->weight)` works without writing `($a, $b)` type hints, and `usort($dates, fn($a, $b) => $a <=> $b)` over `DateTime`/`DateTimeImmutable` compares by instant. Explicit hints (`function (Item $a, Item $b)`) are equally accepted. Sorting an array of **strings** with a user comparator is not yet supported and reports a clear unsupported-feature error.

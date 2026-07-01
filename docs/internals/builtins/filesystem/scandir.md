@@ -2,7 +2,7 @@
 title: "scandir() — internals"
 description: "Compiler internals for scandir(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 127
+  order: 142
 ---
 
 ## `scandir()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:3815](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L3815) (`lower_scandir`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4458](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4458) (`lower_scandir`)
 - **Function symbol**: `lower_scandir()`
 
 

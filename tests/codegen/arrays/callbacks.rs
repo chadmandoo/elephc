@@ -843,6 +843,88 @@ foreach ($uasorted as $value) {
     assert_eq!(out, "34:23:11,12,:321:321:321");
 }
 
+// --- array_map over heterogeneous (Mixed-element) input arrays ---
+
+/// Verifies the reported repro: array_map with an untyped closure over a heterogeneous
+/// array preserves each element (the string element must not coerce to integer 0).
+#[test]
+fn test_array_map_untyped_closure_over_mixed_array() {
+    let out = compile_and_run(
+        r#"<?php
+$items = [1, "two", 3];
+$out = array_map(function ($x) { return $x; }, $items);
+foreach ($out as $v) { echo $v . " "; }
+"#,
+    );
+    assert_eq!(out, "1 two 3 ");
+}
+
+/// Verifies array_map with an explicit `mixed`-typed closure parameter over a heterogeneous
+/// array preserves the runtime type tags of every element.
+#[test]
+fn test_array_map_mixed_param_closure_preserves_tags() {
+    let out = compile_and_run(
+        r#"<?php
+$out = array_map(function (mixed $x) { return gettype($x); }, [1, "two", 3.5, true, null]);
+echo implode(",", $out);
+"#,
+    );
+    assert_eq!(out, "integer,string,double,boolean,NULL");
+}
+
+/// Verifies array_map over a heterogeneous array dispatched to a named function with a
+/// `mixed` parameter, which routes through the descriptor-backed callback wrapper.
+#[test]
+fn test_array_map_named_mixed_callback_over_mixed_array() {
+    let out = compile_and_run(
+        r#"<?php
+function passthrough(mixed $x) { return $x; }
+$out = array_map("passthrough", [1, "two", 3]);
+foreach ($out as $v) { echo $v . " "; }
+"#,
+    );
+    assert_eq!(out, "1 two 3 ");
+}
+
+/// Verifies a transforming closure over a heterogeneous array: the boxed Mixed element is
+/// usable in string concatenation and the mapped results are correct per PHP semantics.
+#[test]
+fn test_array_map_mixed_array_string_transform() {
+    let out = compile_and_run(
+        r#"<?php
+$out = array_map(function (mixed $x) { return "<" . $x . ">"; }, [1, "two", 3]);
+foreach ($out as $v) { echo $v . " "; }
+"#,
+    );
+    assert_eq!(out, "<1> <two> <3> ");
+}
+
+/// Root-cause unit test: a closure with a `mixed` parameter that returns the parameter must
+/// infer a `mixed` return type, so a string argument survives instead of coercing to int 0.
+#[test]
+fn test_mixed_param_closure_return_preserves_string() {
+    let out = compile_and_run(
+        r#"<?php
+$c = function (mixed $x) { return $x; };
+echo $c("two") . ":" . $c(1);
+"#,
+    );
+    assert_eq!(out, "two:1");
+}
+
+/// Verifies the same passthrough closure invoked through the descriptor invoker
+/// (`call_user_func`) also preserves a string argument.
+#[test]
+fn test_mixed_param_closure_via_call_user_func_preserves_string() {
+    let out = compile_and_run(
+        r#"<?php
+$c = function (mixed $x) { return $x; };
+echo call_user_func($c, "two") . ":" . call_user_func($c, 1);
+"#,
+    );
+    assert_eq!(out, "two:1");
+}
+
 /// Verifies runtime-selected static callable arrays route fixed-return callbacks through descriptors.
 /// Verifies `usort` over an array of objects with an explicitly typed comparator:
 /// the comparator reads an integer property from each object handle and the array
@@ -957,4 +1039,202 @@ foreach ($uasorted as $value) {
 "#,
     );
     assert_eq!(out, "34:23:11,12,:321:321:321");
+}
+
+/// Verifies array_walk_recursive() visits the leaf values of a nested indexed array
+/// depth-first, invoking the callback on each scalar leaf.
+/// Fixture: [[1,2],[3,4]] → leaves 1,2,3,4 in order.
+#[test]
+fn test_array_walk_recursive_indexed() {
+    let out = compile_and_run(
+        r#"<?php
+function show($x) { echo $x; echo ","; }
+$a = [[1, 2], [3, 4]];
+array_walk_recursive($a, "show");
+"#,
+    );
+    assert_eq!(out, "1,2,3,4,");
+}
+
+/// Verifies array_walk_recursive() descends into nested associative arrays and visits
+/// the leaf values in insertion order.
+/// Fixture: {g1:{a:1,b:2}, g2:{c:3}} → leaves 1,2,3.
+#[test]
+fn test_array_walk_recursive_assoc() {
+    let out = compile_and_run(
+        r#"<?php
+function p($x) { echo $x; echo ";"; }
+$a = ["g1" => ["a" => 1, "b" => 2], "g2" => ["c" => 3]];
+array_walk_recursive($a, "p");
+"#,
+    );
+    assert_eq!(out, "1;2;3;");
+}
+
+/// Verifies array_walk_recursive() recurses through three levels of nesting.
+/// Fixture: [[[1,2]],[[3]]] → leaves 1,2,3.
+#[test]
+fn test_array_walk_recursive_deep() {
+    let out = compile_and_run(
+        r#"<?php
+function q($x) { echo $x; }
+$a = [[[1, 2]], [[3]]];
+array_walk_recursive($a, "q");
+"#,
+    );
+    assert_eq!(out, "123");
+}
+
+/// Verifies array_walk_recursive() is callable case-insensitively, matching PHP builtin name rules.
+/// Fixture: mixed-case spelling over a nested indexed array.
+#[test]
+fn test_array_walk_recursive_case_insensitive() {
+    let out = compile_and_run(
+        r#"<?php
+function r($x) { echo $x; }
+$a = [[1], [2]];
+Array_Walk_Recursive($a, "r");
+"#,
+    );
+    assert_eq!(out, "12");
+}
+
+/// Verifies array_find() (PHP 8.4) returns the first element satisfying the predicate.
+/// Fixture: first element > 2 in [1,2,3,4] is 3.
+#[test]
+fn test_array_find_returns_first_match() {
+    let out = compile_and_run(
+        r#"<?php
+function gt2($x) { return $x > 2; }
+echo array_find([1, 2, 3, 4], "gt2");
+"#,
+    );
+    assert_eq!(out, "3");
+}
+
+/// Verifies array_find() returns null when no element satisfies the predicate.
+/// Fixture: no element > 2 in [1,2]; the boxed null compares equal to null.
+#[test]
+fn test_array_find_returns_null_when_absent() {
+    let out = compile_and_run(
+        r#"<?php
+function gt2($x) { return $x > 2; }
+$r = array_find([1, 2], "gt2");
+echo ($r === null) ? "null" : "value";
+"#,
+    );
+    assert_eq!(out, "null");
+}
+
+/// Verifies array_find() works with a closure predicate.
+/// Fixture: first element >= 10 in [5,10,15] is 10.
+#[test]
+fn test_array_find_closure() {
+    let out = compile_and_run(
+        r#"<?php
+$r = array_find([5, 10, 15], fn($x) => $x >= 10);
+echo $r;
+"#,
+    );
+    assert_eq!(out, "10");
+}
+
+/// Verifies array_any() (PHP 8.4) returns true iff some element satisfies the predicate.
+/// Fixture: [1,2,3] has an element > 2 (true); [1,2] does not (false).
+#[test]
+fn test_array_any() {
+    let out = compile_and_run(
+        r#"<?php
+function gt2($x) { return $x > 2; }
+echo array_any([1, 2, 3], "gt2") ? "y" : "n";
+echo array_any([1, 2], "gt2") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "yn");
+}
+
+/// Verifies array_all() (PHP 8.4) returns true iff every element satisfies the predicate.
+/// Fixture: all of [1,2,3] are positive (true); [1,-2,3] is not all positive (false).
+#[test]
+fn test_array_all() {
+    let out = compile_and_run(
+        r#"<?php
+function pos($x) { return $x > 0; }
+echo array_all([1, 2, 3], "pos") ? "y" : "n";
+echo array_all([1, -2, 3], "pos") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "yn");
+}
+
+/// Verifies array_find / array_any / array_all are callable case-insensitively.
+/// Fixture: mixed-case spellings over a small numeric array.
+#[test]
+fn test_array_find_any_all_case_insensitive() {
+    let out = compile_and_run(
+        r#"<?php
+function pos($x) { return $x > 0; }
+echo Array_Find([3, 6], "pos");
+echo Array_Any([0, 0], "pos") ? "y" : "n";
+echo Array_All([1, 2], "pos") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "3ny");
+}
+
+/// Verifies array_udiff() keeps elements of the first array whose comparator never returns 0
+/// against any element of the second array.
+/// Fixture: udiff([1,2,3,4], [2,4]) with a numeric comparator keeps 1 and 3.
+#[test]
+fn test_array_udiff_string_comparator() {
+    let out = compile_and_run(
+        r#"<?php
+function cmp($a, $b) { return $a - $b; }
+$r = array_udiff([1, 2, 3, 4], [2, 4], "cmp");
+foreach ($r as $v) { echo $v; }
+"#,
+    );
+    assert_eq!(out, "13");
+}
+
+/// Verifies array_uintersect() keeps elements of the first array that compare equal to some
+/// element of the second array.
+/// Fixture: uintersect([1,2,3,4], [2,4]) keeps 2 and 4.
+#[test]
+fn test_array_uintersect_string_comparator() {
+    let out = compile_and_run(
+        r#"<?php
+function cmp($a, $b) { return $a - $b; }
+$r = array_uintersect([1, 2, 3, 4], [2, 4], "cmp");
+foreach ($r as $v) { echo $v; }
+"#,
+    );
+    assert_eq!(out, "24");
+}
+
+/// Verifies array_udiff() works with a non-capturing closure (spaceship) comparator.
+/// Fixture: udiff([5,10,15], [10]) keeps 5 and 15.
+#[test]
+fn test_array_udiff_closure_comparator() {
+    let out = compile_and_run(
+        r#"<?php
+$r = array_udiff([5, 10, 15], [10], fn($a, $b) => $a <=> $b);
+foreach ($r as $v) { echo $v; echo ","; }
+"#,
+    );
+    assert_eq!(out, "5,15,");
+}
+
+/// Verifies array_udiff() / array_uintersect() result sizes and case-insensitive calls.
+/// Fixture: udiff keeps 2 of 4; uintersect keeps 2 of 4.
+#[test]
+fn test_array_udiff_uintersect_case_insensitive() {
+    let out = compile_and_run(
+        r#"<?php
+function cmp($a, $b) { return $a - $b; }
+echo count(Array_Udiff([1, 2, 3, 4], [2, 4], "cmp"));
+echo count(Array_Uintersect([1, 2, 3, 4], [2, 4], "cmp"));
+"#,
+    );
+    assert_eq!(out, "22");
 }

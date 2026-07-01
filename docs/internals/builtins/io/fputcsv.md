@@ -2,7 +2,7 @@
 title: "fputcsv() — internals"
 description: "Compiler internals for fputcsv(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 151
+  order: 166
 ---
 
 ## `fputcsv()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:2784](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L2784) (`lower_fputcsv`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:3005](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L3005) (`lower_fputcsv`)
 - **Function symbol**: `lower_fputcsv()`
 
 

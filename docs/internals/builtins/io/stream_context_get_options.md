@@ -2,7 +2,7 @@
 title: "stream_context_get_options() — internals"
 description: "Compiler internals for stream_context_get_options(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 176
+  order: 191
 ---
 
 ## `stream_context_get_options()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1139](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1139) (`lower_stream_context_get_options`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1252](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1252) (`lower_stream_context_get_options`)
 - **Function symbol**: `lower_stream_context_get_options()`
 
 

@@ -2,7 +2,7 @@
 title: "isset() — internals"
 description: "Compiler internals for isset(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 265
+  order: 280
 ---
 
 ## `isset()` — internals
@@ -25,7 +25,7 @@ _No direct `__rt_*` helpers captured — the lowering is inlined or routes throu
 ## Signature summary
 
 ```php
-function isset(mixed $var, ...$vars): int
+function isset(mixed $var, ...$vars): bool
 ```
 
 ## What the type checker enforces

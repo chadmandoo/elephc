@@ -25,6 +25,9 @@ pub struct FunctionSig {
     pub defaults: Vec<Option<Expr>>,
     pub return_type: PhpType,
     pub declared_return: bool,
+    /// `true` when declared with `function &f()` / `fn &()` — the function returns a
+    /// reference (alias) to the returned lvalue rather than a copy.
+    pub by_ref_return: bool,
     pub ref_params: Vec<bool>,
     pub declared_params: Vec<bool>,
     pub variadic: Option<String>,
@@ -257,7 +260,8 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
 
         "array_pop" | "array_shift" => Some(first_param_ref(fixed(&["array"]))),
         "array_keys" | "array_values" | "array_reverse" | "array_unique" | "array_flip"
-        | "array_sum" | "array_product" | "array_rand" => Some(fixed(&["array"])),
+        | "array_sum" | "array_product" | "array_rand" | "array_is_list"
+        | "array_key_first" | "array_key_last" => Some(fixed(&["array"])),
         "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
         | "arsort" | "ksort" | "krsort" => Some(first_param_ref(fixed(&["array"]))),
         "in_array" => Some(optional(&["needle", "haystack", "strict"], 2, vec![bool_lit(false)])),
@@ -266,9 +270,18 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             Some(optional(&["needle", "haystack", "strict"], 2, vec![bool_lit(false)]))
         }
         "array_push" | "array_unshift" => Some(first_param_ref(variadic(&["array"], "values"))),
-        "array_merge" => Some(variadic(&[], "arrays")),
-        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
+        "array_merge" | "array_merge_recursive" => Some(variadic(&[], "arrays")),
+        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key"
+        | "array_diff_assoc" | "array_intersect_assoc" => {
             Some(variadic(&["array"], "arrays"))
+        }
+        "array_replace" | "array_replace_recursive" => {
+            Some(fixed(&["array", "replacements"]))
+        }
+        "array_multisort" => {
+            let mut sig = fixed(&["array1", "array2"]);
+            sig.ref_params = vec![true, true];
+            Some(sig)
         }
         "array_combine" => Some(fixed(&["keys", "values"])),
         "array_fill_keys" => Some(fixed(&["keys", "value"])),
@@ -298,8 +311,12 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             2,
             vec![null_lit()],
         )),
-        "array_walk" | "usort" | "uksort" | "uasort" => {
+        "array_walk" | "array_walk_recursive" | "usort" | "uksort" | "uasort" => {
             Some(first_param_ref(fixed(&["array", "callback"])))
+        }
+        "array_find" | "array_any" | "array_all" => Some(fixed(&["array", "callback"])),
+        "array_udiff" | "array_uintersect" => {
+            Some(fixed(&["array1", "array2", "callback"]))
         }
         "call_user_func" => Some(variadic(&["callback"], "args")),
         "call_user_func_array" => Some(fixed(&["callback", "args"])),
@@ -357,6 +374,12 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
             1,
             vec![int_lit(512), int_lit(0)],
         )),
+        "serialize" => Some(fixed(&["value"])),
+        "unserialize" => Some(optional(
+            &["data", "options"],
+            1,
+            vec![Expr::new(ExprKind::ArrayLiteral(Vec::new()), Span::dummy())],
+        )),
         "preg_match" => {
             let mut sig = optional(
                 &["pattern", "subject", "matches"],
@@ -384,6 +407,20 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "file_put_contents" => Some(fixed(&["filename", "data"])),
         "__elephc_phar_list_entries" => Some(fixed(&["filename"])),
         "__elephc_phar_set_compression" => Some(fixed(&["filename", "compression"])),
+        "__elephc_phar_get_metadata" => Some(fixed(&["filename"])),
+        "__elephc_phar_get_stub" => Some(fixed(&["filename"])),
+        "__elephc_phar_set_metadata" => Some(fixed(&["filename", "metadata"])),
+        "__elephc_phar_set_stub" => Some(fixed(&["filename", "stub"])),
+        "__elephc_phar_set_zip_password" => Some(fixed(&["password"])),
+        "__elephc_phar_get_file_metadata" => Some(fixed(&["url"])),
+        "__elephc_phar_set_file_metadata" => Some(fixed(&["url", "metadata"])),
+        "__elephc_phar_gzip_archive" => Some(fixed(&["src"])),
+        "__elephc_phar_bzip2_archive" => Some(fixed(&["src"])),
+        "__elephc_phar_decompress_archive" => Some(fixed(&["src"])),
+        "__elephc_phar_sign_openssl" => Some(fixed(&["path", "key"])),
+        "__elephc_phar_sign_hash" => Some(fixed(&["path", "algo"])),
+        "__elephc_phar_get_signature_hash" => Some(fixed(&["path"])),
+        "__elephc_phar_get_signature_type" => Some(fixed(&["path"])),
         "copy" | "rename" => Some(fixed(&["from", "to"])),
         "unlink" => Some(fixed(&["filename"])),
         "mkdir" | "rmdir" | "chdir" | "scandir" => Some(fixed(&["directory"])),
@@ -621,6 +658,7 @@ pub(crate) fn first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
+            by_ref_return: false,
             ref_params: vec![false],
             declared_params: vec![true],
             variadic: None,
@@ -637,6 +675,7 @@ pub(crate) fn first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
+            by_ref_return: false,
             ref_params: vec![false],
             declared_params: vec![true],
             variadic: None,
@@ -647,6 +686,7 @@ pub(crate) fn first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig
             defaults: vec![None],
             return_type: PhpType::Int,
             declared_return: true,
+            by_ref_return: false,
             ref_params: vec![false],
             declared_params: vec![true],
             variadic: None,
@@ -904,6 +944,16 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             &[PhpType::Str, PhpType::Int, PhpType::Int],
             PhpType::Bool,
         )),
+        "serialize" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Mixed],
+            PhpType::Str,
+        )),
+        "unserialize" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Str, PhpType::Mixed],
+            PhpType::Mixed,
+        )),
         "preg_replace_callback" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Str, PhpType::Callable, PhpType::Str],
@@ -1016,6 +1066,7 @@ fn make_sig(params: &[&str], defaults: Vec<Option<Expr>>, variadic: Option<&str>
         defaults,
         return_type: PhpType::Mixed,
         declared_return: false,
+        by_ref_return: false,
         ref_params: vec![false; params.len()],
         declared_params: vec![false; params.len()],
         variadic: variadic.map(str::to_string),
@@ -1053,6 +1104,7 @@ mod tests {
             defaults: vec![None; params.len()],
             return_type: PhpType::Mixed,
             declared_return: false,
+            by_ref_return: false,
             ref_params: vec![false; params.len()],
             declared_params: vec![false; params.len()],
             params,

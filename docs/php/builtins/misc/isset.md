@@ -2,13 +2,13 @@
 title: "isset()"
 description: "Determines whether a variable is set and is not null."
 sidebar:
-  order: 262
+  order: 277
 ---
 
 ## isset()
 
 ```php
-function isset(mixed $var, ...$vars): int
+function isset(mixed $var, ...$vars): bool
 ```
 
 Determines whether a variable is set and is not null.
@@ -17,7 +17,7 @@ Determines whether a variable is set and is not null.
 - `$var` (`mixed`)
 - `...$vars` — variadic: collects excess arguments into `$vars`.
 
-**Returns**: `int`
+**Returns**: `bool`
 
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 

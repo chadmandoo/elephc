@@ -2,7 +2,7 @@
 title: "fileowner() — internals"
 description: "Compiler internals for fileowner(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 97
+  order: 112
 ---
 
 ## `fileowner()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4849](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4849) (`lower_fileowner`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:5492](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L5492) (`lower_fileowner`)
 - **Function symbol**: `lower_fileowner()`
 
 

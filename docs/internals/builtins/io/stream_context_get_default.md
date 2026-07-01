@@ -2,7 +2,7 @@
 title: "stream_context_get_default() — internals"
 description: "Compiler internals for stream_context_get_default(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 175
+  order: 190
 ---
 
 ## `stream_context_get_default()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:965](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L965) (`lower_stream_context_get_default`)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1078](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1078) (`lower_stream_context_get_default`)
 - **Function symbol**: `lower_stream_context_get_default()`
 
 
