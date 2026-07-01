@@ -30,7 +30,7 @@ use super::{expect_operand, store_if_result};
 /// Scalar static types are formatted directly through `__rt_serialize_value`; a
 /// Mixed/Union argument is unboxed and dispatched by `__rt_serialize_mixed`.
 /// Non-scalar static types (arrays/objects) are not yet supported and are rejected.
-pub(super) fn lower_serialize(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_serialize(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "serialize", 1)?;
     let value = expect_operand(inst, 0)?;
     let value_ty = ctx.value_php_type(value)?;
@@ -161,7 +161,7 @@ pub(super) fn lower_serialize(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 /// The source string is parsed by `__rt_unserialize_mixed`; a null result pointer
 /// (parse error or unsupported wire form) is boxed as PHP `false`. The optional
 /// `$options` argument is accepted but currently ignored.
-pub(super) fn lower_unserialize(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_unserialize(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.is_empty() || inst.operands.len() > 2 {
         return Err(CodegenIrError::invalid_module(format!(
             "unserialize expected 1 or 2 args, got {}",

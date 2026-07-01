@@ -30,11 +30,11 @@ mod debug;
 mod io;
 mod isset;
 mod is_numeric;
-mod json;
+pub(crate) mod json;
 pub(crate) mod math;
 pub(crate) mod pointers;
 mod regex;
-mod serialize;
+pub(crate) mod serialize;
 pub(crate) mod spl;
 pub(crate) mod system;
 pub(crate) mod strings;
@@ -244,13 +244,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "preg_replace" => regex::lower_preg_replace(ctx, inst),
         "preg_replace_callback" => regex::lower_preg_replace_callback(ctx, inst),
         "preg_split" => regex::lower_preg_split(ctx, inst),
-        "json_decode" => json::lower_json_decode(ctx, inst),
-        "json_encode" => json::lower_json_encode(ctx, inst),
-        "json_last_error" => json::lower_json_last_error(ctx, inst),
-        "json_last_error_msg" => json::lower_json_last_error_msg(ctx, inst),
-        "json_validate" => json::lower_json_validate(ctx, inst),
-        "serialize" => serialize::lower_serialize(ctx, inst),
-        "unserialize" => serialize::lower_unserialize(ctx, inst),
         "function_exists" => lower_function_exists(ctx, inst),
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
             lower_class_like_exists(ctx, inst, key.as_str())
