@@ -29,8 +29,9 @@ pub(crate) use catalog::{
     is_supported_builtin_function, supported_builtin_function_names,
 };
 pub(crate) use callables::{
-    callback_supports_complex_descriptor_env, check_preg_replace_callback_first_class_call,
-    runtime_callable_array_type,
+    array_filter_callback_dummy_args, callback_supports_complex_descriptor_env,
+    check_callback_builtin_call, check_preg_replace_callback_first_class_call,
+    dummy_arg_for_array_scalar_elem, runtime_callable_array_type,
 };
 
 impl Checker {

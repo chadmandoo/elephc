@@ -16,15 +16,6 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "__elephc_strtotime_raw",
     "abs",
     "acos",
-    "array_all",
-    "array_any",
-    "array_filter",
-    "array_find",
-    "array_map",
-
-    "array_reduce",
-    "array_udiff",
-    "array_uintersect",
     "array_walk",
     "array_walk_recursive",
 

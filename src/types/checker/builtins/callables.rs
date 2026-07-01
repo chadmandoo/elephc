@@ -112,7 +112,7 @@ fn specialize_dynamic_assoc_variadic_first_class_callback(
 ///
 /// Selects `Str`, `Float`, `Bool`, or `Int` based on the element type of `arr_ty`.
 /// Used to fabricate placeholder call arguments when type-checking array-callback builtins.
-fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::span::Span) -> Expr {
+pub(crate) fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::span::Span) -> Expr {
     let elem_ty = match arr_ty {
         PhpType::Array(elem_ty) => elem_ty.as_ref(),
         PhpType::AssocArray { value, .. } => value.as_ref(),
@@ -813,157 +813,6 @@ pub(super) fn check_builtin(
 ) -> BuiltinResult {
     match name {
         "preg_replace_callback" => preg_replace_callback::check(checker, args, span, env),
-        "array_map" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(span, "array_map() takes exactly 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            let arr_ty = checker.infer_type(&args[1], env)?;
-            match arr_ty {
-                PhpType::Array(elem_ty) => {
-                    let arr_ty = PhpType::Array(elem_ty.clone());
-                    let dummy_args = vec![dummy_arg_for_array_scalar_elem(&arr_ty, span)];
-                    let callback_ret_ty = check_callback_builtin_call(
-                        checker,
-                        &args[0],
-                        &dummy_args,
-                        span,
-                        env,
-                        "array_map() callback",
-                    )?;
-                    let result_elem_ty = if callback_ret_ty == PhpType::Mixed {
-                        Box::new(PhpType::Mixed)
-                    } else {
-                        elem_ty
-                    };
-                    Ok(Some(PhpType::Array(result_elem_ty)))
-                }
-                _ => Err(CompileError::new(
-                    span,
-                    "array_map() second argument must be array",
-                )),
-            }
-        }
-        "array_filter" => {
-            if args.len() < 2 || args.len() > 3 {
-                return Err(CompileError::new(
-                    span,
-                    "array_filter() takes 2 or 3 arguments",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            let arr_ty = checker.infer_type(&args[0], env)?;
-            match arr_ty {
-                PhpType::Array(elem_ty) => {
-                    let arr_ty = PhpType::Array(elem_ty.clone());
-                    let dummy_args = array_filter_callback_dummy_args(&arr_ty, args.get(2), span);
-                    check_callback_builtin_call(
-                        checker,
-                        &args[1],
-                        &dummy_args,
-                        span,
-                        env,
-                        "array_filter() callback",
-                    )?;
-                    Ok(Some(PhpType::Array(elem_ty)))
-                }
-                _ => Err(CompileError::new(
-                    span,
-                    "array_filter() first argument must be array",
-                )),
-            }
-        }
-        "array_find" | "array_any" | "array_all" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 2 arguments", name),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            let arr_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(arr_ty, PhpType::Array(_)) {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() first argument must be array", name),
-                ));
-            }
-            let dummy_args = vec![dummy_arg_for_array_scalar_elem(&arr_ty, span)];
-            check_callback_builtin_call(
-                checker,
-                &args[1],
-                &dummy_args,
-                span,
-                env,
-                &format!("{}() callback", name),
-            )?;
-            // array_find returns the matching element or null (Mixed); any/all return bool.
-            if name == "array_find" {
-                Ok(Some(PhpType::Mixed))
-            } else {
-                Ok(Some(PhpType::Bool))
-            }
-        }
-        "array_udiff" | "array_uintersect" => {
-            if args.len() != 3 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 3 arguments", name),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            let arr_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(arr_ty, PhpType::Array(_)) {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() first argument must be array", name),
-                ));
-            }
-            let cmp_arg = dummy_arg_for_array_scalar_elem(&arr_ty, span);
-            let dummy_args = vec![cmp_arg.clone(), cmp_arg];
-            check_callback_builtin_call(
-                checker,
-                &args[2],
-                &dummy_args,
-                span,
-                env,
-                &format!("{}() comparator", name),
-            )?;
-            Ok(Some(arr_ty))
-        }
-        "array_reduce" => {
-            if args.len() != 3 {
-                return Err(CompileError::new(
-                    span,
-                    "array_reduce() takes exactly 3 arguments",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            let arr_ty = checker.infer_type(&args[0], env)?;
-            let dummy_args = vec![
-                Expr::new(ExprKind::IntLiteral(0), span),
-                dummy_arg_for_array_scalar_elem(&arr_ty, span),
-            ];
-            check_callback_builtin_call(
-                checker,
-                &args[1],
-                &dummy_args,
-                span,
-                env,
-                "array_reduce() callback",
-            )?;
-            Ok(Some(PhpType::Int))
-        }
         "array_walk" | "array_walk_recursive" => {
             if args.len() != 2 {
                 return Err(CompileError::new(
@@ -1575,7 +1424,7 @@ pub(super) fn check_builtin(
 ///
 /// Unknown or invalid runtime modes use the default value-only shape for type checking;
 /// runtime validation still throws before invoking the callback when the mode is invalid.
-fn array_filter_callback_dummy_args(
+pub(crate) fn array_filter_callback_dummy_args(
     arr_ty: &PhpType,
     mode_arg: Option<&Expr>,
     span: crate::span::Span,

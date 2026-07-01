@@ -208,7 +208,7 @@ pub(crate) fn lower_array_unique(ctx: &mut FunctionContext<'_>, inst: &Instructi
 }
 
 /// Lowers `array_filter()` for static and first-class callbacks through the runtime helper.
-pub(super) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "array_filter", 2, 3)?;
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
@@ -309,7 +309,7 @@ pub(super) fn lower_array_filter(ctx: &mut FunctionContext<'_>, inst: &Instructi
 }
 
 /// Lowers `array_map()` through the callback runtime helper matching the callback result type.
-pub(super) fn lower_array_map(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_map(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_map", 2)?;
     let callback = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
@@ -698,7 +698,7 @@ fn array_map_runtime_label(callback_elem_ty: &PhpType, env_bytes: usize) -> &'st
 }
 
 /// Lowers `array_reduce()` through the callback-driven runtime helper.
-pub(super) fn lower_array_reduce(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_reduce(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_reduce", 3)?;
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
@@ -1523,17 +1523,17 @@ fn lower_array_predicate_builtin(
 }
 
 /// Lowers `array_find()`: returns the first element satisfying the predicate, boxed as Mixed (or null).
-pub(super) fn lower_array_find(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_find(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_predicate_builtin(ctx, inst, "array_find", 0)
 }
 
 /// Lowers `array_any()`: returns true when some element satisfies the predicate.
-pub(super) fn lower_array_any(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_any(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_predicate_builtin(ctx, inst, "array_any", 1)
 }
 
 /// Lowers `array_all()`: returns true when every element satisfies the predicate.
-pub(super) fn lower_array_all(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_all(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_predicate_builtin(ctx, inst, "array_all", 2)
 }
 
@@ -1655,12 +1655,12 @@ fn lower_two_array_comparator_builtin(
 }
 
 /// Lowers `array_udiff()`: keeps first-array elements not equal (per comparator) to any second-array element.
-pub(super) fn lower_array_udiff(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_udiff(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_two_array_comparator_builtin(ctx, inst, "array_udiff", 0)
 }
 
 /// Lowers `array_uintersect()`: keeps first-array elements equal (per comparator) to some second-array element.
-pub(super) fn lower_array_uintersect(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_uintersect(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_two_array_comparator_builtin(ctx, inst, "array_uintersect", 1)
 }
 
