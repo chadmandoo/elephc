@@ -181,12 +181,24 @@ pub struct BuiltinSpec {
     /// gate are unaffected.
     pub arity_error: Option<&'static str>,
 
-    /// The PHP-level return type.
+    /// The PHP-level return type used by the type CHECKER when no `check` hook is
+    /// present (a `check` hook, when present, overrides this — see `check`).
+    ///
+    /// NOTE: this drives the *type checker* only. The EIR backend derives call
+    /// return types independently in `call_return_type`
+    /// (`src/ir_lower/expr/mod.rs`) from `sig.return_type` plus the
+    /// `*_builtin_return_type` override chain; it does NOT consult `returns` or
+    /// `check`. A builtin declared `returns: Mixed` with a precise `check` hook
+    /// (the standard pattern for non-scalar returns) therefore also needs a
+    /// matching EIR return-type arm, or the checker and EIR will disagree on the
+    /// value's type at the use site.
     pub returns: TypeSpec,
     /// Whether the function returns by reference.
     pub by_ref_return: bool,
     /// An optional type-checking hook for builtins whose return type depends
-    /// on the argument types or values.
+    /// on the argument types or values. When present, its returned `PhpType` is
+    /// authoritative for the type CHECKER (it overrides `returns`). It is NOT
+    /// consulted by the EIR backend — see the note on `returns`.
     pub check: Option<CheckFn>,
     /// When `true`, the registry's `check_builtin` dispatcher skips the standard
     /// argument pre-inference loop before calling the `check` hook. The check hook
