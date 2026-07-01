@@ -19,7 +19,7 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 /// Type-checks array builtin functions.
 ///
 /// Dispatches on `name` to validate arity, argument types, and return type for each
-/// supported array function (count, isset). Builtins migrated to the registry
+/// supported array function (isset). Builtins migrated to the registry
 /// (e.g. array_keys, array_values, array_flip, array_reverse, array_unique,
 /// array_slice, array_pad, array_combine, array_chunk, array_column, array_is_list,
 /// array_merge, array_merge_recursive, array_multisort, array_diff, array_intersect,
@@ -28,7 +28,7 @@ type BuiltinResult = Result<Option<PhpType>, CompileError>;
 /// array_rand, array_key_exists, array_key_first, array_key_last, array_search,
 /// array_fill_keys, array_fill, range, array_pop, array_shift, array_push,
 /// array_unshift, array_splice, sort, rsort, asort, arsort, ksort, krsort, natsort,
-/// natcasesort, shuffle)
+/// natcasesort, shuffle, count)
 /// are handled by their `src/builtins/array/` homes before this dispatcher runs.
 ///
 /// Returns `Ok(Some(PhpType))` with the inferred return type, `Ok(None)` for unknown
@@ -41,34 +41,6 @@ pub(super) fn check_builtin(
     env: &TypeEnv,
 ) -> BuiltinResult {
     match name {
-        "count" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "count() takes exactly 1 argument"));
-            }
-            let ty = checker.infer_type(&args[0], env)?;
-            match &ty {
-                PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed => {
-                    Ok(Some(PhpType::Int))
-                }
-                PhpType::Union(members) if members.iter().all(union_member_is_countable_array) => {
-                    Ok(Some(PhpType::Int))
-                }
-                PhpType::Object(class_name) => {
-                    if checker.class_implements_interface(class_name, "Countable") {
-                        Ok(Some(PhpType::Int))
-                    } else {
-                        Err(CompileError::new(
-                            span,
-                            "count() object argument must implement Countable",
-                        ))
-                    }
-                }
-                _ => Err(CompileError::new(
-                    span,
-                    "count() argument must be array or Countable object",
-                )),
-            }
-        }
         "isset" => {
             if args.is_empty() {
                 return Err(CompileError::new(span, "isset() takes at least 1 argument"));
@@ -91,8 +63,11 @@ pub(super) fn check_builtin(
     }
 }
 
-/// Provides the Union member is countable array helper used by the arrays module.
-fn union_member_is_countable_array(ty: &PhpType) -> bool {
+/// Returns `true` if a `PhpType` is a countable array type for Union membership checks.
+///
+/// Used by `crate::builtins::array::count` to test whether every branch of a Union type
+/// is countable, in which case `count()` returns `Int` for the whole union.
+pub(crate) fn union_member_is_countable_array(ty: &PhpType) -> bool {
     matches!(
         ty,
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed

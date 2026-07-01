@@ -61,6 +61,7 @@ pub mod array_walk;
 pub mod array_walk_recursive;
 pub mod arsort;
 pub mod asort;
+pub mod count;
 pub mod in_array;
 pub mod krsort;
 pub mod ksort;

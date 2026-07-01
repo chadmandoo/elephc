@@ -83,7 +83,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "pi" => lower_pi(ctx, inst),
         "phpversion" => lower_phpversion(ctx, inst),
         "strlen" => lower_strlen(ctx, inst),
-        "count" => lower_count(ctx, inst),
         "closure_bind" => lower_closure_bind(ctx, inst),
         "buffer_len" => buffers::lower_buffer_len(ctx, inst),
         "buffer_free" => buffers::lower_buffer_free(ctx, inst),
@@ -751,7 +750,12 @@ fn emit_variant_function_exists(ctx: &mut FunctionContext<'_>, function_name: &s
 }
 
 /// Lowers `count(array)` for concrete array values by reading the runtime length header.
-fn lower_count(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+///
+/// Called from `crate::builtins::array::count` (the registry home) via a thin wrapper.
+/// Handles Array/AssocArray (reads length directly from the runtime header), Mixed/Union
+/// (delegates to `__rt_mixed_count`), and Countable Object (calls the object's `count`
+/// method via intrinsic or dynamic dispatch).
+pub(crate) fn lower_count(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "count", 1)?;
     let value = expect_operand(inst, 0)?;
     let ty = ctx.value_php_type(value)?.codegen_repr();

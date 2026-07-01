@@ -8,7 +8,7 @@
 //! Key details:
 //! - Builtin names must flow through the catalog so case-insensitive lookup and namespace fallback stay coherent.
 
-mod arrays;
+pub(crate) mod arrays;
 mod callables;
 mod catalog;
 mod io;

@@ -40,7 +40,6 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "copy",
     "cos",
     "cosh",
-    "count",
     "date",
     "date_default_timezone_get",
     "date_default_timezone_set",
