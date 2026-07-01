@@ -52,6 +52,26 @@ fn test_enum_as_promoted_constructor_param_type() {
     assert_eq!(out, "<div>hi</div>");
 }
 
+/// Regression: PHP 8 allows semi-reserved keywords as enum-case names (e.g. `case Default;`,
+/// `case Print;`, `case List;`) — the same rule as class-constant names. Modeled on AIC's
+/// `HeadAssetMode` enum, whose first case is literally `case Default = 'default';`. Previously
+/// failed at parse time with "Expected case name after 'case'" because the case-name parser
+/// only accepted `Token::Identifier`, not keyword tokens.
+#[test]
+fn test_enum_case_names_may_be_reserved_keywords() {
+    let out = compile_and_run(
+        "<?php
+        enum Mode: string {
+            case Default = 'default';
+            case Print = 'print';
+            case List = 'list';
+        }
+        echo Mode::Default->value, '|', Mode::Print->value, '|', Mode::List->value;
+        ",
+    );
+    assert_eq!(out, "default|print|list");
+}
+
 /// Verifies `Color::tryFrom(99)` returns `null` for an unknown value (with null coalescing to `Color::Red`),
 /// `Color::cases()` returns all cases, and case index `1` is `Color::Green` by identity.
 #[test]
