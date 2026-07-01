@@ -780,7 +780,7 @@ pub(crate) fn lower_array_reduce(ctx: &mut FunctionContext<'_>, inst: &Instructi
 }
 
 /// Lowers `array_walk()` through the callback-driven runtime helper.
-pub(super) fn lower_array_walk(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_walk(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_walk", 2)?;
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
@@ -1118,17 +1118,17 @@ pub(crate) fn lower_shuffle(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `usort()` for indexed integer arrays with a static user comparator.
-pub(super) fn lower_usort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_usort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_user_sort_static_callback(ctx, inst, "usort")
 }
 
 /// Lowers `uksort()` through the legacy user-sort helper for static comparators.
-pub(super) fn lower_uksort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_uksort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_user_sort_static_callback(ctx, inst, "uksort")
 }
 
 /// Lowers `uasort()` through the legacy user-sort helper for static comparators.
-pub(super) fn lower_uasort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_uasort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_user_sort_static_callback(ctx, inst, "uasort")
 }
 
@@ -1539,7 +1539,7 @@ pub(crate) fn lower_array_all(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 
 /// Lowers `array_walk_recursive()`: invokes the callback on each scalar leaf of a (possibly nested)
 /// array, descending into array-valued elements. Returns void; leaves are passed as 8-byte scalars.
-pub(super) fn lower_array_walk_recursive(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_walk_recursive(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_walk_recursive", 2)?;
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;

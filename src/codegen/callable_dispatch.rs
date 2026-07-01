@@ -614,6 +614,15 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // still work through the EIR path.
             | "array_find" | "array_any" | "array_all"
             | "array_udiff" | "array_uintersect"
+            // array_walk_recursive is an EIR-only builtin with no frozen legacy-backend
+            // emitter in src/codegen/builtins/arrays/. When the wrapper body emitted by
+            // function_wrapper_body() calls it, the legacy backend falls through to a
+            // user-function-call path and emits an unresolved _fn_array_walk_recursive
+            // reference that the linker cannot satisfy. Before this builtin was migrated
+            // into the registry first_class_callable_builtin_sig returned None for it, so
+            // no wrapper was emitted. Excluding it restores that pre-migration behaviour:
+            // direct calls and EIR first-class-callable use still work through the EIR path.
+            | "array_walk_recursive"
     )
 }
 

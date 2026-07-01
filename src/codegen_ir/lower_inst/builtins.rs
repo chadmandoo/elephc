@@ -102,11 +102,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "ptr_write16" => pointers::lower_ptr_write16(ctx, inst),
         "ptr_write32" => pointers::lower_ptr_write32(ctx, inst),
         "ptr_write_string" => pointers::lower_ptr_write_string(ctx, inst),
-        "array_walk" => arrays::lower_array_walk(ctx, inst),
-        "array_walk_recursive" => arrays::lower_array_walk_recursive(ctx, inst),
-        "usort" => arrays::lower_usort(ctx, inst),
-        "uksort" => arrays::lower_uksort(ctx, inst),
-        "uasort" => arrays::lower_uasort(ctx, inst),
         "call_user_func" | "call_user_func_array" => {
             arrays::lower_call_user_func_builtin_escape(ctx, inst, key.as_str())
         }

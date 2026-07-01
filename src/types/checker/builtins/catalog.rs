@@ -16,9 +16,6 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "__elephc_strtotime_raw",
     "abs",
     "acos",
-    "array_walk",
-    "array_walk_recursive",
-
     "asin",
 
     "atan",
@@ -311,14 +308,11 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "stream_filter_append",
     "stream_filter_prepend",
     "stream_filter_remove",
-    "uasort",
-    "uksort",
     "umask",
     "unlink",
     "unserialize",
     "unset",
     "usleep",
-    "usort",
     "var_dump",
     "vfprintf",
 ];

@@ -45,6 +45,11 @@
 /// registry's `check_arity` only; it does not affect `function_sig` or the parity gate.
 /// `min_args` (optional `usize`) raises the enforced minimum in `check_arity` only.
 /// `arity_error` (optional `&'static str`) overrides the standard arity error message.
+/// `lazy_check` (optional `bool`, default `false`) skips the registry's standard pre-inference
+/// loop before calling the `check` hook. Use when the check hook must control argument
+/// inference order (e.g., to pass object-element type hints to an unannotated closure before
+/// `infer_type` is called on it). When `true`, the check hook is responsible for calling
+/// `infer_type` on each argument as needed.
 ///
 /// A trailing comma after the last field is optional.
 ///
@@ -69,6 +74,7 @@ macro_rules! builtin {
         returns: $returns:ident,
         $(by_ref_return: $by_ref_return:expr,)?
         $(check: $check:expr,)?
+        $(lazy_check: $lazy_check:expr,)?
         lower: $lower:expr,
         summary: $summary:expr,
         $(examples: $examples:expr,)?
@@ -93,6 +99,7 @@ macro_rules! builtin {
                 returns: $crate::builtins::spec::TypeSpec::$returns,
                 by_ref_return: builtin!(@opt_bool $($by_ref_return)?),
                 check: builtin!(@opt_fn $($check)?),
+                lazy_check: builtin!(@opt_bool $($lazy_check)?),
                 lower: $lower,
                 summary: $summary,
                 examples: builtin!(@opt_examples $($examples)?),

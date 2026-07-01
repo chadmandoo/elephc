@@ -186,6 +186,17 @@ pub struct BuiltinSpec {
     /// An optional type-checking hook for builtins whose return type depends
     /// on the argument types or values.
     pub check: Option<CheckFn>,
+    /// When `true`, the registry's `check_builtin` dispatcher skips the standard
+    /// argument pre-inference loop before calling the `check` hook. The check hook
+    /// is then responsible for calling `infer_type` on each argument as needed.
+    ///
+    /// This is required for builtins like `usort`/`uasort` whose check hook uses
+    /// `infer_closure_type_with_param_hints` to supply object-element type hints to
+    /// an unannotated callback closure: the standard pre-inference loop would call
+    /// `infer_type` on the closure without hints first, causing the closure body to
+    /// be checked with default `Int` parameter types — making `$a->property` fail
+    /// before the hook can supply the correct hints.
+    pub lazy_check: bool,
     /// The assembly-lowering hook called by the EIR backend for this builtin.
     pub lower: LowerFn,
     /// A short one-line summary for generated documentation.
@@ -228,7 +239,7 @@ mod tests {
         const S: BuiltinSpec = BuiltinSpec {
             name: "strlen", area: Area::String, params: P, variadic: None,
             max_args: None, min_args: None, arity_error: None,
-            returns: TypeSpec::Int, by_ref_return: false, check: None,
+            returns: TypeSpec::Int, by_ref_return: false, check: None, lazy_check: false,
             lower: noop_lower, summary: "len", examples: &[], php_manual: None,
             deprecation: None, internal: false,
         };

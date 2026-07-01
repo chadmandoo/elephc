@@ -29,9 +29,9 @@ pub(crate) use catalog::{
     is_supported_builtin_function, supported_builtin_function_names,
 };
 pub(crate) use callables::{
-    array_filter_callback_dummy_args, callback_supports_complex_descriptor_env,
+    array_element_type, array_filter_callback_dummy_args, callback_supports_complex_descriptor_env,
     check_callback_builtin_call, check_preg_replace_callback_first_class_call,
-    dummy_arg_for_array_scalar_elem, runtime_callable_array_type,
+    comparator_dummy_arg_for_elem, dummy_arg_for_array_scalar_elem, runtime_callable_array_type,
 };
 
 impl Checker {
@@ -93,8 +93,15 @@ impl Checker {
             // registry builtin — including pure-data builtins that have no check hook.
             // Check hooks may still inspect inferred types; they should not call
             // infer_type again on the same args to avoid redundant inference.
-            for arg in args.iter() {
-                self.infer_type(arg, env)?;
+            //
+            // Exception: `lazy_check` builtins skip pre-inference so the check hook can
+            // control argument inference order (e.g., to supply object-element type hints
+            // to an unannotated closure before `infer_type` is called on it). These hooks
+            // are responsible for calling `infer_type` on each argument themselves.
+            if !def.spec.lazy_check {
+                for arg in args.iter() {
+                    self.infer_type(arg, env)?;
+                }
             }
             let ret = if let Some(check) = def.spec.check {
                 let mut cx = crate::builtins::spec::BuiltinCheckCtx {
