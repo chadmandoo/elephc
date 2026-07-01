@@ -9,7 +9,6 @@
 //! - Signatures, callable aliases, optimizer effects, and codegen builtin dispatch must remain in lockstep.
 
 use crate::errors::CompileError;
-use crate::names::php_symbol_key;
 use crate::parser::ast::{BinOp, Expr, ExprKind};
 use crate::types::json_constants::JSON_INT_CONSTANTS;
 use crate::types::{PhpType, TypeEnv};
@@ -29,133 +28,6 @@ pub(super) fn check_builtin(
     env: &TypeEnv,
 ) -> BuiltinResult {
     match name {
-        "class_attribute_names" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_names() takes exactly 1 argument",
-                ));
-            }
-            // Resolve at compile time: only string-literal class names are
-            // supported in this iteration. Dynamic class names would require
-            // a runtime name→class_id lookup table that elephc does not yet
-            // expose.
-            let arg_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(arg_ty, PhpType::Str) {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_names() argument must be a string class name",
-                ));
-            }
-            let ExprKind::StringLiteral(class_name) = &args[0].kind else {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_names() requires a string literal class name (dynamic lookup is not yet supported)",
-                ));
-            };
-            if resolve_class_name(checker, class_name).is_none() {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "class_attribute_names(): undefined class '{}'",
-                        class_name
-                    ),
-                ));
-            }
-            Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
-        }
-        "class_attribute_args" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args() takes exactly 2 arguments",
-                ));
-            }
-            let class_arg_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(class_arg_ty, PhpType::Str) {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args() first argument must be a string class name",
-                ));
-            }
-            let attr_arg_ty = checker.infer_type(&args[1], env)?;
-            if !matches!(attr_arg_ty, PhpType::Str) {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args() second argument must be a string attribute name",
-                ));
-            }
-            let ExprKind::StringLiteral(class_name) = &args[0].kind else {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args() requires a string literal class name (dynamic lookup is not yet supported)",
-                ));
-            };
-            if !matches!(args[1].kind, ExprKind::StringLiteral(_)) {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args() requires a string literal attribute name (dynamic lookup is not yet supported)",
-                ));
-            }
-            if resolve_class_name(checker, class_name).is_none() {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "class_attribute_args(): undefined class '{}'",
-                        class_name
-                    ),
-                ));
-            }
-            let ExprKind::StringLiteral(attr_name) = &args[1].kind else {
-                unreachable!("attribute argument literal checked above");
-            };
-            if class_attribute_args_unsupported(checker, class_name, attr_name) {
-                return Err(CompileError::new(
-                    span,
-                    "class_attribute_args(): requested attribute uses argument metadata that is not supported yet",
-                ));
-            }
-            Ok(Some(PhpType::Array(Box::new(PhpType::Mixed))))
-        }
-        "class_get_attributes" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "class_get_attributes() takes exactly 1 argument",
-                ));
-            }
-            let arg_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(arg_ty, PhpType::Str) {
-                return Err(CompileError::new(
-                    span,
-                    "class_get_attributes() argument must be a string class name",
-                ));
-            }
-            let ExprKind::StringLiteral(class_name) = &args[0].kind else {
-                return Err(CompileError::new(
-                    span,
-                    "class_get_attributes() requires a string literal class name (dynamic lookup is not yet supported)",
-                ));
-            };
-            if resolve_class_name(checker, class_name).is_none() {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "class_get_attributes(): undefined class '{}'",
-                        class_name
-                    ),
-                ));
-            }
-            if class_get_attributes_unsupported(checker, class_name) {
-                return Err(CompileError::new(
-                    span,
-                    "class_get_attributes(): class has attribute argument metadata that is not supported yet",
-                ));
-            }
-            Ok(Some(PhpType::Array(Box::new(PhpType::Object(
-                "ReflectionAttribute".to_string(),
-            )))))
-        }
         "json_encode" => {
             if args.is_empty() || args.len() > 3 {
                 return Err(CompileError::new(
@@ -358,18 +230,6 @@ pub(super) fn check_builtin(
     }
 }
 
-/// Resolves a class name to its canonical key in the checker's class table.
-/// Returns `Some(canonical_name)` if the class exists, `None` otherwise.
-/// The lookup is case-insensitive per PHP rules.
-fn resolve_class_name<'a>(checker: &'a Checker, class_name: &str) -> Option<&'a str> {
-    let class_key = php_symbol_key(class_name.trim_start_matches('\\'));
-    checker
-        .classes
-        .keys()
-        .find(|existing| php_symbol_key(existing) == class_key)
-        .map(String::as_str)
-}
-
 /// Returns `true` if `ty` is a valid type for the JSON string argument in
 /// `json_decode` / `json_validate` / `json_encode` (scalar types and `Mixed`).
 fn is_json_string_arg_type(ty: &PhpType) -> bool {
@@ -424,63 +284,3 @@ fn json_static_int_value(expr: &Expr) -> Option<i64> {
     }
 }
 
-/// Returns `true` if the named attribute on the class uses argument metadata
-/// that the compiler does not yet support (i.e., `attribute_args` slot is `None`).
-fn class_attribute_args_unsupported(checker: &Checker, class_name: &str, attr_name: &str) -> bool {
-    let Some(resolved_class) = resolve_class_name(checker, class_name) else {
-        return false;
-    };
-    let Some(class_info) = checker.classes.get(resolved_class) else {
-        return false;
-    };
-    let attr_key = php_symbol_key(attr_name.trim_start_matches('\\'));
-    class_info
-        .attribute_names
-        .iter()
-        .enumerate()
-        .find(|(_, name)| php_symbol_key(name.trim_start_matches('\\')) == attr_key)
-        .is_some_and(|(idx, _)| match class_info.attribute_args.get(idx) {
-            // The flat `class_attribute_args()` helper returns a positional
-            // array of materialized scalars, so it cannot faithfully echo keyed
-            // arguments (named arguments or associative arrays, at any depth) or
-            // deferred symbolic references (global/class constants, enum cases).
-            // Reject them and direct users to
-            // `ReflectionClass::getAttributes()->getArguments()` instead.
-            Some(Some(entries)) => attr_entries_unsupported_by_flat_helper(entries),
-            _ => true,
-        })
-}
-
-/// Returns true when the flat `class_attribute_args()` helper cannot faithfully
-/// echo the captured entries: keyed arguments (named arguments or
-/// associative-array keys, at any depth) would lose their keys, and deferred
-/// symbolic references (global/class constants, enum cases) are not materialized
-/// on this echo path. Both are supported through
-/// `ReflectionClass::getAttributes()->getArguments()` instead.
-fn attr_entries_unsupported_by_flat_helper(entries: &[crate::types::AttrArgEntry]) -> bool {
-    entries.iter().any(|entry| {
-        entry.key.is_some()
-            || matches!(
-                &entry.value,
-                crate::types::AttrArgValue::ConstRef(_)
-                    | crate::types::AttrArgValue::ScopedConst(..)
-            )
-            || matches!(
-                &entry.value,
-                crate::types::AttrArgValue::Array(inner)
-                    if attr_entries_unsupported_by_flat_helper(inner)
-            )
-    })
-}
-
-/// Returns `true` if the class has any attribute whose argument metadata is not
-/// fully supported (slot count mismatch or any `None` slot in `attribute_args`).
-fn class_get_attributes_unsupported(checker: &Checker, class_name: &str) -> bool {
-    let Some(resolved_class) = resolve_class_name(checker, class_name) else {
-        return false;
-    };
-    checker.classes.get(resolved_class).is_some_and(|class_info| {
-        class_info.attribute_names.len() != class_info.attribute_args.len()
-            || class_info.attribute_args.iter().any(Option::is_none)
-    })
-}

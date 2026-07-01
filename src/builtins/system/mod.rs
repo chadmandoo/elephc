@@ -14,13 +14,19 @@
 //!   putenv, http_response_code, header, phpversion, exec, shell_exec, system, passthru.
 //! - Check-hook builtins: microtime (literal-dependent return type), strtotime
 //!   (returns Union(Int, Bool)), getenv (returns Union(Str, Bool)), php_uname (validates
-//!   arg type), define (side-effect: registers constant type), defined (validates literal).
+//!   arg type), define (side-effect: registers constant type), defined (validates literal),
+//!   class_attribute_names/class_attribute_args/class_get_attributes (compile-time reflection).
+//! - `attr_support` holds shared helpers for the class-attribute builtins.
 //! - Add `pub mod <name>;` here for every new system builtin home.
 
 pub mod __elephc_gmmktime_raw;
 pub mod __elephc_mktime_raw;
 pub mod __elephc_strtotime_raw;
+pub mod attr_support;
 pub mod checkdate;
+pub mod class_attribute_args;
+pub mod class_attribute_names;
+pub mod class_get_attributes;
 pub mod date;
 pub mod date_default_timezone_get;
 pub mod date_default_timezone_set;

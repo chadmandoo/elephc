@@ -21,7 +21,7 @@ use super::super::context::FunctionContext;
 use super::{expect_data, expect_operand, load_value_to_first_int_arg, predicates, store_if_result};
 use crate::codegen_ir::{CodegenIrError, Result};
 
-pub(in crate::codegen_ir::lower_inst) mod attributes;
+pub(crate) mod attributes;
 pub(crate) mod arrays;
 mod buffers;
 mod class_relations;
@@ -261,9 +261,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "class_implements" | "class_parents" | "class_uses" => {
             class_relations::lower_class_relation(ctx, inst, key.as_str())
         }
-        "class_attribute_names" => attributes::lower_class_attribute_names(ctx, inst),
-        "class_attribute_args" => attributes::lower_class_attribute_args(ctx, inst),
-        "class_get_attributes" => attributes::lower_class_get_attributes(ctx, inst),
         "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => {
             types::lower_get_declared_names(ctx, inst, key.as_str())
         }
