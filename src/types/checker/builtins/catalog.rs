@@ -21,15 +21,15 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "array_filter",
     "array_find",
     "array_map",
-    "array_multisort",
+
     "array_reduce",
     "array_udiff",
     "array_uintersect",
     "array_walk",
     "array_walk_recursive",
-    "arsort",
+
     "asin",
-    "asort",
+
     "atan",
     "atan2",
     "basename",
@@ -170,8 +170,8 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "json_last_error",
     "json_last_error_msg",
     "json_validate",
-    "krsort",
-    "ksort",
+
+
     "link",
     "linkinfo",
     "lchgrp",
@@ -187,8 +187,8 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "mkdir",
     "mktime",
     "mt_rand",
-    "natcasesort",
-    "natsort",
+
+
     "passthru",
     "pathinfo",
     "php_uname",
@@ -229,12 +229,12 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "rewind",
     "rmdir",
     "round",
-    "rsort",
+
     "scandir",
     "serialize",
     "settype",
     "shell_exec",
-    "shuffle",
+
     "sin",
     "spl_autoload",
     "spl_autoload_call",
@@ -247,7 +247,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "spl_object_id",
     "sinh",
     "sleep",
-    "sort",
+
     "sqrt",
     "stat",
     "strlen",

@@ -1073,47 +1073,47 @@ pub(crate) fn lower_array_unshift(ctx: &mut FunctionContext<'_>, inst: &Instruct
 }
 
 /// Lowers `sort()` for indexed integer arrays by mutating the source array in place.
-pub(super) fn lower_sort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_sort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "sort", "__rt_sort_int", Some("__rt_sort_str"))
 }
 
 /// Lowers `rsort()` for indexed integer arrays by mutating the source array in place.
-pub(super) fn lower_rsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "rsort", "__rt_rsort_int", Some("__rt_rsort_str"))
 }
 
 /// Lowers `asort()` for indexed integer arrays through the value-sort runtime wrapper.
-pub(super) fn lower_asort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_asort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "asort", "__rt_asort", None)
 }
 
 /// Lowers `arsort()` for indexed integer arrays through the descending value-sort wrapper.
-pub(super) fn lower_arsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_arsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "arsort", "__rt_arsort", None)
 }
 
 /// Lowers `ksort()` through the legacy key-sort helper surface.
-pub(super) fn lower_ksort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_ksort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_key_sort(ctx, inst, "ksort", "__rt_ksort")
 }
 
 /// Lowers `krsort()` through the legacy reverse key-sort helper surface.
-pub(super) fn lower_krsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_krsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_key_sort(ctx, inst, "krsort", "__rt_krsort")
 }
 
 /// Lowers `natsort()` for indexed integer arrays through the natural-sort runtime wrapper.
-pub(super) fn lower_natsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_natsort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "natsort", "__rt_natsort", None)
 }
 
 /// Lowers `natcasesort()` for indexed integer arrays through the case-insensitive wrapper.
-pub(super) fn lower_natcasesort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_natcasesort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_sort(ctx, inst, "natcasesort", "__rt_natcasesort", None)
 }
 
 /// Lowers `shuffle()` for indexed arrays with 8-byte slots by mutating the source array in place.
-pub(super) fn lower_shuffle(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_shuffle(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_shuffle(ctx, inst)
 }
 
@@ -1668,7 +1668,7 @@ pub(super) fn lower_array_uintersect(ctx: &mut FunctionContext<'_>, inst: &Instr
 /// in tandem, both in place. Both arguments are by-reference, so each is copy-on-write split with
 /// `ensure_unique_sort_source` and the (possibly relocated) pointer is written back to its local
 /// before the runtime mutates the storage. Returns `true`. Supports 8-byte scalar indexed arrays.
-pub(super) fn lower_array_multisort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_multisort(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_multisort", 2)?;
     let arr1 = expect_operand(inst, 0)?;
     let arr2 = expect_operand(inst, 1)?;
