@@ -155,32 +155,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "stream_socket_enable_crypto" => io::lower_stream_socket_enable_crypto(ctx, inst),
         "stream_socket_recvfrom" => io::lower_stream_socket_recvfrom(ctx, inst),
         "stream_socket_sendto" => io::lower_stream_socket_sendto(ctx, inst),
-        "__elephc_phar_set_compression" => io::lower_elephc_phar_set_compression(ctx, inst),
-        "__elephc_phar_list_entries" => io::lower_elephc_phar_list_entries(ctx, inst),
-        "__elephc_phar_get_metadata" => io::lower_elephc_phar_get_metadata(ctx, inst),
-        "__elephc_phar_get_stub" => io::lower_elephc_phar_get_stub(ctx, inst),
-        "__elephc_phar_set_metadata" => io::lower_elephc_phar_set_metadata(ctx, inst),
-        "__elephc_phar_set_stub" => io::lower_elephc_phar_set_stub(ctx, inst),
-        "__elephc_phar_get_file_metadata" => {
-            io::lower_elephc_phar_get_file_metadata(ctx, inst)
-        }
-        "__elephc_phar_set_file_metadata" => {
-            io::lower_elephc_phar_set_file_metadata(ctx, inst)
-        }
-        "__elephc_phar_gzip_archive" => io::lower_elephc_phar_gzip_archive(ctx, inst),
-        "__elephc_phar_bzip2_archive" => io::lower_elephc_phar_bzip2_archive(ctx, inst),
-        "__elephc_phar_decompress_archive" => {
-            io::lower_elephc_phar_decompress_archive(ctx, inst)
-        }
-        "__elephc_phar_sign_openssl" => io::lower_elephc_phar_sign_openssl(ctx, inst),
-        "__elephc_phar_sign_hash" => io::lower_elephc_phar_sign_hash(ctx, inst),
-        "__elephc_phar_set_zip_password" => io::lower_elephc_phar_set_zip_password(ctx, inst),
-        "__elephc_phar_get_signature_hash" => {
-            io::lower_elephc_phar_get_signature_hash(ctx, inst)
-        }
-        "__elephc_phar_get_signature_type" => {
-            io::lower_elephc_phar_get_signature_type(ctx, inst)
-        }
         "tmpfile" => io::lower_tmpfile(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
         "preg_replace_callback" => regex::lower_preg_replace_callback(ctx, inst),

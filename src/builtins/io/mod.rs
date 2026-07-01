@@ -24,11 +24,29 @@
 //!   validation via `check_touch`).
 //! - Library-linking check hooks: file_get_contents (TLS / PHAR / z / bz2),
 //!   file_put_contents (PHAR / crypto), hash_file (crypto), unlink (PHAR).
+//! - Internal PHAR intrinsics (`internal: true`): all 16 `__elephc_phar_*` builtins
+//!   migrated from `src/types/checker/builtins/io/files.rs` (io batch C2).
 //! - `pathinfo` owns the relocated `pathinfo_static_flag_value` helper (was in io/paths.rs).
 //! - `stat_support` holds `stat_result_type` shared by stat/lstat/fstat check hooks.
 //! - `touch` owns the relocated `check_touch` helper (was in io/files.rs).
 //! - Add `pub mod <name>;` here for every new io builtin home.
 
+pub mod __elephc_phar_bzip2_archive;
+pub mod __elephc_phar_decompress_archive;
+pub mod __elephc_phar_get_file_metadata;
+pub mod __elephc_phar_get_metadata;
+pub mod __elephc_phar_get_signature_hash;
+pub mod __elephc_phar_get_signature_type;
+pub mod __elephc_phar_get_stub;
+pub mod __elephc_phar_gzip_archive;
+pub mod __elephc_phar_list_entries;
+pub mod __elephc_phar_set_compression;
+pub mod __elephc_phar_set_file_metadata;
+pub mod __elephc_phar_set_metadata;
+pub mod __elephc_phar_set_stub;
+pub mod __elephc_phar_set_zip_password;
+pub mod __elephc_phar_sign_hash;
+pub mod __elephc_phar_sign_openssl;
 pub mod basename;
 pub mod chdir;
 pub mod chgrp;

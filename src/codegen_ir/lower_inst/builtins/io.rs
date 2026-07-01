@@ -3798,7 +3798,7 @@ fn lower_literal_phar_file_put_contents(
 }
 
 /// Lowers the compiler-internal native PHAR compression-control helper.
-pub(super) fn lower_elephc_phar_set_compression(
+pub(crate) fn lower_elephc_phar_set_compression(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3856,7 +3856,7 @@ pub(super) fn lower_elephc_phar_set_compression(
 }
 
 /// Lowers `__elephc_phar_get_metadata()` into the metadata-read bridge call.
-pub(super) fn lower_elephc_phar_get_metadata(
+pub(crate) fn lower_elephc_phar_get_metadata(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3870,7 +3870,7 @@ pub(super) fn lower_elephc_phar_get_metadata(
 }
 
 /// Lowers `__elephc_phar_get_stub()` into the stub-read bridge call.
-pub(super) fn lower_elephc_phar_get_stub(
+pub(crate) fn lower_elephc_phar_get_stub(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3879,7 +3879,7 @@ pub(super) fn lower_elephc_phar_get_stub(
 }
 
 /// Lowers `__elephc_phar_set_metadata()` into the metadata-write bridge call.
-pub(super) fn lower_elephc_phar_set_metadata(
+pub(crate) fn lower_elephc_phar_set_metadata(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3893,7 +3893,7 @@ pub(super) fn lower_elephc_phar_set_metadata(
 }
 
 /// Lowers `__elephc_phar_set_stub()` into the stub-write bridge call.
-pub(super) fn lower_elephc_phar_set_stub(
+pub(crate) fn lower_elephc_phar_set_stub(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4071,7 +4071,7 @@ fn emit_phar_get_string_bridge(
 }
 
 /// Lowers `__elephc_phar_get_file_metadata()` into the per-file metadata-read bridge.
-pub(super) fn lower_elephc_phar_get_file_metadata(
+pub(crate) fn lower_elephc_phar_get_file_metadata(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4087,7 +4087,7 @@ pub(super) fn lower_elephc_phar_get_file_metadata(
 /// Lowers `__elephc_phar_set_file_metadata()` into the per-file metadata-write bridge.
 /// The single `phar://archive/entry` URL argument is split by the bridge, so this
 /// reuses the same `(url, data) -> bool` shape as the archive-level metadata writer.
-pub(super) fn lower_elephc_phar_set_file_metadata(
+pub(crate) fn lower_elephc_phar_set_file_metadata(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4102,7 +4102,7 @@ pub(super) fn lower_elephc_phar_set_file_metadata(
 
 /// Lowers `__elephc_phar_gzip_archive(src)` into the whole-archive gzip bridge,
 /// returning the written destination path (or an empty string on failure).
-pub(super) fn lower_elephc_phar_gzip_archive(
+pub(crate) fn lower_elephc_phar_gzip_archive(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4117,7 +4117,7 @@ pub(super) fn lower_elephc_phar_gzip_archive(
 
 /// Lowers `__elephc_phar_bzip2_archive(src)` into the whole-archive bzip2 bridge,
 /// returning the written destination path (or an empty string on failure).
-pub(super) fn lower_elephc_phar_bzip2_archive(
+pub(crate) fn lower_elephc_phar_bzip2_archive(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4132,7 +4132,7 @@ pub(super) fn lower_elephc_phar_bzip2_archive(
 
 /// Lowers `__elephc_phar_decompress_archive(src)` into the whole-archive decompression
 /// bridge, returning the written destination path (or an empty string on failure).
-pub(super) fn lower_elephc_phar_decompress_archive(
+pub(crate) fn lower_elephc_phar_decompress_archive(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4146,7 +4146,7 @@ pub(super) fn lower_elephc_phar_decompress_archive(
 }
 
 /// Lowers `__elephc_phar_sign_openssl(path, keyPem)` into the RSA-SHA1 signing bridge.
-pub(super) fn lower_elephc_phar_sign_openssl(
+pub(crate) fn lower_elephc_phar_sign_openssl(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4160,7 +4160,7 @@ pub(super) fn lower_elephc_phar_sign_openssl(
 }
 
 /// Lowers `__elephc_phar_sign_hash(path, algo)` into the hash-based signing bridge.
-pub(super) fn lower_elephc_phar_sign_hash(
+pub(crate) fn lower_elephc_phar_sign_hash(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4175,7 +4175,7 @@ pub(super) fn lower_elephc_phar_sign_hash(
 
 /// Lowers `__elephc_phar_set_zip_password(password)` into the ZipCrypto password
 /// bridge that lets later reads decrypt encrypted ZIP entries.
-pub(super) fn lower_elephc_phar_set_zip_password(
+pub(crate) fn lower_elephc_phar_set_zip_password(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4189,7 +4189,7 @@ pub(super) fn lower_elephc_phar_set_zip_password(
 }
 
 /// Lowers `__elephc_phar_get_signature_hash(path)` into the signature-hash read bridge.
-pub(super) fn lower_elephc_phar_get_signature_hash(
+pub(crate) fn lower_elephc_phar_get_signature_hash(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4203,7 +4203,7 @@ pub(super) fn lower_elephc_phar_get_signature_hash(
 }
 
 /// Lowers `__elephc_phar_get_signature_type(path)` into the signature-type read bridge.
-pub(super) fn lower_elephc_phar_get_signature_type(
+pub(crate) fn lower_elephc_phar_get_signature_type(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4274,7 +4274,7 @@ fn emit_phar_path_int_to_bool_bridge(
 }
 
 /// Lowers the compiler-internal PHAR entry-list helper into a PHP string array.
-pub(super) fn lower_elephc_phar_list_entries(
+pub(crate) fn lower_elephc_phar_list_entries(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {

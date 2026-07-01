@@ -8,7 +8,8 @@
 //!
 //! Key details:
 //! - `SUPPORTED_BUILTIN_FUNCTIONS` is the source of truth for PHP-visible builtin names.
-//! - `INTERNAL_BUILTIN_FUNCTIONS` exists only for compiler-generated synthetic bodies.
+//! - `INTERNAL_BUILTIN_FUNCTIONS` is now an empty placeholder; internal builtins are
+//!   registered via `internal: true` in `src/builtins/` and recognized through the registry.
 
 const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "boolval",
@@ -146,24 +147,11 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "vfprintf",
 ];
 
-const INTERNAL_BUILTIN_FUNCTIONS: &[&str] = &[
-    "__elephc_phar_bzip2_archive",
-    "__elephc_phar_decompress_archive",
-    "__elephc_phar_get_file_metadata",
-    "__elephc_phar_get_metadata",
-    "__elephc_phar_get_signature_hash",
-    "__elephc_phar_get_signature_type",
-    "__elephc_phar_get_stub",
-    "__elephc_phar_gzip_archive",
-    "__elephc_phar_list_entries",
-    "__elephc_phar_set_compression",
-    "__elephc_phar_set_file_metadata",
-    "__elephc_phar_set_metadata",
-    "__elephc_phar_set_stub",
-    "__elephc_phar_set_zip_password",
-    "__elephc_phar_sign_hash",
-    "__elephc_phar_sign_openssl",
-];
+// All former entries migrated to `src/builtins/io/__elephc_phar_*.rs` with `internal: true`
+// (io batch C2). Name recognition now flows through `registry::is_supported` inside
+// `canonical_builtin_function_name`. The slice is kept as an empty placeholder so that
+// `is_supported_builtin_function_exact` compiles unchanged.
+const INTERNAL_BUILTIN_FUNCTIONS: &[&str] = &[];
 
 /// Checks if the exact (lowercase) name is in the PHP-visible or internal builtin lists.
 /// Does not perform case folding; use `is_supported_builtin_function` for case-insensitive lookup.
