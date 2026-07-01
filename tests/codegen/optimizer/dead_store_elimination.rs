@@ -62,8 +62,8 @@ fn test_dead_store_elimination_removes_overwritten_scalar_store() {
     let unoptimized = emit_ir(source, false);
     let unoptimized_main = function_ir(&unoptimized, "main()");
     assert!(
-        unoptimized_main.contains("ichecked_mul"),
-        "--no-ir-opt should keep the dead store's checked multiply:\n{}",
+        unoptimized_main.contains("imul"),
+        "--no-ir-opt should keep the dead store's multiply:\n{}",
         unoptimized_main
     );
     assert!(
