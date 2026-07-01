@@ -365,6 +365,15 @@ fn is_builtin_global_constant(name: &str) -> bool {
             | "STDIN"
             | "STDOUT"
             | "STDERR"
+            | "ENT_QUOTES"
+            | "ENT_COMPAT"
+            | "ENT_NOQUOTES"
+            | "ENT_HTML401"
+            | "ENT_XML1"
+            | "ENT_XHTML"
+            | "ENT_HTML5"
+            | "ENT_SUBSTITUTE"
+            | "ENT_IGNORE"
     ) {
         return true;
     }

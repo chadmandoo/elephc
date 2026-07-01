@@ -1559,6 +1559,49 @@ fn lower_str_repeat_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     Ok(())
 }
 
+/// Lowers `htmlspecialchars()` / `htmlentities()`, passing the optional flags
+/// argument to the runtime helper in a dedicated register so it can select the
+/// ENT_HTML5 apostrophe form (`&apos;`) versus the default `&#039;`.
+pub(super) fn lower_htmlspecialchars(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => lower_htmlspecialchars_aarch64(ctx, inst)?,
+        Arch::X86_64 => lower_htmlspecialchars_x86_64(ctx, inst)?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_htmlspecialchars");
+    store_if_result(ctx, inst)
+}
+
+/// Materializes AArch64 `htmlspecialchars()` runtime arguments: the source string in
+/// x1/x2 and the flags bitmask in x3. The 1-argument form uses PHP 8.1's default flags
+/// `ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401` (= 11).
+fn lower_htmlspecialchars_aarch64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_string_arg_to_regs(ctx, inst, 0, "htmlspecialchars", "x1", "x2")?;
+    if let Ok(flags) = expect_operand(inst, 1) {
+        ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                         // preserve the source string while materializing the flags argument
+        load_as_int(ctx, flags, "htmlspecialchars flags")?;
+        ctx.emitter.instruction("mov x3, x0");                                      // pass the flags bitmask as the third runtime argument
+        ctx.emitter.instruction("ldp x1, x2, [sp], #16");                           // restore the source string into the runtime argument registers
+    } else {
+        ctx.emitter.instruction("mov x3, #11");                                     // default flags: ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401
+    }
+    Ok(())
+}
+
+/// Materializes x86_64 `htmlspecialchars()` runtime arguments: the source string in
+/// rax/rdx and the flags bitmask in rdi.
+fn lower_htmlspecialchars_x86_64(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    load_string_arg_to_regs(ctx, inst, 0, "htmlspecialchars", "rax", "rdx")?;
+    if let Ok(flags) = expect_operand(inst, 1) {
+        abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+        load_as_int(ctx, flags, "htmlspecialchars flags")?;
+        ctx.emitter.instruction("mov rdi, rax");                                    // pass the flags bitmask as the extra x86_64 runtime argument
+        abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+    } else {
+        ctx.emitter.instruction("mov rdi, 11");                                     // default flags: ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401
+    }
+    Ok(())
+}
+
 /// Emits AArch64 `strstr()` search and suffix reconstruction.
 fn lower_strstr_aarch64(
     ctx: &mut FunctionContext<'_>,

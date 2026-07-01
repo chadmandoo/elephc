@@ -436,18 +436,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "wordwrap" => strings::lower_wordwrap(ctx, inst),
         "bin2hex" => strings::lower_unary_string_runtime(ctx, inst, "bin2hex", "__rt_bin2hex"),
         "hex2bin" => strings::lower_unary_string_runtime(ctx, inst, "hex2bin", "__rt_hex2bin"),
-        "htmlspecialchars" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "htmlspecialchars",
-            "__rt_htmlspecialchars",
-        ),
-        "htmlentities" => strings::lower_unary_string_runtime(
-            ctx,
-            inst,
-            "htmlentities",
-            "__rt_htmlspecialchars",
-        ),
+        "htmlspecialchars" | "htmlentities" => strings::lower_htmlspecialchars(ctx, inst),
         "html_entity_decode" => strings::lower_unary_string_runtime(
             ctx,
             inst,

@@ -87,9 +87,17 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
 
         "strlen" | "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "strrev"
         | "grapheme_strrev" | "addslashes" | "stripslashes" | "nl2br" | "bin2hex"
-        | "hex2bin" | "htmlspecialchars" | "htmlentities" | "html_entity_decode"
+        | "hex2bin" | "html_entity_decode"
         | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
         | "base64_encode" | "base64_decode" => Some(fixed(&["string"])),
+        "htmlspecialchars" | "htmlentities" => Some(optional(
+            &["string", "flags", "encoding"],
+            1,
+            vec![
+                int_lit(11),
+                Expr::new(ExprKind::StringLiteral("UTF-8".to_string()), Span::dummy()),
+            ],
+        )),
         "gzcompress" => Some(optional(&["data", "level"], 1, vec![int_lit(-1)])),
         "gzdeflate" => Some(optional(&["data", "level"], 1, vec![int_lit(-1)])),
         "gzinflate" => Some(optional(&["data", "max_length"], 1, vec![int_lit(0)])),

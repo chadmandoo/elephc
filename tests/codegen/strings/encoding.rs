@@ -184,6 +184,38 @@ fn test_htmlspecialchars() {
     );
 }
 
+/// Verifies the htmlspecialchars() flag argument selects the single-quote entity form:
+/// ENT_HTML5 (and the XHTML/XML doctypes) emit `&apos;`, while the default HTML4.01
+/// doctype emits the numeric `&#039;`. Also exercises the optional encoding argument.
+#[test]
+fn test_htmlspecialchars_flags_select_apostrophe_form() {
+    let out = compile_and_run(
+        r#"<?php
+        echo htmlspecialchars("it's", ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML5, "UTF-8");
+        echo "\n";
+        echo htmlspecialchars("it's", ENT_QUOTES);
+        echo "\n";
+        echo htmlspecialchars("it's");
+        "#,
+    );
+    assert_eq!(out, "it&apos;s\nit&#039;s\nit&#039;s");
+}
+
+/// Verifies the htmlspecialchars() quote-mode flag bits: ENT_QUOTES escapes both
+/// quotes, ENT_COMPAT escapes only the double quote, and ENT_NOQUOTES escapes neither.
+#[test]
+fn test_htmlspecialchars_quote_modes() {
+    let out = compile_and_run(
+        r#"<?php
+        $s = "\"a\" 'b'";
+        echo htmlspecialchars($s, ENT_QUOTES), "\n";
+        echo htmlspecialchars($s, ENT_COMPAT), "\n";
+        echo htmlspecialchars($s, ENT_NOQUOTES);
+        "#,
+    );
+    assert_eq!(out, "&quot;a&quot; &#039;b&#039;\n&quot;a&quot; 'b'\n\"a\" 'b'");
+}
+
 /// Verifies `htmlentities()` converts `<` and `>` to their HTML entities, encoding all applicable characters.
 #[test]
 fn test_htmlentities() {

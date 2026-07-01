@@ -185,8 +185,8 @@ Read-only. Negative indices count from end. Out-of-bounds returns empty string.
 | `hash_update()` | `hash_update($context, $data): bool` | Feed data into an incremental hashing context. |
 | `hash_final()` | `hash_final($context, $binary = false): string` | Finalize a context and return the digest (hex, or raw bytes when `$binary`). |
 | `hash_copy()` | `hash_copy($context): HashContext` | Clone an incremental hashing context so the original and copy can diverge. |
-| `htmlspecialchars()` | `htmlspecialchars($str): string` | Escape HTML special chars |
-| `htmlentities()` | `htmlentities($str): string` | Alias for htmlspecialchars |
+| `htmlspecialchars()` | `htmlspecialchars($str, $flags = ENT_QUOTES\|ENT_SUBSTITUTE\|ENT_HTML401, $encoding = "UTF-8"): string` | Escape `&`, `<`, `>`, and (per `$flags`) the quotes. `$flags` selects the quote-mode (`ENT_QUOTES`/`ENT_COMPAT`/`ENT_NOQUOTES`) and the doctype: `ENT_HTML401` emits `&#039;` while `ENT_HTML5`/`ENT_XHTML`/`ENT_XML1` emit `&apos;`. `$encoding` is accepted but treated as UTF-8/byte-wise; `ENT_SUBSTITUTE`/`ENT_IGNORE` invalid-byte handling is not yet applied. |
+| `htmlentities()` | `htmlentities($str, $flags = ENT_QUOTES\|ENT_SUBSTITUTE\|ENT_HTML401, $encoding = "UTF-8"): string` | Alias for `htmlspecialchars()`. |
 | `html_entity_decode()` | `html_entity_decode($str): string` | Decode HTML entities |
 | `urlencode()` | `urlencode($str): string` | URL-encode (spaces as +) |
 | `urldecode()` | `urldecode($str): string` | URL-decode |

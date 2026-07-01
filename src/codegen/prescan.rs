@@ -108,6 +108,21 @@ pub(crate) fn collect_constants(
         "LOCK_NB".to_string(),
         (ExprKind::IntLiteral(4), PhpType::Int),
     );
+    // htmlspecialchars()/htmlentities() flag constants (quote-mode in the low
+    // two bits, document-type in bits 4-5).
+    for (name, value) in [
+        ("ENT_QUOTES", 3),
+        ("ENT_COMPAT", 2),
+        ("ENT_NOQUOTES", 0),
+        ("ENT_HTML401", 0),
+        ("ENT_XML1", 16),
+        ("ENT_XHTML", 32),
+        ("ENT_HTML5", 48),
+        ("ENT_SUBSTITUTE", 8),
+        ("ENT_IGNORE", 4),
+    ] {
+        constants.insert(name.to_string(), (ExprKind::IntLiteral(value), PhpType::Int));
+    }
     for (name, value) in ARRAY_INT_CONSTANTS {
         constants.insert(
             (*name).to_string(),

@@ -188,6 +188,15 @@ pub(super) fn check_types_impl(
     }
     checker.declared_classes = class_map.keys().cloned().collect();
     checker.declared_interfaces = interface_map.keys().cloned().collect();
+    // Enum names must resolve as types in member positions (property and
+    // promoted-constructor-param types), which are checked during the class
+    // schema pass — before the enum-processing phase populates `enums`. Pre-
+    // declare them alongside classes (mirrors the later insert in `schema::enums`).
+    for stmt in program {
+        if let StmtKind::EnumDecl { name, .. } = &stmt.kind {
+            checker.declared_classes.insert(name.clone());
+        }
+    }
 
     let mut next_interface_id = 0u64;
     let mut building_interfaces = HashSet::new();
@@ -354,8 +363,9 @@ fn substitute_relative_class_types_in_flattened(classes: &mut [FlattenedClass]) 
     }
 }
 
-/// Rewrites the relative class types `self`/`static`/`parent` in each method's parameter and
-/// return type annotations to `self_class`/`parent`. Shared by class and interface processing.
+/// Rewrites the relative class types `self`/`static`/`parent` in each method's parameter,
+/// variadic-parameter, and return type annotations to `self_class`/`parent`. Shared by class
+/// and interface processing.
 fn substitute_relative_class_types_in_methods(
     methods: &mut [ClassMethod],
     self_class: &str,
@@ -369,6 +379,9 @@ fn substitute_relative_class_types_in_methods(
         }
         if let Some(ret) = method.return_type.as_mut() {
             *ret = ret.substitute_relative_class_types(self_class, parent);
+        }
+        if let Some(variadic_ty) = method.variadic_type.as_mut() {
+            *variadic_ty = variadic_ty.substitute_relative_class_types(self_class, parent);
         }
     }
 }
