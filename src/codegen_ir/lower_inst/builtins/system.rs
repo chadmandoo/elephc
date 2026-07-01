@@ -261,7 +261,7 @@ pub(crate) fn lower_hrtime(
 /// 0 = "read current" when omitted) goes into the first integer argument register;
 /// the routine returns the resulting status as an int. PHP semantics (read vs set,
 /// return-previous) live in the bridge's `elephc_web_set_status`.
-pub(super) fn lower_http_response_code(
+pub(crate) fn lower_http_response_code(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -286,7 +286,7 @@ pub(super) fn lower_http_response_code(
 /// to scratch first (their evaluation may call helpers that clobber the string
 /// registers), then the line string is loaded and the staged ints reloaded into
 /// arg2/arg3. All PHP `header()` behavior lives in the bridge (`elephc_web_header`).
-pub(super) fn lower_header(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_header(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "header", 1, 3)?;
     let line = expect_operand(inst, 0)?;
     emit_scratch_reserve(ctx, 16);
@@ -642,7 +642,7 @@ pub(super) fn lower_exit(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 }
 
 /// Lowers `getenv(name)` through the target-aware environment lookup helper.
-pub(super) fn lower_getenv(
+pub(crate) fn lower_getenv(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -654,7 +654,7 @@ pub(super) fn lower_getenv(
 }
 
 /// Lowers `putenv(assignment)` by copying the environment string into persistent heap storage.
-pub(super) fn lower_putenv(
+pub(crate) fn lower_putenv(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -669,7 +669,7 @@ pub(super) fn lower_putenv(
 }
 
 /// Lowers `php_uname(mode?)` through the target-aware uname runtime helper.
-pub(super) fn lower_php_uname(
+pub(crate) fn lower_php_uname(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -687,7 +687,7 @@ pub(super) fn lower_php_uname(
 }
 
 /// Lowers `exec(command)` by capturing shell stdout through the shared runtime helper.
-pub(super) fn lower_exec(
+pub(crate) fn lower_exec(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -695,7 +695,7 @@ pub(super) fn lower_exec(
 }
 
 /// Lowers `shell_exec(command)` by capturing shell stdout through the shared runtime helper.
-pub(super) fn lower_shell_exec(
+pub(crate) fn lower_shell_exec(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -703,7 +703,7 @@ pub(super) fn lower_shell_exec(
 }
 
 /// Lowers `system(command)` through libc `system()` and returns the legacy empty string result.
-pub(super) fn lower_system(
+pub(crate) fn lower_system(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -711,7 +711,7 @@ pub(super) fn lower_system(
 }
 
 /// Lowers `passthru(command)` through libc `system()` for direct stdout passthrough.
-pub(super) fn lower_passthru(
+pub(crate) fn lower_passthru(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {

@@ -57,7 +57,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         return (def.spec.lower)(ctx, inst);
     }
     match key.as_str() {
-        "phpversion" => lower_phpversion(ctx, inst),
         "strlen" => lower_strlen(ctx, inst),
         "closure_bind" => lower_closure_bind(ctx, inst),
         "buffer_len" => buffers::lower_buffer_len(ctx, inst),
@@ -74,8 +73,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "unset" => types::lower_unset_builtin(ctx, inst),
         "isset" => isset::lower_isset(ctx, inst),
         "gettype" => lower_gettype(ctx, inst),
-        "define" => lower_define(ctx, inst),
-        "defined" => lower_defined(ctx, inst),
         "file_get_contents" => io::lower_file_get_contents(ctx, inst),
         "readfile" => io::lower_readfile(ctx, inst),
         "readline" => io::lower_readline(ctx, inst),
@@ -241,16 +238,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_writeable" => io::lower_is_writeable(ctx, inst),
         "is_executable" => io::lower_is_executable(ctx, inst),
         "is_link" => io::lower_is_link(ctx, inst),
-        "http_response_code" => system::lower_http_response_code(ctx, inst),
-        "header" => system::lower_header(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
-        "getenv" => system::lower_getenv(ctx, inst),
-        "putenv" => system::lower_putenv(ctx, inst),
-        "php_uname" => system::lower_php_uname(ctx, inst),
-        "exec" => system::lower_exec(ctx, inst),
-        "shell_exec" => system::lower_shell_exec(ctx, inst),
-        "system" => system::lower_system(ctx, inst),
-        "passthru" => system::lower_passthru(ctx, inst),
         "preg_match" => regex::lower_preg_match(ctx, inst),
         "preg_match_all" => regex::lower_preg_match_all(ctx, inst),
         "preg_replace" => regex::lower_preg_replace(ctx, inst),
@@ -314,7 +302,7 @@ pub(super) fn lower_hash_isset(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `define("NAME", value)` with the legacy duplicate-name runtime guard.
-fn lower_define(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_define(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "define", 2)?;
     let name_value = expect_operand(inst, 0)?;
     let value = expect_operand(inst, 1)?;
@@ -483,7 +471,7 @@ fn emit_type_name_result(ctx: &mut FunctionContext<'_>, type_name: &[u8]) {
 }
 
 /// Lowers `phpversion()` as the compiler package version string.
-fn lower_phpversion(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_phpversion(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "phpversion", 0)?;
     let (label, len) = ctx.data.add_string(env!("CARGO_PKG_VERSION").as_bytes());
     let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
@@ -493,7 +481,7 @@ fn lower_phpversion(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result
 }
 
 /// Lowers `defined("NAME")` for compile-time string constant names.
-fn lower_defined(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_defined(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "defined", 1)?;
     let value = expect_operand(inst, 0)?;
     let constant_name = const_string_operand(ctx, value)?;

@@ -29,62 +29,6 @@ pub(super) fn check_builtin(
     env: &TypeEnv,
 ) -> BuiltinResult {
     match name {
-        "http_response_code" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(
-                    span,
-                    "http_response_code() takes 0 or 1 arguments",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Int))
-        }
-        "header" => {
-            if args.is_empty() || args.len() > 3 {
-                return Err(CompileError::new(span, "header() takes 1 to 3 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Void))
-        }
-        "getenv" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "getenv() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(checker.normalize_union_type(vec![
-                PhpType::Str,
-                PhpType::Bool,
-            ])))
-        }
-        "putenv" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "putenv() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Bool))
-        }
-        "php_uname" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(span, "php_uname() takes 0 or 1 arguments"));
-            }
-            if let Some(arg) = args.first() {
-                let ty = checker.infer_type(arg, env)?;
-                if ty != PhpType::Str {
-                    return Err(CompileError::new(span, "php_uname() argument must be string"));
-                }
-            }
-            Ok(Some(PhpType::Str))
-        }
-        "phpversion" => {
-            if !args.is_empty() {
-                return Err(CompileError::new(span, "phpversion() takes no arguments"));
-            }
-            Ok(Some(PhpType::Str))
-        }
         "class_attribute_names" => {
             if args.len() != 1 {
                 return Err(CompileError::new(
@@ -211,53 +155,6 @@ pub(super) fn check_builtin(
             Ok(Some(PhpType::Array(Box::new(PhpType::Object(
                 "ReflectionAttribute".to_string(),
             )))))
-        }
-        "exec" | "shell_exec" | "system" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes exactly 1 argument", name),
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Str))
-        }
-        "passthru" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "passthru() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Void))
-        }
-        "define" => {
-            if args.len() != 2 {
-                return Err(CompileError::new(span, "define() takes exactly 2 arguments"));
-            }
-            let name_str = match &args[0].kind {
-                ExprKind::StringLiteral(s) => s.clone(),
-                _ => {
-                    return Err(CompileError::new(
-                        span,
-                        "define() first argument must be a string literal",
-                    ));
-                }
-            };
-            let ty = checker.infer_type(&args[1], env)?;
-            checker.constants.entry(name_str).or_insert(ty);
-            Ok(Some(PhpType::Bool))
-        }
-        "defined" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "defined() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            if !matches!(args[0].kind, ExprKind::StringLiteral(_)) {
-                return Err(CompileError::new(
-                    span,
-                    "defined() first argument must be a string literal in AOT mode",
-                ));
-            }
-            Ok(Some(PhpType::Bool))
         }
         "json_encode" => {
             if args.is_empty() || args.len() > 3 {

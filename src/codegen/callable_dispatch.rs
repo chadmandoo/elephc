@@ -635,6 +635,15 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             | "ptr" | "ptr_null" | "ptr_is_null" | "ptr_sizeof" | "ptr_offset"
             | "ptr_get" | "ptr_set"
             | "ptr_read8" | "ptr_read32" | "ptr_write8" | "ptr_write32"
+            // These 9 system builtins had no pre-migration first-class-callable wrapper:
+            // first_class_callable_builtin_sig / general_first_class_callable_builtin_sig
+            // returned None for them, so no wrapper was emitted. Excluding them restores
+            // that pre-migration behaviour — this is provably behaviour-neutral. `define`
+            // additionally requires a StringLiteral first argument, making a generic
+            // runtime wrapper semantically incorrect (same rationale as ptr_sizeof).
+            // Direct calls and EIR first-class-callable use still work through the EIR path.
+            | "getenv" | "putenv" | "http_response_code" | "header"
+            | "exec" | "shell_exec" | "system" | "passthru" | "define"
     )
 }
 
