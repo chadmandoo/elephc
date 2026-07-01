@@ -15,6 +15,7 @@
 mod macros;
 pub mod spec;
 pub mod registry;
+pub mod docs;
 mod convert;
 mod array;
 mod callables;
