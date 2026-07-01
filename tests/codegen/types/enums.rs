@@ -29,6 +29,29 @@ fn test_backed_enum_value_and_from_identity() {
     assert_eq!(out, "1\n1");
 }
 
+/// Regression: an enum case used as a parameter DEFAULT value (`f(E $x = E::Case)`) has
+/// the enum object type, not its backing scalar. Modeled on AIC's `HeadAsset` constructor
+/// `public HeadAssetMode $mode = HeadAssetMode::Default`. Previously failed with
+/// "... parameter $m expects Object(...), got Str" because purely-syntactic default-value
+/// inference typed every `::` access as Str. A free function isolates the fix from
+/// enum-typed class-member resolution.
+#[test]
+fn test_enum_case_as_parameter_default_value() {
+    let out = compile_and_run(
+        "<?php
+        enum Mode: string {
+            case Foo = 'foo';
+            case Bar = 'bar';
+        }
+        function pick(Mode $m = Mode::Foo): string {
+            return $m->value;
+        }
+        echo pick(), '|', pick(Mode::Bar);
+        ",
+    );
+    assert_eq!(out, "foo|bar");
+}
+
 /// Verifies `Color::tryFrom(99)` returns `null` for an unknown value (with null coalescing to `Color::Red`),
 /// `Color::cases()` returns all cases, and case index `1` is `Color::Green` by identity.
 #[test]
