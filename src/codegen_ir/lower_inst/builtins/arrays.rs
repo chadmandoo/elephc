@@ -48,12 +48,12 @@ pub(super) fn lower_call_user_func_builtin_escape(
 }
 
 /// Lowers `array_sum()` over supported indexed-array payloads.
-pub(super) fn lower_array_sum(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_sum(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_aggregate(ctx, inst, "array_sum", "__rt_array_sum")
 }
 
 /// Lowers `array_product()` over supported indexed-array payloads.
-pub(super) fn lower_array_product(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_product(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_indexed_array_aggregate(ctx, inst, "array_product", "__rt_array_product")
 }
 
@@ -112,7 +112,7 @@ pub(crate) fn lower_array_pad(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `array_fill()` for pointer-sized scalar and refcounted payloads.
-pub(super) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_fill", 3)?;
     let start = expect_operand(inst, 0)?;
     let count = expect_operand(inst, 1)?;
@@ -135,7 +135,7 @@ pub(super) fn lower_array_fill(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `array_fill_keys()` through the legacy hash-building runtime helpers.
-pub(super) fn lower_array_fill_keys(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_fill_keys(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_fill_keys", 2)?;
     let keys = expect_operand(inst, 0)?;
     let value = expect_operand(inst, 1)?;
@@ -1004,7 +1004,7 @@ pub(crate) fn lower_array_keys(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `array_rand()` for indexed arrays.
-pub(super) fn lower_array_rand(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_rand(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_rand", 1)?;
     let array = expect_operand(inst, 0)?;
     require_indexed_array_builtin(ctx.value_php_type(array)?, "array_rand")?;
@@ -1017,7 +1017,7 @@ pub(super) fn lower_array_rand(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers `range()` for integer endpoints through the shared runtime constructor.
-pub(super) fn lower_range(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_range(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "range", 2)?;
     let start = expect_operand(inst, 0)?;
     let end = expect_operand(inst, 1)?;
@@ -1133,7 +1133,7 @@ pub(super) fn lower_uasort(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `array_key_exists()` through the dedicated key-existence builtin emitter.
-pub(super) fn lower_array_key_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_key_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     key_exists::lower_array_key_exists(ctx, inst)
 }
 
@@ -1152,12 +1152,12 @@ pub(crate) fn lower_array_is_list(ctx: &mut FunctionContext<'_>, inst: &Instruct
 }
 
 /// Lowers `array_key_first()` through the shared edge-key helper with selector `0`.
-pub(super) fn lower_array_key_first(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_key_first(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_edge_key(ctx, inst, "array_key_first", 0)
 }
 
 /// Lowers `array_key_last()` through the shared edge-key helper with selector `1`.
-pub(super) fn lower_array_key_last(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_key_last(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_array_edge_key(ctx, inst, "array_key_last", 1)
 }
 
@@ -1707,7 +1707,7 @@ pub(super) fn lower_array_multisort(ctx: &mut FunctionContext<'_>, inst: &Instru
 }
 
 /// Lowers `array_search()` for indexed arrays with integer-like payloads.
-pub(super) fn lower_array_search(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_array_search(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "array_search", 2)?;
     let needle = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
@@ -1726,7 +1726,7 @@ pub(super) fn lower_array_search(ctx: &mut FunctionContext<'_>, inst: &Instructi
 }
 
 /// Lowers `in_array()` for indexed arrays with scalar or string payloads.
-pub(super) fn lower_in_array(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_in_array(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "in_array", 2)?;
     let needle = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
