@@ -119,11 +119,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "lstat",
     "mkdir",
     "pathinfo",
-    "preg_match",
-    "preg_match_all",
     "preg_replace_callback",
-    "preg_replace",
-    "preg_split",
     "print_r",
 
     "readline",

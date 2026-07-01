@@ -652,6 +652,14 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // string-name callable dispatch semantically incorrect.
             // Direct calls and EIR first-class-callable use still work through the EIR path.
             | "class_attribute_names" | "class_attribute_args" | "class_get_attributes"
+            // preg_match / preg_match_all / preg_replace / preg_split had no pre-migration
+            // first-class-callable wrapper: general_first_class_callable_builtin_sig returned
+            // None for them (they are not in that table), so no wrapper was emitted.
+            // Excluding them restores that pre-migration behaviour.  preg_match additionally
+            // has a by-ref `$matches` parameter that is semantically incorrect to drive through
+            // a generic string-callable wrapper body.  Direct calls and EIR first-class-callable
+            // use still work through the EIR path.
+            | "preg_match" | "preg_match_all" | "preg_replace" | "preg_split"
     )
 }
 

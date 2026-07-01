@@ -33,7 +33,7 @@ mod is_numeric;
 pub(crate) mod json;
 pub(crate) mod math;
 pub(crate) mod pointers;
-mod regex;
+pub(crate) mod regex;
 pub(crate) mod serialize;
 pub(crate) mod spl;
 pub(crate) mod system;
@@ -239,11 +239,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_executable" => io::lower_is_executable(ctx, inst),
         "is_link" => io::lower_is_link(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
-        "preg_match" => regex::lower_preg_match(ctx, inst),
-        "preg_match_all" => regex::lower_preg_match_all(ctx, inst),
-        "preg_replace" => regex::lower_preg_replace(ctx, inst),
         "preg_replace_callback" => regex::lower_preg_replace_callback(ctx, inst),
-        "preg_split" => regex::lower_preg_split(ctx, inst),
         "function_exists" => lower_function_exists(ctx, inst),
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
             lower_class_like_exists(ctx, inst, key.as_str())

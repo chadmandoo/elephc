@@ -12,12 +12,13 @@
 //!   mktime, gmmktime, hrtime, getdate, localtime, date_default_timezone_get/set,
 //!   __elephc_mktime_raw, __elephc_gmmktime_raw, __elephc_strtotime_raw,
 //!   putenv, http_response_code, header, phpversion, exec, shell_exec, system, passthru,
-//!   json_last_error, json_last_error_msg, serialize.
+//!   json_last_error, json_last_error_msg, serialize, preg_match_all, preg_replace.
 //! - Check-hook builtins: microtime (literal-dependent return type), strtotime
 //!   (returns Union(Int, Bool)), getenv (returns Union(Str, Bool)), php_uname (validates
 //!   arg type), define (side-effect: registers constant type), defined (validates literal),
 //!   class_attribute_names/class_attribute_args/class_get_attributes (compile-time reflection),
-//!   json_encode, json_decode, json_validate, unserialize.
+//!   json_encode, json_decode, json_validate, unserialize, preg_match (by-ref `$matches`
+//!   variable check), preg_split (element type refined by arg count).
 //! - `attr_support` holds shared helpers for the class-attribute builtins.
 //! - `json_support` holds shared helpers for the JSON/serialize check hooks.
 //! - Add `pub mod <name>;` here for every new system builtin home.
@@ -55,6 +56,10 @@ pub mod mktime;
 pub mod passthru;
 pub mod php_uname;
 pub mod phpversion;
+pub mod preg_match;
+pub mod preg_match_all;
+pub mod preg_replace;
+pub mod preg_split;
 pub mod putenv;
 pub mod serialize;
 pub mod shell_exec;
