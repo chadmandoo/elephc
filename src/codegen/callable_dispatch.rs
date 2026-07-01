@@ -550,18 +550,18 @@ pub(crate) fn runtime_instance_method_case(
 
 /// Provides the Runtime builtin wrapper excluded helper used by the callable dispatch module.
 ///
-/// `__elephc_mktime_raw` / `__elephc_gmmktime_raw` are internal escape hatches that the
-/// `mktime`/`gmmktime` procedural-alias rewriter and synthetic DateTime bodies call directly.
-/// They are lowered inline by the active EIR backend (`__rt_mktime` / `__rt_gmmktime`) and have no
-/// standalone `fn_` symbol, but the deferred-closure wrapper body emitted here is lowered by the
-/// frozen legacy direct backend, which does not know these names and would emit an unresolved
-/// `bl _fn_<name>` reference. They are never invoked dynamically, so excluding them from the
-/// dynamic-call descriptor table is both safe and semantically correct.
+/// `__elephc_mktime_raw` / `__elephc_gmmktime_raw` / `__elephc_strtotime_raw` are internal
+/// escape hatches that the procedural-alias rewriter and synthetic DateTime bodies call directly.
+/// They are lowered inline by the active EIR backend and have no standalone `fn_` symbol; the
+/// deferred-closure wrapper body emitted here is lowered by the frozen legacy direct backend,
+/// which does not know these names and would emit an unresolved `bl _fn_<name>` reference.
+/// They are never invoked dynamically, so excluding them from the dynamic-call descriptor table
+/// is both safe and semantically correct.
 fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
     matches!(
         name,
         "iterator_apply" | "preg_replace_callback"
-            | "__elephc_mktime_raw" | "__elephc_gmmktime_raw"
+            | "__elephc_mktime_raw" | "__elephc_gmmktime_raw" | "__elephc_strtotime_raw"
             // serialize/unserialize are EIR-only builtins with no legacy-backend
             // emitter, so the deferred runtime callable wrapper cannot dispatch them
             // (it would emit a `_fn_serialize` user-function reference). Exclude them

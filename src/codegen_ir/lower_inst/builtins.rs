@@ -36,7 +36,7 @@ pub(crate) mod pointers;
 mod regex;
 mod serialize;
 pub(crate) mod spl;
-mod system;
+pub(crate) mod system;
 pub(crate) mod strings;
 mod types;
 
@@ -241,26 +241,8 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "is_writeable" => io::lower_is_writeable(ctx, inst),
         "is_executable" => io::lower_is_executable(ctx, inst),
         "is_link" => io::lower_is_link(ctx, inst),
-        "date" => system::lower_date(ctx, inst),
-        "gmdate" => system::lower_gmdate(ctx, inst),
-        "date_default_timezone_get" => system::lower_date_default_timezone_get(ctx, inst),
-        "date_default_timezone_set" => system::lower_date_default_timezone_set(ctx, inst),
-        "microtime" => system::lower_microtime(ctx, inst),
-        "mktime" => system::lower_mktime(ctx, inst),
-        "gmmktime" => system::lower_gmmktime(ctx, inst),
-        "__elephc_mktime_raw" => system::lower_mktime(ctx, inst),
-        "__elephc_gmmktime_raw" => system::lower_gmmktime(ctx, inst),
-        "checkdate" => system::lower_checkdate(ctx, inst),
-        "getdate" => system::lower_getdate(ctx, inst),
-        "localtime" => system::lower_localtime(ctx, inst),
-        "hrtime" => system::lower_hrtime(ctx, inst),
         "http_response_code" => system::lower_http_response_code(ctx, inst),
         "header" => system::lower_header(ctx, inst),
-        "sleep" => system::lower_sleep(ctx, inst),
-        "strtotime" => system::lower_strtotime(ctx, inst),
-        "__elephc_strtotime_raw" => system::lower_elephc_strtotime_raw(ctx, inst),
-        "time" => system::lower_time(ctx, inst),
-        "usleep" => system::lower_usleep(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
         "getenv" => system::lower_getenv(ctx, inst),
         "putenv" => system::lower_putenv(ctx, inst),

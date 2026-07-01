@@ -29,48 +29,6 @@ pub(super) fn check_builtin(
     env: &TypeEnv,
 ) -> BuiltinResult {
     match name {
-        "time" => {
-            if !args.is_empty() {
-                return Err(CompileError::new(span, "time() takes no arguments"));
-            }
-            Ok(Some(PhpType::Int))
-        }
-        "microtime" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(span, "microtime() takes 0 or 1 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // PHP: `microtime()` / `microtime(false)` returns the "0.NNNNNNNN SSSSSSSSSS"
-            // string; `microtime(true)` returns float seconds. A literal flag selects the
-            // concrete form for the type checker (and the arg-aware EIR result type), while a
-            // non-literal flag yields `string|float` (boxed `Mixed`), matching the runtime
-            // `__rt_microtime_mixed` branch. Keep this in lockstep with `call_return_type_for_args`
-            // and `call_return_type` in `src/ir_lower/expr/mod.rs`.
-            Ok(Some(match args.first() {
-                Some(arg) => match &arg.kind {
-                    ExprKind::BoolLiteral(true) => PhpType::Float,
-                    ExprKind::BoolLiteral(false) => PhpType::Str,
-                    _ => checker.normalize_union_type(vec![PhpType::Str, PhpType::Float]),
-                },
-                None => PhpType::Str,
-            }))
-        }
-        "sleep" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "sleep() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Int))
-        }
-        "usleep" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(span, "usleep() takes exactly 1 argument"));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Void))
-        }
         "http_response_code" => {
             if args.len() > 1 {
                 return Err(CompileError::new(
@@ -108,25 +66,6 @@ pub(super) fn check_builtin(
             }
             checker.infer_type(&args[0], env)?;
             Ok(Some(PhpType::Bool))
-        }
-        "date_default_timezone_set" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "date_default_timezone_set() takes exactly 1 argument",
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            Ok(Some(PhpType::Bool))
-        }
-        "date_default_timezone_get" => {
-            if !args.is_empty() {
-                return Err(CompileError::new(
-                    span,
-                    "date_default_timezone_get() takes no arguments",
-                ));
-            }
-            Ok(Some(PhpType::Str))
         }
         "php_uname" => {
             if args.len() > 1 {
@@ -319,90 +258,6 @@ pub(super) fn check_builtin(
                 ));
             }
             Ok(Some(PhpType::Bool))
-        }
-        "date" | "gmdate" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{name}() takes 1 or 2 arguments"),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Str))
-        }
-        "mktime" | "gmmktime" | "__elephc_mktime_raw" | "__elephc_gmmktime_raw" => {
-            if args.len() != 6 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{name}() takes exactly 6 arguments"),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Int))
-        }
-        "checkdate" => {
-            if args.len() != 3 {
-                return Err(CompileError::new(span, "checkdate() takes exactly 3 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Bool))
-        }
-        "hrtime" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(span, "hrtime() takes at most 1 argument"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Mixed))
-        }
-        "localtime" => {
-            if args.len() > 2 {
-                return Err(CompileError::new(span, "localtime() takes at most 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Mixed))
-        }
-        "getdate" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(span, "getdate() takes at most 1 argument"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // getdate() always returns a (heterogeneous int/string) associative array. The emitter
-            // boxes it into a Mixed cell, so the inferred type is Mixed, like stat()/fstat().
-            Ok(Some(PhpType::Mixed))
-        }
-        "strtotime" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(span, "strtotime() takes 1 or 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            // PHP returns int|false: the timestamp, or false when the string cannot be parsed.
-            Ok(Some(PhpType::Union(vec![PhpType::Int, PhpType::Bool])))
-        }
-        "__elephc_strtotime_raw" => {
-            // Internal alias used by the synthetic DateTime constructor and modify():
-            // identical parsing, but a raw integer result (failure maps to -1) so object
-            // timestamp storage stays a plain int slot.
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(span, "strtotime() takes 1 or 2 arguments"));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Int))
         }
         "json_encode" => {
             if args.is_empty() || args.len() > 3 {
