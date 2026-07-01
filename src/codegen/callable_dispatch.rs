@@ -779,6 +779,22 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             | "is_array" | "is_object" | "is_scalar" | "is_callable" | "is_resource"
             | "get_resource_type" | "get_resource_id"
             | "settype"
+            // These 16 class-reflection builtins had no pre-migration first-class-callable wrapper:
+            // first_class_callable_builtin_sig / general_first_class_callable_builtin_sig returned
+            // None for them (they are not in either table), so no wrapper was emitted. Registering
+            // them in the builtin registry makes first_class_callable_builtin_sig return Some, which
+            // would newly emit a deferred-closure wrapper; excluding them here restores the exact
+            // pre-migration (no-wrapper) behaviour and is provably behaviour-neutral. Several of
+            // them also require literal string arguments (class/interface/function names that must be
+            // compile-time string literals), making generic string-callable dispatch semantically
+            // incorrect. Direct calls and EIR first-class-callable use still work through the EIR
+            // path.
+            | "class_alias" | "class_exists" | "interface_exists" | "trait_exists" | "enum_exists"
+            | "class_implements" | "class_parents" | "class_uses"
+            | "get_class" | "get_parent_class"
+            | "is_a" | "is_subclass_of"
+            | "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits"
+            | "function_exists"
     )
 }
 

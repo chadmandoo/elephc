@@ -24,7 +24,7 @@ use crate::codegen_ir::{CodegenIrError, Result};
 pub(crate) mod attributes;
 pub(crate) mod arrays;
 mod buffers;
-mod class_relations;
+pub(crate) mod class_relations;
 pub(crate) mod ctype;
 pub(crate) mod debug;
 pub(crate) mod io;
@@ -69,19 +69,6 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "isset" => isset::lower_isset(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
         "preg_replace_callback" => regex::lower_preg_replace_callback(ctx, inst),
-        "function_exists" => lower_function_exists(ctx, inst),
-        "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
-            lower_class_like_exists(ctx, inst, key.as_str())
-        }
-        "class_alias" => types::lower_class_alias(ctx, inst),
-        "get_class" | "get_parent_class" => types::lower_class_name_lookup(ctx, inst, key.as_str()),
-        "is_a" | "is_subclass_of" => types::lower_is_a_relation(ctx, inst, key.as_str()),
-        "class_implements" | "class_parents" | "class_uses" => {
-            class_relations::lower_class_relation(ctx, inst, key.as_str())
-        }
-        "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => {
-            types::lower_get_declared_names(ctx, inst, key.as_str())
-        }
         _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
     }
 }
@@ -291,7 +278,7 @@ pub(crate) fn lower_defined(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 /// functions). The aliases are matched through `is_date_procedural_alias` rather than the catalog
 /// because their call sites are rewritten before codegen, so they never reach the builtin catalog
 /// yet must still report as existing to match PHP.
-fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "function_exists", 1)?;
     let value = expect_operand(inst, 0)?;
     let function_name = const_string_operand(ctx, value)?;
@@ -308,7 +295,7 @@ fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 }
 
 /// Lowers AOT class/interface/enum existence checks for literal names.
-fn lower_class_like_exists(
+pub(crate) fn lower_class_like_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,

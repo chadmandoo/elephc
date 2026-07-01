@@ -1155,174 +1155,42 @@ pub(super) fn check_builtin(
                 "call_user_func() callback must be callable",
             ))
         }
-        "class_alias" => {
-            if args.len() < 2 || args.len() > 3 {
-                return Err(CompileError::new(
-                    span,
-                    "class_alias() takes 2 or 3 arguments",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            return Err(CompileError::new(
-                span,
-                "class_alias() is only supported as a top-level statement with literal class names",
-            ));
-        }
-        "class_exists" | "interface_exists" | "trait_exists" | "enum_exists" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes 1 or 2 arguments", name),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            if !matches!(args[0].kind, ExprKind::StringLiteral(_)) {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() first argument must be a string literal in AOT mode", name),
-                ));
-            }
-            if let Some(autoload_arg) = args.get(1) {
-                if !matches!(
-                    autoload_arg.kind,
-                    ExprKind::BoolLiteral(_) | ExprKind::IntLiteral(_)
-                ) {
-                    return Err(CompileError::new(
-                        span,
-                        &format!(
-                            "{}() autoload argument must be a literal bool or int in AOT mode",
-                            name
-                        ),
-                    ));
-                }
-            }
-            Ok(Some(PhpType::Bool))
-        }
-        "class_implements" | "class_parents" | "class_uses" => {
-            if args.is_empty() || args.len() > 2 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes 1 or 2 arguments", name),
-                ));
-            }
-            let first_ty = checker.infer_type(&args[0], env)?;
-            if !matches!(first_ty, PhpType::Object(_))
-                && !matches!(args[0].kind, ExprKind::StringLiteral(_))
-            {
-                return Err(CompileError::new(
-                    span,
-                    &format!(
-                        "{}() first argument must be an object or string literal in AOT mode",
-                        name
-                    ),
-                ));
-            }
-            if let Some(autoload_arg) = args.get(1) {
-                checker.infer_type(autoload_arg, env)?;
-                if !matches!(
-                    autoload_arg.kind,
-                    ExprKind::BoolLiteral(_) | ExprKind::IntLiteral(_)
-                ) {
-                    return Err(CompileError::new(
-                        span,
-                        &format!(
-                            "{}() autoload argument must be a literal bool or int in AOT mode",
-                            name
-                        ),
-                    ));
-                }
-            }
-            Ok(Some(PhpType::Union(vec![
-                PhpType::AssocArray {
-                    key: Box::new(PhpType::Str),
-                    value: Box::new(PhpType::Str),
-                },
-                PhpType::Bool,
-            ])))
-        }
-        "get_class" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(
-                    span,
-                    "get_class() takes at most 1 argument",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Str))
-        }
-        "get_parent_class" => {
-            if args.len() > 1 {
-                return Err(CompileError::new(
-                    span,
-                    "get_parent_class() takes at most 1 argument",
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Str))
-        }
-        "is_a" | "is_subclass_of" => {
-            if args.len() < 2 || args.len() > 3 {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes 2 or 3 arguments", name),
-                ));
-            }
-            for arg in args {
-                checker.infer_type(arg, env)?;
-            }
-            Ok(Some(PhpType::Bool))
-        }
-        "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => {
-            if !args.is_empty() {
-                return Err(CompileError::new(
-                    span,
-                    &format!("{}() takes no arguments", name),
-                ));
-            }
-            Ok(Some(PhpType::Array(Box::new(PhpType::Str))))
-        }
-        "function_exists" => {
-            if args.len() != 1 {
-                return Err(CompileError::new(
-                    span,
-                    "function_exists() takes exactly 1 argument",
-                ));
-            }
-            checker.infer_type(&args[0], env)?;
-            if let ExprKind::StringLiteral(cb_name) = &args[0].kind {
-                let cb_name = cb_name.trim_start_matches('\\');
-                let cb_name = checker
-                    .canonical_function_name_folded(cb_name)
-                    .unwrap_or_else(|| cb_name.to_string());
-                if checker.fn_decls.contains_key(cb_name.as_str())
-                    && !checker.functions.contains_key(cb_name.as_str())
-                {
-                    if let Some(decl) = checker.fn_decls.get(cb_name.as_str()).cloned() {
-                        let dummy_args: Vec<Expr> = decl
-                            .params
-                            .iter()
-                            .map(|_| Expr::new(ExprKind::IntLiteral(0), span))
-                            .collect();
-                        let _ = checker.check_function_call(&cb_name, &dummy_args, span, env);
-                    }
-                } else if checker.function_variant_groups.contains_key(cb_name.as_str())
-                    && !checker.functions.contains_key(cb_name.as_str())
-                {
-                    let _ = checker.ensure_function_variant_group_signature(&cb_name, span);
-                }
-            }
-            Ok(Some(PhpType::Bool))
-        }
         _ => Ok(None),
     }
+}
+
+/// Type-checks `function_exists`: infers the argument and, for a string-literal function
+/// name, forces resolution of a matching not-yet-instantiated declaration or variant group.
+pub(crate) fn check_function_exists(
+    checker: &mut Checker,
+    args: &[Expr],
+    span: crate::span::Span,
+    env: &TypeEnv,
+) -> Result<PhpType, CompileError> {
+    checker.infer_type(&args[0], env)?;
+    if let ExprKind::StringLiteral(cb_name) = &args[0].kind {
+        let cb_name = cb_name.trim_start_matches('\\');
+        let cb_name = checker
+            .canonical_function_name_folded(cb_name)
+            .unwrap_or_else(|| cb_name.to_string());
+        if checker.fn_decls.contains_key(cb_name.as_str())
+            && !checker.functions.contains_key(cb_name.as_str())
+        {
+            if let Some(decl) = checker.fn_decls.get(cb_name.as_str()).cloned() {
+                let dummy_args: Vec<Expr> = decl
+                    .params
+                    .iter()
+                    .map(|_| Expr::new(ExprKind::IntLiteral(0), span))
+                    .collect();
+                let _ = checker.check_function_call(&cb_name, &dummy_args, span, env);
+            }
+        } else if checker.function_variant_groups.contains_key(cb_name.as_str())
+            && !checker.functions.contains_key(cb_name.as_str())
+        {
+            let _ = checker.ensure_function_variant_group_signature(&cb_name, span);
+        }
+    }
+    Ok(PhpType::Bool)
 }
 
 /// Builds synthetic callback arguments for `array_filter()` based on a static mode.

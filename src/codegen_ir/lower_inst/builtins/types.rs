@@ -38,7 +38,7 @@ pub(crate) fn lower_settype(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers the defensive `class_alias()` fallback that remains after AOT alias extraction.
-pub(super) fn lower_class_alias(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_class_alias(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count_between(inst, "class_alias", 2, 3)?;
     emit_bool_result(ctx, false);
     store_if_result(ctx, inst)
@@ -328,7 +328,7 @@ fn emit_resource_display_id_to_int(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Lowers `get_class()` and `get_parent_class()` through static or dynamic class metadata.
-pub(super) fn lower_class_name_lookup(
+pub(crate) fn lower_class_name_lookup(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -366,7 +366,7 @@ pub(super) fn lower_class_name_lookup(
 }
 
 /// Lowers `is_a()` and `is_subclass_of()` for object operands and literal targets.
-pub(super) fn lower_is_a_relation(
+pub(crate) fn lower_is_a_relation(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -385,7 +385,7 @@ pub(super) fn lower_is_a_relation(
 }
 
 /// Lowers `get_declared_classes/interfaces/traits()` using the shared declaration registry.
-pub(super) fn lower_get_declared_names(
+pub(crate) fn lower_get_declared_names(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
