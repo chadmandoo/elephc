@@ -2,14 +2,14 @@
 title: "array_merge() — internals"
 description: "Compiler internals for array_merge(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 15
+  order: 23
 ---
 
 ## `array_merge()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_merge.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_merge.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:850](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L850) (`lower_array_merge`)
 - **Function symbol**: `lower_array_merge()`
 

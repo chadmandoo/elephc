@@ -2,14 +2,14 @@
 title: "natcasesort() — internals"
 description: "Compiler internals for natcasesort(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 38
+  order: 55
 ---
 
 ## `natcasesort()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/natcasesort.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/natcasesort.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:1111](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L1111) (`lower_natcasesort`)
 - **Function symbol**: `lower_natcasesort()`
 
@@ -21,6 +21,7 @@ sidebar:
 ## Runtime helpers
 
 The following runtime helpers are referenced:
+- `__rt_array_is_list`
 - `__rt_natcasesort`
 
 ## Signature summary

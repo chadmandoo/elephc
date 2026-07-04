@@ -2,15 +2,15 @@
 title: "stat() — internals"
 description: "Compiler internals for stat(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 128
+  order: 145
 ---
 
 ## `stat()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:4886](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L4886) (`lower_stat`)
+- **Signature**: [`src/builtins/io/stat.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/io/stat.rs)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:5529](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L5529) (`lower_stat`)
 - **Function symbol**: `lower_stat()`
 
 

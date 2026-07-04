@@ -2,14 +2,14 @@
 title: "array_pop() — internals"
 description: "Compiler internals for array_pop(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 17
+  order: 27
 ---
 
 ## `array_pop()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_pop.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_pop.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:1048](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L1048) (`lower_array_pop`)
 - **Function symbol**: `lower_array_pop()`
 

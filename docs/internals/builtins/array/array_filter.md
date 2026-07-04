@@ -2,14 +2,14 @@
 title: "array_filter() — internals"
 description: "Compiler internals for array_filter(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 8
+  order: 11
 ---
 
 ## `array_filter()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_filter.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_filter.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:211](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L211) (`lower_array_filter`)
 - **Function symbol**: `lower_array_filter()`
 
@@ -27,7 +27,7 @@ The following runtime helpers are referenced:
 ## Signature summary
 
 ```php
-function array_filter(array $array, callable $callback, int $mode): array
+function array_filter(array $array, callable $callback = null, int $mode = 0): array
 ```
 
 ## What the type checker enforces

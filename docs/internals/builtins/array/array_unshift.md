@@ -2,14 +2,14 @@
 title: "array_unshift() — internals"
 description: "Compiler internals for array_unshift(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 29
+  order: 43
 ---
 
 ## `array_unshift()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_unshift.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_unshift.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays/unshift.rs`:23](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays/unshift.rs#L23) (`lower_array_unshift`)
 - **Function symbol**: `lower_array_unshift()`
 

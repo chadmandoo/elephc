@@ -2,14 +2,14 @@
 title: "array_walk() — internals"
 description: "Compiler internals for array_walk(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 31
+  order: 45
 ---
 
 ## `array_walk()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_walk.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_walk.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:783](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L783) (`lower_array_walk`)
 - **Function symbol**: `lower_array_walk()`
 
@@ -26,12 +26,12 @@ The following runtime helpers are referenced:
 ## Signature summary
 
 ```php
-function array_walk(array $array, callable $callback, mixed $arg): void
+function array_walk(array $array, callable $callback): void
 ```
 
 ## What the type checker enforces
 
-- **Arity**: takes exactly 3 arguments.
+- **Arity**: takes exactly 2 arguments.
 - **By-reference parameters**: `$array`.
 
 ## Cross-references

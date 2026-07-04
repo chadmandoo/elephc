@@ -38,7 +38,7 @@ use super::{CodegenIrError, Result};
 mod arithmetic;
 mod arrays;
 mod buffers;
-mod builtins;
+pub(crate) mod builtins;
 mod callables;
 mod comparisons;
 mod conversions;
@@ -136,6 +136,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::ArrayGet => arrays::lower_array_get(ctx, &inst),
         Op::ArrayIsset => builtins::lower_array_isset(ctx, &inst),
         Op::ArraySet => arrays::lower_array_set(ctx, &inst),
+        Op::ArraySetMixedKey => arrays::lower_array_set_mixed_key(ctx, &inst),
         Op::ArrayPush => arrays::lower_array_push(ctx, &inst),
         Op::MixedArrayAppend => arrays::lower_mixed_array_append(ctx, &inst),
         Op::ArrayUnion => arrays::lower_array_union(ctx, &inst),

@@ -2,14 +2,14 @@
 title: "array_intersect() — internals"
 description: "Compiler internals for array_intersect(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 10
+  order: 14
 ---
 
 ## `array_intersect()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_intersect.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_intersect.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:885](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L885) (`lower_array_intersect`)
 - **Function symbol**: `lower_array_intersect()`
 

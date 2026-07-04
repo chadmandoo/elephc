@@ -2,14 +2,14 @@
 title: "array_map() — internals"
 description: "Compiler internals for array_map(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 14
+  order: 22
 ---
 
 ## `array_map()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_map.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_map.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:312](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L312) (`lower_array_map`)
 - **Function symbol**: `lower_array_map()`
 

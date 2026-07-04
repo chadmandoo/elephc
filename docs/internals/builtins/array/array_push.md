@@ -2,14 +2,14 @@
 title: "array_push() — internals"
 description: "Compiler internals for array_push(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 19
+  order: 29
 ---
 
 ## `array_push()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_push.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_push.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:61](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L61) (`lower_array_push`)
 - **Function symbol**: `lower_array_push()`
 

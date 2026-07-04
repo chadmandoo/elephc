@@ -2,14 +2,14 @@
 title: "array_fill_keys() — internals"
 description: "Compiler internals for array_fill_keys(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 7
+  order: 10
 ---
 
 ## `array_fill_keys()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_fill_keys.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_fill_keys.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:138](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L138) (`lower_array_fill_keys`)
 - **Function symbol**: `lower_array_fill_keys()`
 

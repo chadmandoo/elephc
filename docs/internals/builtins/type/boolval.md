@@ -2,15 +2,15 @@
 title: "boolval() — internals"
 description: "Compiler internals for boolval(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 391
+  order: 405
 ---
 
 ## `boolval()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins.rs`:1064](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins.rs#L1064) (`lower_boolval`)
+- **Signature**: [`src/builtins/types/boolval.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/boolval.rs)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins.rs`:587](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins.rs#L587) (`lower_boolval`)
 - **Function symbol**: `lower_boolval()`
 
 

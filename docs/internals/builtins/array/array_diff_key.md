@@ -2,14 +2,14 @@
 title: "array_diff_key() — internals"
 description: "Compiler internals for array_diff_key(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 5
+  order: 8
 ---
 
 ## `array_diff_key()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/array/array_diff_key.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/array/array_diff_key.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/arrays.rs`:896](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/arrays.rs#L896) (`lower_array_diff_key`)
 - **Function symbol**: `lower_array_diff_key()`
 

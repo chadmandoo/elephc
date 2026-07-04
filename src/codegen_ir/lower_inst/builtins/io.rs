@@ -36,7 +36,7 @@ const TOUCH_MTIME_NOW: u8 = 2;
 const TOUCH_BOTH_NOW: u8 = TOUCH_ATIME_NOW | TOUCH_MTIME_NOW;
 
 /// Lowers `file_get_contents(path)` and boxes the runtime string-or-false result.
-pub(super) fn lower_file_get_contents(
+pub(crate) fn lower_file_get_contents(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -176,8 +176,115 @@ fn publish_phar_list_entries_function_pointer(ctx: &mut FunctionContext<'_>) {
     publish_phar_bridge_entries(ctx, ENTRIES);
 }
 
+/// Publishes the archive global-metadata read bridge.
+fn publish_phar_get_metadata_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] =
+        &[("elephc_phar_get_metadata", "_elephc_phar_get_metadata_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the archive global-metadata write bridge.
+fn publish_phar_set_metadata_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] =
+        &[("elephc_phar_set_metadata", "_elephc_phar_set_metadata_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the archive stub read bridge.
+fn publish_phar_get_stub_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[("elephc_phar_get_stub", "_elephc_phar_get_stub_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the archive stub write bridge.
+fn publish_phar_set_stub_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[("elephc_phar_set_stub", "_elephc_phar_set_stub_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the per-file metadata read bridge.
+fn publish_phar_get_file_metadata_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_get_file_metadata",
+        "_elephc_phar_get_file_metadata_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the per-file metadata write bridge.
+fn publish_phar_set_file_metadata_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_set_file_metadata",
+        "_elephc_phar_set_file_metadata_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the whole-archive gzip compression bridge.
+fn publish_phar_gzip_archive_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] =
+        &[("elephc_phar_gzip_archive", "_elephc_phar_gzip_archive_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the whole-archive bzip2 compression bridge.
+fn publish_phar_bzip2_archive_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] =
+        &[("elephc_phar_bzip2_archive", "_elephc_phar_bzip2_archive_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the whole-archive decompression bridge.
+fn publish_phar_decompress_archive_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_decompress_archive",
+        "_elephc_phar_decompress_archive_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the OpenSSL (RSA-SHA1) signing bridge.
+fn publish_phar_sign_openssl_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] =
+        &[("elephc_phar_sign_openssl", "_elephc_phar_sign_openssl_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the hash-based signing bridge.
+fn publish_phar_sign_hash_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[("elephc_phar_sign_hash", "_elephc_phar_sign_hash_fn")];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the ZipCrypto password bridge used to read encrypted ZIP entries.
+fn publish_phar_set_zip_password_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_set_zip_password",
+        "_elephc_phar_set_zip_password_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the signature-hash read bridge.
+fn publish_phar_get_signature_hash_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_get_signature_hash",
+        "_elephc_phar_get_signature_hash_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
+/// Publishes the signature-type read bridge.
+fn publish_phar_get_signature_type_function_pointer(ctx: &mut FunctionContext<'_>) {
+    const ENTRIES: &[(&str, &str)] = &[(
+        "elephc_phar_get_signature_type",
+        "_elephc_phar_get_signature_type_fn",
+    )];
+    publish_phar_bridge_entries(ctx, ENTRIES);
+}
+
 /// Lowers `hash_file(algo, filename, binary?)` by reading bytes then hashing them.
-pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "hash_file", 2, 3)?;
     let fail = ctx.next_label("hash_file_fail");
     let done = ctx.next_label("hash_file_box");
@@ -190,7 +297,7 @@ pub(super) fn lower_hash_file(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `readfile(path)` and boxes the runtime byte-count-or-false result.
-pub(super) fn lower_readfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "readfile", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "readfile")?;
@@ -200,7 +307,7 @@ pub(super) fn lower_readfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `readline(prompt?)` by optionally writing a prompt and reading stdin.
-pub(super) fn lower_readline(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readline(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "readline", 0, 1)?;
     if inst.operands.len() == 1 {
         let prompt = expect_operand(inst, 0)?;
@@ -230,7 +337,7 @@ pub(super) fn lower_readline(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `fopen(filename, mode)` and boxes stream resources or PHP false.
-pub(super) fn lower_fopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fopen", 2, 4)?;
     let filename = expect_operand(inst, 0)?;
     let mode = expect_operand(inst, 1)?;
@@ -263,6 +370,12 @@ pub(super) fn lower_fopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
         }
         if path.starts_with("http://") {
             return lower_literal_http_fopen(ctx, inst, path);
+        }
+        if path.starts_with("compress.zlib://") {
+            return lower_literal_compress_zlib_fopen(ctx, inst, path);
+        }
+        if path.starts_with("compress.bzip2://") {
+            return lower_literal_compress_bzip2_fopen(ctx, inst, path);
         }
     }
     if filename_literal.is_none() {
@@ -884,7 +997,7 @@ fn literal_fopen_mode_is_write(ctx: &FunctionContext<'_>, mode: ValueId) -> Resu
 }
 
 /// Lowers `stream_wrapper_register(protocol, class, flags?)`.
-pub(super) fn lower_stream_wrapper_register(
+pub(crate) fn lower_stream_wrapper_register(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -914,7 +1027,7 @@ pub(super) fn lower_stream_wrapper_register(
 }
 
 /// Lowers `stream_wrapper_unregister(protocol)`.
-pub(super) fn lower_stream_wrapper_unregister(
+pub(crate) fn lower_stream_wrapper_unregister(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -936,7 +1049,7 @@ pub(super) fn lower_stream_wrapper_unregister(
 }
 
 /// Lowers `stream_wrapper_restore(protocol)` as a successful no-op.
-pub(super) fn lower_stream_wrapper_restore(
+pub(crate) fn lower_stream_wrapper_restore(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -948,7 +1061,7 @@ pub(super) fn lower_stream_wrapper_restore(
 }
 
 /// Lowers `stream_context_create(options?, params?)`.
-pub(super) fn lower_stream_context_create(
+pub(crate) fn lower_stream_context_create(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -962,7 +1075,7 @@ pub(super) fn lower_stream_context_create(
 }
 
 /// Lowers `stream_context_get_default(options?)`.
-pub(super) fn lower_stream_context_get_default(
+pub(crate) fn lower_stream_context_get_default(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -972,7 +1085,7 @@ pub(super) fn lower_stream_context_get_default(
 }
 
 /// Lowers `stream_context_set_default(options)`.
-pub(super) fn lower_stream_context_set_default(
+pub(crate) fn lower_stream_context_set_default(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -982,7 +1095,7 @@ pub(super) fn lower_stream_context_set_default(
 }
 
 /// Lowers `stream_context_set_option(context, options)` and the four-argument form.
-pub(super) fn lower_stream_context_set_option(
+pub(crate) fn lower_stream_context_set_option(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1002,7 +1115,7 @@ pub(super) fn lower_stream_context_set_option(
 }
 
 /// Lowers `stream_context_set_params(context, params)` as an accepted parameter update.
-pub(super) fn lower_stream_context_set_params(
+pub(crate) fn lower_stream_context_set_params(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1136,7 +1249,7 @@ fn clear_stream_notification_callback(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Lowers `stream_context_get_options(context)`.
-pub(super) fn lower_stream_context_get_options(
+pub(crate) fn lower_stream_context_get_options(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1175,7 +1288,7 @@ pub(super) fn lower_stream_context_get_options(
 }
 
 /// Lowers `stream_context_get_params(context)` to an empty associative hash.
-pub(super) fn lower_stream_context_get_params(
+pub(crate) fn lower_stream_context_get_params(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1185,7 +1298,7 @@ pub(super) fn lower_stream_context_get_params(
 }
 
 /// Lowers `stream_get_contents(stream, length?, offset?)` to `string|false`.
-pub(super) fn lower_stream_get_contents(
+pub(crate) fn lower_stream_get_contents(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1244,7 +1357,7 @@ pub(super) fn lower_stream_get_contents(
 }
 
 /// Lowers `stream_copy_to_stream(from, to, length?, offset?)` through wrapper-aware read/write loops.
-pub(super) fn lower_stream_copy_to_stream(
+pub(crate) fn lower_stream_copy_to_stream(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1277,7 +1390,7 @@ pub(super) fn lower_stream_copy_to_stream(
 }
 
 /// Lowers `stream_get_line(stream, length, ending?)`.
-pub(super) fn lower_stream_get_line(
+pub(crate) fn lower_stream_get_line(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1330,7 +1443,7 @@ pub(super) fn lower_stream_get_line(
 }
 
 /// Lowers `stream_get_meta_data(stream)` through the metadata runtime helper.
-pub(super) fn lower_stream_get_meta_data(
+pub(crate) fn lower_stream_get_meta_data(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1345,7 +1458,7 @@ pub(super) fn lower_stream_get_meta_data(
 }
 
 /// Lowers `stream_get_wrappers()` to the static built-in wrapper list.
-pub(super) fn lower_stream_get_wrappers(
+pub(crate) fn lower_stream_get_wrappers(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1361,7 +1474,7 @@ pub(super) fn lower_stream_get_wrappers(
 }
 
 /// Lowers `stream_get_transports()` to the static transport list.
-pub(super) fn lower_stream_get_transports(
+pub(crate) fn lower_stream_get_transports(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1377,7 +1490,7 @@ pub(super) fn lower_stream_get_transports(
 }
 
 /// Lowers `stream_get_filters()` to the static built-in filter list.
-pub(super) fn lower_stream_get_filters(
+pub(crate) fn lower_stream_get_filters(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1405,7 +1518,7 @@ pub(super) fn lower_stream_get_filters(
 }
 
 /// Lowers `stream_filter_register(filter_name, class)` into the user-filter registry helper.
-pub(super) fn lower_stream_filter_register(
+pub(crate) fn lower_stream_filter_register(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1434,7 +1547,7 @@ pub(super) fn lower_stream_filter_register(
 }
 
 /// Lowers `stream_filter_append` and `stream_filter_prepend`.
-pub(super) fn lower_stream_filter_attach(
+pub(crate) fn lower_stream_filter_attach(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -1501,6 +1614,15 @@ fn lower_zlib_inflate_stream_filter_attach(
 ) -> Result<()> {
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "stream_filter_append")?;
+    emit_zlib_inflate_attach_in_place(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Attaches the `zlib.inflate` read filter to the stream descriptor already held
+/// in the integer result register, leaving a resource-boxed `Mixed` in that
+/// register. Shared by `stream_filter_append("zlib.inflate")` and the
+/// `compress.zlib://` fopen wrapper.
+fn emit_zlib_inflate_attach_in_place(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             let labels = vec![
@@ -1532,7 +1654,6 @@ fn lower_zlib_inflate_stream_filter_attach(
             });
         }
     }
-    store_if_result(ctx, inst)
 }
 
 /// Lowers `stream_filter_append($stream, "bzip2.compress", ...)`.
@@ -1575,6 +1696,15 @@ fn lower_bzip2_decompress_stream_filter_attach(
 ) -> Result<()> {
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "stream_filter_append")?;
+    emit_bzip2_decompress_attach_in_place(ctx);
+    store_if_result(ctx, inst)
+}
+
+/// Attaches the `bzip2.decompress` read filter to the stream descriptor already
+/// held in the integer result register, leaving a resource-boxed `Mixed` in that
+/// register. Shared by `stream_filter_append("bzip2.decompress")` and the
+/// `compress.bzip2://` fopen wrapper.
+fn emit_bzip2_decompress_attach_in_place(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             let labels = vec![
@@ -1605,6 +1735,95 @@ fn lower_bzip2_decompress_stream_filter_attach(
             });
         }
     }
+}
+
+/// Lowers `fopen("compress.zlib://<path>", ...)` for a compile-time literal path.
+/// Opens the underlying file read-only and attaches the `zlib.inflate` filter so
+/// reads see decompressed bytes; an empty or unopenable path boxes PHP false.
+fn lower_literal_compress_zlib_fopen(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    path: &str,
+) -> Result<()> {
+    let underlying = path.strip_prefix("compress.zlib://").unwrap_or("");
+    emit_literal_compress_wrapper_fopen(ctx, inst, underlying, CompressWrapper::Zlib)
+}
+
+/// Lowers `fopen("compress.bzip2://<path>", ...)` for a compile-time literal path.
+/// Opens the underlying file read-only and attaches the `bzip2.decompress` filter
+/// so reads see decompressed bytes; an empty or unopenable path boxes PHP false.
+fn lower_literal_compress_bzip2_fopen(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    path: &str,
+) -> Result<()> {
+    let underlying = path.strip_prefix("compress.bzip2://").unwrap_or("");
+    emit_literal_compress_wrapper_fopen(ctx, inst, underlying, CompressWrapper::Bzip2)
+}
+
+/// Selects which read-direction decompressor a `compress.*://` fopen wrapper attaches.
+#[derive(Clone, Copy)]
+enum CompressWrapper {
+    Zlib,
+    Bzip2,
+}
+
+/// Opens `underlying` read-only through `__rt_fopen` and attaches the matching
+/// decompressor so subsequent reads see plain bytes, boxing the filtered
+/// descriptor as a resource. An empty path, or a failed open, boxes PHP false —
+/// matching PHP's `compress.zlib://` / `compress.bzip2://` wrapper behavior.
+fn emit_literal_compress_wrapper_fopen(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    underlying: &str,
+    kind: CompressWrapper,
+) -> Result<()> {
+    if underlying.is_empty() {
+        emit_fd_result(ctx, -1);
+        box_stream_fd_or_false_result(ctx, "fopen");
+        return store_if_result(ctx, inst);
+    }
+    let (path_label, path_len) = ctx.data.add_string(underlying.as_bytes());
+    let (mode_label, mode_len) = ctx.data.add_string(b"r");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_symbol_address(ctx.emitter, "x1", &path_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", path_len));         // pass the underlying path byte length
+            abi::emit_symbol_address(ctx.emitter, "x3", &mode_label);
+            ctx.emitter.instruction(&format!("mov x4, #{}", mode_len));         // pass the read-mode string byte length
+            abi::emit_call_label(ctx.emitter, "__rt_fopen");
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "rax", &path_label);
+            ctx.emitter.instruction(&format!("mov rdx, {}", path_len));         // pass the underlying path byte length
+            abi::emit_symbol_address(ctx.emitter, "rdi", &mode_label);
+            ctx.emitter.instruction(&format!("mov rsi, {}", mode_len));         // pass the read-mode string byte length
+            abi::emit_call_label(ctx.emitter, "__rt_fopen");
+        }
+    }
+    let false_label = ctx.next_label("compress_fopen_false");
+    let done_label = ctx.next_label("compress_fopen_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #0");                              // negative descriptor means the underlying open failed
+            ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false when the source could not be opened
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // negative descriptor means the underlying open failed
+            ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false when the source could not be opened
+        }
+    }
+    match kind {
+        CompressWrapper::Zlib => emit_zlib_inflate_attach_in_place(ctx),
+        CompressWrapper::Bzip2 => emit_bzip2_decompress_attach_in_place(ctx),
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => ctx.emitter.instruction(&format!("b {}", done_label)), // skip false boxing after attaching the decompressor
+        Arch::X86_64 => ctx.emitter.instruction(&format!("jmp {}", done_label)),// skip false boxing after attaching the decompressor
+    }
+    ctx.emitter.label(&false_label);
+    box_stream_fd_or_false_result(ctx, "fopen");
+    ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
 }
 
@@ -1717,7 +1936,7 @@ fn emit_iconv_write_transform_for_current_fd(
 }
 
 /// Lowers `stream_filter_remove(filter)` and clears both direction tables for the fd.
-pub(super) fn lower_stream_filter_remove(
+pub(crate) fn lower_stream_filter_remove(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1748,7 +1967,7 @@ pub(super) fn lower_stream_filter_remove(
 }
 
 /// Lowers `stream_bucket_new(stream, data)` into a stdClass-backed bucket object.
-pub(super) fn lower_stream_bucket_new(
+pub(crate) fn lower_stream_bucket_new(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1765,7 +1984,7 @@ pub(super) fn lower_stream_bucket_new(
 }
 
 /// Lowers `stream_bucket_make_writeable(brigade)` by popping the brigade head.
-pub(super) fn lower_stream_bucket_make_writeable(
+pub(crate) fn lower_stream_bucket_make_writeable(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1842,7 +2061,7 @@ pub(super) fn lower_stream_bucket_make_writeable(
 }
 
 /// Lowers `stream_bucket_append` and `stream_bucket_prepend` over the `_buckets` array.
-pub(super) fn lower_stream_bucket_append_or_prepend(
+pub(crate) fn lower_stream_bucket_append_or_prepend(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1881,7 +2100,7 @@ pub(super) fn lower_stream_bucket_append_or_prepend(
 }
 
 /// Lowers `stream_is_local(stream)` as a true predicate after evaluating its argument.
-pub(super) fn lower_stream_is_local(
+pub(crate) fn lower_stream_is_local(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1893,7 +2112,7 @@ pub(super) fn lower_stream_is_local(
 }
 
 /// Lowers `stream_supports_lock(stream)` as true after resource unboxing.
-pub(super) fn lower_stream_supports_lock(
+pub(crate) fn lower_stream_supports_lock(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1905,7 +2124,7 @@ pub(super) fn lower_stream_supports_lock(
 }
 
 /// Lowers `stream_isatty(stream)`.
-pub(super) fn lower_stream_isatty(
+pub(crate) fn lower_stream_isatty(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1920,7 +2139,7 @@ pub(super) fn lower_stream_isatty(
 }
 
 /// Lowers `stream_set_blocking(stream, enable)`.
-pub(super) fn lower_stream_set_blocking(
+pub(crate) fn lower_stream_set_blocking(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -1972,7 +2191,7 @@ pub(super) fn lower_stream_set_blocking(
 }
 
 /// Lowers `stream_set_chunk_size(stream, size)` and returns the previous size.
-pub(super) fn lower_stream_set_chunk_size(
+pub(crate) fn lower_stream_set_chunk_size(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2032,7 +2251,7 @@ pub(super) fn lower_stream_set_chunk_size(
 }
 
 /// Lowers stream read/write buffer setters as successful no-ops.
-pub(super) fn lower_stream_set_buffer(
+pub(crate) fn lower_stream_set_buffer(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2045,7 +2264,7 @@ pub(super) fn lower_stream_set_buffer(
 }
 
 /// Lowers `stream_set_timeout(stream, seconds, microseconds?)`.
-pub(super) fn lower_stream_set_timeout(
+pub(crate) fn lower_stream_set_timeout(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2094,7 +2313,7 @@ pub(super) fn lower_stream_set_timeout(
 }
 
 /// Lowers `stream_select(read, write, except, seconds, microseconds?)`.
-pub(super) fn lower_stream_select(
+pub(crate) fn lower_stream_select(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2139,7 +2358,7 @@ pub(super) fn lower_stream_select(
 }
 
 /// Lowers `stream_resolve_include_path(filename)` as realpath-backed `string|false`.
-pub(super) fn lower_stream_resolve_include_path(
+pub(crate) fn lower_stream_resolve_include_path(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2152,7 +2371,7 @@ pub(super) fn lower_stream_resolve_include_path(
 }
 
 /// Lowers `stream_socket_server(address)` and boxes `resource|false`.
-pub(super) fn lower_stream_socket_server(
+pub(crate) fn lower_stream_socket_server(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2175,7 +2394,7 @@ pub(super) fn lower_stream_socket_server(
 }
 
 /// Lowers `stream_socket_client(address)` and records the connected host for TLS defaults.
-pub(super) fn lower_stream_socket_client(
+pub(crate) fn lower_stream_socket_client(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2214,7 +2433,7 @@ pub(super) fn lower_stream_socket_client(
 }
 
 /// Lowers `stream_socket_accept(server, timeout?, peer_name?)`.
-pub(super) fn lower_stream_socket_accept(
+pub(crate) fn lower_stream_socket_accept(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2243,7 +2462,7 @@ pub(super) fn lower_stream_socket_accept(
 }
 
 /// Lowers `stream_socket_pair(domain, type, protocol)` and boxes `array|false`.
-pub(super) fn lower_stream_socket_pair(
+pub(crate) fn lower_stream_socket_pair(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2274,7 +2493,7 @@ pub(super) fn lower_stream_socket_pair(
 }
 
 /// Lowers `stream_socket_get_name(socket, remote)` and boxes `string|false`.
-pub(super) fn lower_stream_socket_get_name(
+pub(crate) fn lower_stream_socket_get_name(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2300,7 +2519,7 @@ pub(super) fn lower_stream_socket_get_name(
 }
 
 /// Lowers `stream_socket_shutdown(stream, mode)`.
-pub(super) fn lower_stream_socket_shutdown(
+pub(crate) fn lower_stream_socket_shutdown(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2325,7 +2544,7 @@ pub(super) fn lower_stream_socket_shutdown(
 }
 
 /// Lowers `stream_socket_enable_crypto(stream, enable, method?, session_stream?)`.
-pub(super) fn lower_stream_socket_enable_crypto(
+pub(crate) fn lower_stream_socket_enable_crypto(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2377,7 +2596,7 @@ pub(super) fn lower_stream_socket_enable_crypto(
 }
 
 /// Lowers `stream_socket_recvfrom(socket, length, flags?, address?)`.
-pub(super) fn lower_stream_socket_recvfrom(
+pub(crate) fn lower_stream_socket_recvfrom(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2419,7 +2638,7 @@ pub(super) fn lower_stream_socket_recvfrom(
 }
 
 /// Lowers `stream_socket_sendto(socket, data, flags?, address?)` and boxes `int|false`.
-pub(super) fn lower_stream_socket_sendto(
+pub(crate) fn lower_stream_socket_sendto(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -2485,10 +2704,12 @@ pub(super) fn lower_stream_socket_sendto(
 }
 
 /// Lowers `fclose(stream)` after validating and unboxing the stream handle.
-pub(super) fn lower_fclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fclose", 1)?;
     let stream = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, stream)?;
     load_stream_fd_to_result(ctx, stream, "fclose")?;
+    apply_resource_release_sentinel(ctx, captured);
     let success_label = ctx.next_label("fclose_ok");
     let done_label = ctx.next_label("fclose_done");
     let user_wrapper_label = ctx.next_label("fclose_user_wrapper");
@@ -2592,7 +2813,7 @@ pub(super) fn lower_fclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `fread(stream, length)` using the shared runtime file-read helper.
-pub(super) fn lower_fread(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fread(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fread", 2)?;
     let stream = expect_operand(inst, 0)?;
     let length = expect_operand(inst, 1)?;
@@ -2614,7 +2835,7 @@ pub(super) fn lower_fread(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `fwrite(stream, data)` and returns the number of bytes written.
-pub(super) fn lower_fwrite(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fwrite(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fwrite", 2)?;
     let stream = expect_operand(inst, 0)?;
     let data = expect_operand(inst, 1)?;
@@ -2638,7 +2859,7 @@ pub(super) fn lower_fwrite(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `fprintf(stream, format, values...)` as `sprintf()` plus stream write.
-pub(super) fn lower_fprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fprintf", 2, usize::MAX)?;
     let stream = expect_operand(inst, 0)?;
     let format = expect_operand(inst, 1)?;
@@ -2674,7 +2895,7 @@ pub(super) fn lower_fprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `vfprintf(stream, format, values)` through `__rt_vsprintf` then fwrite.
-pub(super) fn lower_vfprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_vfprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "vfprintf", 3)?;
     let stream = expect_operand(inst, 0)?;
     let format = expect_operand(inst, 1)?;
@@ -2714,7 +2935,7 @@ pub(super) fn lower_vfprintf(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `fscanf(stream, format)` through `__rt_fgets` and `__rt_sscanf`.
-pub(super) fn lower_fscanf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fscanf(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fscanf", 2, usize::MAX)?;
     let stream = expect_operand(inst, 0)?;
     let format = expect_operand(inst, 1)?;
@@ -2743,7 +2964,7 @@ pub(super) fn lower_fscanf(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `fgets(stream)` through the shared line-read runtime helper.
-pub(super) fn lower_fgets(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fgets(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fgets", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fgets")?;
@@ -2756,7 +2977,7 @@ pub(super) fn lower_fgets(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `fgetc(stream)` and boxes the one-byte string or PHP false result.
-pub(super) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fgetc", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fgetc")?;
@@ -2769,7 +2990,7 @@ pub(super) fn lower_fgetc(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `fgetcsv(stream, separator?, enclosure?)` through the CSV row runtime helper.
-pub(super) fn lower_fgetcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fgetcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fgetcsv", 1, 3)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fgetcsv")?;
@@ -2781,7 +3002,7 @@ pub(super) fn lower_fgetcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `fputcsv(stream, fields, separator?, enclosure?)` for string arrays.
-pub(super) fn lower_fputcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fputcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fputcsv", 2, 4)?;
     let stream = expect_operand(inst, 0)?;
     let fields = expect_operand(inst, 1)?;
@@ -2803,7 +3024,7 @@ pub(super) fn lower_fputcsv(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `fpassthru(stream)` through the remaining-bytes stream runtime helper.
-pub(super) fn lower_fpassthru(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fpassthru(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fpassthru", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fpassthru")?;
@@ -2897,7 +3118,7 @@ fn emit_fpassthru_dispatch(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Lowers `feof(stream)` through the runtime EOF-flag table helper.
-pub(super) fn lower_feof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_feof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "feof", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "feof")?;
@@ -2909,7 +3130,7 @@ pub(super) fn lower_feof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
 }
 
 /// Lowers `ftell(stream)` as `lseek(fd, 0, SEEK_CUR)`.
-pub(super) fn lower_ftell(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_ftell(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "ftell", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "ftell")?;
@@ -2948,7 +3169,7 @@ pub(super) fn lower_ftell(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `fseek(stream, offset, whence?)` and clears EOF state on success.
-pub(super) fn lower_fseek(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fseek(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fseek", 2, 3)?;
     let stream = expect_operand(inst, 0)?;
     let offset = expect_operand(inst, 1)?;
@@ -2972,7 +3193,7 @@ pub(super) fn lower_fseek(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `rewind(stream)` as `lseek(fd, 0, SEEK_SET)` and clears EOF state on success.
-pub(super) fn lower_rewind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rewind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "rewind", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "rewind")?;
@@ -2986,7 +3207,7 @@ pub(super) fn lower_rewind(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `ftruncate(stream, size)` through the shared fd truncate runtime helper.
-pub(super) fn lower_ftruncate(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_ftruncate(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "ftruncate", 2)?;
     let stream = expect_operand(inst, 0)?;
     let size = expect_operand(inst, 1)?;
@@ -3037,12 +3258,12 @@ pub(super) fn lower_ftruncate(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `fsync(stream)` through the shared fd sync runtime helper.
-pub(super) fn lower_fsync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fsync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_stream_bool_runtime(ctx, inst, "fsync", "__rt_fsync")
 }
 
 /// Lowers `fflush(stream)` through the shared fd flush runtime helper.
-pub(super) fn lower_fflush(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fflush(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fflush", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fflush")?;
@@ -3080,12 +3301,12 @@ pub(super) fn lower_fflush(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `fdatasync(stream)` through the shared fd data-sync runtime helper.
-pub(super) fn lower_fdatasync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fdatasync(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_stream_bool_runtime(ctx, inst, "fdatasync", "__rt_fdatasync")
 }
 
 /// Lowers `flock(stream, operation, would_block?)` through the libc flock wrapper.
-pub(super) fn lower_flock(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_flock(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "flock", 2, 3)?;
     let stream = expect_operand(inst, 0)?;
     let operation = expect_operand(inst, 1)?;
@@ -3146,7 +3367,7 @@ pub(super) fn lower_flock(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `disk_free_space(path)` through the shared disk-space runtime helper.
-pub(super) fn lower_disk_free_space(
+pub(crate) fn lower_disk_free_space(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3154,7 +3375,7 @@ pub(super) fn lower_disk_free_space(
 }
 
 /// Lowers `disk_total_space(path)` through the shared disk-space runtime helper.
-pub(super) fn lower_disk_total_space(
+pub(crate) fn lower_disk_total_space(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3185,7 +3406,7 @@ fn lower_disk_space(
 }
 
 /// Lowers `gethostname()` through the shared runtime helper.
-pub(super) fn lower_gethostname(
+pub(crate) fn lower_gethostname(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3195,7 +3416,7 @@ pub(super) fn lower_gethostname(
 }
 
 /// Lowers `gethostbyname(hostname)` through the shared runtime resolver.
-pub(super) fn lower_gethostbyname(
+pub(crate) fn lower_gethostbyname(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3207,7 +3428,7 @@ pub(super) fn lower_gethostbyname(
 }
 
 /// Lowers `gethostbyaddr(address)` and boxes malformed addresses as PHP `false`.
-pub(super) fn lower_gethostbyaddr(
+pub(crate) fn lower_gethostbyaddr(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3220,7 +3441,7 @@ pub(super) fn lower_gethostbyaddr(
 }
 
 /// Lowers `getprotobyname(protocol)` and boxes a missing entry as PHP `false`.
-pub(super) fn lower_getprotobyname(
+pub(crate) fn lower_getprotobyname(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3243,7 +3464,7 @@ pub(super) fn lower_getprotobyname(
 }
 
 /// Lowers `getprotobynumber(number)` and boxes a missing entry as PHP `false`.
-pub(super) fn lower_getprotobynumber(
+pub(crate) fn lower_getprotobynumber(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3262,7 +3483,7 @@ pub(super) fn lower_getprotobynumber(
 }
 
 /// Lowers `getservbyname(service, protocol)` and boxes a missing entry as PHP `false`.
-pub(super) fn lower_getservbyname(
+pub(crate) fn lower_getservbyname(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3293,7 +3514,7 @@ pub(super) fn lower_getservbyname(
 }
 
 /// Lowers `getservbyport(port, protocol)` and boxes a missing entry as PHP `false`.
-pub(super) fn lower_getservbyport(
+pub(crate) fn lower_getservbyport(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3323,17 +3544,17 @@ pub(super) fn lower_getservbyport(
 }
 
 /// Lowers `opendir(path)` and boxes the directory stream as `resource|false`.
-pub(super) fn lower_opendir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_opendir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "opendir", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "opendir path")?;
     abi::emit_call_label(ctx.emitter, "__rt_opendir");
-    box_stream_fd_or_false_result(ctx, "opendir");
+    box_stream_fd_or_false_result_kind(ctx, "opendir", 4);
     store_if_result(ctx, inst)
 }
 
 /// Lowers `readdir(dir_handle)` for libc, glob, and userspace-wrapper handles.
-pub(super) fn lower_readdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "readdir", 1)?;
     let handle = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, handle, "readdir")?;
@@ -3348,10 +3569,12 @@ pub(super) fn lower_readdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `closedir(dir_handle)` for libc, glob, and userspace-wrapper handles.
-pub(super) fn lower_closedir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_closedir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "closedir", 1)?;
     let handle = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, handle)?;
     load_stream_fd_to_result(ctx, handle, "closedir")?;
+    apply_resource_release_sentinel(ctx, captured);
     lower_directory_handle_dispatch(
         ctx,
         "__rt_closedir",
@@ -3362,7 +3585,7 @@ pub(super) fn lower_closedir(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `rewinddir(dir_handle)` for libc, glob, and userspace-wrapper handles.
-pub(super) fn lower_rewinddir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rewinddir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "rewinddir", 1)?;
     let handle = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, handle, "rewinddir")?;
@@ -3376,7 +3599,7 @@ pub(super) fn lower_rewinddir(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `popen(command, mode)` and boxes the process pipe as `resource|false`.
-pub(super) fn lower_popen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_popen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "popen", 2)?;
     let command = expect_operand(inst, 0)?;
     let mode = expect_operand(inst, 1)?;
@@ -3399,15 +3622,17 @@ pub(super) fn lower_popen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_popen");
-    box_stream_fd_or_false_result(ctx, "popen");
+    box_stream_fd_or_false_result_kind(ctx, "popen", 3);
     store_if_result(ctx, inst)
 }
 
 /// Lowers `pclose(handle)` and returns the child process status.
-pub(super) fn lower_pclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_pclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "pclose", 1)?;
     let handle = expect_operand(inst, 0)?;
+    let captured = capture_resource_box_for_release(ctx, handle)?;
     load_stream_fd_to_result(ctx, handle, "pclose")?;
+    apply_resource_release_sentinel(ctx, captured);
     if ctx.emitter.target.arch == Arch::X86_64 {
         ctx.emitter.instruction("mov rdi, rax");                                // pass the pipe descriptor to the runtime close helper
     }
@@ -3416,7 +3641,7 @@ pub(super) fn lower_pclose(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `fsockopen(host, port, errno?, errstr?, timeout?)`.
-pub(super) fn lower_fsockopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fsockopen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fsockopen", 2, 5)?;
     let host = expect_operand(inst, 0)?;
     let port = expect_operand(inst, 1)?;
@@ -3457,12 +3682,12 @@ pub(super) fn lower_fsockopen(ctx: &mut FunctionContext<'_>, inst: &Instruction)
 }
 
 /// Lowers `file(path)` through the target-aware runtime line-array helper.
-pub(super) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_file(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "file", "__rt_file")
 }
 
 /// Lowers `realpath(path)` and boxes the owned runtime string-or-false result.
-pub(super) fn lower_realpath(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_realpath(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "realpath", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "realpath")?;
@@ -3472,7 +3697,7 @@ pub(super) fn lower_realpath(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `realpath_cache_get()` to elephc's empty realpath-cache view.
-pub(super) fn lower_realpath_cache_get(
+pub(crate) fn lower_realpath_cache_get(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3482,7 +3707,7 @@ pub(super) fn lower_realpath_cache_get(
 }
 
 /// Lowers `realpath_cache_size()` to zero because elephc has no realpath cache.
-pub(super) fn lower_realpath_cache_size(
+pub(crate) fn lower_realpath_cache_size(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3499,7 +3724,7 @@ pub(super) fn lower_realpath_cache_size(
 }
 
 /// Lowers `file_put_contents(path, data)` through the target-aware runtime writer.
-pub(super) fn lower_file_put_contents(
+pub(crate) fn lower_file_put_contents(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3573,7 +3798,7 @@ fn lower_literal_phar_file_put_contents(
 }
 
 /// Lowers the compiler-internal native PHAR compression-control helper.
-pub(super) fn lower_elephc_phar_set_compression(
+pub(crate) fn lower_elephc_phar_set_compression(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3630,8 +3855,426 @@ pub(super) fn lower_elephc_phar_set_compression(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `__elephc_phar_get_metadata()` into the metadata-read bridge call.
+pub(crate) fn lower_elephc_phar_get_metadata(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_get_metadata_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_get_metadata",
+        "_elephc_phar_get_metadata_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_get_stub()` into the stub-read bridge call.
+pub(crate) fn lower_elephc_phar_get_stub(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_get_stub_function_pointer(ctx);
+    emit_phar_get_string_bridge(ctx, inst, "__elephc_phar_get_stub", "_elephc_phar_get_stub_fn")
+}
+
+/// Lowers `__elephc_phar_set_metadata()` into the metadata-write bridge call.
+pub(crate) fn lower_elephc_phar_set_metadata(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_set_metadata_function_pointer(ctx);
+    emit_phar_set_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_set_metadata",
+        "_elephc_phar_set_metadata_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_set_stub()` into the stub-write bridge call.
+pub(crate) fn lower_elephc_phar_set_stub(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_set_stub_function_pointer(ctx);
+    emit_phar_set_string_bridge(ctx, inst, "__elephc_phar_set_stub", "_elephc_phar_set_stub_fn")
+}
+
+/// Emits a `(path, data)` string -> bool PHAR bridge call (set metadata/stub).
+///
+/// Loads the path and data strings into the bridge's `(path_ptr, path_len, data_ptr,
+/// data_len)` argument registers, calls the optional bridge pointer in `slot`, and
+/// normalizes the result to a PHP bool (false when the bridge is unavailable).
+fn emit_phar_set_string_bridge(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    slot: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 2)?;
+    let path = expect_operand(inst, 0)?;
+    let data = expect_operand(inst, 1)?;
+    let fail = ctx.next_label("phar_set_string_fail");
+    let done = ctx.next_label("phar_set_string_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_to_result(ctx, data, "phar set-string data")?;
+            abi::emit_push_reg_pair(ctx.emitter, "x1", "x2");
+            load_string_to_result(ctx, path, "phar set-string path")?;
+            ctx.emitter.instruction("mov x0, x1");                              // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov x1, x2");                              // bridge arg 1 = archive path length
+            abi::emit_pop_reg_pair(ctx.emitter, "x2", "x3");
+            abi::emit_symbol_address(ctx.emitter, "x9", slot);
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional PHAR write bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", fail));              // missing bridge makes the write fail
+            ctx.emitter.instruction("blr x9");                                  // rewrite the archive with the new metadata/stub
+            ctx.emitter.instruction("cmp x0, #0");                              // test the bridge success flag
+            ctx.emitter.instruction("cset x0, ne");                             // normalize bridge result to PHP bool
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("mov x0, #0");                              // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+        Arch::X86_64 => {
+            load_string_to_result(ctx, data, "phar set-string data")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");
+            load_string_to_result(ctx, path, "phar set-string path")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov rsi, rdx");                            // bridge arg 1 = archive path length
+            abi::emit_pop_reg_pair(ctx.emitter, "rdx", "rcx");
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r10", slot, 0);
+            ctx.emitter.instruction("test r10, r10");                           // test whether the PHAR write bridge was published
+            ctx.emitter.instruction(&format!("jz {}", fail));                   // missing bridge makes the write fail
+            ctx.emitter.instruction("call r10");                                // rewrite the archive with the new metadata/stub
+            ctx.emitter.instruction("test rax, rax");                           // test the bridge success flag
+            ctx.emitter.instruction("setne al");                                // normalize bridge result to PHP bool
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized bool
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("xor eax, eax");                            // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Emits a `(string) -> bool` PHAR bridge call (e.g. set the ZipCrypto password).
+///
+/// Loads the single string argument as (pointer, length), calls the optional bridge
+/// pointer in `slot`, and normalizes its return to a PHP bool. A null bridge yields
+/// false.
+fn emit_phar_string_to_bool_bridge(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    slot: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 1)?;
+    let value = expect_operand(inst, 0)?;
+    let fail = ctx.next_label("phar_string_bool_fail");
+    let done = ctx.next_label("phar_string_bool_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_to_result(ctx, value, "phar string->bool arg")?;
+            ctx.emitter.instruction("mov x0, x1");                              // bridge arg 0 = string pointer
+            ctx.emitter.instruction("mov x1, x2");                              // bridge arg 1 = string length
+            abi::emit_symbol_address(ctx.emitter, "x9", slot);
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", fail));              // missing bridge yields false
+            ctx.emitter.instruction("blr x9");                                  // call the bridge setter
+            ctx.emitter.instruction("cmp x0, #0");                              // test the bridge return flag
+            ctx.emitter.instruction("cset x0, ne");                             // normalize to a PHP bool
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("mov x0, #0");                              // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+        Arch::X86_64 => {
+            load_string_to_result(ctx, value, "phar string->bool arg")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // bridge arg 0 = string pointer
+            ctx.emitter.instruction("mov rsi, rdx");                            // bridge arg 1 = string length
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r10", slot, 0);
+            ctx.emitter.instruction("test r10, r10");                           // test whether the bridge was published
+            ctx.emitter.instruction(&format!("jz {}", fail));                   // missing bridge yields false
+            ctx.emitter.instruction("call r10");                                // call the bridge setter
+            ctx.emitter.instruction("test rax, rax");                           // test the bridge return flag
+            ctx.emitter.instruction("setne al");                                // normalize to a PHP bool
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized bool
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("xor eax, eax");                            // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Emits a `(path) -> string` PHAR bridge call (read metadata/stub).
+///
+/// Calls the optional bridge pointer in `slot` with the path and an out-length slot,
+/// then persists the returned bytes into an owned PHP string. A null bridge or a null
+/// result yields an owned empty string (the OOP layer treats that as "not set").
+fn emit_phar_get_string_bridge(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    slot: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 1)?;
+    let path = expect_operand(inst, 0)?;
+    let empty = ctx.next_label("phar_get_string_empty");
+    let persist = ctx.next_label("phar_get_string_persist");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            load_string_to_result(ctx, path, "phar get-string path")?;
+            ctx.emitter.instruction("mov x0, x1");                              // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov x1, x2");                              // bridge arg 1 = archive path length
+            abi::emit_symbol_address(ctx.emitter, "x2", "_phar_list_len");      // bridge arg 2 = out-length slot
+            abi::emit_symbol_address(ctx.emitter, "x9", slot);
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional PHAR read bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", empty));             // missing bridge yields an empty string
+            ctx.emitter.instruction("blr x9");                                  // read the metadata/stub bytes into the global buffer
+            ctx.emitter.instruction(&format!("cbz x0, {}", empty));             // a null result means the field is unset
+            ctx.emitter.instruction("mov x1, x0");                              // str_persist source pointer = bridge buffer
+            abi::emit_symbol_address(ctx.emitter, "x9", "_phar_list_len");
+            ctx.emitter.instruction("ldr x2, [x9]");                            // str_persist length = bridge out-length
+            ctx.emitter.instruction(&format!("b {}", persist));                 // persist the returned bytes
+            ctx.emitter.label(&empty);
+            ctx.emitter.instruction("mov x1, #0");                              // empty source pointer (length 0 is not dereferenced)
+            ctx.emitter.instruction("mov x2, #0");                              // empty string length
+            ctx.emitter.label(&persist);
+            ctx.emitter.instruction("bl __rt_str_persist");                     // copy into an owned heap string -> x1=ptr, x2=len
+        }
+        Arch::X86_64 => {
+            load_string_to_result(ctx, path, "phar get-string path")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov rsi, rdx");                            // bridge arg 1 = archive path length
+            abi::emit_symbol_address(ctx.emitter, "rdx", "_phar_list_len");     // bridge arg 2 = out-length slot
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r10", slot, 0);
+            ctx.emitter.instruction("test r10, r10");                           // test whether the PHAR read bridge was published
+            ctx.emitter.instruction(&format!("jz {}", empty));                  // missing bridge yields an empty string
+            ctx.emitter.instruction("call r10");                                // read the metadata/stub bytes into the global buffer
+            ctx.emitter.instruction("test rax, rax");                           // a null result means the field is unset
+            ctx.emitter.instruction(&format!("jz {}", empty));                  // fall back to an empty string
+            ctx.emitter.instruction("mov rdi, rax");                            // str_persist source pointer = bridge buffer
+            abi::emit_load_symbol_to_reg(ctx.emitter, "rdx", "_phar_list_len", 0); // str_persist length = bridge out-length
+            ctx.emitter.instruction(&format!("jmp {}", persist));               // persist the returned bytes
+            ctx.emitter.label(&empty);
+            ctx.emitter.instruction("mov rdi, 0");                              // empty source pointer (length 0 is not dereferenced)
+            ctx.emitter.instruction("mov rdx, 0");                              // empty string length
+            ctx.emitter.label(&persist);
+            ctx.emitter.instruction("call __rt_str_persist");                   // copy into an owned heap string -> rax=ptr, rdx=len
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `__elephc_phar_get_file_metadata()` into the per-file metadata-read bridge.
+pub(crate) fn lower_elephc_phar_get_file_metadata(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_get_file_metadata_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_get_file_metadata",
+        "_elephc_phar_get_file_metadata_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_set_file_metadata()` into the per-file metadata-write bridge.
+/// The single `phar://archive/entry` URL argument is split by the bridge, so this
+/// reuses the same `(url, data) -> bool` shape as the archive-level metadata writer.
+pub(crate) fn lower_elephc_phar_set_file_metadata(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_set_file_metadata_function_pointer(ctx);
+    emit_phar_set_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_set_file_metadata",
+        "_elephc_phar_set_file_metadata_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_gzip_archive(src)` into the whole-archive gzip bridge,
+/// returning the written destination path (or an empty string on failure).
+pub(crate) fn lower_elephc_phar_gzip_archive(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_gzip_archive_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_gzip_archive",
+        "_elephc_phar_gzip_archive_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_bzip2_archive(src)` into the whole-archive bzip2 bridge,
+/// returning the written destination path (or an empty string on failure).
+pub(crate) fn lower_elephc_phar_bzip2_archive(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_bzip2_archive_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_bzip2_archive",
+        "_elephc_phar_bzip2_archive_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_decompress_archive(src)` into the whole-archive decompression
+/// bridge, returning the written destination path (or an empty string on failure).
+pub(crate) fn lower_elephc_phar_decompress_archive(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_decompress_archive_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_decompress_archive",
+        "_elephc_phar_decompress_archive_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_sign_openssl(path, keyPem)` into the RSA-SHA1 signing bridge.
+pub(crate) fn lower_elephc_phar_sign_openssl(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_sign_openssl_function_pointer(ctx);
+    emit_phar_set_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_sign_openssl",
+        "_elephc_phar_sign_openssl_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_sign_hash(path, algo)` into the hash-based signing bridge.
+pub(crate) fn lower_elephc_phar_sign_hash(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_sign_hash_function_pointer(ctx);
+    emit_phar_path_int_to_bool_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_sign_hash",
+        "_elephc_phar_sign_hash_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_set_zip_password(password)` into the ZipCrypto password
+/// bridge that lets later reads decrypt encrypted ZIP entries.
+pub(crate) fn lower_elephc_phar_set_zip_password(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_set_zip_password_function_pointer(ctx);
+    emit_phar_string_to_bool_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_set_zip_password",
+        "_elephc_phar_set_zip_password_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_get_signature_hash(path)` into the signature-hash read bridge.
+pub(crate) fn lower_elephc_phar_get_signature_hash(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_get_signature_hash_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_get_signature_hash",
+        "_elephc_phar_get_signature_hash_fn",
+    )
+}
+
+/// Lowers `__elephc_phar_get_signature_type(path)` into the signature-type read bridge.
+pub(crate) fn lower_elephc_phar_get_signature_type(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    publish_phar_get_signature_type_function_pointer(ctx);
+    emit_phar_get_string_bridge(
+        ctx,
+        inst,
+        "__elephc_phar_get_signature_type",
+        "_elephc_phar_get_signature_type_fn",
+    )
+}
+
+/// Emits a `(path: string, value: int) -> bool` PHAR bridge call. Mirrors the
+/// archive-compression bridge: the integer is stashed, the path string is loaded into
+/// the path pointer/length registers, then the bridge pointer in `slot` is called and
+/// its result normalized to a PHP bool (false when the bridge is unavailable).
+fn emit_phar_path_int_to_bool_bridge(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    name: &str,
+    slot: &str,
+) -> Result<()> {
+    super::ensure_arg_count(inst, name, 2)?;
+    let path = expect_operand(inst, 0)?;
+    let value = expect_operand(inst, 1)?;
+    let fail = ctx.next_label("phar_path_int_fail");
+    let done = ctx.next_label("phar_path_int_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_push_reg(ctx.emitter, "x0");
+            load_string_to_result(ctx, path, "phar path-int bridge path")?;
+            ctx.emitter.instruction("mov x0, x1");                              // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov x1, x2");                              // bridge arg 1 = archive path length
+            abi::emit_pop_reg(ctx.emitter, "x2");
+            abi::emit_symbol_address(ctx.emitter, "x9", slot);
+            ctx.emitter.instruction("ldr x9, [x9]");                            // load the optional bridge pointer
+            ctx.emitter.instruction(&format!("cbz x9, {}", fail));              // missing bridge makes the op fail
+            ctx.emitter.instruction("blr x9");                                  // invoke the bridge
+            ctx.emitter.instruction("cmp x0, #0");                              // test the bridge success flag
+            ctx.emitter.instruction("cset x0, ne");                             // normalize to PHP bool
+            ctx.emitter.instruction(&format!("b {}", done));                    // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("mov x0, #0");                              // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_result(value)?;
+            abi::emit_push_reg(ctx.emitter, "rax");
+            load_string_to_result(ctx, path, "phar path-int bridge path")?;
+            ctx.emitter.instruction("mov rdi, rax");                            // bridge arg 0 = archive path pointer
+            ctx.emitter.instruction("mov rsi, rdx");                            // bridge arg 1 = archive path length
+            abi::emit_pop_reg(ctx.emitter, "rdx");
+            abi::emit_load_symbol_to_reg(ctx.emitter, "r10", slot, 0);
+            ctx.emitter.instruction("test r10, r10");                           // test whether the bridge was published
+            ctx.emitter.instruction(&format!("jz {}", fail));                   // missing bridge makes the op fail
+            ctx.emitter.instruction("call r10");                                // invoke the bridge
+            ctx.emitter.instruction("test rax, rax");                           // test the bridge success flag
+            ctx.emitter.instruction("setne al");                                // normalize to PHP bool
+            ctx.emitter.instruction("movzx eax, al");                           // widen the normalized bool
+            ctx.emitter.instruction(&format!("jmp {}", done));                  // skip the failure result
+            ctx.emitter.label(&fail);
+            ctx.emitter.instruction("xor eax, eax");                            // report false when the bridge is unavailable
+            ctx.emitter.label(&done);
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers the compiler-internal PHAR entry-list helper into a PHP string array.
-pub(super) fn lower_elephc_phar_list_entries(
+pub(crate) fn lower_elephc_phar_list_entries(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3753,7 +4396,7 @@ fn emit_phar_list_entries_buffer_to_array_x86_64(ctx: &mut FunctionContext<'_>) 
 }
 
 /// Lowers `file_exists(path)` through the target-aware runtime stat helper.
-pub(super) fn lower_file_exists(
+pub(crate) fn lower_file_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -3761,7 +4404,7 @@ pub(super) fn lower_file_exists(
 }
 
 /// Lowers `unlink(path)` through the target-aware runtime helper.
-pub(super) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "unlink", 1)?;
     let path = expect_operand(inst, 0)?;
     let path_literal = optional_const_string_operand(ctx, path)?;
@@ -3782,72 +4425,72 @@ pub(super) fn lower_unlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers `mkdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_mkdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_mkdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_single_path_wrapper_op(ctx, inst, "mkdir", "__rt_mkdir", STREAM_WRAPPER_MKDIR_SLOT)
 }
 
 /// Lowers `rmdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_rmdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rmdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_single_path_wrapper_op(ctx, inst, "rmdir", "__rt_rmdir", STREAM_WRAPPER_RMDIR_SLOT)
 }
 
 /// Lowers `chdir(path)` through the target-aware runtime helper.
-pub(super) fn lower_chdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chdir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_predicate(ctx, inst, "chdir", "__rt_chdir")
 }
 
 /// Lowers `copy(source, dest)` through the target-aware runtime helper.
-pub(super) fn lower_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "copy", "__rt_copy")
 }
 
 /// Lowers `rename(from, to)` through the target-aware runtime helper.
-pub(super) fn lower_rename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_rename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_rename_with_wrapper(ctx, inst)
 }
 
 /// Lowers `tempnam(directory, prefix)` through the target-aware runtime helper.
-pub(super) fn lower_tempnam(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_tempnam(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "tempnam", "__rt_tempnam")
 }
 
 /// Lowers `scandir(path)` through the target-aware runtime directory listing helper.
-pub(super) fn lower_scandir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_scandir(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "scandir", "__rt_scandir")
 }
 
 /// Lowers `glob(pattern)` through the target-aware runtime glob expansion helper.
-pub(super) fn lower_glob(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_glob(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_array(ctx, inst, "glob", "__rt_glob")
 }
 
 /// Lowers `chmod(path, mode)` through the target-aware runtime helper.
-pub(super) fn lower_chmod(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chmod(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chmod_with_wrapper(ctx, inst)
 }
 
 /// Lowers `chown(path, owner)` for integer UIDs and string user names.
-pub(super) fn lower_chown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chown_or_chgrp(ctx, inst, "chown", PrincipalKind::Owner)
 }
 
 /// Lowers `chgrp(path, group)` for integer GIDs and string group names.
-pub(super) fn lower_chgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_chgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_chown_or_chgrp(ctx, inst, "chgrp", PrincipalKind::Group)
 }
 
 /// Lowers `lchown(path, owner)` for integer UIDs and string user names without following symlinks.
-pub(super) fn lower_lchown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lchown(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_lchown_or_lchgrp(ctx, inst, "lchown", PrincipalKind::Owner)
 }
 
 /// Lowers `lchgrp(path, group)` for integer GIDs and string group names without following symlinks.
-pub(super) fn lower_lchgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lchgrp(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_lchown_or_lchgrp(ctx, inst, "lchgrp", PrincipalKind::Group)
 }
 
 /// Lowers `umask(mask?)` through the target-aware runtime helper.
-pub(super) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "umask", 0, 1)?;
     if inst.operands.is_empty() {
         match ctx.emitter.target.arch {
@@ -3877,7 +4520,7 @@ pub(super) fn lower_umask(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `touch(path, mtime?, atime?)` through the target-aware runtime helper.
-pub(super) fn lower_touch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_touch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "touch", 1, 3)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "touch path")?;
@@ -3890,7 +4533,7 @@ pub(super) fn lower_touch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `basename(path, suffix?)` through the target-aware runtime helper.
-pub(super) fn lower_basename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_basename(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "basename", 1, 2)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "basename path")?;
@@ -3929,7 +4572,7 @@ pub(super) fn lower_basename(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `dirname(path, levels?)` through the target-aware runtime helper.
-pub(super) fn lower_dirname(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_dirname(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "dirname", 1, 2)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "dirname path")?;
@@ -3957,7 +4600,7 @@ pub(super) fn lower_dirname(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `fnmatch(pattern, filename, flags?)` through the target-aware runtime helper.
-pub(super) fn lower_fnmatch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fnmatch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "fnmatch", 2, 3)?;
     let pattern = expect_operand(inst, 0)?;
     let filename = expect_operand(inst, 1)?;
@@ -3998,7 +4641,7 @@ pub(super) fn lower_fnmatch(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `pathinfo(path, flags?)` through string, array, or boxed dynamic helpers.
-pub(super) fn lower_pathinfo(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_pathinfo(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count_between(inst, "pathinfo", 1, 2)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "pathinfo path")?;
@@ -4750,14 +5393,14 @@ fn lower_pathinfo_mixed(ctx: &mut FunctionContext<'_>, flag: ValueId) -> Result<
 }
 
 /// Lowers `getcwd()` through the target-aware runtime helper.
-pub(super) fn lower_getcwd(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_getcwd(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "getcwd", 0)?;
     abi::emit_call_label(ctx.emitter, "__rt_getcwd");
     store_if_result(ctx, inst)
 }
 
 /// Lowers `sys_get_temp_dir()` as the project's hardcoded `/tmp` string.
-pub(super) fn lower_sys_get_temp_dir(
+pub(crate) fn lower_sys_get_temp_dir(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4770,7 +5413,7 @@ pub(super) fn lower_sys_get_temp_dir(
 }
 
 /// Lowers `tmpfile()` and boxes the anonymous stream descriptor or PHP false.
-pub(super) fn lower_tmpfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_tmpfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "tmpfile", 0)?;
     abi::emit_call_label(ctx.emitter, "__rt_tmpfile");
     box_stream_fd_or_false_result(ctx, "tmpfile");
@@ -4778,7 +5421,7 @@ pub(super) fn lower_tmpfile(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `filesize(path)` through the target-aware runtime stat helper.
-pub(super) fn lower_filesize(
+pub(crate) fn lower_filesize(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4786,7 +5429,7 @@ pub(super) fn lower_filesize(
 }
 
 /// Lowers `filemtime(path)` through the target-aware runtime stat helper.
-pub(super) fn lower_filemtime(
+pub(crate) fn lower_filemtime(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4794,7 +5437,7 @@ pub(super) fn lower_filemtime(
 }
 
 /// Lowers `linkinfo(path)` through the target-aware runtime lstat helper.
-pub(super) fn lower_linkinfo(
+pub(crate) fn lower_linkinfo(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4802,17 +5445,17 @@ pub(super) fn lower_linkinfo(
 }
 
 /// Lowers `symlink(target, link)` through the target-aware libc wrapper.
-pub(super) fn lower_symlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_symlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "symlink", "__rt_symlink")
 }
 
 /// Lowers `link(oldpath, newpath)` through the target-aware libc wrapper.
-pub(super) fn lower_link(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_link(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_binary_path_call(ctx, inst, "link", "__rt_link")
 }
 
 /// Lowers `readlink(path)` and boxes the owned runtime string-or-false result.
-pub(super) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "readlink", 1)?;
     let path = expect_operand(inst, 0)?;
     load_string_to_result(ctx, path, "readlink")?;
@@ -4822,7 +5465,7 @@ pub(super) fn lower_readlink(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
 }
 
 /// Lowers `fileatime(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_fileatime(
+pub(crate) fn lower_fileatime(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4830,7 +5473,7 @@ pub(super) fn lower_fileatime(
 }
 
 /// Lowers `filectime(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_filectime(
+pub(crate) fn lower_filectime(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4838,7 +5481,7 @@ pub(super) fn lower_filectime(
 }
 
 /// Lowers `fileperms(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_fileperms(
+pub(crate) fn lower_fileperms(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4846,7 +5489,7 @@ pub(super) fn lower_fileperms(
 }
 
 /// Lowers `fileowner(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_fileowner(
+pub(crate) fn lower_fileowner(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4854,7 +5497,7 @@ pub(super) fn lower_fileowner(
 }
 
 /// Lowers `filegroup(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_filegroup(
+pub(crate) fn lower_filegroup(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4862,7 +5505,7 @@ pub(super) fn lower_filegroup(
 }
 
 /// Lowers `fileinode(path)` and boxes the runtime integer-or-false result.
-pub(super) fn lower_fileinode(
+pub(crate) fn lower_fileinode(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4870,7 +5513,7 @@ pub(super) fn lower_fileinode(
 }
 
 /// Lowers `filetype(path)` and boxes the runtime string-or-false result.
-pub(super) fn lower_filetype(
+pub(crate) fn lower_filetype(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4883,17 +5526,17 @@ pub(super) fn lower_filetype(
 }
 
 /// Lowers `stat(path)` and boxes the runtime stat array or PHP false result.
-pub(super) fn lower_stat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_stat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_stat_array_or_false(ctx, inst, "stat", "__rt_stat_array")
 }
 
 /// Lowers `lstat(path)` and boxes the runtime lstat array or PHP false result.
-pub(super) fn lower_lstat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_lstat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     lower_unary_path_stat_array_or_false(ctx, inst, "lstat", "__rt_lstat_array")
 }
 
 /// Lowers `fstat(stream)` and boxes the runtime stat array or PHP false result.
-pub(super) fn lower_fstat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(crate) fn lower_fstat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "fstat", 1)?;
     let stream = expect_operand(inst, 0)?;
     load_stream_fd_to_result(ctx, stream, "fstat")?;
@@ -4932,7 +5575,7 @@ pub(super) fn lower_fstat(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 }
 
 /// Lowers `clearstatcache(...)` as an ordered no-op after EIR operand evaluation.
-pub(super) fn lower_clearstatcache(
+pub(crate) fn lower_clearstatcache(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4946,7 +5589,7 @@ pub(super) fn lower_clearstatcache(
 }
 
 /// Lowers `is_file(path)` through the target-aware runtime stat helper.
-pub(super) fn lower_is_file(
+pub(crate) fn lower_is_file(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4954,7 +5597,7 @@ pub(super) fn lower_is_file(
 }
 
 /// Lowers `is_dir(path)` through the target-aware runtime stat helper.
-pub(super) fn lower_is_dir(
+pub(crate) fn lower_is_dir(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4962,7 +5605,7 @@ pub(super) fn lower_is_dir(
 }
 
 /// Lowers `is_readable(path)` through the target-aware runtime access helper.
-pub(super) fn lower_is_readable(
+pub(crate) fn lower_is_readable(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4970,7 +5613,7 @@ pub(super) fn lower_is_readable(
 }
 
 /// Lowers `is_writable(path)` through the target-aware runtime access helper.
-pub(super) fn lower_is_writable(
+pub(crate) fn lower_is_writable(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4978,7 +5621,7 @@ pub(super) fn lower_is_writable(
 }
 
 /// Lowers `is_writeable(path)`, PHP's alias of `is_writable(path)`.
-pub(super) fn lower_is_writeable(
+pub(crate) fn lower_is_writeable(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4986,7 +5629,7 @@ pub(super) fn lower_is_writeable(
 }
 
 /// Lowers `is_executable(path)` through the target-aware runtime access helper.
-pub(super) fn lower_is_executable(
+pub(crate) fn lower_is_executable(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -4994,7 +5637,7 @@ pub(super) fn lower_is_executable(
 }
 
 /// Lowers `is_link(path)` through the target-aware runtime lstat helper.
-pub(super) fn lower_is_link(
+pub(crate) fn lower_is_link(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -7412,6 +8055,60 @@ pub(super) fn load_stream_fd_to_result(
     }
 }
 
+/// Stashes the Mixed box pointer of a resource operand on the stack so an
+/// explicit closer (`fclose`/`pclose`/`closedir`) can stamp a release sentinel
+/// into it after the handle is unboxed.
+///
+/// Returns `true` when a box was captured (Mixed/Union-typed operands, which are
+/// the only ones that participate in scope cleanup) and `false` for unboxed
+/// `Resource`-typed handles, which have no Mixed cell. The push keeps the stack
+/// 16-byte aligned across the `__rt_mixed_unbox` call performed during unboxing;
+/// the matching pop lives in `apply_resource_release_sentinel`.
+fn capture_resource_box_for_release(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+) -> Result<bool> {
+    let raw_ty = ctx.raw_value_php_type(value)?;
+    if !matches!(raw_ty, PhpType::Mixed | PhpType::Union(_)) {
+        return Ok(false);
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(value, "x9")?;
+            ctx.emitter.instruction("str x9, [sp, #-16]!");                     // stash the resource Mixed box pointer across the unbox call
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(value, "r11")?;
+            ctx.emitter.instruction("sub rsp, 16");                             // reserve a 16-byte aligned slot for the stashed box pointer
+            ctx.emitter.instruction("mov QWORD PTR [rsp], r11");                // stash the resource Mixed box pointer across the unbox call
+        }
+    }
+    Ok(true)
+}
+
+/// Pops the stashed Mixed box pointer and writes the `-1` release sentinel into
+/// its low payload word so scope cleanup (`__rt_mixed_free_deep`) skips the
+/// already-closed handle — preventing a second `close`/`pclose`/`closedir` on a
+/// descriptor whose number may have been reused. A no-op when nothing was
+/// captured. Preserves the close result already in the int result register.
+fn apply_resource_release_sentinel(ctx: &mut FunctionContext<'_>, captured: bool) {
+    if !captured {
+        return;
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("ldr x9, [sp], #16");                       // restore the stashed resource Mixed box pointer
+            ctx.emitter.instruction("mov x10, #-1");                            // -1 marks the resource handle as already released
+            ctx.emitter.instruction("str x10, [x9, #8]");                       // overwrite the low payload word so scope cleanup skips it
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                // restore the stashed resource Mixed box pointer
+            ctx.emitter.instruction("add rsp, 16");                             // release the stash slot
+            ctx.emitter.instruction("mov QWORD PTR [r11 + 8], -1");             // overwrite the low payload word so scope cleanup skips it
+        }
+    }
+}
+
 /// Unboxes a Mixed stream resource or emits a fatal TypeError for non-resource values.
 fn emit_unbox_stream_or_type_error(ctx: &mut FunctionContext<'_>, function_name: &str) {
     let ok_label = ctx.next_label("stream_resource_ok");
@@ -7845,7 +8542,24 @@ fn box_stream_string_or_false_on_empty_result(
 }
 
 /// Boxes a non-negative stream descriptor as a PHP resource or false on failure.
+///
+/// The resource is tagged with scope-cleanup kind 1 (native stream fd, closed via
+/// `close()` at scope exit). Callers whose handle needs a different destructor use
+/// `box_stream_fd_or_false_result_kind` instead.
 fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &str) {
+    box_stream_fd_or_false_result_kind(ctx, label_prefix, 1);
+}
+
+/// Boxes a non-negative descriptor as a PHP resource (or false on failure) and
+/// records the scope-cleanup `kind` in the Mixed high payload word so
+/// `__rt_mixed_free_deep` dispatches the right destructor: 1 = native stream fd
+/// (`close`), 3 = `popen` pipe (`__rt_pclose`), 4 = `opendir` stream
+/// (`__rt_closedir`).
+fn box_stream_fd_or_false_result_kind(
+    ctx: &mut FunctionContext<'_>,
+    label_prefix: &str,
+    kind: u64,
+) {
     let false_label = ctx.next_label(&format!("{}_false", label_prefix));
     let done_label = ctx.next_label(&format!("{}_done", label_prefix));
     match ctx.emitter.target.arch {
@@ -7853,7 +8567,7 @@ fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &s
             ctx.emitter.instruction("cmp x0, #0");                              // test whether the stream helper returned a negative descriptor
             ctx.emitter.instruction(&format!("b.lt {}", false_label));          // box PHP false when stream creation failed
             ctx.emitter.instruction("mov x1, x0");                              // pass the native stream fd as the Mixed low payload word
-            ctx.emitter.instruction("mov x2, #0");                              // resource Mixed payloads do not use a high word
+            ctx.emitter.instruction(&format!("mov x2, #{}", kind));             // resource-kind subtype in the Mixed high word (1=fd,3=popen,4=dir)
             ctx.emitter.instruction("mov x0, #9");                              // select runtime tag 9 for a stream resource
             abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
             ctx.emitter.instruction(&format!("b {}", done_label));              // skip false boxing after building the resource result
@@ -7868,7 +8582,7 @@ fn box_stream_fd_or_false_result(ctx: &mut FunctionContext<'_>, label_prefix: &s
             ctx.emitter.instruction("test rax, rax");                           // test whether the stream helper returned a negative descriptor
             ctx.emitter.instruction(&format!("js {}", false_label));            // box PHP false when stream creation failed
             ctx.emitter.instruction("mov rdi, rax");                            // pass the native stream fd as the Mixed low payload word
-            ctx.emitter.instruction("xor esi, esi");                            // resource Mixed payloads do not use a high word
+            ctx.emitter.instruction(&format!("mov esi, {}", kind));             // resource-kind subtype in the Mixed high word (1=fd,3=popen,4=dir)
             ctx.emitter.instruction("mov eax, 9");                              // select runtime tag 9 for a stream resource
             abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
             ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip false boxing after building the resource result

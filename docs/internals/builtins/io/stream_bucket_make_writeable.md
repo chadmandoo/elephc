@@ -2,15 +2,15 @@
 title: "stream_bucket_make_writeable() — internals"
 description: "Compiler internals for stream_bucket_make_writeable(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 172
+  order: 189
 ---
 
 ## `stream_bucket_make_writeable()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1768](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1768) (`lower_stream_bucket_make_writeable`)
+- **Signature**: [`src/builtins/io/stream_bucket_make_writeable.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/io/stream_bucket_make_writeable.rs)
+- **Lowering**: [`src/codegen_ir/lower_inst/builtins/io.rs`:1987](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/io.rs#L1987) (`lower_stream_bucket_make_writeable`)
 - **Function symbol**: `lower_stream_bucket_make_writeable()`
 
 
