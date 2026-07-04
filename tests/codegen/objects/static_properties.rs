@@ -371,3 +371,41 @@ echo A::$x;
     );
     assert_eq!(out, "2");
 }
+
+/// Tests `static::$x++` and `++static::$x` inside a static method use late-static storage.
+#[test]
+fn test_static_property_static_increment_in_method() {
+    let out = compile_and_run(
+        r#"<?php
+class A {
+    public static $x = 0;
+    public static function inc(): void {
+        static::$x++;
+        ++static::$x;
+    }
+}
+A::inc();
+echo A::$x;
+"#,
+    );
+    assert_eq!(out, "2");
+}
+
+/// Tests `parent::$x++` and `++parent::$x` inside a child static method.
+#[test]
+fn test_static_property_parent_increment_in_method() {
+    let out = compile_and_run(
+        r#"<?php
+class A { public static $x = 0; }
+class B extends A {
+    public static function inc(): void {
+        parent::$x++;
+        ++parent::$x;
+    }
+}
+B::inc();
+echo A::$x;
+"#,
+    );
+    assert_eq!(out, "2");
+}

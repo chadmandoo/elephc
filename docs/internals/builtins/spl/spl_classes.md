@@ -2,14 +2,14 @@
 title: "spl_classes() — internals"
 description: "Compiler internals for spl_classes(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 328
+  order: 325
 ---
 
 ## `spl_classes()` — internals
 
 ## Where it lives
 
-- **Signature**: [`src/types/signatures.rs`](https://github.com/illegalstudio/elephc/blob/main/src/types/signatures.rs)
+- **Signature**: [`src/builtins/spl/spl_classes.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/spl/spl_classes.rs)
 - **Lowering**: [`src/codegen_ir/lower_inst/builtins/spl.rs`:206](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/spl.rs#L206) (`lower_spl_classes`)
 - **Function symbol**: `lower_spl_classes()`
 
@@ -36,4 +36,3 @@ function spl_classes(): array
 ## Cross-references
 
 - [User reference for `spl_classes()`](../../../php/builtins/spl/spl_classes.md)
-

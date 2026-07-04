@@ -17,8 +17,10 @@ use crate::types::PhpType;
 use super::super::super::super::context::FunctionContext;
 use super::super::{expect_operand, store_if_result};
 
+const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
+
 /// Lowers `intdiv()` for concrete integer-like numeric operands.
-pub(in crate::codegen_ir::lower_inst::builtins) fn lower_intdiv(
+pub(crate) fn lower_intdiv(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -62,7 +64,7 @@ pub(in crate::codegen_ir::lower_inst::builtins) fn lower_intdiv(
 }
 
 /// Lowers `fdiv()` for concrete integer-like and floating operands.
-pub(in crate::codegen_ir::lower_inst::builtins) fn lower_fdiv(
+pub(crate) fn lower_fdiv(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -79,15 +81,15 @@ pub(in crate::codegen_ir::lower_inst::builtins) fn lower_fdiv(
         }
         Arch::X86_64 => {
             abi::emit_pop_float_reg(ctx.emitter, "xmm1");
-            ctx.emitter.instruction("divsd xmm1, xmm0");                        // compute dividend divided by divisor in the scratch register
-            ctx.emitter.instruction("movsd xmm0, xmm1");                        // move the floating quotient into the result register
+            ctx.emitter.instruction("divsd xmm1, xmm0"); // compute dividend divided by divisor in the scratch register
+            ctx.emitter.instruction("movsd xmm0, xmm1"); // move the floating quotient into the result register
         }
     }
     store_if_result(ctx, inst)
 }
 
 /// Lowers `fmod()` for concrete integer-like and floating operands.
-pub(in crate::codegen_ir::lower_inst::builtins) fn lower_fmod(
+pub(crate) fn lower_fmod(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -116,7 +118,7 @@ pub(in crate::codegen_ir::lower_inst::builtins) fn lower_fmod(
 }
 
 /// Lowers `pow()` for concrete integer-like and floating operands.
-pub(in crate::codegen_ir::lower_inst::builtins) fn lower_pow(
+pub(crate) fn lower_pow(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
@@ -237,9 +239,9 @@ fn emit_intdiv_overflow_throw(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.instruction("sub rsp, 16");                                 // keep the nested heap allocation call 16-byte aligned
             ctx.emitter.instruction("mov rax, 32");                                  // request Throwable payload storage for the ArithmeticError
             ctx.emitter.instruction("call __rt_heap_alloc");                        // allocate the ArithmeticError object payload
-            ctx.emitter.instruction("mov r10, 0x4545504c00000006");                  // materialize the x86_64 object heap-kind header
+            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 6)); // materialize the x86_64 object heap-kind header
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");                 // stamp the allocation header as a runtime object
-            ctx.emitter.instruction("mov r10, QWORD PTR [rip + _spl_arithmetic_error_class_id]");
+            ctx.emitter.instruction("mov r10, QWORD PTR [rip + _spl_arithmetic_error_class_id]"); // load ArithmeticError's runtime class id for this program
             ctx.emitter.instruction("mov QWORD PTR [rax], r10");                    // store the ArithmeticError class id in the Throwable header
             ctx.emitter.instruction(&format!("lea r10, [rip + {}]", msg_label));    // materialize the static ArithmeticError message pointer
             ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");                // store the static ArithmeticError message pointer
