@@ -1451,3 +1451,63 @@ echo $cb();
     );
     assert_eq!(out, "B");
 }
+
+/// Verifies that `call_user_func` dispatches a boxed-Mixed callback by runtime tag.
+///
+/// A callable stored in a `mixed` property is read back boxed, so the checker sees
+/// a Mixed callback and the backend routes it through `callable_descriptor_invoke`,
+/// which unboxes and dispatches on the runtime tag: a string function name (tag 1)
+/// through the per-candidate function lookup, and a closure descriptor (tag 10)
+/// directly. This is the mechanism the legacy 6-callable `session_set_save_handler`
+/// form relies on. Fixture registers one of each kind and expects both to invoke.
+#[test]
+fn test_call_user_func_dispatches_boxed_mixed_string_and_closure_callback() {
+    let out = compile_and_run(
+        r#"<?php
+function ext_reader(string $id): string { return "S:" . $id; }
+class Adapter {
+    public mixed $cb;
+    public function __construct(mixed $cb) { $this->cb = $cb; }
+    public function run(string $id): string { return (string)call_user_func($this->cb, $id); }
+}
+function make(mixed $cb): string {
+    $a = new Adapter($cb);
+    return $a->run("id");
+}
+echo make('ext_reader');
+echo make(function (string $id): string { return "C:" . $id; });
+"#,
+    );
+    assert_eq!(out, "S:idC:id");
+}
+
+/// Verifies that `call_user_func` dispatches a boxed-Mixed `[$obj, "method"]` callback.
+///
+/// An `[$obj, "method"]` array stored in a `mixed` property boxes to a runtime Mixed
+/// cell (indexed-array tag 4), so the checker sees a Mixed callback and the backend
+/// routes it through `callable_descriptor_invoke`. Regression: the boxed-array tag
+/// used to fall through to the "not callable" fatal; it now re-unboxes the array,
+/// fills the receiver/method selector slots, and dispatches the matching public
+/// instance method by runtime class-id — the form PHP session save handlers use.
+#[test]
+fn test_call_user_func_dispatches_boxed_mixed_instance_method_array_callback() {
+    let out = compile_and_run(
+        r#"<?php
+class Handler {
+    public function greet(string $id): string { return "H:" . $id; }
+}
+class Adapter {
+    public mixed $cb;
+    public function __construct(mixed $cb) { $this->cb = $cb; }
+    public function run(string $id): string { return (string)call_user_func($this->cb, $id); }
+}
+function make(mixed $cb): string {
+    $a = new Adapter($cb);
+    return $a->run("id");
+}
+$h = new Handler();
+echo make([$h, 'greet']);
+"#,
+    );
+    assert_eq!(out, "H:id");
+}

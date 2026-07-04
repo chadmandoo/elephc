@@ -47,6 +47,8 @@ const STRING_METHOD_OFFSET: usize = 0;
 const STRING_CLASS_OFFSET: usize = 16;
 const STRING_SELECTOR_BYTES: usize = 32;
 const MIXED_TAG_CALLABLE: i64 = 10;
+/// Runtime Mixed tag for a boxed indexed (list) array; payload-low holds the array pointer.
+const MIXED_TAG_INDEXED_ARRAY: i64 = 4;
 
 /// Resolved user function candidate for a runtime string callable.
 struct RuntimeStringFunctionTarget {
@@ -63,6 +65,17 @@ struct RuntimeArrayInstanceMethodTarget {
     method_name: String,
     impl_class: String,
     sig: FunctionSig,
+}
+
+/// Describes how the base pointer of a runtime callable array is materialized.
+///
+/// Both forms re-load the pointer on demand so it survives the `__rt_mixed_unbox`
+/// calls that read each selector element.
+enum CallableArraySource {
+    /// The value's local slot already holds the raw indexed-array pointer.
+    RawArray(ValueId),
+    /// The value's local slot holds a boxed `Mixed` indexed array; unbox to reach it.
+    BoxedArray(ValueId),
 }
 
 /// Lowers `$callable(...)` calls when the callable is a runtime string function name.
@@ -163,6 +176,15 @@ pub(super) fn lower_callable_descriptor_invoke(
 }
 
 /// Lowers descriptor invocation when the callable traveled through a boxed Mixed value.
+///
+/// Unboxes the Mixed callback and dispatches by runtime tag: a callable descriptor
+/// (tag 10, a closure/first-class callable) is invoked directly, a string (tag 1, a
+/// function name) is dispatched through the same per-candidate function lookup used
+/// for concrete string callables, and a boxed indexed array (tag 4, `[$obj,
+/// "method"]`) is routed through the shared instance-method callable-array
+/// dispatch. Any other boxed payload — including a boxed array whose element 0 is a
+/// class-name string (the static `["Class", "method"]` form) — is a fatal "not
+/// callable".
 fn lower_mixed_callable_descriptor_invoke(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -170,29 +192,47 @@ fn lower_mixed_callable_descriptor_invoke(
     arg_mixed: ValueId,
     op_name: &str,
 ) -> Result<()> {
+    let instance_targets = runtime_array_instance_method_targets_for_descriptor(ctx);
+    let array_label = (!instance_targets.is_empty())
+        .then(|| ctx.next_label("mixed_callable_array"));
     let descriptor_reg = abi::nested_call_reg(ctx.emitter);
+    let string_label = ctx.next_label("mixed_callable_string_name");
+    let callable_label = ctx.next_label("mixed_callable_closure");
     let fatal_label = ctx.next_label("mixed_callable_not_callable");
     let done_label = ctx.next_label("mixed_callable_done");
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.load_value_to_reg(callable, "x0")?;
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
-            ctx.emitter
-                .instruction(&format!("cmp x0, #{}", MIXED_TAG_CALLABLE)); // check whether the boxed Mixed payload is a callable descriptor
-            ctx.emitter.instruction(&format!("b.ne {}", fatal_label));          // fatal when the boxed Mixed value is not callable
-            ctx.emitter
-                .instruction(&format!("mov {}, x1", descriptor_reg)); // keep the unboxed callable descriptor in the nested-call register
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");              // unbox → x0=tag, x1=payload lo, x2=payload hi
+            ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_STRING)); // is the boxed Mixed payload a string function name?
+            ctx.emitter.instruction(&format!("b.eq {}", string_label));         // dispatch a boxed string-name callable
+            ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_CALLABLE)); // is the boxed Mixed payload a callable descriptor?
+            ctx.emitter.instruction(&format!("b.eq {}", callable_label));       // dispatch a boxed closure/first-class callable descriptor
+            if let Some(array_label) = &array_label {
+                ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a [$obj, "method"] array?
+                ctx.emitter.instruction(&format!("b.eq {}", array_label));      // dispatch a boxed instance-method callable array
+            }
+            abi::emit_jump(ctx.emitter, &fatal_label);
+            ctx.emitter.label(&callable_label);
+            ctx.emitter.instruction(&format!("mov {}, x1", descriptor_reg));    // keep the unboxed closure descriptor in the nested-call register
         }
         Arch::X86_64 => {
             ctx.load_value_to_reg(callable, "rax")?;
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
-            ctx.emitter
-                .instruction(&format!("cmp rax, {}", MIXED_TAG_CALLABLE)); // check whether the boxed Mixed payload is a callable descriptor
-            ctx.emitter.instruction(&format!("jne {}", fatal_label));           // fatal when the boxed Mixed value is not callable
-            ctx.emitter
-                .instruction(&format!("mov {}, rdi", descriptor_reg)); // keep the unboxed callable descriptor in the nested-call register
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");             // unbox → rax=tag, rdi=payload lo, rdx=payload hi
+            ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_STRING)); // is the boxed Mixed payload a string function name?
+            ctx.emitter.instruction(&format!("je {}", string_label));           // dispatch a boxed string-name callable
+            ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_CALLABLE)); // is the boxed Mixed payload a callable descriptor?
+            ctx.emitter.instruction(&format!("je {}", callable_label));         // dispatch a boxed closure/first-class callable descriptor
+            if let Some(array_label) = &array_label {
+                ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a [$obj, "method"] array?
+                ctx.emitter.instruction(&format!("je {}", array_label));        // dispatch a boxed instance-method callable array
+            }
+            abi::emit_jump(ctx.emitter, &fatal_label);
+            ctx.emitter.label(&callable_label);
+            ctx.emitter.instruction(&format!("mov {}, rdi", descriptor_reg));   // keep the unboxed closure descriptor in the nested-call register
         }
     }
+    // Closure descriptor (tag 10): invoke the unboxed descriptor directly.
     emit_descriptor_reg_invoker_call_with_mixed_arg(
         ctx,
         inst,
@@ -202,6 +242,41 @@ fn lower_mixed_callable_descriptor_invoke(
         false,
     )?;
     abi::emit_jump(ctx.emitter, &done_label);
+
+    // String function name (tag 1): the unboxed pointer/length are still in the
+    // payload registers. Move them into the string ABI result pair, spill them onto
+    // the temporary stack, and reuse the concrete-string per-candidate dispatch.
+    ctx.emitter.label(&string_label);
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    if ctx.emitter.target.arch == Arch::X86_64 {
+        ctx.emitter.instruction(&format!("mov {}, rdi", ptr_reg));              // move the unboxed string pointer into the string ABI result register
+    }
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);                    // spill the unboxed function name across dispatch emission
+    let cases = runtime_string_descriptor_cases(ctx, None)?;
+    if cases.is_empty() {
+        emit_undefined_runtime_string_call_fatal(ctx);
+    } else {
+        emit_string_name_descriptor_cases_loop(ctx, inst, arg_mixed, &cases, op_name)?;
+    }
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    // Boxed indexed array (tag 4): a `[$obj, "method"]` instance-method callable.
+    // Re-unbox the array from the boxed Mixed value, fill the selector slots, and
+    // reuse the same instance-method dispatch as a statically-typed callable array.
+    if let Some(array_label) = &array_label {
+        ctx.emitter.label(array_label);
+        emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::BoxedArray(callable))?;
+        emit_mixed_callable_array_descriptor_dispatch(
+            ctx,
+            inst,
+            callable,
+            arg_mixed,
+            op_name,
+            &instance_targets,
+            &[],
+        )?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
 
     ctx.emitter.label(&fatal_label);
     emit_mixed_callable_not_callable_fatal(ctx, op_name);
@@ -256,7 +331,24 @@ fn lower_runtime_string_descriptor_invoke(
     let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
     ctx.load_string_value_to_regs(callable, ptr_reg, len_reg)?;
     abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+    emit_string_name_descriptor_cases_loop(ctx, inst, arg_mixed, &cases, op_name)
+}
 
+/// Emits the per-candidate string function-name dispatch loop.
+///
+/// Assumes the callable's `(ptr, len)` are already pushed onto the temporary stack
+/// (pointer at `[sp]`, length at `[sp + 8]`) and `cases` is non-empty. Each case
+/// compares the pushed name against a candidate function and, on a match, invokes
+/// that function's descriptor with `arg_mixed`; a miss is a fatal "undefined
+/// function" call. The 16-byte name spill is released before returning. Shared by
+/// the concrete-string and boxed-Mixed string-callable descriptor paths.
+fn emit_string_name_descriptor_cases_loop(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    arg_mixed: ValueId,
+    cases: &[callable_dispatch::RuntimeCallableCase],
+    op_name: &str,
+) -> Result<()> {
     let done_label = ctx.next_label(&format!("{}_runtime_string_done", op_name));
     let miss_label = ctx.next_label(&format!("{}_runtime_string_missing", op_name));
     let call_reg = abi::nested_call_reg(ctx.emitter);
@@ -265,7 +357,7 @@ fn lower_runtime_string_descriptor_invoke(
         len_offset: 8,
         call_reg,
     };
-    for case in &cases {
+    for case in cases {
         let next_case = ctx.next_label("runtime_string_descriptor_next");
         let matched_label = ctx.next_label("callable_string_match");
         callable_dispatch::emit_branch_if_callable_case_mismatch(
@@ -626,7 +718,7 @@ fn lower_runtime_mixed_callable_array_call(
         )));
     }
 
-    emit_mixed_callable_array_selector_slots(ctx, callable)?;
+    emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::RawArray(callable))?;
     let done_label = ctx.next_label("callable_array_runtime_done");
     let miss_label = ctx.next_label(&format!("{}_callable_array_missing", op_name));
     for target in &targets {
@@ -662,17 +754,45 @@ fn lower_runtime_mixed_callable_array_descriptor_invoke(
         ));
     }
 
-    emit_mixed_callable_array_selector_slots(ctx, callable)?;
+    emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::RawArray(callable))?;
+    emit_mixed_callable_array_descriptor_dispatch(
+        ctx,
+        inst,
+        callable,
+        arg_mixed,
+        op_name,
+        &instance_targets,
+        &static_cases,
+    )
+}
+
+/// Dispatches already-filled callable-array selector slots to a matching descriptor.
+///
+/// Assumes the 64-byte selector block (`MIXED_*_OFFSET` slots) is already on the
+/// temporary stack. Tries each public instance-method target (receiver class-id and
+/// method-name match) then each public static-method case; a match invokes that
+/// descriptor with the prebuilt `arg_mixed` container, and no match is a fatal.
+/// Releases the selector block on the matched path before returning. Shared by the
+/// statically-typed `array<mixed>` path and the boxed-Mixed indexed-array path.
+fn emit_mixed_callable_array_descriptor_dispatch(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    callable: ValueId,
+    arg_mixed: ValueId,
+    op_name: &str,
+    instance_targets: &[RuntimeArrayInstanceMethodTarget],
+    static_cases: &[callable_dispatch::RuntimeStaticMethodCallableCase],
+) -> Result<()> {
     let done_label = ctx.next_label("callable_array_runtime_done");
     let miss_label = ctx.next_label(&format!("{}_callable_array_missing", op_name));
-    for target in &instance_targets {
+    for target in instance_targets {
         let next_label = ctx.next_label("callable_array_instance_next");
         emit_branch_if_runtime_array_instance_mismatch(ctx, target, &next_label);
         emit_runtime_array_instance_descriptor_invoke(ctx, inst, arg_mixed, target)?;
         abi::emit_jump(ctx.emitter, &done_label);
         ctx.emitter.label(&next_label);
     }
-    for case in &static_cases {
+    for case in static_cases {
         let next_label = ctx.next_label("callable_array_static_next");
         emit_branch_if_mixed_static_case_mismatch(ctx, case, &next_label);
         emit_static_descriptor_case_invoke(ctx, inst, arg_mixed, &case.case.descriptor_label)?;
@@ -773,7 +893,7 @@ pub(super) fn emit_runtime_mixed_instance_callable_array_descriptor_value(
         )));
     }
 
-    emit_mixed_callable_array_selector_slots(ctx, callable)?;
+    emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::RawArray(callable))?;
     let done_label = ctx.next_label("callable_array_instance_descriptor_done");
     let miss_label = ctx.next_label(&format!("{}_callable_array_instance_missing", op_name));
     for target in &targets {
@@ -808,7 +928,7 @@ fn emit_mixed_callable_array_descriptor_value(
         )));
     }
 
-    emit_mixed_callable_array_selector_slots(ctx, callable)?;
+    emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::RawArray(callable))?;
     let done_label = ctx.next_label("callable_array_descriptor_done");
     let miss_label = ctx.next_label(&format!("{}_callable_array_missing", op_name));
     for target in &instance_targets {
@@ -1042,20 +1162,30 @@ fn runtime_array_instance_method_targets(
     targets
 }
 
-/// Saves the receiver and method slots from a boxed-Mixed callable array.
+/// Saves the receiver and method slots from a mixed callable array.
+///
+/// Reads both elements of the `[$obj, "method"]` array through the `source`, unboxes
+/// each to a runtime tag/payload triple, and pushes them so the later dispatch can
+/// match receiver class-id and method name. `RawArray` reads a directly-typed
+/// `array<mixed>`; `BoxedArray` reads an array that arrived wrapped in a `Mixed` cell.
 fn emit_mixed_callable_array_selector_slots(
     ctx: &mut FunctionContext<'_>,
-    callable: ValueId,
+    source: &CallableArraySource,
 ) -> Result<()> {
-    if value_is_array_literal(ctx, callable) {
-        ctx.emitter
-            .comment("runtime callable-array literal mixed selector");
-    } else {
-        ctx.emitter.comment("runtime callable-array mixed selector");
+    match source {
+        CallableArraySource::RawArray(callable) if value_is_array_literal(ctx, *callable) => {
+            ctx.emitter.comment("runtime callable-array literal mixed selector");
+        }
+        CallableArraySource::RawArray(_) => {
+            ctx.emitter.comment("runtime callable-array mixed selector");
+        }
+        CallableArraySource::BoxedArray(_) => {
+            ctx.emitter.comment("runtime callable-array boxed-mixed selector");
+        }
     }
-    emit_unbox_mixed_callable_array_slot(ctx, callable, 0)?;
+    emit_unbox_mixed_callable_array_slot(ctx, source, 0)?;
     emit_push_mixed_unbox_payload(ctx);
-    emit_unbox_mixed_callable_array_slot(ctx, callable, 1)?;
+    emit_unbox_mixed_callable_array_slot(ctx, source, 1)?;
     emit_push_mixed_unbox_payload(ctx);
     Ok(())
 }
@@ -1109,26 +1239,56 @@ fn value_is_array_literal(ctx: &FunctionContext<'_>, value: ValueId) -> bool {
 /// Loads and unboxes one boxed-Mixed slot from a callable array.
 fn emit_unbox_mixed_callable_array_slot(
     ctx: &mut FunctionContext<'_>,
-    callable: ValueId,
+    source: &CallableArraySource,
     slot: usize,
 ) -> Result<()> {
     let array_reg = abi::symbol_scratch_reg(ctx.emitter);
     let offset = 24 + slot * 8;
+    emit_load_callable_array_base(ctx, source, array_reg)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.load_value_to_reg(callable, array_reg)?;
-            ctx.emitter
-                .instruction(&format!("ldr x0, [{}, #{}]", array_reg, offset)); // load the boxed callable-array selector slot
+            ctx.emitter.instruction(&format!("ldr x0, [{}, #{}]", array_reg, offset)); // load the boxed callable-array selector slot
         }
         Arch::X86_64 => {
-            ctx.load_value_to_reg(callable, array_reg)?;
-            ctx.emitter
-                .instruction(&format!("mov rax, QWORD PTR [{} + {}]", array_reg, offset));
-            // load the boxed callable-array selector slot
+            ctx.emitter.instruction(&format!("mov rax, QWORD PTR [{} + {}]", array_reg, offset)); // load the boxed callable-array selector slot
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
     Ok(())
+}
+
+/// Materializes the callable-array base pointer into `array_reg` from its source.
+///
+/// `RawArray` reloads the pointer straight from the value's local slot. `BoxedArray`
+/// reloads the boxed `Mixed` indexed array and unboxes it, taking the borrowed array
+/// pointer from the unbox payload-low word (`x1`/`rdi`) without changing its refcount.
+/// Both forms re-materialize on every call so the pointer survives the intervening
+/// `__rt_mixed_unbox` calls that read each selector element.
+fn emit_load_callable_array_base(
+    ctx: &mut FunctionContext<'_>,
+    source: &CallableArraySource,
+    array_reg: &str,
+) -> Result<()> {
+    match source {
+        CallableArraySource::RawArray(callable) => {
+            ctx.load_value_to_reg(*callable, array_reg)?;
+            Ok(())
+        }
+        CallableArraySource::BoxedArray(callable) => {
+            let unbox_arg = abi::int_result_reg(ctx.emitter);
+            ctx.load_value_to_reg(*callable, unbox_arg)?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            match ctx.emitter.target.arch {
+                Arch::AArch64 => {
+                    ctx.emitter.instruction(&format!("mov {}, x1", array_reg)); // borrow the unboxed indexed-array pointer as the selector base
+                }
+                Arch::X86_64 => {
+                    ctx.emitter.instruction(&format!("mov {}, rdi", array_reg)); // borrow the unboxed indexed-array pointer as the selector base
+                }
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Preserves the tag and payload returned by `__rt_mixed_unbox`.

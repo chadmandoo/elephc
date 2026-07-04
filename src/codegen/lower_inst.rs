@@ -6815,7 +6815,7 @@ fn lower_store_global(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
     let symbol = ir_global_symbol(&name);
     let value = expect_operand(inst, 0)?;
     let ty = ctx.load_value_to_result(value)?;
-    let store_ty = if crate::superglobals::is_superglobal(&name) {
+    let store_ty = if ctx.module.web && crate::superglobals::is_superglobal(&name) {
         ty.codegen_repr()
     } else {
         let source_ty = ty.codegen_repr();

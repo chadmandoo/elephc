@@ -51,9 +51,12 @@ fn dce_block_with_guards(body: Vec<Stmt>, mut guards: GuardState) -> Vec<Stmt> {
             // Tail-sinking copies the tail into each branch of the if/switch/try.
             // Declarations (functions, classes, interfaces, enums, traits, externs)
             // are hoisted and must stay singular — sinking one into multiple
-            // branches would emit duplicate symbols and fail the assembler. Fall
-            // back to plain per-statement DCE when the tail declares anything.
-            if stmts_contain_declaration(&tail) {
+            // branches would emit duplicate symbols and fail the assembler.
+            // Control-flow statements (if/switch/try/loops) must also stay singular:
+            // sinking them duplicates nested control flow and produces exponential
+            // AST growth (each successive if duplicates the remaining tail).
+            // Fall back to plain per-statement DCE when the tail contains either.
+            if stmts_contain_declaration(&tail) || stmts_contain_control_flow(&tail) {
                 use_tail_sink = false;
                 dce_stmt_with_guards(stmt, &guards)
             } else {
@@ -86,6 +89,29 @@ fn dce_block_with_guards(body: Vec<Stmt>, mut guards: GuardState) -> Vec<Stmt> {
 /// assembler symbol twice.
 fn stmts_contain_declaration(stmts: &[Stmt]) -> bool {
     stmts.iter().any(stmt_contains_declaration)
+}
+
+/// Returns true when `stmts` contains, or recursively contains, a control-flow
+/// statement (`if`, `switch`, `try`, or any loop). Tail-sinking such statements
+/// into multiple if/switch/try branches duplicates code and can cause exponential
+/// AST growth; the DCE pass skips tail-sinking in that case.
+fn stmts_contain_control_flow(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(stmt_contains_control_flow)
+}
+
+/// Returns true when `stmt` is, or recursively contains, a control-flow statement.
+fn stmt_contains_control_flow(stmt: &Stmt) -> bool {
+    match &stmt.kind {
+        StmtKind::If { .. }
+        | StmtKind::IfDef { .. }
+        | StmtKind::Switch { .. }
+        | StmtKind::Try { .. }
+        | StmtKind::While { .. }
+        | StmtKind::DoWhile { .. }
+        | StmtKind::For { .. }
+        | StmtKind::Foreach { .. } => true,
+        _ => false,
+    }
 }
 
 /// Returns true when `stmt` is, or recursively contains, a symbol-emitting

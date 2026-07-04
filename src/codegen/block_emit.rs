@@ -65,6 +65,16 @@ pub(super) fn emit_module(
     web: bool,
 ) -> Result<()> {
     function_variants::emit_dispatchers(module, emitter, data);
+    // In `--web` builds the reset routine references every request superglobal.
+    // If a superglobal is never read or written by user/prelude code, the symbol
+    // would otherwise be missing from the object, so reserve storage up front.
+    if web {
+        let sg_type = crate::superglobals::superglobal_type();
+        let sg_size = sg_type.codegen_repr().stack_size().max(8);
+        for name in crate::superglobals::SUPERGLOBALS {
+            data.add_comm(crate::names::ir_global_symbol(name), sg_size);
+        }
+    }
     for function in module
         .functions
         .iter()
