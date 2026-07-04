@@ -5,6 +5,7 @@ Releases are listed newest first.
 
 ## [Unreleased]
 - Fixed enum type resolution in class member positions: enum names can now be used as declared property types and constructor-promoted property types without failing early with "Unknown type" during the class schema pass.
+- Fixed the Linux x86_64 `strtotime()` weekday-modifier scanner: `next Mon`, `last Fri`, and similar modifier + weekday forms now pass the remaining input length capped at 16 bytes to the keyword matcher, matching the ARM64 path and avoiding a fragile fixed-width scan into the zero-padded lowercase buffer tail.
 
 ## [0.26.0]
 - Runtime dead stripping: compiled executables now link only the runtime helpers the program actually reaches and drop the rest, shrinking binaries without changing behavior. Works on every supported target — Linux via per-symbol sections and `--gc-sections`, macOS via `.subsections_via_symbols` atoms and `-dead_strip`. Shared libraries (`--emit cdylib`) keep the full runtime.
