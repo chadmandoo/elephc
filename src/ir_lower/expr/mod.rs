@@ -1689,9 +1689,25 @@ fn lower_inc_dec(
     expr: &Expr,
 ) -> LoweredValue {
     let old = ctx.load_local(name, Some(expr.span));
+    let existing_type = ctx.local_type(name);
+    if matches!(existing_type.codegen_repr(), PhpType::Mixed) {
+        let return_old = if post {
+            crate::ir_lower::ownership::acquire_if_refcounted(ctx, old, Some(expr.span))
+        } else {
+            old
+        };
+        let one = lower_int_literal(ctx, 1, expr);
+        let op = if increment {
+            MixedNumericOp::Add
+        } else {
+            MixedNumericOp::Sub
+        };
+        let new = lower_mixed_numeric_binary(ctx, old, one, op, expr);
+        let stored = ctx.store_local(name, new, PhpType::Mixed, Some(expr.span));
+        return if post { return_old } else { stored };
+    }
     let one = lower_int_literal(ctx, 1, expr);
     let operand = coerce_to_int(ctx, old, expr);
-    let existing_type = ctx.local_type(name);
     let checked_int_local = matches!(existing_type.codegen_repr(), PhpType::Int);
     let iop = match (increment, checked_int_local) {
         (true, true) => Op::ICheckedAdd,
@@ -1719,8 +1735,8 @@ fn lower_inc_dec(
         )
         .expect("integer inc/dec produces a value");
     let new = LoweredValue { value: new, ir_type: result_ir_type };
-    ctx.store_local(name, new, result_php_type, Some(expr.span));
-    if post { old } else { new }
+    let stored = ctx.store_local(name, new, result_php_type, Some(expr.span));
+    if post { old } else { stored }
 }
 
 /// Lowers a direct function, builtin, or extern call.

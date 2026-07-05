@@ -17,7 +17,7 @@ use crate::ir::{Instruction, LocalSlot, LocalSlotId, ValueId};
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
-use super::{expect_local_slot, expect_operand, store_if_result};
+use super::{coerce_loaded_local_to_result_type, expect_local_slot, expect_operand};
 use crate::codegen_ir::{CodegenIrError, Result};
 
 /// Resolved function static-local metadata for symbol-backed storage.
@@ -32,8 +32,13 @@ struct StaticLocalSlot {
 pub(super) fn lower_load_static_local(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let slot = resolve_static_local_slot(ctx, inst)?;
     ensure_static_local_type_supported(&slot, inst)?;
+    let result = inst.result.ok_or_else(|| {
+        CodegenIrError::invalid_module("load_static_local missing result value")
+    })?;
     abi::emit_load_symbol_to_result(ctx.emitter, &slot.symbol, &slot.php_type);
-    store_if_result(ctx, inst)
+    let result_ty = ctx.value_php_type(result)?;
+    coerce_loaded_local_to_result_type(ctx, &slot.php_type, &result_ty)?;
+    ctx.store_result_value(result)
 }
 
 /// Lowers a static-local assignment from one SSA operand into symbol-backed storage.

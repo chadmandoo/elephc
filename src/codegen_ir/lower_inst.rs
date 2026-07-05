@@ -5696,7 +5696,7 @@ fn load_ref_cell_local_to_result_as(
 }
 
 /// Converts a loaded local slot value to the SSA result representation requested by EIR.
-fn coerce_loaded_local_to_result_type(
+pub(super) fn coerce_loaded_local_to_result_type(
     ctx: &mut FunctionContext<'_>,
     source_ty: &PhpType,
     result_ty: &PhpType,
