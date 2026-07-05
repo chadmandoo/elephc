@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\MigrationInterface"
+    ],
+    "files": 3,
+    "order": [
+        "AIC\\Schema\\Contracts\\SchemaAstInterface",
+        "AIC\\Schema\\Contracts\\SchemaBuilderInterface",
+        "AIC\\Schema\\Contracts\\MigrationInterface"
+    ],
+    "external_referenced": [
+        "Closure"
+    ]
+}

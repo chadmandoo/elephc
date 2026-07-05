@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Layout\\Contracts\\RegionName"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Layout\\Contracts\\RegionName"
+    ],
+    "external_referenced": []
+}

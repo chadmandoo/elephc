@@ -1,0 +1,30 @@
+{
+    "roots": [
+        "AIC\\Contracts\\KernelBuilderInterface"
+    ],
+    "files": 13,
+    "order": [
+        "Psr\\Container\\ContainerInterface",
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "Psr\\Http\\Server\\RequestHandlerInterface",
+        "Psr\\Http\\Server\\MiddlewareInterface",
+        "AIC\\Contracts\\RouteCollectorInterface",
+        "AIC\\Contracts\\RouteContributor",
+        "AIC\\Contracts\\EventSubscriberContributor",
+        "AIC\\Contracts\\KernelBuilderInterface"
+    ],
+    "external_referenced": [
+        "Closure",
+        "ContainerInterface",
+        "LogicException",
+        "MiddlewareInterface",
+        "ResponseInterface",
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

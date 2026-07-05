@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\EntityQueryOrderingInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Dbal\\Contracts\\OrderDirection",
+        "AIC\\Entity\\Contracts\\EntityQueryOrderingInterface"
+    ],
+    "external_referenced": [
+        "OrderDirection"
+    ]
+}

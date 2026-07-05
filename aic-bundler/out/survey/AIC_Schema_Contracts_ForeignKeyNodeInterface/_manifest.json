@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\ForeignKeyNodeInterface"
+    ],
+    "files": 3,
+    "order": [
+        "AIC\\Schema\\Contracts\\TableRefInterface",
+        "AIC\\Schema\\Contracts\\ReferentialAction",
+        "AIC\\Schema\\Contracts\\ForeignKeyNodeInterface"
+    ],
+    "external_referenced": []
+}

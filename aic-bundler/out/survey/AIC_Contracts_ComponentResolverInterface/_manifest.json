@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\ComponentResolverInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\ComponentResolverInterface"
+    ],
+    "external_referenced": []
+}

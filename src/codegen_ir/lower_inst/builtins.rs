@@ -491,6 +491,7 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
         "hash_copy" => strings::lower_hash_copy(ctx, inst),
         "hash_file" => io::lower_hash_file(ctx, inst),
         "crc32" => strings::lower_crc32(ctx, inst),
+        "mb_strlen" => strings::lower_mb_strlen(ctx, inst),
         "gzcompress" => strings::lower_gzcompress(ctx, inst),
         "gzdeflate" => strings::lower_gzdeflate(ctx, inst),
         "gzinflate" => strings::lower_gzinflate(ctx, inst),

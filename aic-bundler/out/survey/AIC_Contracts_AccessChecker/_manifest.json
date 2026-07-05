@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Contracts\\AccessChecker"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\Identity",
+        "AIC\\Contracts\\AccessChecker"
+    ],
+    "external_referenced": []
+}

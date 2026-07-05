@@ -85,7 +85,7 @@ pub(crate) fn builtin_call_sig(name: &str) -> Option<FunctionSig> {
         | "ptr_null" | "getcwd" | "sys_get_temp_dir" | "tmpfile" | "hash_algos"
         | "date_default_timezone_get" => Some(fixed(&[])),
 
-        "strlen" | "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "strrev"
+        "strlen" | "mb_strlen" | "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "strrev"
         | "grapheme_strrev" | "addslashes" | "stripslashes" | "nl2br" | "bin2hex"
         | "hex2bin" | "html_entity_decode"
         | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
@@ -719,6 +719,11 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
             name,
             &[PhpType::Mixed],
             PhpType::Str,
+        )),
+        "mb_strlen" => Some(typed_first_class_builtin_sig(
+            name,
+            &[PhpType::Str],
+            PhpType::Int,
         )),
         "printf" => return_typed_first_class_builtin_sig(name, PhpType::Int),
         "grapheme_strrev" => Some(typed_first_class_builtin_sig(

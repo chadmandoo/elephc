@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\DenyDecision"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Entity\\Contracts\\AccessDecision",
+        "AIC\\Entity\\Contracts\\DenyDecision"
+    ],
+    "external_referenced": [
+        "Override"
+    ]
+}

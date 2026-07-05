@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SeedContributor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\SeedContributor"
+    ],
+    "external_referenced": []
+}

@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\Component"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Components\\Domain\\Html",
+        "AIC\\Components\\Domain\\Component"
+    ],
+    "external_referenced": [
+        "Override",
+        "Stringable (builtin)"
+    ]
+}

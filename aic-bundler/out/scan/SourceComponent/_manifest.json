@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\SourceComponent"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Components\\Domain\\SourceComponent"
+    ],
+    "external_referenced": []
+}

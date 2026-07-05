@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SchemaCompilerInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\SchemaAstInterface",
+        "AIC\\Schema\\Contracts\\SchemaCompilerInterface"
+    ],
+    "external_referenced": []
+}

@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\ColumnNodeInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\LogicalType",
+        "AIC\\Schema\\Contracts\\ColumnNodeInterface"
+    ],
+    "external_referenced": []
+}

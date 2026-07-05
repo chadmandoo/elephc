@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Contracts\\ServiceFactoryInterface"
+    ],
+    "files": 2,
+    "order": [
+        "Psr\\Container\\ContainerInterface",
+        "AIC\\Contracts\\ServiceFactoryInterface"
+    ],
+    "external_referenced": [
+        "ContainerInterface",
+        "RuntimeException"
+    ]
+}

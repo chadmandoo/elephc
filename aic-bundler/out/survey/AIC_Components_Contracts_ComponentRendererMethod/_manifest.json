@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Components\\Contracts\\ComponentRendererMethod"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Components\\Contracts\\ComponentRendererMethod"
+    ],
+    "external_referenced": []
+}

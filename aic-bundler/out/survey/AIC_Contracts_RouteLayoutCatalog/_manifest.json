@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\RouteLayoutCatalog"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\RouteLayoutCatalog"
+    ],
+    "external_referenced": []
+}

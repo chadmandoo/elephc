@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Session\\Contracts\\RequiresAuthentication"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Session\\Contracts\\RequiresAuthentication"
+    ],
+    "external_referenced": []
+}

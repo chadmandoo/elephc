@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\PoolStatsInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\PoolStatsInterface"
+    ],
+    "external_referenced": []
+}

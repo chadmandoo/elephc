@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\TranslatableMessage"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\TranslatableMessage"
+    ],
+    "external_referenced": []
+}

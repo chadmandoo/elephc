@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Swoole\\Contracts\\CoroutineDeferRegistrar"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Swoole\\Contracts\\CoroutineDeferRegistrar"
+    ],
+    "external_referenced": []
+}

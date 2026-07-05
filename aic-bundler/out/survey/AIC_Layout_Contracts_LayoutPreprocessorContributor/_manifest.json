@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Layout\\Contracts\\LayoutPreprocessorContributor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Layout\\Contracts\\LayoutPreprocessorContributor"
+    ],
+    "external_referenced": []
+}

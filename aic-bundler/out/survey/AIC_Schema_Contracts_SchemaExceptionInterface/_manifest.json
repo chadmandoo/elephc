@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SchemaExceptionInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\SchemaExceptionInterface"
+    ],
+    "external_referenced": [
+        "Throwable"
+    ]
+}

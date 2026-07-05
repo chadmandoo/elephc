@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\EntityQueryConditionInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Entity\\Contracts\\EntityQueryOperator",
+        "AIC\\Entity\\Contracts\\EntityQueryConditionInterface"
+    ],
+    "external_referenced": []
+}

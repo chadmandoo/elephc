@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Forms\\Contracts\\SubmissionResult"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Forms\\Contracts\\SubmissionResult"
+    ],
+    "external_referenced": []
+}

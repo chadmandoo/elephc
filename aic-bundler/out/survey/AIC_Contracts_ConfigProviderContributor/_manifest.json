@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\ConfigProviderContributor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\ConfigProviderContributor"
+    ],
+    "external_referenced": []
+}

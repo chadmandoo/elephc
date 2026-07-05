@@ -1,0 +1,16 @@
+{
+    "roots": [
+        "AIC\\Forms\\Contracts\\Constraint"
+    ],
+    "files": 3,
+    "order": [
+        "AIC\\Contracts\\TranslatableMessage",
+        "AIC\\I18n\\Contracts\\Message",
+        "AIC\\Forms\\Contracts\\Constraint"
+    ],
+    "external_referenced": [
+        "Message",
+        "Override",
+        "TranslatableMessage"
+    ]
+}

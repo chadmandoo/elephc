@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Layout\\Contracts\\LayoutSlot"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Layout\\Contracts\\LayoutSlot"
+    ],
+    "external_referenced": []
+}

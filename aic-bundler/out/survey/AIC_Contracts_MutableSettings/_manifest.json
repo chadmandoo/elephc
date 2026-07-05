@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Contracts\\MutableSettings"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\MutableSettings"
+    ],
+    "external_referenced": [
+        "LogicException",
+        "RuntimeException"
+    ]
+}

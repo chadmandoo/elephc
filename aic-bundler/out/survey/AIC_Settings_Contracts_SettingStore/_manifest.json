@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Settings\\Contracts\\SettingStore"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Settings\\Contracts\\SettingStore"
+    ],
+    "external_referenced": [
+        "RuntimeException"
+    ]
+}

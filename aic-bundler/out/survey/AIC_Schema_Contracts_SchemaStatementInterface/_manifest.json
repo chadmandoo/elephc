@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SchemaStatementInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\StatementKind",
+        "AIC\\Schema\\Contracts\\SchemaStatementInterface"
+    ],
+    "external_referenced": []
+}

@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\Entity"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Entity\\Contracts\\EntityId",
+        "AIC\\Entity\\Contracts\\Entity"
+    ],
+    "external_referenced": [
+        "Override",
+        "Stringable (builtin)"
+    ]
+}

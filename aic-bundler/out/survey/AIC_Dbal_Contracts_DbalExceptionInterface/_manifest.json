@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\DbalExceptionInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\DbalExceptionInterface"
+    ],
+    "external_referenced": [
+        "Throwable"
+    ]
+}

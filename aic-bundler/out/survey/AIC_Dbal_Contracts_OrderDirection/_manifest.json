@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\OrderDirection"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\OrderDirection"
+    ],
+    "external_referenced": []
+}

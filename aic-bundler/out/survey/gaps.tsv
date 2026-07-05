@@ -1,0 +1,14 @@
+error[N:N]: Unknown type: Closure	AIC\Contracts\KernelBuilderInterface
+error[N:N]: Unknown type: Psr\EventDispatcher\object	AIC\Contracts\KernelGraphInterface
+error[N:N]: Unknown type: Closure	AIC\Contracts\KernelModuleInterface
+error[N:N]: Unknown type: <FQCN>	AIC\Contracts\ServiceFactoryInterface
+error[N:N]: Unknown type: <FQCN>	AIC\Entity\Contracts\EntityQueryBuilderInterface
+error[N:N]: Unknown type: <FQCN>	AIC\Entity\Contracts\EntityQueryConditionInterface
+error[N:N]: Unknown type: <FQCN>	AIC\Entity\Contracts\EntityStorage
+error[N:N]: Unknown type: <FQCN>	AIC\Entity\Contracts\FieldTypePluginType
+error[N:N]: Static interface methods are not supported yet: <FQCN>::fromStorageRow	AIC\Entity\Contracts\HydratableEntity
+error[N:N]: Unknown type: Closure	AIC\Schema\Contracts\MigrationInterface
+error[N:N]: Unknown type: Closure	AIC\Schema\Contracts\SchemaBuilderInterface
+error[N:N]: Unknown type: Swoole\Http\Request	AIC\Swoole\Contracts\RequestExtractor
+error[N:N]: Unknown type: Swoole\Http\Response	AIC\Swoole\Contracts\ResponseEmitter
+error[N:N]: Unknown type: Swoole\Http\Server	AIC\Swoole\Contracts\SwooleServerFactory

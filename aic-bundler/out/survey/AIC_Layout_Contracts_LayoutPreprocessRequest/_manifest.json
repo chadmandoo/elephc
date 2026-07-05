@@ -1,0 +1,18 @@
+{
+    "roots": [
+        "AIC\\Layout\\Contracts\\LayoutPreprocessRequest"
+    ],
+    "files": 6,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "AIC\\Layout\\Contracts\\LayoutPreprocessRequest"
+    ],
+    "external_referenced": [
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

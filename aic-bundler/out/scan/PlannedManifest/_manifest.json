@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\PlannedManifest"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Components\\Domain\\AssetManifest",
+        "AIC\\Components\\Domain\\PlannedManifest"
+    ],
+    "external_referenced": []
+}

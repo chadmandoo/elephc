@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SchemaAstInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\SchemaAstInterface"
+    ],
+    "external_referenced": []
+}

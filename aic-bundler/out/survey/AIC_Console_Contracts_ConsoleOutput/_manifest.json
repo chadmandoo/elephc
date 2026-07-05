@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Console\\Contracts\\ConsoleOutput"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Console\\Contracts\\ConsoleOutput"
+    ],
+    "external_referenced": []
+}

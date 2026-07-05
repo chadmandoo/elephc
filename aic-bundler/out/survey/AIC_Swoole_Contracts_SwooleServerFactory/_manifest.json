@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Swoole\\Contracts\\SwooleServerFactory"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Swoole\\Contracts\\SwooleServerFactory"
+    ],
+    "external_referenced": [
+        "SwooleServer",
+        "Swoole\\Http\\Server"
+    ]
+}

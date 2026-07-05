@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\Identity"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\Identity"
+    ],
+    "external_referenced": []
+}

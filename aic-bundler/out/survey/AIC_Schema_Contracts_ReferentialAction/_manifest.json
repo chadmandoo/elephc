@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\ReferentialAction"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\ReferentialAction"
+    ],
+    "external_referenced": []
+}

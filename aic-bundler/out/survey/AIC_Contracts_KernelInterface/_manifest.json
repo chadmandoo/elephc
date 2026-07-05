@@ -1,0 +1,23 @@
+{
+    "roots": [
+        "AIC\\Contracts\\KernelInterface"
+    ],
+    "files": 9,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "AIC\\Contracts\\BootableInterface",
+        "AIC\\Contracts\\TerminableInterface",
+        "AIC\\Contracts\\KernelInterface"
+    ],
+    "external_referenced": [
+        "ResponseInterface",
+        "RuntimeException",
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

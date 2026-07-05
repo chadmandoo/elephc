@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Contracts\\ConfigInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\ConfigInterface"
+    ],
+    "external_referenced": [
+        "InvalidArgumentException"
+    ]
+}

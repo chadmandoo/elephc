@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\TableNodeInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\TableOperation",
+        "AIC\\Schema\\Contracts\\TableNodeInterface"
+    ],
+    "external_referenced": []
+}

@@ -1,0 +1,22 @@
+{
+    "roots": [
+        "AIC\\Swoole\\Contracts\\RequestHandlerFactory"
+    ],
+    "files": 8,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "Psr\\Http\\Server\\RequestHandlerInterface",
+        "AIC\\Swoole\\Contracts\\RequestHandlerFactory"
+    ],
+    "external_referenced": [
+        "RequestHandlerInterface",
+        "ResponseInterface",
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

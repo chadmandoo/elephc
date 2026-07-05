@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\RequestScopeInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\RequestScopeInterface"
+    ],
+    "external_referenced": []
+}

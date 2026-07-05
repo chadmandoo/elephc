@@ -515,3 +515,13 @@ echo inet_pton("nonsense") === false ? "F" : "S";
     );
     assert_eq!(out, "SF");
 }
+
+/// EC-2 (#485): `mb_strlen()` counts UTF-8 codepoints, not bytes. Byte-parity vs
+/// PHP 8.5 for ASCII, 2-byte, and 3-byte sequences + the empty string.
+#[test]
+fn test_mb_strlen_utf8_codepoints() {
+    assert_eq!(compile_and_run("<?php echo mb_strlen('hello');"), "5");
+    assert_eq!(compile_and_run("<?php echo mb_strlen('héllo');"), "5");
+    assert_eq!(compile_and_run("<?php echo mb_strlen('日本語');"), "3");
+    assert_eq!(compile_and_run("<?php echo mb_strlen('');"), "0");
+}

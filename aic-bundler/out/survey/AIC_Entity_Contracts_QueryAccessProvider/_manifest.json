@@ -1,0 +1,16 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\QueryAccessProvider"
+    ],
+    "files": 5,
+    "order": [
+        "AIC\\Contracts\\Identity",
+        "AIC\\Entity\\Contracts\\AccessDefault",
+        "AIC\\Entity\\Contracts\\EntityType",
+        "AIC\\Entity\\Contracts\\AccessOp",
+        "AIC\\Entity\\Contracts\\QueryAccessProvider"
+    ],
+    "external_referenced": [
+        "Identity"
+    ]
+}

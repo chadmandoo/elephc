@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Blocks\\Contracts\\BlockContributor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Blocks\\Contracts\\BlockContributor"
+    ],
+    "external_referenced": []
+}

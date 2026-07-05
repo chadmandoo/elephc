@@ -1,0 +1,24 @@
+{
+    "roots": [
+        "AIC\\Contracts\\MiddlewareDispatcherInterface"
+    ],
+    "files": 9,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "Psr\\Http\\Server\\RequestHandlerInterface",
+        "Psr\\Http\\Server\\MiddlewareInterface",
+        "AIC\\Contracts\\MiddlewareDispatcherInterface"
+    ],
+    "external_referenced": [
+        "MiddlewareInterface",
+        "RequestHandlerInterface",
+        "ResponseInterface",
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\TransactionState"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\TransactionState"
+    ],
+    "external_referenced": []
+}

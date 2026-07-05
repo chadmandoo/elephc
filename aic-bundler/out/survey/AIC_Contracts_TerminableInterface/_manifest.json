@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Contracts\\TerminableInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\TerminableInterface"
+    ],
+    "external_referenced": [
+        "RuntimeException"
+    ]
+}

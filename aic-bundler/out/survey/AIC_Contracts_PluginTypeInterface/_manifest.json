@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Contracts\\PluginTypeInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\PluginTypeInterface"
+    ],
+    "external_referenced": []
+}

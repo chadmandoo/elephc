@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\I18n\\Contracts\\Message"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\TranslatableMessage",
+        "AIC\\I18n\\Contracts\\Message"
+    ],
+    "external_referenced": [
+        "Override",
+        "TranslatableMessage"
+    ]
+}

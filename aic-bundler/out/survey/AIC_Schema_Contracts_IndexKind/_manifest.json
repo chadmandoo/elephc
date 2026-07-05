@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\IndexKind"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\IndexKind"
+    ],
+    "external_referenced": []
+}

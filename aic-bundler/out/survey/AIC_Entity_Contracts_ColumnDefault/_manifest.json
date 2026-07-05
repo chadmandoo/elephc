@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\ColumnDefault"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Entity\\Contracts\\ColumnDefault"
+    ],
+    "external_referenced": []
+}

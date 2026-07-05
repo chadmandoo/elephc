@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Forms\\Contracts\\ComposesFieldType"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Forms\\Contracts\\ComposesFieldType"
+    ],
+    "external_referenced": []
+}

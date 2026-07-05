@@ -1,0 +1,149 @@
+AIC\Access\Contracts\Permission                      OK
+AIC\Access\Contracts\PermissionContributor           OK
+AIC\Access\Contracts\Role                            OK
+AIC\Access\Contracts\RoleStorage                     OK
+AIC\Blocks\Contracts\BlockContributor                OK
+AIC\Blocks\Contracts\PlacementRule                   OK
+AIC\Boost\Contracts\Descriptor                       OK
+AIC\Components\Contracts\ComponentContributor        OK
+AIC\Components\Contracts\ComponentRendererMethod     OK
+AIC\Config\Contracts\ConfigSyncStorage               OK
+AIC\Console\Contracts\Command                        OK
+AIC\Console\Contracts\ConsoleInput                   OK
+AIC\Console\Contracts\ConsoleOutput                  OK
+AIC\Contracts\AccessChecker                          OK
+AIC\Contracts\AuditEventDraft                        OK
+AIC\Contracts\AuditRecorder                          OK
+AIC\Contracts\BootableInterface                      OK
+AIC\Contracts\ComponentResolverInterface             OK
+AIC\Contracts\ConfigInterface                        OK
+AIC\Contracts\ConfigProvider                         OK
+AIC\Contracts\ConfigProviderContributor              OK
+AIC\Contracts\EventSubscriber                        OK
+AIC\Contracts\EventSubscriberContributor             OK
+AIC\Contracts\Identity                               OK
+AIC\Contracts\KernelBuilderInterface                 GAP  error[45:5]: Unknown type: Closure
+AIC\Contracts\KernelGraphInterface                   GAP  error[18:5]: Unknown type: Psr\EventDispatcher\object
+AIC\Contracts\KernelInterface                        OK
+AIC\Contracts\KernelModuleInterface                  GAP  error[45:5]: Unknown type: Closure
+AIC\Contracts\MiddlewareDispatcherInterface          OK
+AIC\Contracts\MutableSettings                        OK
+AIC\Contracts\NullComponentResolver                  OK
+AIC\Contracts\PluginManagerInterface                 OK
+AIC\Contracts\PluginTypeInterface                    OK
+AIC\Contracts\RequestScopeInterface                  OK
+AIC\Contracts\RouteCatalog                           OK
+AIC\Contracts\RouteCollectorInterface                OK
+AIC\Contracts\RouteContributor                       OK
+AIC\Contracts\RouteLayoutCatalog                     OK
+AIC\Contracts\RouterInterface                        OK
+AIC\Contracts\ServiceFactoryInterface                GAP  error[29:5]: Unknown type: AIC\Contracts\object
+AIC\Contracts\ServiceProviderInterface               OK
+AIC\Contracts\TerminableInterface                    OK
+AIC\Contracts\TranslatableMessage                    OK
+AIC\Contracts\Translator                             OK
+AIC\Controller\Contracts\Action                      OK
+AIC\Controller\Contracts\RequestlessAction           OK
+AIC\Controller\Contracts\Response                    OK
+AIC\Dbal\Contracts\CapabilitiesInterface             OK
+AIC\Dbal\Contracts\CompoundConditionInterface        OK
+AIC\Dbal\Contracts\ConnectionInterface               OK
+AIC\Dbal\Contracts\ConnectionPoolInterface           OK
+AIC\Dbal\Contracts\DbalExceptionInterface            OK
+AIC\Dbal\Contracts\DriverInterface                   OK
+AIC\Dbal\Contracts\OrderDirection                    OK
+AIC\Dbal\Contracts\PoolStatsInterface                OK
+AIC\Dbal\Contracts\QueryAstInterface                 OK
+AIC\Dbal\Contracts\QueryBuilderInterface             OK
+AIC\Dbal\Contracts\QueryConditionInterface           OK
+AIC\Dbal\Contracts\QueryOrderingInterface            OK
+AIC\Dbal\Contracts\ResultInterface                   OK
+AIC\Dbal\Contracts\StatementInterface                OK
+AIC\Dbal\Contracts\TransactionInterface              OK
+AIC\Dbal\Contracts\TransactionState                  OK
+AIC\Entity\Contracts\AbstainVote                     OK
+AIC\Entity\Contracts\AccessDecision                  OK
+AIC\Entity\Contracts\AccessDefault                   OK
+AIC\Entity\Contracts\AccessOp                        OK
+AIC\Entity\Contracts\AccessVote                      OK
+AIC\Entity\Contracts\AllowDecision                   OK
+AIC\Entity\Contracts\AllowVote                       OK
+AIC\Entity\Contracts\ColumnDefault                   OK
+AIC\Entity\Contracts\ColumnDefinition                OK
+AIC\Entity\Contracts\DenyDecision                    OK
+AIC\Entity\Contracts\DenyVote                        OK
+AIC\Entity\Contracts\Entity                          OK
+AIC\Entity\Contracts\EntityContributor               OK
+AIC\Entity\Contracts\EntityId                        OK
+AIC\Entity\Contracts\EntityQueryAstInterface         OK
+AIC\Entity\Contracts\EntityQueryBuilderInterface     GAP  error[40:5]: Unknown type: AIC\Entity\Contracts\object
+AIC\Entity\Contracts\EntityQueryConditionInterface   GAP  error[40:5]: Unknown type: AIC\Entity\Contracts\object
+AIC\Entity\Contracts\EntityQueryOperator             OK
+AIC\Entity\Contracts\EntityQueryOrderingInterface    OK
+AIC\Entity\Contracts\EntityStorage                   GAP  error[40:5]: Unknown type: AIC\Entity\Contracts\object
+AIC\Entity\Contracts\EntityType                      OK
+AIC\Entity\Contracts\FieldAugmentation               OK
+AIC\Entity\Contracts\FieldDefinition                 OK
+AIC\Entity\Contracts\FieldTypePluginType             GAP  error[50:5]: Unknown type: AIC\Entity\Contracts\object
+AIC\Entity\Contracts\HydratableEntity                GAP  error[35:5]: Static interface methods are not supported yet: AIC\Entity\Contracts\HydratableEntity::fromStorageRow
+AIC\Entity\Contracts\QueryAccessProvider             OK
+AIC\Entity\Contracts\ValidationFailure               OK
+AIC\Forms\Contracts\AccessRule                       OK
+AIC\Forms\Contracts\ComposesFieldType                OK
+AIC\Forms\Contracts\Condition                        OK
+AIC\Forms\Contracts\Constraint                       OK
+AIC\Forms\Contracts\CsrfStrategy                     OK
+AIC\Forms\Contracts\SubmissionResult                 OK
+AIC\Frankenphp\Contracts\RequestExtractor            OK
+AIC\Frankenphp\Contracts\ResponseEmitter             OK
+AIC\Frankenphp\Contracts\SapiRequest                 OK
+AIC\Frankenphp\Contracts\SapiSink                    OK
+AIC\I18n\Contracts\Message                           OK
+AIC\Layout\Contracts\LayoutPreprocessor              OK
+AIC\Layout\Contracts\LayoutPreprocessorContributor   OK
+AIC\Layout\Contracts\LayoutPreprocessRequest         OK
+AIC\Layout\Contracts\LayoutSlot                      OK
+AIC\Layout\Contracts\LayoutSlotResolver              OK
+AIC\Layout\Contracts\RegionName                      OK
+AIC\Manifest\Contracts\JsonWriter                    OK
+AIC\Manifest\Contracts\WardEnumerator                OK
+AIC\Messages\Contracts\Message                       OK
+AIC\Messages\Contracts\Messenger                     OK
+AIC\Messages\Contracts\Severity                      OK
+AIC\Routing\Contracts\HandlerResolver                OK
+AIC\Schema\Contracts\ColumnNodeInterface             OK
+AIC\Schema\Contracts\ForeignKeyNodeInterface         OK
+AIC\Schema\Contracts\IndexKind                       OK
+AIC\Schema\Contracts\IndexNodeInterface              OK
+AIC\Schema\Contracts\LogicalType                     OK
+AIC\Schema\Contracts\MigrationInterface              GAP  error[36:5]: Unknown type: Closure
+AIC\Schema\Contracts\MigrationRecordInterface        OK
+AIC\Schema\Contracts\MigrationsPath                  OK
+AIC\Schema\Contracts\ReferentialAction               OK
+AIC\Schema\Contracts\SchemaAstInterface              OK
+AIC\Schema\Contracts\SchemaBuilderInterface          GAP  error[36:5]: Unknown type: Closure
+AIC\Schema\Contracts\SchemaCompilerInterface         OK
+AIC\Schema\Contracts\SchemaDifferInterface           OK
+AIC\Schema\Contracts\SchemaExceptionInterface        OK
+AIC\Schema\Contracts\SchemaIntrospectorInterface     OK
+AIC\Schema\Contracts\SchemaStatementInterface        OK
+AIC\Schema\Contracts\Seed                            OK
+AIC\Schema\Contracts\SeedContributor                 OK
+AIC\Schema\Contracts\StatementKind                   OK
+AIC\Schema\Contracts\TableBuilderInterface           OK
+AIC\Schema\Contracts\TableNodeInterface              OK
+AIC\Schema\Contracts\TableOperation                  OK
+AIC\Schema\Contracts\TableRefInterface               OK
+AIC\Session\Contracts\RequiresAuthentication         OK
+AIC\Session\Contracts\SessionInterface               OK
+AIC\Session\Contracts\SessionStoreInterface          OK
+AIC\Settings\Contracts\SettingDefinition             OK
+AIC\Settings\Contracts\SettingsContributor           OK
+AIC\Settings\Contracts\SettingStore                  OK
+AIC\Settings\Contracts\SettingType                   OK
+AIC\Sse\Contracts\PatchEventInterface                OK
+AIC\Swoole\Contracts\CoroutineDeferRegistrar         OK
+AIC\Swoole\Contracts\RequestExtractor                GAP  error[30:5]: Unknown type: Swoole\Http\Request
+AIC\Swoole\Contracts\RequestHandlerFactory           OK
+AIC\Swoole\Contracts\ResponseEmitter                 GAP  error[28:5]: Unknown type: Swoole\Http\Response
+AIC\Swoole\Contracts\SwooleServerFactory             GAP  error[43:5]: Unknown type: Swoole\Http\Server
