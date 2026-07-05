@@ -2158,17 +2158,27 @@ fn lower_property_assign(
 ) {
     // A statically-decided readonly-property write outside the declaring
     // constructor raises a catchable `Error` in PHP rather than a compile-time
-    // error.
-    if let Some(info) = ctx.throw_access_sites.get(&span) {
+    // error, but the object and RHS expressions must still be evaluated first.
+    let throw_access_message = ctx.throw_access_sites.get(&span).and_then(|info| {
         if let ThrowAccessKind::ReadonlyProperty { class_name, property } = &info.kind {
-            let message = format!("Cannot modify readonly property {}::${}", class_name, property);
-            lower_throw_access_error(ctx, &message, span);
-            return;
+            Some(format!("Cannot modify readonly property {}::${}", class_name, property))
+        } else {
+            None
         }
-    }
+    });
     let object = lower_expr(ctx, object);
     let value_expr = value;
     let lowered_value = lower_expr(ctx, value_expr);
+    if let Some(message) = throw_access_message {
+        if ctx.value_is_owning_temporary(object) {
+            crate::ir_lower::ownership::release_if_owned(ctx, object, Some(span));
+        }
+        if ctx.value_is_owning_temporary(lowered_value) {
+            crate::ir_lower::ownership::release_if_owned(ctx, lowered_value, Some(span));
+        }
+        lower_throw_access_error(ctx, &message, span);
+        return;
+    }
     let value = contextualize_property_array_assignment(
         ctx,
         object.value,

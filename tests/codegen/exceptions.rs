@@ -551,6 +551,23 @@ fn test_private_method_access_error_message() {
     assert_eq!(out, "Call to private method C::secret() from global scope");
 }
 
+/// Regression: private-method access must evaluate the receiver expression
+/// before raising the catchable `Error`, matching PHP's observable side effects.
+#[test]
+fn test_private_method_access_evaluates_receiver_before_error() {
+    let out = compile_and_run(
+        r#"<?php
+class C { private function secret() {} }
+function make_c() {
+    echo "make|";
+    return new C();
+}
+try { make_c()->secret(); echo "no"; } catch (Error $e) { echo "err"; }
+"#,
+    );
+    assert_eq!(out, "make|err");
+}
+
 /// Verifies that `getMessage()` on a caught readonly-write `Error` returns the
 /// PHP error message (issue #383).
 #[test]
@@ -559,6 +576,28 @@ fn test_readonly_property_write_error_message() {
         "<?php class Box { public readonly int $x; public function __construct() { $this->x = 1; } } try { $b = new Box(); $b->x = 2; } catch (Error $e) { echo $e->getMessage(); }",
     );
     assert_eq!(out, "Cannot modify readonly property Box::$x");
+}
+
+/// Regression: readonly-property writes must evaluate the right-hand side
+/// before raising the catchable `Error`, matching PHP's observable side effects.
+#[test]
+fn test_readonly_property_write_evaluates_rhs_before_error() {
+    let out = compile_and_run(
+        r#"<?php
+class Box {
+    public readonly int $x;
+    public function __construct() { $this->x = 1; }
+}
+function side() {
+    echo "side|";
+    return 2;
+}
+$b = new Box();
+try { $b->x = side(); echo "no"; } catch (Error $e) { echo "err|"; }
+echo $b->x;
+"#,
+    );
+    assert_eq!(out, "side|err|1");
 }
 
 /// Verifies that calling a protected method from outside the class hierarchy
