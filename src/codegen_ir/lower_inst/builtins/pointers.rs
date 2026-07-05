@@ -19,7 +19,6 @@ use crate::names::ir_global_symbol;
 use crate::types::PhpType;
 
 use super::super::super::context::FunctionContext;
-use super::super::resolve_int_operand_to_result;
 use super::{expect_operand, store_if_result};
 
 /// Lowers `ptr(value)` by materializing the address of addressable local/global storage.
@@ -90,7 +89,7 @@ pub(crate) fn lower_ptr_offset(ctx: &mut FunctionContext<'_>, inst: &Instruction
     let offset = expect_operand(inst, 1)?;
     load_pointer_payload(ctx, pointer, "ptr_offset")?;
     abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
-    resolve_int_operand_to_result(ctx, offset, "ptr_offset offset")?;
+    super::super::resolve_int_operand_to_result(ctx, offset, "ptr_offset offset")?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.instruction("mov x10, x0");                             // preserve the byte offset while restoring the base pointer
