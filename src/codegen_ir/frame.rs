@@ -20,7 +20,7 @@ use crate::codegen::{
 };
 use crate::codegen::context::TRY_HANDLER_SLOT_SIZE;
 use crate::codegen::platform::{Arch, Target};
-use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op, Terminator, ValueDef};
+use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op, Terminator, ValueDef, ValueId};
 use crate::ir_passes::{allocate_registers, Allocation};
 use crate::types::PhpType;
 
@@ -227,6 +227,7 @@ pub(super) fn emit_main_epilogue(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.blank();
     ctx.emitter.comment("epilogue + exit(0)");
     emit_main_local_epilogue_cleanup(ctx);
+    emit_main_static_local_cleanup(ctx);
     emit_callee_saved_restores(ctx);
     abi::emit_frame_restore(ctx.emitter, ctx.frame_size);
     if ctx.gc_stats {
@@ -238,6 +239,51 @@ pub(super) fn emit_main_epilogue(ctx: &mut FunctionContext<'_>) {
     }
     abi::emit_exit(ctx.emitter, 0);
     ctx.epilogue_emitted = true;
+}
+
+/// Releases initialized function static locals before process-exit diagnostics.
+fn emit_main_static_local_cleanup(ctx: &mut FunctionContext<'_>) {
+    let static_locals = ctx.data.static_locals().to_vec();
+    for record in static_locals {
+        let ty = record.php_type.codegen_repr();
+        if !(matches!(ty, PhpType::Str | PhpType::Callable) || ty.is_refcounted()) {
+            continue;
+        }
+        let done = ctx.next_label("static_local_cleanup_done");
+        ctx.emitter
+            .comment(&format!("epilogue cleanup static local {}", record.symbol));
+        abi::emit_load_symbol_to_reg(
+            ctx.emitter,
+            abi::int_result_reg(ctx.emitter),
+            &record.init_symbol,
+            0,
+        );
+        abi::emit_branch_if_int_result_zero(ctx.emitter, &done);
+        emit_static_symbol_value_cleanup(ctx, &record.symbol, &ty);
+        abi::emit_store_zero_to_symbol(ctx.emitter, &record.symbol, 0);
+        abi::emit_store_zero_to_symbol(ctx.emitter, &record.symbol, 8);
+        abi::emit_store_zero_to_symbol(ctx.emitter, &record.init_symbol, 0);
+        ctx.emitter.label(&done);
+    }
+}
+
+/// Releases the refcounted value stored in a static-local symbol.
+fn emit_static_symbol_value_cleanup(ctx: &mut FunctionContext<'_>, symbol: &str, ty: &PhpType) {
+    match ty {
+        PhpType::Str => {
+            abi::emit_load_symbol_to_reg(ctx.emitter, abi::int_result_reg(ctx.emitter), symbol, 0);
+            abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe");
+        }
+        PhpType::Callable => {
+            abi::emit_load_symbol_to_result(ctx.emitter, symbol, ty);
+            abi::emit_decref_if_refcounted(ctx.emitter, ty);
+        }
+        other if other.is_refcounted() => {
+            abi::emit_load_symbol_to_result(ctx.emitter, symbol, other);
+            abi::emit_decref_if_refcounted(ctx.emitter, other);
+        }
+        _ => {}
+    }
 }
 
 /// Emits the C-callable `--web` top-level handler prologue.
@@ -458,7 +504,7 @@ fn local_slot_has_store(function: &Function, slot: LocalSlotId) -> bool {
 
 /// Returns PHP-visible locals whose slot is rewritten to a ref-cell pointer.
 fn promoted_ref_cell_local_slots(function: &Function) -> HashSet<LocalSlotId> {
-    function
+    let mut slots = function
         .instructions
         .iter()
         .filter_map(|inst| match inst.immediate {
@@ -470,7 +516,34 @@ fn promoted_ref_cell_local_slots(function: &Function) -> HashSet<LocalSlotId> {
             }
             _ => None,
         })
+        .collect::<HashSet<_>>();
+    slots.extend(closure_ref_capture_local_slots(function));
+    slots
+}
+
+/// Returns local slots whose value is captured by reference into a closure descriptor.
+fn closure_ref_capture_local_slots(function: &Function) -> HashSet<LocalSlotId> {
+    function
+        .instructions
+        .iter()
+        .filter(|inst| inst.op == Op::ClosureCapture)
+        .filter(|inst| inst.immediate == Some(Immediate::I64(1)))
+        .filter_map(|inst| inst.operands.first().copied())
+        .filter_map(|value| loaded_local_slot(function, value))
         .collect()
+}
+
+/// Resolves a lowered local read value back to its source slot.
+fn loaded_local_slot(function: &Function, value: ValueId) -> Option<LocalSlotId> {
+    let value = function.value(value)?;
+    let ValueDef::Instruction { inst, .. } = value.def else {
+        return None;
+    };
+    let inst = function.instruction(inst)?;
+    match (inst.op, inst.immediate.as_ref()) {
+        (Op::LoadLocal | Op::LoadRefCell, Some(Immediate::LocalSlot(slot))) => Some(*slot),
+        _ => None,
+    }
 }
 
 /// Releases a string local through the validating heap-free helper.

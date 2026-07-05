@@ -273,20 +273,19 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         self.foreach_int_key_locals.contains(name)
     }
 
-    /// Returns the checker-known top-level type for a `global` alias name.
+    /// Returns the storage type for a `global` alias name.
     ///
     /// Request superglobals resolve to their fixed `AssocArray{Str, Mixed}` type
     /// directly: inside a function the `top_level_env` snapshot may not carry
     /// them, but their global slot must still be a Hash pointer (not a boxed
     /// Mixed cell) so the function read agrees with the prelude's StoreGlobal.
+    /// Ordinary PHP globals use boxed Mixed storage in every scope because any
+    /// function with `global $x` can replace the value with a different runtime type.
     pub(crate) fn global_alias_type(&self, name: &str) -> PhpType {
         if crate::superglobals::is_superglobal(name) {
             return crate::superglobals::superglobal_type();
         }
-        self.top_level_env
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| self.local_type(name))
+        PhpType::Mixed
     }
 
     /// Returns the prescanned value and PHP type for a global constant name.
@@ -356,6 +355,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if let Some(slot) = self.local_slots.get(name).copied() {
             self.builder.widen_local_storage_type(slot, ty.clone());
         }
+        self.local_types.insert(name.to_string(), ty);
+    }
+
+    /// Updates only the flow-sensitive PHP type fact for a local.
+    pub(crate) fn set_local_logical_type(&mut self, name: &str, ty: PhpType) {
         self.local_types.insert(name.to_string(), ty);
     }
 
@@ -440,13 +444,13 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         name
     }
 
-    /// Declares a parser-reserved hidden temporary slot.
-    pub(crate) fn declare_hidden_temp_with_name(
+    /// Declares a parser-reserved hidden expression-result temporary.
+    pub(crate) fn declare_owned_hidden_temp_with_name(
         &mut self,
         name: &str,
         php_type: PhpType,
     ) -> LocalSlotId {
-        self.declare_local_with_kind(name, php_type, LocalKind::HiddenTemp)
+        self.declare_local_with_kind(name, php_type, LocalKind::OwnedTemp)
     }
 
     /// Declares a hidden owner slot for a promoted local ref-cell pointer.
@@ -516,9 +520,12 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if let Some(php_type) = self.extern_global_type(name) {
             return self.load_extern_global(name, php_type, span);
         }
-        // Superglobals carry a fixed `AssocArray{Str, Mixed}` type in every scope
-        // so the global-storage load is a Hash pointer, not a boxed Mixed cell.
-        let php_type = if crate::superglobals::is_superglobal(name) {
+        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let uses_global = self.uses_global_storage(name, kind);
+        // Superglobals carry a fixed `AssocArray{Str, Mixed}` type in every scope.
+        // Ordinary globals are boxed Mixed cells even in main so function writes
+        // through `global $x` cannot make later top-level loads reinterpret the slot.
+        let php_type = if uses_global {
             self.global_alias_type(name)
         } else {
             self.local_type(name)
@@ -526,8 +533,6 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let slot = self.declare_local(name, php_type.clone());
         let ir_type = value_ir_type(&php_type);
         let ownership = Ownership::for_php_type(&php_type);
-        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
-        let uses_global = self.uses_global_storage(name, kind);
         let is_ref_bound = self.is_ref_bound_local(name) && !uses_global && kind == LocalKind::PhpLocal;
         let op = match (is_ref_bound, uses_global, kind) {
             (true, _, _) => Op::LoadRefCell,
@@ -627,6 +632,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let previous_type = self.local_type(name);
         let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, previous_kind);
+        let php_type = if uses_global {
+            self.global_alias_type(name)
+        } else {
+            php_type
+        };
         let slot = self.declare_local(name, php_type.clone());
         // Backend frame layout uses the final widened slot type for every load
         // and store, so cleanup loads must be typed after this store's widening.
@@ -642,7 +652,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         self.builder.widen_local_storage_type(slot, widen_type);
         let source = value;
         let source_is_owning_temporary = self.value_is_owning_temporary(value);
-        let release_source_after_store = self.value_needs_release_after_retaining_store(value);
+        let release_source_after_store =
+            self.value_needs_release_after_retaining_store(value)
+                && !matches!(previous_kind, LocalKind::HiddenTemp | LocalKind::OwnedTemp);
         let transfer_callable_source_to_store = source_is_owning_temporary
             && matches!(php_type.codegen_repr(), PhpType::Callable);
         if !uses_global
@@ -1042,7 +1054,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         matches!(
             self.builder.value_defining_op(value.value),
                 Some(
-                    Op::IToStr
+                    Op::Acquire
+                    | Op::IToStr
                     | Op::FToStr
                     | Op::BoolToStr
                     | Op::ResourceToStr
