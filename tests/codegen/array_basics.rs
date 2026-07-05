@@ -964,3 +964,14 @@ echo (in_array("hello", $a) ? "y" : "n"),
     );
     assert_eq!(out, "yyn");
 }
+
+/// EC-2 (#485): in_array() accepts the optional 3rd `strict` argument. For the homogeneously-typed
+/// arrays real code uses it with, elephc's per-type comparison already matches strict membership.
+/// Byte-parity vs PHP 8.5 (string[] + int[], present + absent).
+#[test]
+fn test_in_array_strict_flag() {
+    let out = compile_and_run(
+        "<?php echo in_array('b', ['a','b','c'], true) ? '1' : '0'; echo in_array('x', ['a','b'], true) ? '1' : '0'; echo in_array(2, [1,2,3], true) ? '1' : '0'; echo in_array(9, [1,2], true) ? '1' : '0';",
+    );
+    assert_eq!(out, "1010");
+}

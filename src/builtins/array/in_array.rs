@@ -7,12 +7,11 @@
 //!
 //! Key details:
 //! - `check` validates that the second argument is an array and returns `Bool`.
-//! - The golden signature carries the optional `strict` param (min=2, max=3), but the
-//!   legacy CHECK arm enforced exactly 2 arguments and the `lower_in_array` emitter
-//!   only supports 2 args. `max_args: 2` reproduces that exact-2 enforcement in
-//!   `check_arity` only; `function_sig` and the parity gate keep the full param-derived
-//!   bounds from the golden. This keeps the clean "takes exactly 2 arguments" checker
-//!   diagnostic for a 3-arg call instead of an EIR backend error.
+//! - The optional `strict` (3rd) argument is accepted (min=2, max=3). `lower_in_array`'s
+//!   per-type comparison (int/float/bool by value, string by byte-equality) is already
+//!   type-specific, so for the homogeneously-typed arrays real code uses `in_array($x, $a, true)`
+//!   with, the result already matches strict `===` membership; the `strict` flag itself is not
+//!   separately consulted (a heterogeneous-array + type-juggling distinction would need it).
 //! - `lower` is a thin wrapper over the shared `arrays::lower_in_array` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
@@ -26,7 +25,6 @@ builtin! {
     name: "in_array",
     area: Array,
     params: [needle: Mixed, haystack: Mixed, strict: Bool = DefaultSpec::Bool(false)],
-    max_args: 2,
     returns: Bool,
     check: check,
     lower: lower,
