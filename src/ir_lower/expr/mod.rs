@@ -1670,14 +1670,35 @@ fn lower_inc_dec(
     let old = ctx.load_local(name, Some(expr.span));
     let one = lower_int_literal(ctx, 1, expr);
     let operand = coerce_to_int(ctx, old, expr);
-    let iop = if increment { Op::IAdd } else { Op::ISub };
+    let existing_type = ctx.local_type(name);
+    let checked_int_local = matches!(existing_type.codegen_repr(), PhpType::Int);
+    let iop = match (increment, checked_int_local) {
+        (true, true) => Op::ICheckedAdd,
+        (false, true) => Op::ICheckedSub,
+        (true, false) => Op::IAdd,
+        (false, false) => Op::ISub,
+    };
+    let result_php_type = if checked_int_local { PhpType::Mixed } else { PhpType::Int };
+    let result_ir_type = if checked_int_local {
+        IrType::Heap(IrHeapKind::Mixed)
+    } else {
+        IrType::I64
+    };
     let new = ctx
         .builder
-        .emit_with_effects(iop, vec![operand.value, one.value], None, IrType::I64, PhpType::Int, Ownership::for_php_type(&PhpType::Int), iop.default_effects(), Some(expr.span))
+        .emit_with_effects(
+            iop,
+            vec![operand.value, one.value],
+            None,
+            result_ir_type,
+            result_php_type.clone(),
+            Ownership::for_php_type(&result_php_type),
+            iop.default_effects(),
+            Some(expr.span),
+        )
         .expect("integer inc/dec produces a value");
-    let new = LoweredValue { value: new, ir_type: IrType::I64 };
-    let existing_type = ctx.local_type(name);
-    ctx.store_local(name, new, existing_type, Some(expr.span));
+    let new = LoweredValue { value: new, ir_type: result_ir_type };
+    ctx.store_local(name, new, result_php_type, Some(expr.span));
     if post { old } else { new }
 }
 

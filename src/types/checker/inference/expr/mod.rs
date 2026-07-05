@@ -72,13 +72,20 @@ impl Checker {
                 self.infer_type(inner, env)?;
                 Ok(PhpType::Int)
             }
-            ExprKind::PreIncrement(name)
-            | ExprKind::PostIncrement(name)
-            | ExprKind::PreDecrement(name)
-            | ExprKind::PostDecrement(name) => match env.get(name) {
-                Some(PhpType::Int) | Some(PhpType::Bool) | Some(PhpType::Void) => {
-                    Ok(PhpType::Int)
-                }
+            ExprKind::PreIncrement(name) | ExprKind::PreDecrement(name) => match env.get(name) {
+                Some(PhpType::Int) => Ok(PhpType::Mixed),
+                Some(PhpType::Bool) | Some(PhpType::Void) => Ok(PhpType::Int),
+                Some(other) => Err(CompileError::new(
+                    expr.span,
+                    &format!("Cannot increment/decrement ${} of type {:?}", name, other),
+                )),
+                None => Err(CompileError::new(
+                    expr.span,
+                    &format!("Undefined variable: ${}", name),
+                )),
+            },
+            ExprKind::PostIncrement(name) | ExprKind::PostDecrement(name) => match env.get(name) {
+                Some(PhpType::Int) | Some(PhpType::Bool) | Some(PhpType::Void) => Ok(PhpType::Int),
                 Some(other) => Err(CompileError::new(
                     expr.span,
                     &format!("Cannot increment/decrement ${} of type {:?}", name, other),

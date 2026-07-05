@@ -257,15 +257,17 @@ fn fold_checked_int_binop(op: Op, lhs: i64, rhs: i64) -> (Const, TypeNarrowing) 
     match checked {
         Some(result) => (Const::Int(result), TypeNarrowing::ToInt),
         None => {
-            // Overflow: PHP promotes to float. Use the wrapping result cast to
-            // f64, matching the runtime helper's `__rt_mixed_from_value` path.
-            let wrapped = match op {
-                Op::ICheckedAdd => lhs.wrapping_add(rhs),
-                Op::ICheckedSub => lhs.wrapping_sub(rhs),
-                Op::ICheckedMul => lhs.wrapping_mul(rhs),
+            // Overflow: PHP promotes both original integer operands to double
+            // and then performs the arithmetic in floating point.
+            let lhs = lhs as f64;
+            let rhs = rhs as f64;
+            let promoted = match op {
+                Op::ICheckedAdd => lhs + rhs,
+                Op::ICheckedSub => lhs - rhs,
+                Op::ICheckedMul => lhs * rhs,
                 _ => unreachable!(),
             };
-            (Const::Float(wrapped as f64), TypeNarrowing::ToFloat)
+            (Const::Float(promoted), TypeNarrowing::ToFloat)
         }
     }
 }

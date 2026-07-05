@@ -42,7 +42,7 @@ pub(super) fn lower_store_static_local(ctx: &mut FunctionContext<'_>, inst: &Ins
     let slot = resolve_static_local_slot(ctx, inst)?;
     ensure_static_local_type_supported(&slot, inst)?;
     ensure_static_local_value_supported(ctx, &slot, value, inst)?;
-    let loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
+    let mut loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
     // Narrow Mixed to Int when the static local slot is Int-typed
     // (from checked integer arithmetic that may overflow to float).
     if matches!(slot.php_type.codegen_repr(), PhpType::Int)
@@ -66,6 +66,7 @@ pub(super) fn lower_store_static_local(ctx: &mut FunctionContext<'_>, inst: &Ins
         ctx.load_value_to_result(value)?;
         abi::emit_call_label(ctx.emitter, "__rt_decref_mixed");
         abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        loaded_ty = PhpType::Int;
     }
     if loaded_ty.is_refcounted() {
         abi::emit_incref_if_refcounted(ctx.emitter, &loaded_ty);
@@ -86,7 +87,7 @@ pub(super) fn lower_init_static_local(ctx: &mut FunctionContext<'_>, inst: &Inst
     abi::emit_branch_if_int_result_nonzero(ctx.emitter, &initialized_label);
     abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
     abi::emit_store_reg_to_symbol(ctx.emitter, abi::int_result_reg(ctx.emitter), &slot.init_symbol, 0);
-    let loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
+    let mut loaded_ty = ctx.load_value_to_result(value)?.codegen_repr();
     // Narrow Mixed to Int when the static local slot is Int-typed.
     if matches!(slot.php_type.codegen_repr(), PhpType::Int)
         && matches!(loaded_ty, PhpType::Mixed)
@@ -100,6 +101,11 @@ pub(super) fn lower_init_static_local(ctx: &mut FunctionContext<'_>, inst: &Inst
                 abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
             }
         }
+        abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        ctx.load_value_to_result(value)?;
+        abi::emit_call_label(ctx.emitter, "__rt_decref_mixed");
+        abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+        loaded_ty = PhpType::Int;
     }
     // Box Int/Float/Bool/Void as Mixed when the static local slot is Mixed-typed.
     if matches!(slot.php_type.codegen_repr(), PhpType::Mixed)

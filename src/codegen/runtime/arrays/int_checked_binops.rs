@@ -82,8 +82,10 @@ fn emit_aarch64_checked(emitter: &mut Emitter, label: &str, opcode: i64) {
             emitter.instruction("cmp x3, x0, asr #63");                         // high half must equal the sign extension of the low half
             let oob_label = format!("{}_overflow", label);
             emitter.instruction(&format!("b.ne {}", oob_label));                // promote to double when signed multiplication overflowed
-            emit_aarch64_box_int(emitter, label, &format!("{}_box_int", label));
+            let done_label = format!("{}_box_int", label);
+            emitter.instruction(&format!("b {}", done_label));                  // box the in-range integer result
             emit_aarch64_overflow(emitter, label, opcode, &oob_label);
+            emit_aarch64_box_int(emitter, label, &done_label);
             emit_aarch64_done(emitter, label);
         }
         _ => unreachable!(),
