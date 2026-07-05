@@ -4,6 +4,15 @@ All notable changes to elephc, a PHP-to-native compiler written in Rust.
 Releases are listed newest first.
 
 ## [Unreleased]
+- Fixed EIR parity for two PHP runtime edge cases: `foreach` by reference now observes elements appended during iteration instead of using the by-value snapshot length, while by-value indexed and mixed-array iteration still stops at the original array length; and reading an uninitialized typed instance or static property now emits PHP's specific fatal message when uncaught while still throwing a catchable `Error` when an exception handler is active.
+- Fixed missing-key reads on indexed arrays: null coalescing now suppresses undefined-key warnings for missing integer, string, mixed, and `null` keys while direct reads still emit PHP-compatible `Warning: Undefined array key ...` diagnostics and return the correct null fallback. The EIR/runtime paths now handle mixed-key indexed reads consistently across macOS ARM64, Linux x86_64, and Linux ARM64, including string-key warnings and mixed integer-key misses.
+- Fixed static-member and integer-division parity (issues #336, #372, #356): `static::CONST` now late-binds to the runtime class and falls back to the declaring-class value when not overridden; prefix/postfix `++` and `--` now work on static properties through `ClassName::$x`, `self::$x`, `static::$x`, and `parent::$x`; and `intdiv(PHP_INT_MIN, -1)` now throws catchable `ArithmeticError` with PHP's message instead of wrapping or trapping on every supported backend target.
+- Fixed mixed float loose equality and `switch` comparisons (issue #397): `Mixed` float operands now compare numerically instead of truncating through integers, and numeric loose equality dispatches through the boxed runtime tag so numeric strings, booleans, non-scalars, and NaN/unordered float comparisons follow PHP semantics on every supported backend target.
+- Fixed undefined-variable compound assignments (issue #370): `$x += 1`, `$x -= 1`, `$x *= 5`, and `$y .= "..."` now treat the missing target as PHP `null`/`0`/`""` with a single warning instead of failing during type checking or reading uninitialized stack storage. Null-coalescing assignment (`??=`) remains warning-free and now also works correctly when used as an expression, such as `echo ($z ??= 42)`.
+- Fixed enum type resolution in class member positions: enum names can now be used as declared property types and constructor-promoted property types without failing early with "Unknown type" during the class schema pass.
+- Fixed the Linux x86_64 `strtotime()` weekday-modifier scanner: `next Mon`, `last Fri`, and similar modifier + weekday forms now pass the remaining input length capped at 16 bytes to the keyword matcher, matching the ARM64 path and avoiding a fragile fixed-width scan into the zero-padded lowercase buffer tail.
+
+## [0.26.0]
 - Runtime dead stripping: compiled executables now link only the runtime helpers the program actually reaches and drop the rest, shrinking binaries without changing behavior. Works on every supported target — Linux via per-symbol sections and `--gc-sections`, macOS via `.subsections_via_symbols` atoms and `-dead_strip`. Shared libraries (`--emit cdylib`) keep the full runtime.
 - Closures can be rebound to a new receiver: `Closure::bind()`, `bindTo()`, and `Closure::call()` are supported, and a top-level closure that captures `$this` now binds it correctly instead of losing the receiver. A by-reference `Closure::bind` stored in a variable and called later is tracked as a static callable, so the call carries the bound cell directly rather than going through the generic descriptor invoker.
 - New magic methods `__callStatic`, `__isset`, and `__unset`: a static call to an undeclared method dispatches to `__callStatic`, `isset()`/`empty()` on an undeclared property route through `__isset` (and only read `__get` when `__isset` is truthy, so an unset virtual property is empty without ever being read), and `unset($obj->prop)` on a virtual property calls `__unset`.
@@ -428,7 +437,8 @@ Releases are listed newest first.
 ## [0.1.0] - 2026-03-22
 - Initial compiler: echo, variables, integers, arithmetic and string concatenation, comparison operators, control flow (`if`/`while`/`for`/`break`/`continue`), functions, logical/assignment/increment operators.
 
-[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/illegalstudio/elephc/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/illegalstudio/elephc/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/illegalstudio/elephc/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/illegalstudio/elephc/compare/v0.24.3...v0.25.0

@@ -199,6 +199,7 @@ pub fn check_types(program: &Program, target_platform: Platform) -> Result<Check
 
     let mut warnings = crate::types::warnings::collect_warnings(program);
     warnings.extend(checker.warnings);
+    dedupe_warnings(&mut warnings);
 
     Ok(CheckResult {
         global_env,
@@ -217,6 +218,21 @@ pub fn check_types(program: &Program, target_platform: Platform) -> Result<Check
         warnings,
         throw_access_sites: checker.throw_access_sites,
     })
+}
+
+/// Removes duplicate warnings emitted by repeated checker stabilization passes.
+///
+/// The first occurrence is preserved so diagnostic order stays stable; duplicates are keyed by
+/// source span and message, matching the user-visible warning identity.
+fn dedupe_warnings(warnings: &mut Vec<crate::errors::CompileWarning>) {
+    let mut seen = HashSet::new();
+    warnings.retain(|warning| {
+        seen.insert((
+            warning.span.line,
+            warning.span.col,
+            warning.message.clone(),
+        ))
+    });
 }
 
 /// Returns the single object class named by a type, ignoring a nullable arm.

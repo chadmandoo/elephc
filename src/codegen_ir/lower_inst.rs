@@ -38,7 +38,7 @@ use super::{CodegenIrError, Result};
 mod arithmetic;
 mod arrays;
 mod buffers;
-mod builtins;
+pub(crate) mod builtins;
 mod callables;
 mod comparisons;
 mod conversions;
@@ -73,6 +73,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::ConstNull => lower_const_null(ctx, &inst),
         Op::ConstStr => strings::lower_const_str(ctx, &inst),
         Op::ConstClassName => strings::lower_const_class_name(ctx, &inst),
+        Op::LoadCalledClassId => strings::lower_load_called_class_id(ctx, &inst),
         Op::LoadLocal => lower_load_local(ctx, &inst),
         Op::StoreLocal => lower_store_local(ctx, &inst),
         Op::UnsetLocal => lower_unset_local(ctx, &inst),
@@ -133,10 +134,13 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::StrPersist => strings::lower_str_persist(ctx, &inst),
         Op::ArrayNew => arrays::lower_array_new(ctx, &inst),
         Op::ArrayLen => arrays::lower_array_len(ctx, &inst),
-        Op::ArrayGet => arrays::lower_array_get(ctx, &inst),
+        Op::ArrayGet => arrays::lower_array_get(ctx, &inst, true),
+        Op::ArrayGetSilent => arrays::lower_array_get(ctx, &inst, false),
         Op::ArrayIsset => builtins::lower_array_isset(ctx, &inst),
         Op::ArraySet => arrays::lower_array_set(ctx, &inst),
         Op::ArraySetMixedKey => arrays::lower_array_set_mixed_key(ctx, &inst),
+        Op::ArrayGetMixedKey => arrays::lower_array_get_mixed_key(ctx, &inst, true),
+        Op::ArrayGetMixedKeySilent => arrays::lower_array_get_mixed_key(ctx, &inst, false),
         Op::ArrayPush => arrays::lower_array_push(ctx, &inst),
         Op::MixedArrayAppend => arrays::lower_mixed_array_append(ctx, &inst),
         Op::ArrayUnion => arrays::lower_array_union(ctx, &inst),
@@ -150,6 +154,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::HashUnset => hashes::lower_hash_unset(ctx, &inst),
         Op::HashUnion => hashes::lower_hash_union(ctx, &inst),
         Op::HashArrayUnion => hashes::lower_hash_array_union(ctx, &inst),
+        Op::HashSpread => hashes::lower_hash_spread(ctx, &inst),
         Op::IterStart => iterators::lower_iter_start(ctx, &inst),
         Op::IterNext => iterators::lower_iter_next(ctx, &inst),
         Op::IterCurrentKey => iterators::lower_iter_current_key(ctx, &inst),

@@ -18,12 +18,14 @@ use crate::ir::{
 use crate::ir_lower::context::{FinallyFrame, LoopCleanup, LoopFrame, LoweredValue, LoweringContext};
 use crate::ir_lower::effects_lookup;
 use crate::ir_lower::expr::{
-    coerce_to_int_at_span, lower_callable_array_for_assignment, lower_closure_for_assignment, lower_expr,
-    static_callable_binding_for_expr, string_op_uses_scratch_storage,
-    type_satisfies_array_access_for_ir,
+    array_access_element_result_type, coerce_to_int_at_span, lower_callable_array_for_assignment,
+    lower_closure_for_assignment, lower_expr, static_callable_binding_for_expr,
+    string_op_uses_scratch_storage, type_satisfies_array_access_for_ir,
 };
 use crate::names::{php_symbol_key, property_hook_set_method};
-use crate::parser::ast::{CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
+use crate::parser::ast::{
+    is_compound_assignment_self_read, CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind,
+};
 use crate::span::Span;
 use crate::types::{PhpType, ThrowAccessKind};
 
@@ -212,6 +214,18 @@ fn lower_echo(ctx: &mut LoweringContext<'_, '_>, expr: &Expr, span: Span) {
 
 /// Lowers a plain PHP local assignment.
 fn lower_assign(ctx: &mut LoweringContext<'_, '_>, name: &str, value: &Expr, span: Span) {
+    // PHP allows compound assignment on an undefined variable (`$x += 1`),
+    // treating the undefined variable as null/0 with a warning. The type
+    // checker injects the variable as `Void` and emits a warning. At the
+    // lowering level, we must initialize the local slot to null/0 before
+    // the compound read so the runtime does not read garbage from the stack.
+    if is_compound_assignment_self_read(value, name, span) && !ctx.has_local_slot(name) {
+        let null_value = ctx.builder.emit_const_null();
+        let null_lowered = LoweredValue { value: null_value, ir_type: IrType::I64 };
+        ctx.store_local(name, null_lowered, PhpType::Void, Some(span));
+        ctx.mark_local_initialized(name);
+    }
+
     // A by-reference `Closure::bind(fn &() => $this->prop, $obj, $obj)` assigned to a variable is
     // tracked as a static callable, like a closure literal, so a later `$b()` lowers to a direct
     // call that carries the property's reference-cell pointer instead of boxing it.
@@ -1278,9 +1292,15 @@ fn lower_dynamic_switch_dispatch(
     default_block: BlockId,
 ) {
     let subject_is_str = subject.ir_type == IrType::Str;
-    // Non-string subjects are coerced to an integer once and reused by the ICmp path.
-    let int_subject =
-        if subject_is_str { None } else { Some(coerce_to_int(ctx, subject, None)) };
+    let subject_is_mixed = matches!(subject.ir_type, IrType::Heap(crate::ir::IrHeapKind::Mixed));
+    // Non-string, non-Mixed subjects are coerced to an integer once and reused by the ICmp path.
+    // Mixed subjects must use loose equality for every case because the runtime tag may be
+    // float, string, bool, etc. — coercing to int would truncate a float (issue #397).
+    let int_subject = if subject_is_str || subject_is_mixed {
+        None
+    } else {
+        Some(coerce_to_int(ctx, subject, None))
+    };
     for ((case_exprs, _), case_block) in cases.iter().zip(blocks) {
         for case_expr in case_exprs {
             let case_value = lower_expr(ctx, case_expr);
@@ -1288,7 +1308,9 @@ fn lower_dynamic_switch_dispatch(
             // collapses every case to `0 == 0`, and coercing a float to int would
             // truncate the subject (so `switch (1.5) { case 1.5; }` would wrongly
             // match `case 1`). The cheap ICmp fast path stays for integer-like pairs.
+            // Mixed subjects must always use loose equality (tag-aware comparison).
             let use_loose_eq = subject_is_str
+                || subject_is_mixed
                 || case_value.ir_type == IrType::Str
                 || float_loose_eq_pair(subject.ir_type, case_value.ir_type);
             let matched = if use_loose_eq {
@@ -2065,10 +2087,20 @@ fn list_unpack_get_op(source_type: IrType) -> Op {
 }
 
 /// Returns the PHP type assigned to each simple list-unpack destination.
+///
+/// Indexed-array reads use `Op::ArrayGet`, whose runtime OOB fallback produces a
+/// null in the result shape (tagged scalar or sentinel). To preserve that null
+/// for `??` and `IsNull`, the destination type is widened the same way as a
+/// direct array index read (see `array_access_element_result_type`). Without
+/// this widening an `Array(Int)` element would lower to `PhpType::Int`, whose
+/// null fallback is the in-band `NULL_SENTINEL` i64, and `$b ?? 'n'` would see
+/// a non-null integer instead of null for missing keys (#337).
 fn list_unpack_item_type(ctx: &LoweringContext<'_, '_>, source: crate::ir::ValueId) -> PhpType {
     let item_type = match ctx.builder.value_php_type(source).codegen_repr() {
-        PhpType::Array(elem_ty) => *elem_ty,
-        PhpType::AssocArray { value, .. } => *value,
+        PhpType::Array(elem_ty) => array_access_element_result_type(elem_ty.codegen_repr()),
+        PhpType::AssocArray { value, .. } => {
+            array_access_element_result_type(value.codegen_repr())
+        }
         _ => PhpType::Mixed,
     };
     normalize_materialized_element_type(item_type)
