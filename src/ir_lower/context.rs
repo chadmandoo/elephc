@@ -1207,6 +1207,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                     | Op::GeneratorYieldFrom
                     | Op::Call
                     | Op::FunctionVariantCall
+                    | Op::EvalLiteralCall
                     | Op::EvalFunctionCall
                     | Op::EvalFunctionCallArray
                     | Op::EvalConstantFetch

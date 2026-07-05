@@ -215,6 +215,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::EnumBackingMixedToInt => enums::lower_enum_backing_mixed_to_int(ctx, &inst),
         Op::ExternCall => externs::lower_extern_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
+        Op::EvalLiteralCall => builtins::lower_eval_literal_call(ctx, &inst),
         Op::EvalFunctionCall => builtins::lower_eval_function_call(ctx, &inst),
         Op::EvalFunctionCallArray => builtins::lower_eval_function_call_array(ctx, &inst),
         Op::EvalObjectNew => builtins::lower_eval_object_new(ctx, &inst),

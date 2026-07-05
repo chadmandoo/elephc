@@ -363,6 +363,7 @@ pub enum Op {
     Call,
     FunctionVariantCall,
     BuiltinCall,
+    EvalLiteralCall,
     EvalFunctionCall,
     EvalFunctionCallArray,
     EvalFunctionExists,
@@ -513,8 +514,8 @@ impl Op {
             EvalConstantFetch => {
                 E::READS_GLOBAL | E::READS_HEAP | E::WRITES_HEAP | E::REFCOUNT_OP | E::MAY_FATAL
             }
-            Call | FunctionVariantCall | BuiltinCall | EvalFunctionCall | EvalFunctionCallArray
-            | EvalObjectNew | EvalStaticMethodCall | RuntimeCall
+            Call | FunctionVariantCall | BuiltinCall | EvalLiteralCall | EvalFunctionCall
+            | EvalFunctionCallArray | EvalObjectNew | EvalStaticMethodCall | RuntimeCall
             | ClosureCall | ExprCall | CallableDescriptorInvoke | PipeCall | FiberRuntimeCall => {
                 E::all().difference(E::REFCOUNT_OP)
             }
@@ -538,6 +539,7 @@ impl Op {
             Op::Call
                 | Op::FunctionVariantCall
                 | Op::BuiltinCall
+                | Op::EvalLiteralCall
                 | Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
                 | Op::EvalObjectNew
@@ -726,6 +728,7 @@ impl Op {
             Call => "call",
             FunctionVariantCall => "function_variant_call",
             BuiltinCall => "builtin_call",
+            EvalLiteralCall => "eval_literal_call",
             EvalFunctionCall => "eval_function_call",
             EvalFunctionCallArray => "eval_function_call_array",
             EvalFunctionExists => "eval_function_exists",

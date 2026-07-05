@@ -1892,7 +1892,8 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
             Some(expr.span),
         );
     }
-    emit_builtin_call_value(ctx, canonical, operands, php_type, expr.span)
+    let eval_literal = eval_literal_fragment(canonical, args);
+    emit_builtin_call_value(ctx, canonical, operands, php_type, expr.span, eval_literal)
 }
 
 /// Emits a builtin call and releases owned temporary arguments after the call consumes them.
@@ -1902,14 +1903,27 @@ fn emit_builtin_call_value(
     operands: Vec<crate::ir::ValueId>,
     php_type: PhpType,
     span: Span,
+    eval_literal: Option<&str>,
 ) -> LoweredValue {
-    let data = ctx.intern_function_name(name);
+    let (op, immediate, effects) = if let Some(fragment) = eval_literal {
+        (
+            Op::EvalLiteralCall,
+            Some(Immediate::Data(ctx.intern_string(fragment))),
+            Op::EvalLiteralCall.default_effects(),
+        )
+    } else {
+        (
+            Op::BuiltinCall,
+            Some(Immediate::Data(ctx.intern_function_name(name))),
+            effects_lookup::builtin_effects(name),
+        )
+    };
     let call = ctx.emit_value(
-        Op::BuiltinCall,
+        op,
         operands.clone(),
-        Some(Immediate::Data(data)),
+        immediate,
         php_type,
-        effects_lookup::builtin_effects(name),
+        effects,
         Some(span),
     );
     release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), span);
@@ -1917,6 +1931,21 @@ fn emit_builtin_call_value(
         ctx.apply_eval_barrier();
     }
     call
+}
+
+/// Returns the literal eval fragment when the call is a simple `eval('...')`.
+fn eval_literal_fragment<'a>(name: &str, args: &'a [Expr]) -> Option<&'a str> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "eval"
+        || args.len() != 1
+        || crate::types::call_args::has_named_args(args)
+        || args.iter().any(is_spread_arg)
+    {
+        return None;
+    }
+    match &args[0].kind {
+        ExprKind::StringLiteral(fragment) => Some(fragment.as_str()),
+        _ => None,
+    }
 }
 
 /// Returns true when a dynamic eval fallback can preserve simple positional call semantics.
@@ -2033,7 +2062,7 @@ fn lower_lazy_isset(
     for (idx, arg) in args.iter().enumerate() {
         let checked = lower_lazy_isset_operand(ctx, arg).unwrap_or_else(|| {
             let value = lower_expr(ctx, arg);
-            emit_builtin_call_value(ctx, name, vec![value.value], PhpType::Int, arg.span)
+            emit_builtin_call_value(ctx, name, vec![value.value], PhpType::Int, arg.span, None)
         });
         let then_target = if idx + 1 == args.len() {
             ctx.builder.create_named_block("isset.lazy_true", Vec::new())
@@ -2360,7 +2389,14 @@ fn lower_native_isset_offset_probe_from_value(
         }
         _ => {
             let read_value = lower_array_access_from_value(ctx, array_value, index, expr, false);
-            emit_builtin_call_value(ctx, "isset", vec![read_value.value], PhpType::Int, expr.span)
+            emit_builtin_call_value(
+                ctx,
+                "isset",
+                vec![read_value.value],
+                PhpType::Int,
+                expr.span,
+                None,
+            )
         }
     }
 }
@@ -3499,7 +3535,14 @@ fn lower_static_callable_value_call(
         }
         StaticCallableBinding::Builtin(function_name) => {
             let php_type = call_return_type(ctx, &function_name, &operands);
-            Some(emit_builtin_call_value(ctx, &function_name, operands, php_type, expr.span))
+            Some(emit_builtin_call_value(
+                ctx,
+                &function_name,
+                operands,
+                php_type,
+                expr.span,
+                None,
+            ))
         }
         StaticCallableBinding::Closure {
             name,
@@ -3930,7 +3973,14 @@ fn lower_static_callable_call(
             let sig = call_signature(ctx, &function_name, callback_args);
             let operands = lower_builtin_call_args(ctx, &function_name, sig.as_ref(), callback_args);
             let php_type = call_return_type(ctx, &function_name, &operands);
-            Some(emit_builtin_call_value(ctx, &function_name, operands, php_type, expr.span))
+            Some(emit_builtin_call_value(
+                ctx,
+                &function_name,
+                operands,
+                php_type,
+                expr.span,
+                None,
+            ))
         }
         StaticCallableBinding::Closure {
             name,
@@ -4817,7 +4867,7 @@ fn lower_static_settype(
     let target_ty = static_settype_target_type(&type_arg)?;
     let sig = call_signature(ctx, name, args);
     let operands = lower_builtin_call_args(ctx, name, sig.as_ref(), args);
-    let result = emit_builtin_call_value(ctx, name, operands, PhpType::Bool, expr.span);
+    let result = emit_builtin_call_value(ctx, name, operands, PhpType::Bool, expr.span, None);
     ctx.set_local_type(local_name, target_ty);
     Some(result)
 }

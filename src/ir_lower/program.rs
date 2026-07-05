@@ -344,7 +344,8 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
                         features.eval = true;
                     }
                 }
-                Op::EvalFunctionCall
+                Op::EvalLiteralCall
+                | Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
                 | Op::EvalFunctionExists
                 | Op::EvalClassExists

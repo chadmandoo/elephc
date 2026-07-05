@@ -44,6 +44,10 @@ fn test_eval_codegen_requires_eval_bridge() {
         "user assembly should call the eval bridge:\n{user_asm}"
     );
     assert!(
+        user_asm.contains("eval literal AOT candidate"),
+        "literal eval should be marked as an AOT candidate before falling back:\n{user_asm}"
+    );
+    assert!(
         user_asm.contains("__elephc_eval_context_new"),
         "user assembly should create a persistent eval context:\n{user_asm}"
     );
@@ -56,6 +60,34 @@ fn test_eval_codegen_requires_eval_bridge() {
             .iter()
             .any(|lib| lib == "elephc_magician"),
         "required libraries should include elephc_magician: {required_libraries:?}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Verifies dynamic eval code is not marked as a literal AOT candidate.
+#[test]
+fn test_dynamic_eval_does_not_emit_literal_aot_marker() {
+    let dir = make_cli_test_dir("elephc_dynamic_eval_no_aot_marker");
+    let (user_asm, _runtime_asm, required_libraries) = compile_source_to_asm_with_options(
+        "<?php $code = '$x = 1;'; eval($code);",
+        &dir,
+        8_388_608,
+        false,
+        false,
+    );
+    assert!(
+        user_asm.contains("__elephc_eval_execute"),
+        "dynamic eval should still call the eval bridge:\n{user_asm}"
+    );
+    assert!(
+        !user_asm.contains("eval literal AOT candidate"),
+        "dynamic eval must not be marked as a literal AOT candidate:\n{user_asm}"
+    );
+    assert!(
+        required_libraries
+            .iter()
+            .any(|lib| lib == "elephc_magician"),
+        "dynamic eval should still require elephc_magician: {required_libraries:?}"
     );
     let _ = fs::remove_dir_all(&dir);
 }

@@ -220,7 +220,8 @@ fn function_uses_eval(module: &Module, function: &Function) -> bool {
 fn instruction_uses_eval(module: &Module, inst: &crate::ir::Instruction) -> bool {
     matches!(
         inst.op,
-        Op::EvalFunctionCall
+        Op::EvalLiteralCall
+            | Op::EvalFunctionCall
             | Op::EvalFunctionCallArray
             | Op::EvalObjectNew
             | Op::EvalStaticMethodCall

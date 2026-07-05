@@ -237,6 +237,7 @@ struct EvalNativeCallableObjectDefaultArg {
 /// Lowers `eval($code)` to the eval bridge ABI and leaves the eval return cell in result registers.
 pub(super) fn lower_eval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "eval", 1)?;
+    emit_eval_literal_aot_marker(ctx, inst)?;
     let code = expect_operand(inst, 0)?;
     let ty = ctx.load_value_to_result(code)?.codegen_repr();
     if ty != PhpType::Str {
@@ -277,6 +278,30 @@ pub(super) fn lower_eval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
     abi::emit_load_temporary_stack_slot(ctx.emitter, result_reg, EVAL_TEMP_CELL_OFFSET);
     abi::emit_release_temporary_stack(ctx.emitter, EVAL_STACK_BYTES);
     store_if_result(ctx, inst)
+}
+
+/// Emits an assembly marker for literal eval fragments that still use the bridge fallback.
+fn emit_eval_literal_aot_marker(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    if inst.op != Op::EvalLiteralCall {
+        return Ok(());
+    }
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return Ok(());
+    };
+    let fragment = ctx
+        .module
+        .data
+        .strings
+        .get(data.as_raw() as usize)
+        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))?;
+    ctx.emitter.comment(&format!(
+        "eval literal AOT candidate ({} bytes), using bridge fallback",
+        fragment.len()
+    ));
+    Ok(())
 }
 
 /// Updates eval context source metadata for file, directory, and call-site line magic constants.

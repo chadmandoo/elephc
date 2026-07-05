@@ -92,6 +92,14 @@ pub(super) fn lower_hash_isset(ctx: &mut FunctionContext<'_>, inst: &Instruction
     isset::lower_hash_isset(ctx, inst)
 }
 
+/// Lowers a statically-known eval fragment through the current bridge fallback path.
+pub(super) fn lower_eval_literal_call(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    eval::lower_eval(ctx, inst)
+}
+
 /// Lowers a native call to a zero-argument function declared through `eval()`.
 pub(super) fn lower_eval_function_call(
     ctx: &mut FunctionContext<'_>,
