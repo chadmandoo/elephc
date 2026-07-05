@@ -84,6 +84,7 @@ pub(super) fn resolve_type_expr(
             if matches!(
                 raw,
                 "array" | "mixed" | "callable" | "void" | "object" | "iterable" | "never"
+                    | "Closure"
             ) {
                 TypeExpr::Named(name.clone())
             } else {

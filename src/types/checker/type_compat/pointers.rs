@@ -124,6 +124,9 @@ impl Checker {
                     "object" => Ok(PhpType::Mixed),
                     "iterable" => Ok(PhpType::Iterable),
                     "never" => Ok(PhpType::Never),
+                    // The built-in `Closure` class types any closure/arrow-fn value;
+                    // closures are callables, so it resolves to Callable.
+                    "closure" => Ok(PhpType::Callable),
                     // Relative class types only survive to this point when used outside a class
                     // body; inside a class they are rewritten to the enclosing class beforehand.
                     relative @ ("self" | "static" | "parent") => Err(CompileError::new(

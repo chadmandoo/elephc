@@ -478,3 +478,14 @@ echo 5 |> $a |> $b;
     assert_eq!(out, "11");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// EC-5 (#488): the `Closure` type-hint (param, return, and property) must resolve — closures
+/// work internally but the type was "Unknown type Closure". A `Closure` property is permitted
+/// (unlike bare `callable`). Byte-parity vs PHP 8.5.
+#[test]
+fn test_closure_type_hint_param_and_property() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); function apply(\\Closure $c, int $x): int { return $c($x); } final class Holder { public function __construct(public Closure $fn) {} } $h = new Holder(fn(int $n): int => $n * 10); $g = $h->fn; echo apply(fn($n) => $n + 1, 41), ':', $g(5);",
+    );
+    assert_eq!(out, "42:50");
+}
