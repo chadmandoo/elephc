@@ -44,3 +44,15 @@ fn test_php_float_max() {
     let out = compile_and_run("<?php echo is_float(PHP_FLOAT_MAX);");
     assert_eq!(out, "1");
 }
+
+/// P8 (PHP 8.3 typed class constants): a class constant may carry a declared type
+/// (`const string X = …`); elephc parses + discards the type (byte-parity — the
+/// annotation does not affect runtime). Exercises scalar, int, and nullable typed
+/// constants read back via `self::`, plus an interface constant with a type.
+#[test]
+fn test_typed_class_constants() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); final class C { private const string A = 'x'; public const int N = 7; public const ?string M = null; public static function s(): string { return self::A . ':' . self::N . ':' . (self::M ?? 'none'); } } echo C::s();",
+    );
+    assert_eq!(out, "x:7:none");
+}
