@@ -81,7 +81,10 @@ pub(super) fn resolve_type_expr(
         }
         TypeExpr::Named(name) => {
             let raw = name.as_str();
-            if matches!(raw, "array" | "mixed" | "callable" | "void") {
+            if matches!(
+                raw,
+                "array" | "mixed" | "callable" | "void" | "object" | "iterable" | "never"
+            ) {
                 TypeExpr::Named(name.clone())
             } else {
                 TypeExpr::Named(resolved_name(resolve_special_or_class_name(
