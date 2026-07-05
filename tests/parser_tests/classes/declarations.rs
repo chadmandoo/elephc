@@ -199,6 +199,20 @@ fn test_parse_new_static() {
     }
 }
 
+/// Verifies that `<?php echo new static;` parses `new static` without parentheses into
+/// `ExprKind::NewScopedObject` with `StaticReceiver::Static` and empty args.
+#[test]
+fn test_parse_new_static_no_parens() {
+    let stmts = parse_source("<?php echo new static;");
+    match echoed_expr(&stmts) {
+        ExprKind::NewScopedObject {
+            receiver: StaticReceiver::Static,
+            args,
+        } => assert!(args.is_empty()),
+        other => panic!("expected NewScopedObject Static, got {:?}", other),
+    }
+}
+
 /// Verifies that `<?php echo new parent(1, 2);` parses `new parent` with positional args into
 /// `ExprKind::NewScopedObject` with `StaticReceiver::Parent` and two constructor arguments.
 #[test]
@@ -209,6 +223,20 @@ fn test_parse_new_parent_with_args() {
             receiver: StaticReceiver::Parent,
             args,
         } => assert_eq!(args.len(), 2),
+        other => panic!("expected NewScopedObject Parent, got {:?}", other),
+    }
+}
+
+/// Verifies that `<?php echo new parent;` parses `new parent` without parentheses into
+/// `ExprKind::NewScopedObject` with `StaticReceiver::Parent` and empty args.
+#[test]
+fn test_parse_new_parent_no_parens() {
+    let stmts = parse_source("<?php echo new parent;");
+    match echoed_expr(&stmts) {
+        ExprKind::NewScopedObject {
+            receiver: StaticReceiver::Parent,
+            args,
+        } => assert!(args.is_empty()),
         other => panic!("expected NewScopedObject Parent, got {:?}", other),
     }
 }
