@@ -1043,7 +1043,6 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             self.builder.value_defining_op(value.value),
                 Some(
                     Op::IToStr
-                    | Op::Acquire
                     | Op::FToStr
                     | Op::BoolToStr
                     | Op::ResourceToStr
