@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Sse\\Contracts\\PatchEventInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Sse\\Contracts\\PatchEventInterface"
+    ],
+    "external_referenced": []
+}

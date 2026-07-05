@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\FieldAugmentation"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Entity\\Contracts\\FieldAugmentation"
+    ],
+    "external_referenced": []
+}

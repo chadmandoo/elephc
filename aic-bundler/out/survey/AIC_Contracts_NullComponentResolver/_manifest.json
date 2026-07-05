@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Contracts\\NullComponentResolver"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\ComponentResolverInterface",
+        "AIC\\Contracts\\NullComponentResolver"
+    ],
+    "external_referenced": [
+        "Override"
+    ]
+}

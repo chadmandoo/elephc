@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\StatementInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Dbal\\Contracts\\ResultInterface",
+        "AIC\\Dbal\\Contracts\\StatementInterface"
+    ],
+    "external_referenced": [
+        "BackedEnum",
+        "Generator"
+    ]
+}

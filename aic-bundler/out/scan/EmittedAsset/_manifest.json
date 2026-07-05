@@ -1,0 +1,15 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\EmittedAsset"
+    ],
+    "files": 4,
+    "order": [
+        "AIC\\Components\\Domain\\HeadAssetType",
+        "AIC\\Components\\Domain\\HeadAssetMode",
+        "AIC\\Components\\Domain\\HeadAsset",
+        "AIC\\Components\\Domain\\EmittedAsset"
+    ],
+    "external_referenced": [
+        "InvalidArgumentException"
+    ]
+}

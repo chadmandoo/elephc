@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Session\\Contracts\\SessionInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Session\\Contracts\\SessionInterface"
+    ],
+    "external_referenced": []
+}

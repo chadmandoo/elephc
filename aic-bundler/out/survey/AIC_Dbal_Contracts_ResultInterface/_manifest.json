@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\ResultInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\ResultInterface"
+    ],
+    "external_referenced": [
+        "Generator"
+    ]
+}

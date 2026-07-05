@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Messages\\Contracts\\Severity"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Messages\\Contracts\\Severity"
+    ],
+    "external_referenced": []
+}

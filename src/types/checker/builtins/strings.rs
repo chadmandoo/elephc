@@ -33,7 +33,7 @@ pub(super) fn check_builtin(
     env: &TypeEnv,
 ) -> BuiltinResult {
     match name {
-        "strlen" => {
+        "strlen" | "mb_strlen" => {
             if args.len() != 1 {
                 return Err(CompileError::new(span, "strlen() takes exactly 1 argument"));
             }

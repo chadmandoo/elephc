@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Access\\Contracts\\PermissionContributor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Access\\Contracts\\PermissionContributor"
+    ],
+    "external_referenced": []
+}

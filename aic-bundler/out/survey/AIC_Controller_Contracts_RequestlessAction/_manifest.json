@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Controller\\Contracts\\RequestlessAction"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Controller\\Contracts\\Response",
+        "AIC\\Controller\\Contracts\\RequestlessAction"
+    ],
+    "external_referenced": []
+}

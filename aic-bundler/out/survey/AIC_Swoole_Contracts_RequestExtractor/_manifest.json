@@ -1,0 +1,20 @@
+{
+    "roots": [
+        "AIC\\Swoole\\Contracts\\RequestExtractor"
+    ],
+    "files": 6,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "AIC\\Swoole\\Contracts\\RequestExtractor"
+    ],
+    "external_referenced": [
+        "SEEK_SET",
+        "ServerRequestInterface",
+        "SwooleRequest",
+        "Swoole\\Http\\Request"
+    ]
+}

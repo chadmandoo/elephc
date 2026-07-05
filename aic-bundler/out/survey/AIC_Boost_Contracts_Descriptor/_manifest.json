@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Boost\\Contracts\\Descriptor"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Boost\\Contracts\\Descriptor"
+    ],
+    "external_referenced": []
+}

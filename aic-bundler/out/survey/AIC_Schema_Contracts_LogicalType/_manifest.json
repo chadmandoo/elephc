@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\LogicalType"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\LogicalType"
+    ],
+    "external_referenced": []
+}

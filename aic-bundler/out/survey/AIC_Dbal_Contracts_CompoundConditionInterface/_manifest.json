@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\CompoundConditionInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\CompoundConditionInterface"
+    ],
+    "external_referenced": []
+}

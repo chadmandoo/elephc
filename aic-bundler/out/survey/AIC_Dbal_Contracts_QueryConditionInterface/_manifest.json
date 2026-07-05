@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\QueryConditionInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\QueryConditionInterface"
+    ],
+    "external_referenced": []
+}

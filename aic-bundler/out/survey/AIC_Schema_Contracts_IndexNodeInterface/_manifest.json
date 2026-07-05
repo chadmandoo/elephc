@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\IndexNodeInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\IndexKind",
+        "AIC\\Schema\\Contracts\\IndexNodeInterface"
+    ],
+    "external_referenced": []
+}

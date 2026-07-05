@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Contracts\\BootableInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Contracts\\BootableInterface"
+    ],
+    "external_referenced": [
+        "RuntimeException"
+    ]
+}

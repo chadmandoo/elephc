@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Contracts\\RouteContributor"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\RouteCollectorInterface",
+        "AIC\\Contracts\\RouteContributor"
+    ],
+    "external_referenced": []
+}

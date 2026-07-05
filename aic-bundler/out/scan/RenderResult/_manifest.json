@@ -1,0 +1,14 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\RenderResult"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Components\\Domain\\Html",
+        "AIC\\Components\\Domain\\RenderResult"
+    ],
+    "external_referenced": [
+        "Override",
+        "Stringable (builtin)"
+    ]
+}

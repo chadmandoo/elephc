@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\FieldTypePluginType"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\PluginTypeInterface",
+        "AIC\\Entity\\Contracts\\FieldTypePluginType"
+    ],
+    "external_referenced": [
+        "PluginTypeInterface"
+    ]
+}

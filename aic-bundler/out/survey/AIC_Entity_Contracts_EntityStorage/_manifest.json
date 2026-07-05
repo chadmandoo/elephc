@@ -1,0 +1,23 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\EntityStorage"
+    ],
+    "files": 9,
+    "order": [
+        "AIC\\Entity\\Contracts\\EntityId",
+        "AIC\\Entity\\Contracts\\Entity",
+        "AIC\\Entity\\Contracts\\AccessDefault",
+        "AIC\\Entity\\Contracts\\EntityType",
+        "AIC\\Dbal\\Contracts\\OrderDirection",
+        "AIC\\Entity\\Contracts\\EntityQueryOperator",
+        "AIC\\Entity\\Contracts\\EntityQueryAstInterface",
+        "AIC\\Entity\\Contracts\\EntityQueryBuilderInterface",
+        "AIC\\Entity\\Contracts\\EntityStorage"
+    ],
+    "external_referenced": [
+        "OrderDirection",
+        "Override",
+        "RuntimeException",
+        "Stringable (builtin)"
+    ]
+}

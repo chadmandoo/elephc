@@ -1,0 +1,24 @@
+{
+    "roots": [
+        "AIC\\Routing\\Contracts\\HandlerResolver"
+    ],
+    "files": 9,
+    "order": [
+        "Psr\\Container\\ContainerExceptionInterface",
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "Psr\\Http\\Server\\RequestHandlerInterface",
+        "AIC\\Routing\\Contracts\\HandlerResolver"
+    ],
+    "external_referenced": [
+        "RequestHandlerInterface",
+        "ResponseInterface",
+        "SEEK_SET",
+        "ServerRequestInterface",
+        "Throwable"
+    ]
+}

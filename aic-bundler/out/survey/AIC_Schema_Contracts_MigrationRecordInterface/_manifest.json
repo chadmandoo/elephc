@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\MigrationRecordInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\MigrationRecordInterface"
+    ],
+    "external_referenced": [
+        "DateTimeImmutable"
+    ]
+}

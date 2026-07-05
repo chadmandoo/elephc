@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\PropDescriptor"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Components\\Domain\\PropParameter",
+        "AIC\\Components\\Domain\\PropDescriptor"
+    ],
+    "external_referenced": []
+}

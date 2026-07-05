@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Manifest\\Contracts\\WardEnumerator"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Manifest\\Contracts\\WardEnumerator"
+    ],
+    "external_referenced": []
+}

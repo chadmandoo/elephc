@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\MigrationsPath"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Schema\\Contracts\\MigrationsPath"
+    ],
+    "external_referenced": [
+        "InvalidArgumentException"
+    ]
+}

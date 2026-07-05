@@ -1,0 +1,19 @@
+{
+    "roots": [
+        "AIC\\Frankenphp\\Contracts\\RequestExtractor"
+    ],
+    "files": 7,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "AIC\\Frankenphp\\Contracts\\SapiRequest",
+        "AIC\\Frankenphp\\Contracts\\RequestExtractor"
+    ],
+    "external_referenced": [
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

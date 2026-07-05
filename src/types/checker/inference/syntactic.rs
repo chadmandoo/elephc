@@ -265,7 +265,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
                 PhpType::Mixed
             }
             "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::Bool]),
-            "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv" | "printf"
+            "strlen" | "mb_strlen" | "ord" | "count" | "intval" | "abs" | "intdiv" | "printf"
             | "rand" | "time" | "fpassthru" | "linkinfo" => PhpType::Int,
             "floatval" | "floor" | "ceil" | "round" | "sqrt" | "pow" | "fmod" | "sin" | "cos"
             | "tan" | "asin" | "acos" | "atan" | "atan2" | "sinh" | "cosh" | "tanh" | "log"

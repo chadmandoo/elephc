@@ -330,6 +330,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "strcmp",
     "stripslashes",
     "strlen",
+    "mb_strlen",
     "strpos",
     "strrev",
     "strrpos",

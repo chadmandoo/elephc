@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\AccessDecision"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Entity\\Contracts\\AccessDecision"
+    ],
+    "external_referenced": []
+}

@@ -1,0 +1,15 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\EntityQueryBuilderInterface"
+    ],
+    "files": 4,
+    "order": [
+        "AIC\\Dbal\\Contracts\\OrderDirection",
+        "AIC\\Entity\\Contracts\\EntityQueryOperator",
+        "AIC\\Entity\\Contracts\\EntityQueryAstInterface",
+        "AIC\\Entity\\Contracts\\EntityQueryBuilderInterface"
+    ],
+    "external_referenced": [
+        "OrderDirection"
+    ]
+}

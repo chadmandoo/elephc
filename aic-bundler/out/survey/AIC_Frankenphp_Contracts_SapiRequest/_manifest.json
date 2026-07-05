@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Frankenphp\\Contracts\\SapiRequest"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Frankenphp\\Contracts\\SapiRequest"
+    ],
+    "external_referenced": []
+}

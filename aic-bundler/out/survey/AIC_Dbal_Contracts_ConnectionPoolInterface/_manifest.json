@@ -1,0 +1,22 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\ConnectionPoolInterface"
+    ],
+    "files": 10,
+    "order": [
+        "AIC\\Dbal\\Contracts\\ResultInterface",
+        "AIC\\Dbal\\Contracts\\StatementInterface",
+        "AIC\\Dbal\\Contracts\\QueryAstInterface",
+        "AIC\\Dbal\\Contracts\\TransactionState",
+        "AIC\\Dbal\\Contracts\\TransactionInterface",
+        "AIC\\Dbal\\Contracts\\CapabilitiesInterface",
+        "AIC\\Dbal\\Contracts\\DriverInterface",
+        "AIC\\Dbal\\Contracts\\ConnectionInterface",
+        "AIC\\Dbal\\Contracts\\PoolStatsInterface",
+        "AIC\\Dbal\\Contracts\\ConnectionPoolInterface"
+    ],
+    "external_referenced": [
+        "BackedEnum",
+        "Generator"
+    ]
+}

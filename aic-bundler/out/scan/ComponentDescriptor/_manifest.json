@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\ComponentDescriptor"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Components\\Domain\\ComponentTier",
+        "AIC\\Components\\Domain\\ComponentDescriptor"
+    ],
+    "external_referenced": []
+}

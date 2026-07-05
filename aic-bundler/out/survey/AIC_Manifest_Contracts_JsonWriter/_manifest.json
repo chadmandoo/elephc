@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Manifest\\Contracts\\JsonWriter"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Manifest\\Contracts\\JsonWriter"
+    ],
+    "external_referenced": []
+}

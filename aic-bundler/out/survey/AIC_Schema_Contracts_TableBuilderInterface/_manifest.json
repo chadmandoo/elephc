@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\TableBuilderInterface"
+    ],
+    "files": 3,
+    "order": [
+        "AIC\\Schema\\Contracts\\IndexKind",
+        "AIC\\Schema\\Contracts\\ReferentialAction",
+        "AIC\\Schema\\Contracts\\TableBuilderInterface"
+    ],
+    "external_referenced": []
+}

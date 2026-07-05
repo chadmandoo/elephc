@@ -1,0 +1,12 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\QueryBuilderInterface"
+    ],
+    "files": 3,
+    "order": [
+        "AIC\\Dbal\\Contracts\\OrderDirection",
+        "AIC\\Dbal\\Contracts\\QueryAstInterface",
+        "AIC\\Dbal\\Contracts\\QueryBuilderInterface"
+    ],
+    "external_referenced": []
+}

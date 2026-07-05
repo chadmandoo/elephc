@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Settings\\Contracts\\SettingDefinition"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Settings\\Contracts\\SettingType",
+        "AIC\\Settings\\Contracts\\SettingDefinition"
+    ],
+    "external_referenced": []
+}

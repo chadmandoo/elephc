@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Access\\Contracts\\RoleStorage"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Access\\Contracts\\RoleStorage"
+    ],
+    "external_referenced": []
+}

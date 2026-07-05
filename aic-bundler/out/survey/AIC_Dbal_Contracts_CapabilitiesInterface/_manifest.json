@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\CapabilitiesInterface"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Dbal\\Contracts\\CapabilitiesInterface"
+    ],
+    "external_referenced": []
+}

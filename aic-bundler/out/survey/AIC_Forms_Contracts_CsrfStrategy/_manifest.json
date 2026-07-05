@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Forms\\Contracts\\CsrfStrategy"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Session\\Contracts\\SessionInterface",
+        "AIC\\Forms\\Contracts\\CsrfStrategy"
+    ],
+    "external_referenced": [
+        "SessionInterface"
+    ]
+}

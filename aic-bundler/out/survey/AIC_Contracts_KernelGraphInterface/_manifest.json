@@ -1,0 +1,26 @@
+{
+    "roots": [
+        "AIC\\Contracts\\KernelGraphInterface"
+    ],
+    "files": 10,
+    "order": [
+        "Psr\\EventDispatcher\\EventDispatcherInterface",
+        "Psr\\EventDispatcher\\ListenerProviderInterface",
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "Psr\\Http\\Message\\UriInterface",
+        "Psr\\Http\\Message\\RequestInterface",
+        "Psr\\Http\\Message\\ServerRequestInterface",
+        "Psr\\Http\\Server\\RequestHandlerInterface",
+        "AIC\\Contracts\\KernelGraphInterface"
+    ],
+    "external_referenced": [
+        "EventDispatcherInterface",
+        "ListenerProviderInterface",
+        "RequestHandlerInterface",
+        "ResponseInterface",
+        "SEEK_SET",
+        "ServerRequestInterface"
+    ]
+}

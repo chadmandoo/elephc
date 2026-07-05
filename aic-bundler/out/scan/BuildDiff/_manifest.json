@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\BuildDiff"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Components\\Domain\\BuildDiff"
+    ],
+    "external_referenced": []
+}

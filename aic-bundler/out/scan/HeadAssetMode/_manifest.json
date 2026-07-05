@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Components\\Domain\\HeadAssetMode"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Components\\Domain\\HeadAssetMode"
+    ],
+    "external_referenced": []
+}

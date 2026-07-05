@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Layout\\Contracts\\LayoutSlotResolver"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Layout\\Contracts\\LayoutSlot",
+        "AIC\\Layout\\Contracts\\LayoutSlotResolver"
+    ],
+    "external_referenced": []
+}

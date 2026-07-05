@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Contracts\\AuditRecorder"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\AuditEventDraft",
+        "AIC\\Contracts\\AuditRecorder"
+    ],
+    "external_referenced": []
+}

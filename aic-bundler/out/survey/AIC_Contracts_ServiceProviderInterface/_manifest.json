@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Contracts\\ServiceProviderInterface"
+    ],
+    "files": 2,
+    "order": [
+        "Psr\\Container\\ContainerInterface",
+        "AIC\\Contracts\\ServiceProviderInterface"
+    ],
+    "external_referenced": [
+        "ContainerInterface"
+    ]
+}

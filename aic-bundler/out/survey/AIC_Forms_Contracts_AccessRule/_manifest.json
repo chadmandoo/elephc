@@ -1,0 +1,13 @@
+{
+    "roots": [
+        "AIC\\Forms\\Contracts\\AccessRule"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Contracts\\Identity",
+        "AIC\\Forms\\Contracts\\AccessRule"
+    ],
+    "external_referenced": [
+        "Identity"
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "roots": [
+        "AIC\\Blocks\\Contracts\\PlacementRule"
+    ],
+    "files": 1,
+    "order": [
+        "AIC\\Blocks\\Contracts\\PlacementRule"
+    ],
+    "external_referenced": []
+}

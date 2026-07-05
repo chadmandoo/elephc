@@ -1,0 +1,16 @@
+{
+    "roots": [
+        "AIC\\Frankenphp\\Contracts\\ResponseEmitter"
+    ],
+    "files": 4,
+    "order": [
+        "Psr\\Http\\Message\\StreamInterface",
+        "Psr\\Http\\Message\\MessageInterface",
+        "Psr\\Http\\Message\\ResponseInterface",
+        "AIC\\Frankenphp\\Contracts\\ResponseEmitter"
+    ],
+    "external_referenced": [
+        "ResponseInterface",
+        "SEEK_SET"
+    ]
+}

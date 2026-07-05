@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Entity\\Contracts\\DenyVote"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Entity\\Contracts\\AccessVote",
+        "AIC\\Entity\\Contracts\\DenyVote"
+    ],
+    "external_referenced": []
+}

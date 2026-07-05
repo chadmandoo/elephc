@@ -1,0 +1,20 @@
+{
+    "roots": [
+        "AIC\\Dbal\\Contracts\\DriverInterface"
+    ],
+    "files": 8,
+    "order": [
+        "AIC\\Dbal\\Contracts\\CapabilitiesInterface",
+        "AIC\\Dbal\\Contracts\\ResultInterface",
+        "AIC\\Dbal\\Contracts\\StatementInterface",
+        "AIC\\Dbal\\Contracts\\QueryAstInterface",
+        "AIC\\Dbal\\Contracts\\TransactionState",
+        "AIC\\Dbal\\Contracts\\TransactionInterface",
+        "AIC\\Dbal\\Contracts\\ConnectionInterface",
+        "AIC\\Dbal\\Contracts\\DriverInterface"
+    ],
+    "external_referenced": [
+        "BackedEnum",
+        "Generator"
+    ]
+}

@@ -1,0 +1,3 @@
+css:default:/build/app.css
+js:module:/build/app.js
+js:defer:/build/defer.js

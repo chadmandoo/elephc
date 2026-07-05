@@ -1,0 +1,11 @@
+{
+    "roots": [
+        "AIC\\Schema\\Contracts\\SchemaDifferInterface"
+    ],
+    "files": 2,
+    "order": [
+        "AIC\\Schema\\Contracts\\SchemaAstInterface",
+        "AIC\\Schema\\Contracts\\SchemaDifferInterface"
+    ],
+    "external_referenced": []
+}
