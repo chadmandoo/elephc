@@ -21,8 +21,8 @@ use crate::ir_lower::effects_lookup;
 use crate::ir_lower::function;
 use crate::names::{php_symbol_key, property_hook_get_method, Name};
 use crate::parser::ast::{
-    BinOp, CallableTarget, CastType, Expr, ExprKind, InstanceOfTarget, MagicConstant,
-    StaticReceiver, Stmt, StmtKind, TypeExpr, Visibility,
+    is_compound_assignment_self_read, BinOp, CallableTarget, CastType, Expr, ExprKind,
+    InstanceOfTarget, MagicConstant, StaticReceiver, Stmt, StmtKind, TypeExpr, Visibility,
 };
 use crate::span::Span;
 use crate::types::checker::builtins::canonical_builtin_function_name;
@@ -1421,6 +1421,14 @@ fn lower_assignment_expr(
         ExprKind::Variable(name) => Some(name.as_str()),
         _ => None,
     };
+    if let Some(name) = assigned_name {
+        if is_compound_assignment_self_read(value, name, expr.span) && !ctx.has_local_slot(name) {
+            let null_value = ctx.builder.emit_const_null();
+            let null_lowered = LoweredValue { value: null_value, ir_type: IrType::I64 };
+            ctx.store_local(name, null_lowered, PhpType::Void, Some(expr.span));
+            ctx.mark_local_initialized(name);
+        }
+    }
     let static_callable = assigned_name.and_then(|_| static_callable_binding_for_expr(ctx, value));
     let fiber_start_sig =
         assigned_name.and_then(|_| crate::ir_lower::fibers::start_sig_for_expr(ctx, value));
@@ -3539,6 +3547,12 @@ pub(crate) fn lower_bound_closure_for_assignment(
     Some(closure_value)
 }
 
+/// Resolves the statically-known class name of an object expression used as the
+/// receiver of an instance first-class callable (`$obj->m(...)`).
+///
+/// Returns the normalized class name for `$var` (from `local_types`), `$this`
+/// (the current class), and `new` expressions; `None` when the receiver class
+/// cannot be determined statically.
 fn instance_callable_object_class(
     ctx: &LoweringContext<'_, '_>,
     object: &Expr,
@@ -5933,6 +5947,12 @@ fn array_builtin_return_type(
         "in_array" => Some(PhpType::Bool),
         "array_is_list" => Some(PhpType::Bool),
         "array_key_first" | "array_key_last" => Some(PhpType::Mixed),
+        // `array_keys`/`array_slice` produce a fresh indexed array of boxed `Mixed`
+        // payloads (keys, or the sliced elements). These mirror the result type the
+        // first-class-callable fallback supplied before they were registered as
+        // builtins, so the EIR backend keeps receiving a concrete `Array` result
+        // type rather than the registry's `Mixed` return-type placeholder.
+        "array_keys" | "array_slice" => Some(PhpType::Array(Box::new(PhpType::Mixed))),
         "range" => Some(PhpType::Array(Box::new(PhpType::Int))),
         "array_values" => {
             let array = operands.first()?;
@@ -9262,6 +9282,9 @@ fn lower_scoped_constant(ctx: &mut LoweringContext<'_, '_>, receiver: &StaticRec
             Some(expr.span),
         );
     }
+    if matches!(receiver, StaticReceiver::Static) {
+        return lower_late_static_scoped_constant(ctx, name, expr);
+    }
     if let Some(value) = ctx.scoped_constant_value(&class_name, name) {
         return lower_expr(ctx, &value);
     }
@@ -9283,6 +9306,155 @@ fn scoped_constant_receiver_name(ctx: &LoweringContext<'_, '_>, receiver: &Stati
         StaticReceiver::Static => receiver_name(receiver),
         _ => static_receiver_class_name(ctx, receiver).unwrap_or_else(|| receiver_name(receiver)),
     }
+}
+
+/// Lowers `static::CONST` using late static binding: emits a runtime dispatch over the
+/// called-class id so that each descendant class that overrides the constant contributes
+/// its own value. Falls back to the lexical (declaring-class) constant value.
+fn lower_late_static_scoped_constant(ctx: &mut LoweringContext<'_, '_>, name: &str, expr: &Expr) -> LoweredValue {
+    let Some(base_class) = ctx.current_class.clone() else {
+        return lower_scoped_constant_fallback(ctx, "static", name, expr);
+    };
+    let fallback_value = ctx.scoped_constant_value(&base_class, name);
+    let result_type = fallback_expr_type(expr);
+    let candidates = late_static_constant_candidates(ctx, &base_class, name);
+    if candidates.is_empty() {
+        if let Some(value) = fallback_value {
+            return lower_expr(ctx, &value);
+        }
+        return lower_scoped_constant_fallback(ctx, "static", name, expr);
+    }
+    let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
+    let split_initialized = ctx.initialized_slots_snapshot();
+    let merge = ctx.builder.create_named_block("static_const.merge", Vec::new());
+    let called_class_id = ctx.emit_value(
+        Op::LoadCalledClassId,
+        Vec::new(),
+        None,
+        PhpType::Int,
+        Op::LoadCalledClassId.default_effects(),
+        Some(expr.span),
+    );
+    let mut branch_labels = Vec::new();
+    for (class_name, class_id) in &candidates {
+        let block = ctx.builder.create_named_block("static_const.branch", Vec::new());
+        branch_labels.push((block, class_name.clone(), *class_id));
+        let class_id_val = ctx.emit_value(
+            Op::ConstI64,
+            Vec::new(),
+            Some(Immediate::I64(*class_id as i64)),
+            PhpType::Int,
+            Op::ConstI64.default_effects(),
+            Some(expr.span),
+        );
+        let eq_result = ctx.emit_value(
+            Op::ICmp,
+            vec![called_class_id.value, class_id_val.value],
+            Some(Immediate::CmpPredicate(CmpPredicate::Eq)),
+            PhpType::Bool,
+            Op::ICmp.default_effects(),
+            Some(expr.span),
+        );
+        let skip_block = ctx.builder.create_named_block("static_const.skip", Vec::new());
+        ctx.builder.terminate(Terminator::CondBr {
+            cond: eq_result.value,
+            then_target: block,
+            then_args: Vec::new(),
+            else_target: skip_block,
+            else_args: Vec::new(),
+        });
+        ctx.builder.position_at_end(skip_block);
+    }
+    let fallback_expr = fallback_value
+        .as_ref()
+        .map(|v| v.clone())
+        .unwrap_or_else(|| Expr::new(ExprKind::Null, expr.span));
+    store_expr_into_temp(ctx, &temp_name, result_type.clone(), &fallback_expr, expr.span);
+    branch_to(ctx, merge);
+    for (block, class_name, _class_id) in branch_labels {
+        ctx.builder.position_at_end(block);
+        ctx.restore_initialized_slots(split_initialized.clone());
+        let value = ctx.scoped_constant_value(&class_name, name)
+            .unwrap_or_else(|| fallback_expr.clone());
+        store_expr_into_temp(ctx, &temp_name, result_type.clone(), &value, expr.span);
+        branch_to(ctx, merge);
+    }
+    ctx.builder.position_at_end(merge);
+    let _ = split_initialized;
+    take_owned_temp(ctx, &temp_name, expr.span)
+}
+
+/// Collects descendant classes that redefine a class constant, returning (class_name, class_id)
+/// pairs sorted by class_id for deterministic dispatch.
+fn late_static_constant_candidates(
+    ctx: &LoweringContext<'_, '_>,
+    base_class: &str,
+    const_name: &str,
+) -> Vec<(String, u64)> {
+    let base_value = ctx.scoped_constant_value(base_class, const_name);
+    let mut candidates = Vec::new();
+    for (class_name, class_info) in ctx.classes {
+        if class_name == base_class {
+            continue;
+        }
+        if !is_same_or_descendant_class(ctx, class_name, base_class) {
+            continue;
+        }
+        let Some(value) = ctx.scoped_constant_value(class_name, const_name) else {
+            continue;
+        };
+        if base_value.as_ref().is_some_and(|bv| expr_literals_equal(&value, bv)) {
+            continue;
+        }
+        candidates.push((class_name.clone(), class_info.class_id));
+    }
+    candidates.sort_by_key(|(_, id)| *id);
+    candidates
+}
+
+/// Returns true when `class_name` is `ancestor` or one of its descendants.
+fn is_same_or_descendant_class(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    ancestor: &str,
+) -> bool {
+    let mut cursor = Some(class_name);
+    while let Some(name) = cursor {
+        if name == ancestor {
+            return true;
+        }
+        cursor = ctx
+            .classes
+            .get(name)
+            .and_then(|info| info.parent.as_deref());
+    }
+    false
+}
+
+/// Compares two expressions for literal equality (used to skip redundant dispatch branches).
+fn expr_literals_equal(a: &Expr, b: &Expr) -> bool {
+    match (&a.kind, &b.kind) {
+        (ExprKind::IntLiteral(a), ExprKind::IntLiteral(b)) => a == b,
+        (ExprKind::FloatLiteral(a), ExprKind::FloatLiteral(b)) => a == b,
+        (ExprKind::StringLiteral(a), ExprKind::StringLiteral(b)) => a == b,
+        (ExprKind::BoolLiteral(a), ExprKind::BoolLiteral(b)) => a == b,
+        (ExprKind::Null, ExprKind::Null) => true,
+        _ => false,
+    }
+}
+
+/// Emits the fallback `Op::ScopedConstantGet` for unresolved scoped constants.
+fn lower_scoped_constant_fallback(ctx: &mut LoweringContext<'_, '_>, class_name: &str, name: &str, expr: &Expr) -> LoweredValue {
+    let key = format!("{}::{}", class_name, name);
+    let data = ctx.intern_string(&key);
+    ctx.emit_value(
+        Op::ScopedConstantGet,
+        Vec::new(),
+        Some(Immediate::Data(data)),
+        fallback_expr_type(expr),
+        Op::ScopedConstantGet.default_effects(),
+        Some(expr.span),
+    )
 }
 
 /// Lowers `new self`, `new static`, or `new parent`.
