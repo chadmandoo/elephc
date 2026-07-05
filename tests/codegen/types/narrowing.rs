@@ -236,3 +236,13 @@ fn test_narrowing_restores_all_narrowed_variables() {
     );
     assert_eq!(out, "8");
 }
+
+/// EC-3 (#486): the `object` / `iterable` / `never` built-in pseudo-types must resolve
+/// as builtins (not be namespace-qualified into `AIC\...\object`). Byte-parity vs PHP 8.5.
+#[test]
+fn test_object_iterable_pseudo_types() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); function tally(iterable $it): int { $n = 0; foreach ($it as $_) { $n++; } return $n; } final class Wrap { public function __construct(public object $o) {} } $w = new Wrap(new Wrap(new stdClass())); echo tally([1,2,3,4]), ':', ($w->o instanceof Wrap ? 'Y' : 'N');",
+    );
+    assert_eq!(out, "4:Y");
+}
