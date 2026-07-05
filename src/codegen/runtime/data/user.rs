@@ -159,6 +159,7 @@ pub(crate) fn emit_runtime_data_user(
         ("_spl_type_error_class_id", "TypeError"),
         ("_spl_value_error_class_id", "ValueError"),
         ("_spl_error_class_id", "Error"),
+        ("_spl_arithmetic_error_class_id", "ArithmeticError"),
     ] {
         let class_id = all_class_id_by_name
             .get(class_name)

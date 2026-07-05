@@ -23,7 +23,9 @@ use crate::ir_lower::expr::{
     type_satisfies_array_access_for_ir,
 };
 use crate::names::{php_symbol_key, property_hook_set_method};
-use crate::parser::ast::{CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind};
+use crate::parser::ast::{
+    is_compound_assignment_self_read, CatchClause, Expr, ExprKind, StaticReceiver, Stmt, StmtKind,
+};
 use crate::span::Span;
 use crate::types::PhpType;
 
@@ -212,6 +214,18 @@ fn lower_echo(ctx: &mut LoweringContext<'_, '_>, expr: &Expr, span: Span) {
 
 /// Lowers a plain PHP local assignment.
 fn lower_assign(ctx: &mut LoweringContext<'_, '_>, name: &str, value: &Expr, span: Span) {
+    // PHP allows compound assignment on an undefined variable (`$x += 1`),
+    // treating the undefined variable as null/0 with a warning. The type
+    // checker injects the variable as `Void` and emits a warning. At the
+    // lowering level, we must initialize the local slot to null/0 before
+    // the compound read so the runtime does not read garbage from the stack.
+    if is_compound_assignment_self_read(value, name, span) && !ctx.has_local_slot(name) {
+        let null_value = ctx.builder.emit_const_null();
+        let null_lowered = LoweredValue { value: null_value, ir_type: IrType::I64 };
+        ctx.store_local(name, null_lowered, PhpType::Void, Some(span));
+        ctx.mark_local_initialized(name);
+    }
+
     // A by-reference `Closure::bind(fn &() => $this->prop, $obj, $obj)` assigned to a variable is
     // tracked as a static callable, like a closure literal, so a later `$b()` lowers to a direct
     // call that carries the property's reference-cell pointer instead of boxing it.
@@ -1278,9 +1292,15 @@ fn lower_dynamic_switch_dispatch(
     default_block: BlockId,
 ) {
     let subject_is_str = subject.ir_type == IrType::Str;
-    // Non-string subjects are coerced to an integer once and reused by the ICmp path.
-    let int_subject =
-        if subject_is_str { None } else { Some(coerce_to_int(ctx, subject, None)) };
+    let subject_is_mixed = matches!(subject.ir_type, IrType::Heap(crate::ir::IrHeapKind::Mixed));
+    // Non-string, non-Mixed subjects are coerced to an integer once and reused by the ICmp path.
+    // Mixed subjects must use loose equality for every case because the runtime tag may be
+    // float, string, bool, etc. — coercing to int would truncate a float (issue #397).
+    let int_subject = if subject_is_str || subject_is_mixed {
+        None
+    } else {
+        Some(coerce_to_int(ctx, subject, None))
+    };
     for ((case_exprs, _), case_block) in cases.iter().zip(blocks) {
         for case_expr in case_exprs {
             let case_value = lower_expr(ctx, case_expr);
@@ -1288,7 +1308,9 @@ fn lower_dynamic_switch_dispatch(
             // collapses every case to `0 == 0`, and coercing a float to int would
             // truncate the subject (so `switch (1.5) { case 1.5; }` would wrongly
             // match `case 1`). The cheap ICmp fast path stays for integer-like pairs.
+            // Mixed subjects must always use loose equality (tag-aware comparison).
             let use_loose_eq = subject_is_str
+                || subject_is_mixed
                 || case_value.ir_type == IrType::Str
                 || float_loose_eq_pair(subject.ir_type, case_value.ir_type);
             let matched = if use_loose_eq {
