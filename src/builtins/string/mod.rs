@@ -47,6 +47,7 @@ pub mod ip2long;
 pub mod lcfirst;
 pub mod long2ip;
 pub mod ltrim;
+pub mod mb_strlen;
 pub mod md5;
 pub mod nl2br;
 pub mod number_format;
