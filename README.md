@@ -42,6 +42,18 @@ elephc is built and maintained independently. You can support the project by eit
 - ⭐ **[Starring the repo](https://github.com/illegalstudio/elephc/stargazers)** — it helps others discover it and keeps the project going.
 - 💜 **[Sponsoring on GitHub](https://github.com/sponsors/nahime0)** — every contribution, big or small, makes a real difference.
 
+## Core Contributors
+
+<p>
+  <a href="https://github.com/nahime0"><img src="https://github.com/nahime0.png" width="40" alt="Vincenzo Petrucci"></a>
+  &nbsp;<a href="https://github.com/nahime0"><b>Vincenzo Petrucci</b></a>
+</p>
+
+<p>
+  <a href="https://github.com/Guikingone"><img src="https://github.com/Guikingone.png" width="40" alt="Guillaume Loulier"></a>
+  &nbsp;<a href="https://github.com/Guikingone"><b>Guillaume Loulier</b></a>
+</p>
+
 ## An async HTTP server in PHP
 
 An asynchronous HTTP/1.1 server — a non-blocking `poll()` event loop, one Fiber per connection, raw TCP sockets through `extern` FFI, plus an HTTP parser and a router — written entirely in PHP and compiled to a single native binary. No interpreter, no PHP-FPM, no Nginx.
