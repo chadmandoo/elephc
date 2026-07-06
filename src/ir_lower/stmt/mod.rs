@@ -446,7 +446,68 @@ fn lower_ifdef(
 }
 
 /// Lowers a `while` loop.
+/// Widens locals whose indexed-array element type joins to `mixed` across the loop body's
+/// push sites (issue #452) and materializes the promotion once before the loop. Loop bodies
+/// are lowered in a single pass, so without this an early `$a[] = <scalar>` site is emitted
+/// as a raw push against the pre-promotion element type even though the back edge brings the
+/// promoted `array<mixed>` around, writing an unboxed scalar into boxed-cell storage on
+/// iterations >= 2. Converting the array up front (in place, same pointer) and fixing its
+/// type to `array<mixed>` makes every push site box its value. `overrides` supplies types
+/// for names bound by the loop itself (the `foreach` value/key variables) so a push of the
+/// loop variable joins with its real element type. Locals without a materialized slot yet
+/// (first assigned inside the body, hence fresh every iteration) are left untouched.
+fn widen_loop_grown_arrays(
+    ctx: &mut LoweringContext<'_, '_>,
+    body: &[Stmt],
+    update: Option<&Stmt>,
+    overrides: &[(&str, PhpType)],
+    span: Option<Span>,
+) {
+    let names = {
+        let lookup = |name: &str| -> Option<PhpType> {
+            if let Some((_, ty)) = overrides.iter().find(|(n, _)| *n == name) {
+                return Some(ty.clone());
+            }
+            Some(ctx.local_type(name))
+        };
+        crate::types::checker::loop_grown_mixed_array_pushes(body, update, &lookup)
+    };
+    for name in names {
+        if !ctx.local_slots.contains_key(&name) {
+            continue;
+        }
+        let array_value = ctx.load_local(&name, span);
+        if array_value.ir_type != IrType::Heap(crate::ir::IrHeapKind::Array) {
+            continue;
+        }
+        let mixed_array_ty = PhpType::Array(Box::new(PhpType::Mixed));
+        let converted = ctx.emit_value(
+            Op::ArrayToMixed,
+            vec![array_value.value],
+            None,
+            mixed_array_ty.clone(),
+            Op::ArrayToMixed.default_effects(),
+            span,
+        );
+        ctx.store_mutated_local(&name, converted, mixed_array_ty, span);
+    }
+}
+
+/// Mirrors the checker's `foreach` value binding for the loop-widening prescan: the element
+/// type for an indexed/associative array source variable, `mixed` otherwise.
+fn foreach_prescan_value_type(ctx: &LoweringContext<'_, '_>, array: &Expr) -> PhpType {
+    let ExprKind::Variable(name) = &array.kind else {
+        return PhpType::Mixed;
+    };
+    match ctx.local_type(name) {
+        PhpType::Array(elem) => *elem,
+        PhpType::AssocArray { value, .. } => *value,
+        _ => PhpType::Mixed,
+    }
+}
+
 fn lower_while(ctx: &mut LoweringContext<'_, '_>, condition: &Expr, body: &[Stmt]) {
+    widen_loop_grown_arrays(ctx, body, None, &[], Some(condition.span));
     let header = ctx.builder.create_named_block("while.cond", Vec::new());
     let body_block = ctx.builder.create_named_block("while.body", Vec::new());
     let exit = ctx.builder.create_named_block("while.exit", Vec::new());
@@ -479,6 +540,7 @@ fn lower_while(ctx: &mut LoweringContext<'_, '_>, condition: &Expr, body: &[Stmt
 
 /// Lowers a `do while` loop.
 fn lower_do_while(ctx: &mut LoweringContext<'_, '_>, body: &[Stmt], condition: &Expr) {
+    widen_loop_grown_arrays(ctx, body, None, &[], Some(condition.span));
     let body_block = ctx.builder.create_named_block("do.body", Vec::new());
     let cond_block = ctx.builder.create_named_block("do.cond", Vec::new());
     let exit = ctx.builder.create_named_block("do.exit", Vec::new());
@@ -523,6 +585,10 @@ fn lower_for(
     if ctx.builder.insertion_block_is_terminated() {
         return;
     }
+    let widen_span = condition
+        .map(|c| c.span)
+        .or_else(|| body.first().map(|s| s.span));
+    widen_loop_grown_arrays(ctx, body, update, &[], widen_span);
 
     let header = ctx.builder.create_named_block("for.cond", Vec::new());
     let body_block = ctx.builder.create_named_block("for.body", Vec::new());
@@ -1037,6 +1103,15 @@ fn lower_foreach(
     value_by_ref: bool,
     body: &[Stmt],
 ) {
+    // Widen before the source is lowered so an iterated-and-pushed array is loaded with
+    // its fixed-point element type, and bind the loop variables' prescan types so a push
+    // of the foreach value joins with its real element type.
+    let prescan_value_ty = foreach_prescan_value_type(ctx, array);
+    let mut overrides: Vec<(&str, PhpType)> = vec![(value_var, prescan_value_ty)];
+    if let Some(key_var) = key_var {
+        overrides.push((key_var, PhpType::Mixed));
+    }
+    widen_loop_grown_arrays(ctx, body, None, &overrides, Some(array.span));
     let source = lower_expr(ctx, array);
     let source_php_ty = ctx.builder.value_php_type(source.value);
     let source_ty = source_php_ty.codegen_repr();

@@ -240,6 +240,117 @@ echo $a[0]->n . "|" . $a[5]->n . "|" . count($a);
     assert_eq!(out, "p0|p5|6");
 }
 
+/// Regression for #452: pushing heterogeneous scalars (int then float) into an empty array
+/// inside a loop promotes the array to mixed-element storage on iteration 1, but the earlier
+/// push site was lowered against the stale pre-promotion type and wrote an unboxed scalar
+/// into the mixed array on iteration 2. Reading that element then dereferenced the raw
+/// scalar as a boxed cell pointer and crashed. The loop body must see the fixed-point
+/// (back-edge) element type so every push site boxes correctly.
+#[test]
+fn test_loop_grown_mixed_array_element_read() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) { $vals[] = 1; $vals[] = 2.0; }
+echo $vals[2];
+"#,
+    );
+    assert_eq!(out, "1");
+}
+
+/// Regression for #452: consuming every element of a loop-grown mixed array (foreach with
+/// arithmetic) must see each value correctly instead of crashing on the element written by
+/// the stale-typed push site.
+#[test]
+fn test_loop_grown_mixed_array_foreach_sum() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) { $vals[] = 1; $vals[] = 2.0; }
+$sum = 0;
+foreach ($vals as $v) { $sum += intval($v); }
+echo $sum;
+"#,
+    );
+    assert_eq!(out, "6");
+}
+
+/// Regression for #452: the int + string flavour of the same loop-grown promotion. Before
+/// the fix the raw int push into the mixed array happened to survive reads (the payload was
+/// misread as a pointer that pointed at a valid persistent string) but corrupted values and
+/// leaked; the fixed-point loop typing must produce the correct elements.
+#[test]
+fn test_loop_grown_mixed_array_int_string_elements() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) { $vals[] = 1; $vals[] = "x"; }
+echo $vals[0], $vals[1], $vals[2], $vals[3];
+"#,
+    );
+    assert_eq!(out, "1x1x");
+}
+
+/// Regression for #452: float-first ordering inside the loop (the promotion happens at the
+/// first site, the second site pushes the int raw) must also produce a sound mixed array.
+#[test]
+fn test_loop_grown_mixed_array_float_first() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) { $vals[] = 2.0; $vals[] = 1; }
+$sum = 0;
+foreach ($vals as $v) { $sum += intval($v); }
+echo $sum;
+"#,
+    );
+    assert_eq!(out, "6");
+}
+
+/// Regression for #452: the widening prescan must find push sites nested inside an `if`
+/// within the loop body, so a conditionally-executed heterogeneous push still fixes the
+/// array's element type before the loop.
+#[test]
+fn test_loop_grown_mixed_array_push_under_if() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 4; $i++) {
+    if ($i % 2 == 0) {
+        $vals[] = 1;
+    } else {
+        $vals[] = 2.0;
+    }
+}
+$sum = 0;
+foreach ($vals as $v) { $sum += intval($v); }
+echo $sum, "|", intval($vals[2]);
+"#,
+    );
+    assert_eq!(out, "6|1");
+}
+
+/// Regression for #452: the same loop-grown promotion through a `while` loop (the widening
+/// runs on every loop kind, not just `for`).
+#[test]
+fn test_loop_grown_mixed_array_while_loop() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+$i = 0;
+while ($i < 2) {
+    $vals[] = 1;
+    $vals[] = 2.0;
+    $i++;
+}
+$sum = 0;
+foreach ($vals as $v) { $sum += intval($v); }
+echo $sum;
+"#,
+    );
+    assert_eq!(out, "6");
+}
+
 /// Verifies array access on function call result.
 #[test]
 fn test_array_access_on_function_call_result() {
