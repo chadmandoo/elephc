@@ -20,8 +20,8 @@ use crate::codegen_support::context::{
 use crate::codegen::platform::Arch;
 use crate::intrinsics::{IntrinsicCall, IntrinsicCallKind};
 use crate::ir::{
-    BlockId, CmpPredicate, Function, Immediate, InstId, Instruction, LocalKind, LocalSlotId, Op, Ownership,
-    Terminator, ValueDef, ValueId,
+    BlockId, Builder, CmpPredicate, Function, FunctionParam, Immediate, InstId, Instruction,
+    IrType, LocalKind, LocalSlotId, Module, Op, Ownership, Terminator, ValueDef, ValueId,
 };
 use crate::names::{
     function_symbol, ir_global_symbol, method_symbol, php_symbol_key, static_method_symbol,
@@ -675,7 +675,7 @@ fn lower_first_class_callable_new(ctx: &mut FunctionContext<'_>, inst: &Instruct
     if emit_instance_method_first_class_callable(ctx, inst, &target)? {
         return store_if_result(ctx, inst);
     }
-    if let Some(descriptor) = first_class_callable_descriptor(ctx, &target) {
+    if let Some(descriptor) = first_class_callable_descriptor(ctx, &target)? {
         let invoker_label = descriptor
             .sig
             .as_ref()
@@ -1362,31 +1362,181 @@ pub(super) fn emit_runtime_builtin_wrapper_inline(
     ctx: &mut FunctionContext<'_>,
     name: &str,
     sig: &FunctionSig,
-) -> String {
-    let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
-    let label = crate::codegen::callable_dispatch::ensure_runtime_builtin_wrapper(
-        &mut legacy_ctx,
-        name,
-        sig,
-    );
-    emit_legacy_deferred_callable_support_inline(ctx, &mut legacy_ctx);
-    label
+) -> Result<String> {
+    emit_runtime_call_wrapper_inline(ctx, name, sig, RuntimeCallWrapperKind::Builtin)
 }
 
-/// Emits a legacy extern wrapper inline so EIR descriptors can point at PHP-ABI code.
+/// Returns the concrete EIR ABI signature used by runtime builtin descriptors.
+pub(super) fn runtime_builtin_wrapper_sig(name: &str, sig: &FunctionSig) -> FunctionSig {
+    let mut sig = sig.clone();
+    match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "array_sum" | "array_product" => set_wrapper_param_type(
+            &mut sig,
+            0,
+            PhpType::Array(Box::new(PhpType::Int)),
+        ),
+        "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
+        | "arsort" => set_wrapper_param_type(
+            &mut sig,
+            0,
+            PhpType::Array(Box::new(PhpType::Int)),
+        ),
+        _ => {}
+    }
+    sig
+}
+
+/// Replaces one wrapper parameter type when the parameter exists.
+fn set_wrapper_param_type(sig: &mut FunctionSig, index: usize, php_type: PhpType) {
+    if let Some((_, param_ty)) = sig.params.get_mut(index) {
+        *param_ty = php_type;
+    }
+}
+
+/// Emits an EIR extern wrapper inline so descriptors can point at PHP-ABI code.
 pub(super) fn emit_runtime_extern_wrapper_inline(
     ctx: &mut FunctionContext<'_>,
     name: &str,
     sig: &FunctionSig,
-) -> String {
-    let mut legacy_ctx = legacy_context_from_eir_module(ctx.module);
-    let label = crate::codegen::callable_dispatch::ensure_runtime_extern_wrapper(
-        &mut legacy_ctx,
-        name,
-        sig,
+) -> Result<String> {
+    emit_runtime_call_wrapper_inline(ctx, name, sig, RuntimeCallWrapperKind::Extern)
+}
+
+/// Kind of call instruction used by a descriptor entry wrapper.
+#[derive(Clone, Copy)]
+enum RuntimeCallWrapperKind {
+    Builtin,
+    Extern,
+}
+
+/// Emits a synthetic EIR wrapper that forwards PHP-ABI descriptor entry calls.
+fn emit_runtime_call_wrapper_inline(
+    ctx: &mut FunctionContext<'_>,
+    name: &str,
+    sig: &FunctionSig,
+    kind: RuntimeCallWrapperKind,
+) -> Result<String> {
+    let label_prefix = match kind {
+        RuntimeCallWrapperKind::Builtin => "callable_builtin",
+        RuntimeCallWrapperKind::Extern => "callable_extern",
+    };
+    let label = ctx.next_label(label_prefix);
+    let done_label = ctx.next_label(&format!("{}_done", label_prefix));
+    let mut wrapper_module = ctx.module.clone();
+    let wrapper = build_runtime_call_wrapper_function(&mut wrapper_module, &label, name, sig, kind);
+    abi::emit_jump(ctx.emitter, &done_label);
+    super::block_emit::emit_synthetic_function_with_label(
+        &wrapper_module,
+        &wrapper,
+        &label,
+        ctx.emitter,
+        ctx.data,
+        false,
+    )?;
+    ctx.emitter.label(&done_label);
+    Ok(label)
+}
+
+/// Builds the EIR body for a PHP-ABI wrapper around a builtin or extern call.
+fn build_runtime_call_wrapper_function(
+    module: &mut Module,
+    label: &str,
+    name: &str,
+    sig: &FunctionSig,
+    kind: RuntimeCallWrapperKind,
+) -> Function {
+    let return_php_type = wrapper_return_php_type(&sig.return_type);
+    let mut function = Function::new(
+        label.to_string(),
+        wrapper_return_ir_type(&return_php_type),
+        return_php_type.clone(),
     );
-    emit_legacy_deferred_callable_support_inline(ctx, &mut legacy_ctx);
-    label
+    function.signature = Some(sig.clone());
+    let params = wrapper_function_params(sig);
+    function.params = params.clone();
+    for param in params {
+        function.add_local(
+            Some(param.name.clone()),
+            param.ir_type,
+            param.php_type.clone(),
+            LocalKind::PhpLocal,
+        );
+    }
+
+    let data = module.data.intern_function_name(name);
+    let mut builder = Builder::new(&mut function);
+    let entry = builder.create_named_block("entry", Vec::new());
+    builder.set_entry(entry);
+    builder.position_at_end(entry);
+    let operands = wrapper_param_operands(&mut builder, sig);
+    let op = match kind {
+        RuntimeCallWrapperKind::Builtin => Op::BuiltinCall,
+        RuntimeCallWrapperKind::Extern => Op::ExternCall,
+    };
+    let result = builder.emit(
+        op,
+        operands,
+        Some(Immediate::Data(data)),
+        wrapper_return_ir_type(&return_php_type),
+        return_php_type.clone(),
+        Ownership::for_php_type(&return_php_type),
+    );
+    builder.terminate(Terminator::Return { value: result });
+    function
+}
+
+/// Converts callable signature params into EIR function params with matching ABI/local slots.
+fn wrapper_function_params(sig: &FunctionSig) -> Vec<FunctionParam> {
+    sig.params
+        .iter()
+        .enumerate()
+        .map(|(idx, (name, php_type))| FunctionParam {
+            name: name.clone(),
+            ir_type: wrapper_value_ir_type(php_type),
+            php_type: php_type.clone(),
+            by_ref: sig.ref_params.get(idx).copied().unwrap_or(false),
+            variadic: sig.variadic.as_deref() == Some(name.as_str()),
+        })
+        .collect()
+}
+
+/// Emits `LoadLocal` operands for every wrapper parameter.
+fn wrapper_param_operands(builder: &mut Builder<'_>, sig: &FunctionSig) -> Vec<ValueId> {
+    sig.params
+        .iter()
+        .enumerate()
+        .map(|(idx, (_, php_type))| {
+            builder.emit_load_local(
+                LocalSlotId::from_raw(idx as u32),
+                wrapper_value_ir_type(php_type),
+                php_type.clone(),
+            )
+        })
+        .collect()
+}
+
+/// Returns a materializable PHP type for wrapper return values.
+fn wrapper_return_php_type(php_type: &PhpType) -> PhpType {
+    match php_type.codegen_repr() {
+        PhpType::Never => PhpType::Void,
+        other => other,
+    }
+}
+
+/// Returns EIR return storage for a wrapper function signature.
+fn wrapper_return_ir_type(php_type: &PhpType) -> IrType {
+    match php_type.codegen_repr() {
+        PhpType::Void | PhpType::Never => IrType::Void,
+        other => IrType::from_php(&other),
+    }
+}
+
+/// Returns EIR value storage for wrapper params and call results.
+fn wrapper_value_ir_type(php_type: &PhpType) -> IrType {
+    match php_type.codegen_repr() {
+        PhpType::Void | PhpType::Never => IrType::I64,
+        other => IrType::from_php(&other),
+    }
 }
 
 /// Emits legacy deferred callable helpers inline and branches around their entry bodies.
@@ -1545,12 +1695,12 @@ struct FirstClassCallableDescriptor {
 fn first_class_callable_descriptor(
     ctx: &mut FunctionContext<'_>,
     target: &str,
-) -> Option<FirstClassCallableDescriptor> {
+) -> Result<Option<FirstClassCallableDescriptor>> {
     if let Some((receiver_label, method_name)) = target.rsplit_once("::") {
-        return first_class_static_method_descriptor(ctx, receiver_label, method_name);
+        return Ok(first_class_static_method_descriptor(ctx, receiver_label, method_name));
     }
     if let Some(callee) = ctx.callable_function_by_name(target) {
-        return Some(FirstClassCallableDescriptor {
+        return Ok(Some(FirstClassCallableDescriptor {
             entry_label: function_symbol(&callee.name),
             kind: callable_descriptor::CALLABLE_DESC_KIND_FUNCTION,
             sig: Some(function_signature_from_eir(callee)),
@@ -1558,10 +1708,10 @@ fn first_class_callable_descriptor(
                 callable_descriptor::CallableDescriptorShape::Function,
                 callee.name.clone(),
             ),
-        });
+        }));
     }
     if ctx.has_extern_function(target) {
-        return Some(FirstClassCallableDescriptor {
+        return Ok(Some(FirstClassCallableDescriptor {
             entry_label: ctx.emitter.target.extern_symbol(target),
             kind: callable_descriptor::CALLABLE_DESC_KIND_EXTERN,
             sig: None,
@@ -1569,24 +1719,26 @@ fn first_class_callable_descriptor(
                 callable_descriptor::CallableDescriptorShape::Extern,
                 target.to_string(),
             ),
-        });
+        }));
     }
-    if let Some(descriptor) = first_class_builtin_descriptor(ctx, target) {
-        return Some(descriptor);
+    if let Some(descriptor) = first_class_builtin_descriptor(ctx, target)? {
+        return Ok(Some(descriptor));
     }
-    None
+    Ok(None)
 }
 
 /// Returns descriptor metadata for builtin first-class callable targets.
 fn first_class_builtin_descriptor(
     ctx: &mut FunctionContext<'_>,
     target: &str,
-) -> Option<FirstClassCallableDescriptor> {
+) -> Result<Option<FirstClassCallableDescriptor>> {
     let name = php_symbol_key(target.trim_start_matches('\\'));
-    let sig = first_class_callable_builtin_sig(&name)?;
-    let wrapper_sig = callable_wrapper_sig(&sig);
-    let entry_label = emit_runtime_builtin_wrapper_inline(ctx, &name, &wrapper_sig);
-    Some(FirstClassCallableDescriptor {
+    let Some(sig) = first_class_callable_builtin_sig(&name) else {
+        return Ok(None);
+    };
+    let wrapper_sig = runtime_builtin_wrapper_sig(&name, &callable_wrapper_sig(&sig));
+    let entry_label = emit_runtime_builtin_wrapper_inline(ctx, &name, &wrapper_sig)?;
+    Ok(Some(FirstClassCallableDescriptor {
         entry_label,
         kind: callable_descriptor::CALLABLE_DESC_KIND_BUILTIN,
         sig: Some(wrapper_sig),
@@ -1594,7 +1746,7 @@ fn first_class_builtin_descriptor(
             callable_descriptor::CallableDescriptorShape::Builtin,
             name,
         ),
-    })
+    }))
 }
 
 /// Returns descriptor metadata for static methods with compile-time class receivers.

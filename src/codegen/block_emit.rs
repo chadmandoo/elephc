@@ -189,6 +189,34 @@ fn emit_user_function(
     Ok(())
 }
 
+/// Emits a synthetic EIR function body at an explicit already-published entry label.
+pub(super) fn emit_synthetic_function_with_label(
+    module: &Module,
+    function: &Function,
+    entry_label: &str,
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+    regalloc_linear: bool,
+) -> Result<()> {
+    let layout = frame::layout_for_function(function, emitter.target, regalloc_linear);
+    let epilogue_label = format!("{}_epilogue", entry_label);
+    let mut ctx = FunctionContext::new(
+        module,
+        function,
+        emitter,
+        data,
+        layout,
+        false,
+        false,
+        false,
+        Some(epilogue_label),
+    );
+    frame::emit_function_prologue_with_label(&mut ctx, entry_label)?;
+    emit_blocks(&mut ctx)?;
+    frame::emit_function_epilogue(&mut ctx);
+    Ok(())
+}
+
 /// Returns the assembly entry label for a user or synthetic EIR function.
 fn user_function_entry_symbol(function: &Function) -> String {
     if is_property_init_thunk(function) {

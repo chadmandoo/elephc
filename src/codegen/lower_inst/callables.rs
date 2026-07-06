@@ -29,7 +29,7 @@ use super::{
     emit_runtime_builtin_wrapper_inline, emit_runtime_callable_invoker_inline,
     emit_runtime_descriptor_with_receiver_capture, emit_runtime_extern_wrapper_inline,
     emit_static_method_descriptor_entry_wrapper, expect_operand, function_signature_from_eir,
-    materialize_direct_call_args,
+    materialize_direct_call_args, runtime_builtin_wrapper_sig,
     materialize_method_call_args_with_receiver_reg_and_refs, store_call_result,
 };
 use crate::codegen::{CodegenIrError, Result};
@@ -240,7 +240,7 @@ fn lower_runtime_string_descriptor_invoke(
     arg_mixed: ValueId,
     op_name: &str,
 ) -> Result<()> {
-    let cases = runtime_string_descriptor_cases(ctx, None);
+    let cases = runtime_string_descriptor_cases(ctx, None)?;
     if cases.is_empty() {
         return Err(CodegenIrError::unsupported(
             "callable_descriptor_invoke for runtime string with no descriptor targets",
@@ -288,27 +288,27 @@ fn lower_runtime_string_descriptor_invoke(
 pub(super) fn runtime_string_descriptor_cases(
     ctx: &mut FunctionContext<'_>,
     source_arg_ty: Option<&PhpType>,
-) -> Vec<callable_dispatch::RuntimeCallableCase> {
-    let mut cases = runtime_extern_descriptor_cases(ctx);
-    cases.extend(runtime_builtin_descriptor_cases(ctx, source_arg_ty));
+) -> Result<Vec<callable_dispatch::RuntimeCallableCase>> {
+    let mut cases = runtime_extern_descriptor_cases(ctx)?;
+    cases.extend(runtime_builtin_descriptor_cases(ctx, source_arg_ty)?);
     cases.extend(runtime_user_function_descriptor_cases(ctx, source_arg_ty));
     cases.extend(runtime_static_method_descriptor_cases(ctx).into_iter().map(|case| case.case));
     cases.sort_by(|left, right| left.label.cmp(&right.label));
     cases.dedup_by(|left, right| left.label == right.label);
-    cases
+    Ok(cases)
 }
 
 /// Builds runtime descriptor cases for extern functions declared in the EIR module.
 fn runtime_extern_descriptor_cases(
     ctx: &mut FunctionContext<'_>,
-) -> Vec<callable_dispatch::RuntimeCallableCase> {
+) -> Result<Vec<callable_dispatch::RuntimeCallableCase>> {
     let mut decls = ctx.module.extern_decls.iter().collect::<Vec<_>>();
     decls.sort_by(|left, right| left.name.cmp(&right.name));
 
     let mut cases = Vec::new();
     for decl in decls {
         let wrapper_sig = crate::types::callable_wrapper_sig(&extern_decl_signature(decl));
-        let entry_label = emit_runtime_extern_wrapper_inline(ctx, &decl.name, &wrapper_sig);
+        let entry_label = emit_runtime_extern_wrapper_inline(ctx, &decl.name, &wrapper_sig)?;
         let invoker_label = emit_runtime_callable_invoker_inline(ctx, &wrapper_sig, &[]);
         let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
             ctx.data,
@@ -334,7 +334,7 @@ fn runtime_extern_descriptor_cases(
             invoker_label: Some(invoker_label),
         });
     }
-    cases
+    Ok(cases)
 }
 
 /// Converts an EIR extern declaration into the PHP-facing wrapper signature.
@@ -360,7 +360,7 @@ fn extern_decl_signature(decl: &crate::ir::ExternDecl) -> FunctionSig {
 fn runtime_builtin_descriptor_cases(
     ctx: &mut FunctionContext<'_>,
     source_arg_ty: Option<&PhpType>,
-) -> Vec<callable_dispatch::RuntimeCallableCase> {
+) -> Result<Vec<callable_dispatch::RuntimeCallableCase>> {
     let mut cases = Vec::new();
     for name in crate::types::checker::builtins::supported_builtin_function_names() {
         if callable_dispatch::runtime_builtin_wrapper_excluded(name)
@@ -375,9 +375,9 @@ fn runtime_builtin_descriptor_cases(
         let Some(sig) = crate::types::first_class_callable_builtin_sig(name) else {
             continue;
         };
-        let wrapper_sig = crate::types::callable_wrapper_sig(&sig);
+        let wrapper_sig = runtime_builtin_wrapper_sig(name, &crate::types::callable_wrapper_sig(&sig));
         let case_sig = callable_dispatch::specialized_runtime_case_sig(&wrapper_sig, source_arg_ty);
-        let entry_label = emit_runtime_builtin_wrapper_inline(ctx, name, &case_sig);
+        let entry_label = emit_runtime_builtin_wrapper_inline(ctx, name, &case_sig)?;
         let invoker_label = emit_runtime_callable_invoker_inline(ctx, &case_sig, &[]);
         let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
             ctx.data,
@@ -403,7 +403,7 @@ fn runtime_builtin_descriptor_cases(
             invoker_label: Some(invoker_label),
         });
     }
-    cases
+    Ok(cases)
 }
 
 /// Builds runtime descriptor cases for user functions emitted in the EIR module.
@@ -458,7 +458,7 @@ pub(super) fn emit_runtime_string_descriptor_value(
     dest_reg: &str,
     op_name: &str,
 ) -> Result<()> {
-    let cases = runtime_string_descriptor_cases(ctx, None);
+    let cases = runtime_string_descriptor_cases(ctx, None)?;
     if cases.is_empty() {
         return Err(CodegenIrError::unsupported(format!(
             "{} for runtime string with no descriptor targets",
