@@ -681,6 +681,36 @@ pub(super) fn lower_spaceship(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         abi::emit_call_label(ctx.emitter, "__rt_str_spaceship");
         return store_if_result(ctx, inst);
     }
+    // Array spaceship goes through `__rt_array_spaceship` — count first, then
+    // pairwise elements. The element mode (0 = 8-byte int slots, 1 = 16-byte
+    // string ptr/len slots) comes from the static element type; the checker only
+    // admits uniform string/string or int/int element pairs.
+    if let (PhpType::Array(left_elem), PhpType::Array(right_elem)) = (&lhs_ty, &rhs_ty) {
+        let mode = match (left_elem.as_ref(), right_elem.as_ref()) {
+            (PhpType::Str, PhpType::Str) => 1,
+            (PhpType::Int, PhpType::Int) => 0,
+            _ => {
+                return Err(CodegenIrError::unsupported(format!(
+                    "array spaceship for element types {:?} and {:?}",
+                    left_elem, right_elem
+                )));
+            }
+        };
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.load_value_to_reg(lhs, "x1")?;
+                ctx.load_value_to_reg(rhs, "x2")?;
+                abi::emit_load_int_immediate(ctx.emitter, "x3", mode);
+            }
+            Arch::X86_64 => {
+                ctx.load_value_to_reg(lhs, "rdi")?;
+                ctx.load_value_to_reg(rhs, "rsi")?;
+                abi::emit_load_int_immediate(ctx.emitter, "rdx", mode);
+            }
+        }
+        abi::emit_call_label(ctx.emitter, "__rt_array_spaceship");
+        return store_if_result(ctx, inst);
+    }
     let uses_float_compare = lhs_ty == PhpType::Float || rhs_ty == PhpType::Float;
     if uses_float_compare {
         emit_numeric_float_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty)?;

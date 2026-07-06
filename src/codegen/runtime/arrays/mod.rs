@@ -17,6 +17,7 @@ mod array_column_str;
 mod array_combine;
 mod array_combine_refcounted;
 mod array_clone_shallow;
+mod array_spaceship;
 mod array_diff;
 mod array_diff_refcounted;
 mod array_diff_key;
@@ -172,6 +173,7 @@ pub use array_combine::emit_array_combine;
 pub use array_combine_refcounted::emit_array_combine_refcounted;
 /// Emit refcounted array combine helper.
 pub use array_clone_shallow::emit_array_clone_shallow;
+pub use array_spaceship::emit_array_spaceship;
 /// Emit shallow array clone helper.
 pub use array_diff::emit_array_diff;
 /// Emit array difference helper.

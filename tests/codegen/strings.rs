@@ -33,6 +33,18 @@ fn test_string_spaceship_php8_semantics() {
     assert_eq!(out, "-1:1:0:1:-1:alpha,mid,zeta");
 }
 
+/// EC-16 (#499): array spaceship follows PHP's rule — count first (fewer elements sorts
+/// smaller regardless of content), then pairwise elements (strings via the PHP 8 string
+/// spaceship, so numeric strings order numerically). Drives the multi-key usort tuple
+/// comparator `[$l->a, $l->b] <=> [$r->a, $r->b]`. Byte-parity vs PHP 8.5.
+#[test]
+fn test_array_spaceship_count_then_pairwise() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); final class R { public function __construct(public string $m, public string $p) {} } function main(): void { echo (['GET','/a'] <=> ['GET','/b']), ':', (['GET','/b'] <=> ['GET','/a']), ':', (['GET','/a'] <=> ['GET','/a']), ':', (['a'] <=> ['a','b']), ':', (['a','b'] <=> ['a']), ':', ([2,1] <=> [2,3]), ':', ([10,5] <=> [2,300]), ':', (['10','x'] <=> ['9','x']), ':'; $rs = [new R('POST','/b'), new R('GET','/z'), new R('GET','/a'), new R('POST','/a')]; usort($rs, static fn (R $l, R $r): int => [$l->m, $l->p] <=> [$r->m, $r->p]); foreach ($rs as $r) { echo $r->m, ' ', $r->p, ';'; } } main();",
+    );
+    assert_eq!(out, "-1:1:0:-1:1:-1:1:1:GET /a;GET /z;POST /a;POST /b;");
+}
+
 /// urlencode/rawurlencode pass decimal digits through unencoded: the classification checked
 /// letters FIRST, and its below-'A' shortcut routed digits (which sit below 'A') straight to
 /// the punctuation set, percent-encoding them ("2" became "%32"). Byte-parity vs PHP 8.5.

@@ -145,7 +145,17 @@ impl Checker {
                 // PHP 8 orders two strings with `<=>` (numeric strings numerically, otherwise
                 // byte-for-byte) — the usort-comparator staple `$a->name() <=> $b->name()`.
                 let string_ok = lt == PhpType::Str && rt == PhpType::Str;
-                if !numeric_ok && !datetime_ok && !string_ok {
+                // PHP orders two arrays by count first, then pairwise element-by-element —
+                // the multi-key comparator staple `[$a, $b] <=> [$c, $d]`. The lowering
+                // supports packed arrays with a uniform comparable element type (both
+                // string or both integer); other element shapes keep the error.
+                let array_ok = matches!(
+                    (&lt, &rt),
+                    (PhpType::Array(left), PhpType::Array(right))
+                        if (**left == PhpType::Str && **right == PhpType::Str)
+                            || (**left == PhpType::Int && **right == PhpType::Int)
+                );
+                if !numeric_ok && !datetime_ok && !string_ok && !array_ok {
                     return Err(CompileError::new(
                         expr.span,
                         "Spaceship operator requires numeric operands",
