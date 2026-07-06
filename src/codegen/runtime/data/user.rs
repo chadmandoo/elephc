@@ -917,7 +917,9 @@ fn emit_callable_function_data(
 
 /// Emits the `_classes_by_name` lookup table used by `__rt_new_by_name`
 /// for `new $variable()` dynamic instantiation (Phase 10 user-wrapper
-/// dispatch). Each registered class contributes a 32-byte entry:
+/// dispatch) and by `__rt_class_file_by_name` for
+/// `ReflectionClass::getFileName()`. Each registered class contributes a
+/// 48-byte entry:
 ///
 ///   [0..8)   name_ptr   — pointer to the class-name ASCII bytes
 ///   [8..16)  name_len   — count of name bytes
@@ -926,9 +928,14 @@ fn emit_callable_function_data(
 ///                         `__rt_heap_alloc` callers)
 ///   [24..32) obj_size   — `8 + num_props*16 + dyn_props_slot`, the same
 ///                         allocation size emit_new_object_core uses
+///   [32..40) file_ptr   — pointer to the declaring file's canonical path
+///                         bytes (0 when unknown, e.g. synthetic classes)
+///   [40..48) file_len   — count of file-path bytes
 ///
-/// The accompanying `_classes_by_name_count` symbol holds the entry count
-/// so the runtime helper can bound its linear scan.
+/// File paths come from the `__ELEPHC_FILE__` constant the magic-constants
+/// pass stamps into every class declaration; the path bytes are deduplicated
+/// per unique file. The accompanying `_classes_by_name_count` symbol holds
+/// the entry count so the runtime helpers can bound their linear scans.
 fn emit_classes_by_name_table(
     out: &mut String,
     sorted_classes: &[(&String, &ClassInfo)],
@@ -939,6 +946,20 @@ fn emit_classes_by_name_table(
             class_info.class_id,
             escaped_ascii(class_name)
         ));
+    }
+    let mut file_symbols: HashMap<String, usize> = HashMap::new();
+    for (_, class_info) in sorted_classes {
+        if let Some(path) = class_declaring_file(class_info) {
+            let next_id = file_symbols.len();
+            let id = *file_symbols.entry(path.clone()).or_insert(next_id);
+            if id == next_id {
+                out.push_str(&format!(
+                    ".globl _class_file_str_{0}\n_class_file_str_{0}:\n    .ascii \"{1}\"\n",
+                    id,
+                    escaped_ascii(&path)
+                ));
+            }
+        }
     }
     out.push_str(".p2align 3\n");
     out.push_str(".globl _classes_by_name_count\n_classes_by_name_count:\n");
@@ -959,6 +980,32 @@ fn emit_classes_by_name_table(
         out.push_str(&format!("    .quad {}\n", class_name.len()));
         out.push_str(&format!("    .quad {}\n", class_info.class_id));
         out.push_str(&format!("    .quad {}\n", obj_size));
+        match class_declaring_file(class_info) {
+            Some(path) => {
+                out.push_str(&format!(
+                    "    .quad _class_file_str_{}\n",
+                    file_symbols[&path]
+                ));
+                out.push_str(&format!("    .quad {}\n", path.len()));
+            }
+            None => {
+                out.push_str("    .quad 0\n");
+                out.push_str("    .quad 0\n");
+            }
+        }
+    }
+}
+
+/// Returns the canonical declaring-file path recorded in a class's stamped
+/// `__ELEPHC_FILE__` constant, or `None` for classes without one (synthetic
+/// builtin classes, preludes).
+fn class_declaring_file(class_info: &ClassInfo) -> Option<String> {
+    let expr = class_info
+        .constants
+        .get(crate::magic_constants::CLASS_FILE_CONSTANT)?;
+    match &expr.kind {
+        crate::parser::ast::ExprKind::StringLiteral(path) => Some(path.clone()),
+        _ => None,
     }
 }
 

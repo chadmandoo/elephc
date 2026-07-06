@@ -11,9 +11,12 @@
 //!   `new $variable()` expressions.
 //!
 //! Key details:
-//! - Each `_classes_by_name` entry is 32 bytes: name_ptr (8) + name_len
-//!   (8) + class_id (8) + obj_size (8). A linear scan compares lengths
-//!   first, then delegates to `__rt_strcasecmp` for PHP-style class lookup.
+//! - Each `_classes_by_name` entry is 48 bytes: name_ptr (8) + name_len
+//!   (8) + class_id (8) + obj_size (8) + file_ptr (8) + file_len (8). A
+//!   linear scan compares lengths first, then delegates to
+//!   `__rt_strcasecmp` for PHP-style class lookup.
+//! - `__rt_class_file_by_name` (also emitted here) runs the same scan but
+//!   returns the declaring-file columns for `ReflectionClass::getFileName()`.
 //! - On match: allocates obj_size bytes through `__rt_heap_alloc`, stamps
 //!   the uniform heap-kind word (heap kind 4 = object) ahead of the
 //!   payload, writes the class id at offset 0, and zeroes the property
@@ -77,7 +80,7 @@ pub fn emit_new_by_name(emitter: &mut Emitter) {
 
     emitter.label("__rt_nbn_skip");
     emitter.instruction("ldr x10, [sp, #48]");                                  // reload the entry cursor
-    emitter.instruction("add x10, x10, #32");                                   // advance to the next 32-byte entry
+    emitter.instruction("add x10, x10, #48");                                   // advance to the next 48-byte entry
     emitter.instruction("str x10, [sp, #48]");                                  // persist the cursor
     emitter.instruction("add x11, x11, #1");                                    // advance the entry index
     abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
@@ -172,7 +175,7 @@ fn emit_new_by_name_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_nbn_skip_x86");
     emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
-    emitter.instruction("add r10, 32");                                         // advance to the next 32-byte entry
+    emitter.instruction("add r10, 48");                                         // advance to the next 48-byte entry
     emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // persist the cursor
     emitter.instruction("add r11, 1");                                          // advance the entry index
     abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // reload the count (lost across the table walk)
@@ -224,4 +227,143 @@ fn emit_new_by_name_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("add rsp, 48");                                         // release the frame
     emitter.instruction("pop rbp");                                             // restore the caller frame pointer
     emitter.instruction("ret");                                                 // return null
+}
+
+/// class_file_by_name: look up a class's declaring-file path by class name.
+/// Runs the same case-insensitive `_classes_by_name` scan as `__rt_new_by_name`
+/// but returns the file columns ([32..48) of the matched 48-byte entry).
+/// Input:  AArch64 x1 = name pointer, x2 = name length
+///         x86_64  rax = name pointer, rdx = name length
+/// Output: AArch64 x0 = file pointer, x1 = file length (0/0 on miss)
+///         x86_64  rax = file pointer, rdx = file length (0/0 on miss)
+pub fn emit_class_file_by_name(emitter: &mut Emitter) {
+    if emitter.target.arch == Arch::X86_64 {
+        emit_class_file_by_name_linux_x86_64(emitter);
+        return;
+    }
+
+    emitter.blank();
+    emitter.comment("--- runtime: class_file_by_name ---");
+    emitter.label_global("__rt_class_file_by_name");
+
+    // Frame (48 bytes): [0..16) saved x29/x30, [16) name_ptr, [24) name_len,
+    //   [32) entry cursor, [40) entry index saved across __rt_strcasecmp.
+    emitter.instruction("sub sp, sp, #48");                                     // helper frame
+    emitter.instruction("stp x29, x30, [sp, #0]");                              // save frame pointer and return address
+    emitter.instruction("mov x29, sp");                                         // establish the helper frame pointer
+    emitter.instruction("str x1, [sp, #16]");                                   // save the name pointer
+    emitter.instruction("str x2, [sp, #24]");                                   // save the name length
+
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // x9 = entry count
+    emitter.instruction("cbz x9, __rt_cfbn_miss");                              // empty registry → no match
+    abi::emit_symbol_address(emitter, "x10", "_classes_by_name");
+    emitter.instruction("str x10, [sp, #32]");                                  // initialise the entry cursor
+    emitter.instruction("mov x11, #0");                                         // entry index
+
+    emitter.label("__rt_cfbn_loop");
+    emitter.instruction("cmp x11, x9");                                         // scanned every registered class?
+    emitter.instruction("b.ge __rt_cfbn_miss");                                 // exhausted the table without a match
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("ldr x13, [x10, #8]");                                  // stored name length
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("cmp x13, x2");                                         // length mismatch → skip
+    emitter.instruction("b.ne __rt_cfbn_skip");                                 // skip this class when the name lengths differ
+    emitter.instruction("str x11, [sp, #40]");                                  // save the entry index across the string helper
+    emitter.instruction("ldr x1, [sp, #16]");                                   // reload the input name pointer
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("ldr x3, [x10]");                                       // stored class-name pointer
+    emitter.instruction("mov x4, x13");                                         // stored class-name length
+    emitter.instruction("bl __rt_strcasecmp");                                  // compare class names case-insensitively
+    emitter.instruction("ldr x11, [sp, #40]");                                  // restore the entry index after the string helper
+    emitter.instruction("cmp x0, #0");                                          // did the class names match case-insensitively?
+    emitter.instruction("b.eq __rt_cfbn_match");                                // full match: return the file columns
+    emitter.instruction("b __rt_cfbn_skip");                                    // mismatch: try the next entry
+
+    emitter.label("__rt_cfbn_skip");
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("add x10, x10, #48");                                   // advance to the next 48-byte entry
+    emitter.instruction("str x10, [sp, #32]");                                  // persist the cursor
+    emitter.instruction("add x11, x11, #1");                                    // advance the entry index
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // reload the count (lost across the table walk)
+    emitter.instruction("b __rt_cfbn_loop");                                    // continue scanning
+
+    emitter.label("__rt_cfbn_match");
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the matched entry cursor
+    emitter.instruction("ldr x0, [x10, #32]");                                  // file_ptr column
+    emitter.instruction("ldr x1, [x10, #40]");                                  // file_len column
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the file string
+
+    emitter.label("__rt_cfbn_miss");
+    emitter.instruction("mov x0, #0");                                          // no class with that name → null pointer
+    emitter.instruction("mov x1, #0");                                          // zero length
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the empty result
+}
+
+/// Emits the Linux x86_64 variant of `__rt_class_file_by_name`.
+fn emit_class_file_by_name_linux_x86_64(emitter: &mut Emitter) {
+    emitter.blank();
+    emitter.comment("--- runtime: class_file_by_name ---");
+    emitter.label_global("__rt_class_file_by_name");
+
+    // Frame (rbp-relative): [-8) name_ptr [-16) name_len [-24) entry cursor
+    //   [-32) entry index stash.
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish the helper frame pointer
+    emitter.instruction("sub rsp, 32");                                         // helper frame
+    emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save the name pointer (elephc string ABI: rax)
+    emitter.instruction("mov QWORD PTR [rbp - 16], rdx");                       // save the name length (elephc string ABI: rdx)
+
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // r9 = entry count
+    emitter.instruction("test r9, r9");                                         // empty registry?
+    emitter.instruction("jz __rt_cfbn_miss_x86");                               // no entries → no match
+    abi::emit_symbol_address(emitter, "r10", "_classes_by_name");               // r10 = table base
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // entry cursor
+    emitter.instruction("xor r11, r11");                                        // entry index
+
+    emitter.label("__rt_cfbn_loop_x86");
+    emitter.instruction("cmp r11, r9");                                         // scanned every registered class?
+    emitter.instruction("jge __rt_cfbn_miss_x86");                              // exhausted the table without a match
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("mov rcx, QWORD PTR [r10 + 8]");                        // stored name length
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("cmp rcx, rdx");                                        // length mismatch?
+    emitter.instruction("jne __rt_cfbn_skip_x86");                              // skip on length mismatch
+    emitter.instruction("mov QWORD PTR [rbp - 32], r11");                       // save the entry index across the string helper
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // reload the input name pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("mov rdx, QWORD PTR [r10]");                            // stored class-name pointer
+    emitter.instruction("call __rt_strcasecmp");                                // compare class names case-insensitively
+    emitter.instruction("mov r11, QWORD PTR [rbp - 32]");                       // restore the entry index after the string helper
+    emitter.instruction("test rax, rax");                                       // did the class names match case-insensitively?
+    emitter.instruction("je __rt_cfbn_match_x86");                              // full match: return the file columns
+    emitter.instruction("jmp __rt_cfbn_skip_x86");                              // mismatch: try the next entry
+
+    emitter.label("__rt_cfbn_skip_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("add r10, 48");                                         // advance to the next 48-byte entry
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // persist the cursor
+    emitter.instruction("add r11, 1");                                          // advance the entry index
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // reload the count (lost across the table walk)
+    emitter.instruction("jmp __rt_cfbn_loop_x86");                              // continue scanning
+
+    emitter.label("__rt_cfbn_match_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the matched entry cursor
+    emitter.instruction("mov rax, QWORD PTR [r10 + 32]");                       // file_ptr column
+    emitter.instruction("mov rdx, QWORD PTR [r10 + 40]");                       // file_len column
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the file string
+
+    emitter.label("__rt_cfbn_miss_x86");
+    emitter.instruction("xor eax, eax");                                        // no class with that name → null pointer
+    emitter.instruction("xor edx, edx");                                        // zero length
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the empty result
 }

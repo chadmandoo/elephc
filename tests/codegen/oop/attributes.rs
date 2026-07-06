@@ -1581,3 +1581,50 @@ echo "ok";
     );
     assert_eq!(out, "ok");
 }
+
+/// Verifies `ReflectionClass::getFileName()` returns the declaring file's canonical
+/// path (asserted against `__FILE__`, which shares the same canonicalization), for a
+/// literal class name and through late-static-bound `static::class` from a subclass.
+#[test]
+fn test_reflection_class_get_file_name() {
+    let out = compile_and_run(
+        r#"<?php
+class Base {
+    public function where(): string {
+        return (new ReflectionClass(static::class))->getFileName();
+    }
+}
+class Leaf extends Base {}
+$b = new Base();
+$l = new Leaf();
+echo ($b->where() === __FILE__ ? "base-same" : "base-diff") . "|";
+echo ($l->where() === __FILE__ ? "leaf-same" : "leaf-diff") . "|";
+echo ((new ReflectionClass('Leaf'))->getFileName() === __FILE__ ? "lit-same" : "lit-diff") . "|";
+echo (dirname((new ReflectionClass('Base'))->getFileName()) === __DIR__ ? "dir-same" : "dir-diff");
+"#,
+    );
+    assert_eq!(out, "base-same|leaf-same|lit-same|dir-same");
+}
+
+/// Verifies `ReflectionClass` accepts a dynamic (runtime string) class name:
+/// `static::class` and a plain string variable both populate `getName()`, and an
+/// unknown dynamic name yields an empty file path rather than a crash.
+#[test]
+fn test_reflection_class_dynamic_name() {
+    let out = compile_and_run(
+        r#"<?php
+class Base {
+    public function nameOf(): string {
+        return (new ReflectionClass(static::class))->getName();
+    }
+}
+class Leaf extends Base {}
+$l = new Leaf();
+$n = "Leaf";
+$viaVar = new ReflectionClass($n);
+$unknown = "NoSuchClass";
+echo $l->nameOf() . "|" . $viaVar->getName() . "|" . strlen((new ReflectionClass($unknown))->getFileName());
+"#,
+    );
+    assert_eq!(out, "Leaf|Leaf|0");
+}

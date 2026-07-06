@@ -63,6 +63,16 @@ pub(super) fn lower_reflection_owner_new(
     )?;
     if let Some(reflected_name) = metadata.reflected_name.as_deref() {
         emit_reflection_string_property(ctx, reflected_name, 8, 16);
+    } else if class_name == "ReflectionClass" {
+        // Dynamic reflected name (`static::class`, a runtime string variable):
+        // the name cannot be baked at compile time, so store the operand's
+        // runtime string into the `__name` slot instead. Attribute metadata
+        // stays empty on this path (getAttributes() returns []).
+        if let Some(&operand) = inst.operands.first() {
+            if matches!(ctx.value_php_type(operand)?, crate::types::PhpType::Str) {
+                emit_reflection_runtime_name_property(ctx, operand, 8, 16)?;
+            }
+        }
     }
     emit_reflection_attrs_property(
         ctx,
@@ -455,6 +465,12 @@ fn reflection_owner_metadata(
 }
 
 /// Resolves `ReflectionClass(class)` metadata.
+///
+/// Non-constant operands (a runtime string variable) and constant names that
+/// resolve only at runtime (`static::class` lowers to `ConstClassName("static")`,
+/// bound late from the receiver) both yield empty metadata: the owner-new
+/// lowering then stores the operand's runtime string into `__name` instead of a
+/// baked literal.
 fn reflection_class_metadata(
     ctx: &FunctionContext<'_>,
     inst: &Instruction,
@@ -462,7 +478,10 @@ fn reflection_class_metadata(
     let Some(class_operand) = inst.operands.first().copied() else {
         return Ok(empty_reflection_metadata());
     };
-    let reflected_class = const_string_or_class_operand(ctx, class_operand, "ReflectionClass")?;
+    let Ok(reflected_class) = const_string_or_class_operand(ctx, class_operand, "ReflectionClass")
+    else {
+        return Ok(empty_reflection_metadata());
+    };
     Ok(resolve_reflection_class(ctx, &reflected_class)
         .map(|(class_name, info)| ReflectionOwnerMetadata {
             reflected_name: Some(class_name.to_string()),
@@ -608,6 +627,39 @@ fn const_data_operand(
             owner
         ))),
     }
+}
+
+/// Writes a runtime string operand (heap-persisted) into the current Reflection
+/// object's `__name` slots. The object pointer is expected in the integer result
+/// register, exactly as `emit_reflection_string_property` assumes.
+fn emit_reflection_runtime_name_property(
+    ctx: &mut FunctionContext<'_>,
+    value: ValueId,
+    low_offset: usize,
+    high_offset: usize,
+) -> Result<()> {
+    let object_reg = abi::symbol_scratch_reg(ctx.emitter);
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, result_reg);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_string_value_to_regs(value, "x1", "x2")?;
+            abi::emit_call_label(ctx.emitter, "__rt_str_persist");
+            abi::emit_pop_reg(ctx.emitter, object_reg);
+            abi::emit_store_to_address(ctx.emitter, "x1", object_reg, low_offset);
+            abi::emit_store_to_address(ctx.emitter, "x2", object_reg, high_offset);
+        }
+        Arch::X86_64 => {
+            ctx.load_string_value_to_regs(value, "rax", "rdx")?;
+            abi::emit_call_label(ctx.emitter, "__rt_str_persist");
+            abi::emit_pop_reg(ctx.emitter, object_reg);
+            abi::emit_store_to_address(ctx.emitter, "rax", object_reg, low_offset);
+            abi::emit_store_to_address(ctx.emitter, "rdx", object_reg, high_offset);
+        }
+    }
+    abi::emit_push_reg(ctx.emitter, object_reg);
+    abi::emit_pop_reg(ctx.emitter, result_reg);
+    Ok(())
 }
 
 /// Writes a heap-persisted string into the current Reflection object result slot.

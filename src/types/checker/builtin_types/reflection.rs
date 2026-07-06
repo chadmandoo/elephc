@@ -503,11 +503,53 @@ fn builtin_reflection_class() -> FlattenedClass {
                 false,
             )]),
             builtin_reflection_class_get_name_method(),
+            builtin_reflection_class_get_file_name_method(),
             builtin_reflection_owner_get_attributes_method(),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
         used_traits: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::getFileName()` method whose body looks up
+/// the reflected class's declaring file through the `__elephc_class_file`
+/// intrinsic (a `_classes_by_name` scan over the stamped `__ELEPHC_FILE__`
+/// paths). Declared `Str` rather than PHP's `string|false`: every compiled
+/// user class has a recorded file, and an unknown name yields the empty
+/// string instead of `false`.
+fn builtin_reflection_class_get_file_name_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "getFileName".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Str),
+        by_ref_return: false,
+        body: vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::FunctionCall {
+                    name: crate::names::Name::from("__elephc_class_file"),
+                    args: vec![Expr::new(
+                        ExprKind::PropertyAccess {
+                            object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                            property: "__name".to_string(),
+                        },
+                        dummy_span,
+                    )],
+                },
+                dummy_span,
+            ))),
+            dummy_span,
+        )],
+        span: dummy_span,
+        attributes: Vec::new(),
     }
 }
 

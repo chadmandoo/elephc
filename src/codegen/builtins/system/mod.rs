@@ -9,6 +9,7 @@
 //! - Dispatcher names must stay aligned with the builtin catalog and signature normalization layer.
 
 mod class_attribute_args;
+mod class_file;
 mod class_attribute_names;
 mod class_get_attributes;
 mod checkdate;
@@ -82,6 +83,7 @@ pub fn emit(
         "phpversion" => phpversion::emit(name, args, emitter, ctx, data),
         "class_attribute_args" => class_attribute_args::emit(name, args, emitter, ctx, data),
         "class_attribute_names" => class_attribute_names::emit(name, args, emitter, ctx, data),
+        "__elephc_class_file" => class_file::emit(name, args, emitter, ctx, data),
         "class_get_attributes" => class_get_attributes::emit(name, args, emitter, ctx, data),
         "exec" => exec_fn::emit(name, args, emitter, ctx, data),
         "shell_exec" => shell_exec::emit(name, args, emitter, ctx, data),

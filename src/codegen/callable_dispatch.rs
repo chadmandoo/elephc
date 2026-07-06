@@ -572,6 +572,9 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
         "call_user_func" | "call_user_func_array"
             | "iterator_apply" | "preg_replace_callback"
             | "__elephc_mktime_raw" | "__elephc_gmmktime_raw" | "__elephc_strtotime_raw"
+            // __elephc_class_file is the internal ReflectionClass::getFileName intrinsic —
+            // EIR-only (inline __rt_class_file_by_name call), never dynamically invoked.
+            | "__elephc_class_file"
             // serialize/unserialize are EIR-only builtins with no legacy-backend
             // emitter, so the deferred runtime callable wrapper cannot dispatch them
             // (it would emit a `_fn_serialize` user-function reference). Exclude them

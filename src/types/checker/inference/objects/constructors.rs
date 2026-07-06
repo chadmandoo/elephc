@@ -221,10 +221,27 @@ impl Checker {
             return self.validate_reflection_function_target(&function_name, expr);
         }
 
+        // ReflectionClass accepts a dynamic (runtime string) class name —
+        // `new ReflectionClass(static::class)` or a string variable — in which
+        // case there is nothing to validate at compile time: the lowering
+        // stores the runtime name into `__name` and attribute metadata stays
+        // empty. ReflectionMethod/ReflectionProperty keep the literal demand.
+        if class_name == "ReflectionClass" {
+            return match self.reflection_class_dynamic_or_literal_arg(
+                class_name,
+                &normalized_args[0],
+                env,
+            )? {
+                Some(reflected_class) => {
+                    self.validate_reflection_class_attrs(&reflected_class, expr)
+                }
+                None => Ok(()),
+            };
+        }
+
         let reflected_class =
             self.reflection_class_literal_arg(class_name, &normalized_args[0], env)?;
         match class_name {
-            "ReflectionClass" => self.validate_reflection_class_attrs(&reflected_class, expr),
             "ReflectionMethod" => {
                 let method_name = self.reflection_string_literal_arg(
                     class_name,
@@ -245,6 +262,54 @@ impl Checker {
             }
             _ => Ok(()),
         }
+    }
+
+    /// Extracts a `ReflectionClass` constructor class-name argument that may be dynamic.
+    ///
+    /// A string literal or `ClassName::class` constant resolves like
+    /// `reflection_class_literal_arg` (undefined classes stay hard errors).
+    /// `static::class` and any other string-typed runtime expression return
+    /// `Ok(None)`: the class binds at runtime, so compile-time attribute
+    /// validation is skipped. A non-string argument is still a hard error.
+    fn reflection_class_dynamic_or_literal_arg(
+        &mut self,
+        reflection_type: &str,
+        arg: &Expr,
+        env: &TypeEnv,
+    ) -> Result<Option<String>, CompileError> {
+        let arg_ty = self.infer_type(arg, env)?;
+        if !matches!(arg_ty, PhpType::Str) {
+            return Err(CompileError::new(
+                arg.span,
+                &format!(
+                    "{}::__construct() first argument must be a string class name",
+                    reflection_type
+                ),
+            ));
+        }
+        let raw_class_name = match &arg.kind {
+            ExprKind::StringLiteral(class_name) => class_name.clone(),
+            ExprKind::ClassConstant { receiver } => {
+                match self.resolve_reflection_class_constant(receiver, arg.span) {
+                    Ok(class_name) => class_name,
+                    // A late-bound receiver (`static::class`) resolves at runtime.
+                    Err(_) => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
+        };
+        self.resolve_reflection_class_name(&raw_class_name)
+            .map(str::to_string)
+            .map(Some)
+            .ok_or_else(|| {
+                CompileError::new(
+                    arg.span,
+                    &format!(
+                        "{}::__construct(): undefined class '{}'",
+                        reflection_type, raw_class_name
+                    ),
+                )
+            })
     }
 
     /// Extracts the class name argument from a reflection constructor call.
