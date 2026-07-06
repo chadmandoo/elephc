@@ -36,6 +36,8 @@ mod result;
 mod schema;
 /// Function signature representation and builtin signature helpers.
 mod signatures;
+/// PHP `SORT_*` sort-flag integer constants.
+pub(crate) mod sort_constants;
 pub(crate) mod stream_constants;
 /// Type checker diagnostics and warnings.
 mod warnings;

@@ -24,6 +24,7 @@
 //! - Add `pub mod <name>;` here for every new system builtin home.
 
 pub mod __elephc_class_file;
+pub mod assert;
 pub mod get_debug_type;
 pub mod restore_error_handler;
 pub mod set_error_handler;
@@ -43,6 +44,7 @@ pub mod defined;
 pub mod exec;
 pub mod getdate;
 pub mod getenv;
+pub mod getmypid;
 pub mod gmdate;
 pub mod gmmktime;
 pub mod header;

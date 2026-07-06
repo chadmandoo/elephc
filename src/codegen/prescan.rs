@@ -17,6 +17,7 @@ use crate::types::date_constants::DATE_INT_CONSTANTS;
 use crate::types::json_constants::JSON_INT_CONSTANTS;
 use crate::types::stream_constants::STREAM_INT_CONSTANTS;
 use crate::types::preg_constants::PREG_INT_CONSTANTS;
+use crate::types::sort_constants::SORT_INT_CONSTANTS;
 use crate::types::{PhpType, TypeEnv};
 
 use super::context::{Context, TRY_HANDLER_SLOT_SIZE};
@@ -197,6 +198,24 @@ pub(crate) fn collect_constants(
         constants.insert(
             (*name).to_string(),
             (ExprKind::IntLiteral(*value), PhpType::Int),
+        );
+    }
+    for (name, value) in SORT_INT_CONSTANTS {
+        constants.insert(
+            (*name).to_string(),
+            (ExprKind::IntLiteral(*value), PhpType::Int),
+        );
+    }
+    // password_hash() algorithm identifiers (PHP 7.4+ string values).
+    for (name, algo) in [
+        ("PASSWORD_DEFAULT", "2y"),
+        ("PASSWORD_BCRYPT", "2y"),
+        ("PASSWORD_ARGON2I", "argon2i"),
+        ("PASSWORD_ARGON2ID", "argon2id"),
+    ] {
+        constants.insert(
+            name.to_string(),
+            (ExprKind::StringLiteral(algo.to_string()), PhpType::Str),
         );
     }
     collect_constant_decls(program, &mut constants);

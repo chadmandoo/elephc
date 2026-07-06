@@ -621,6 +621,16 @@ pub(crate) fn lower_time(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `getmypid()` through the process-id runtime helper.
+pub(crate) fn lower_getmypid(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "getmypid", 0)?;
+    abi::emit_call_label(ctx.emitter, "__rt_getmypid");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `usleep(microseconds)` through the target's C library symbol.
 pub(crate) fn lower_usleep(
     ctx: &mut FunctionContext<'_>,

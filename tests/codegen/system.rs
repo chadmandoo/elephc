@@ -3326,3 +3326,36 @@ echo function_exists("mktime") ? "1" : "0", function_exists("gmmktime") ? "1" : 
     );
     assert_eq!(out, "2024-06-15 12:30:45|03-15|same-year|h12|11");
 }
+
+/// Verifies `getmypid()` returns the current process id: an integer, strictly positive,
+/// and stable across calls within a single process. The PID value itself is
+/// nondeterministic, so the fixture asserts type + sign + intra-run consistency.
+/// Fixture asserts `is_int`, `> 0`, and `getmypid() === getmypid()`.
+#[test]
+fn test_getmypid() {
+    let out = compile_and_run(
+        r#"<?php
+$pid = getmypid();
+echo is_int($pid) ? "1" : "0";
+echo $pid > 0 ? "1" : "0";
+echo getmypid() === getmypid() ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "111");
+}
+
+/// Verifies `assert()` follows PHP's production semantics (`zend.assertions=-1`): it is a
+/// no-op that always returns `true` and never throws, for both the 1-arg and 2-arg
+/// (assertion + description) forms — including a failing assertion.
+/// Fixture asserts `assert(true)`, `assert(1===2)`, and `assert(false,"msg")` all yield `1`.
+#[test]
+fn test_assert_returns_true() {
+    let out = compile_and_run(
+        r#"<?php
+echo assert(true) ? "1" : "0";
+echo assert(1 === 2) ? "1" : "0";
+echo assert(false, "msg") ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "111");
+}

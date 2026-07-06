@@ -90,6 +90,25 @@ fn test_random_int_range() {
     assert_eq!(out, "42");
 }
 
+/// Verifies `random_bytes($n)` returns a string of exactly `$n` bytes for several lengths,
+/// is a string type, and produces distinct output across calls (collision probability is
+/// negligible). The byte values are nondeterministic, so the fixture asserts length + type
+/// + distinctness rather than a fixed value.
+/// Fixture asserts `11111`.
+#[test]
+fn test_random_bytes_length_and_type() {
+    let out = compile_and_run(
+        r#"<?php
+echo strlen(random_bytes(16)) === 16 ? "1" : "0";
+echo strlen(random_bytes(1)) === 1 ? "1" : "0";
+echo strlen(random_bytes(32)) === 32 ? "1" : "0";
+echo is_string(random_bytes(8)) ? "1" : "0";
+echo random_bytes(16) !== random_bytes(16) ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "11111");
+}
+
 /// Verifies `rand()` with no arguments does not crash and returns a non-negative integer.
 #[test]
 fn test_rand_no_args() {

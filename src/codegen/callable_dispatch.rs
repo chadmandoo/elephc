@@ -588,13 +588,18 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // from runtime string-callable dispatch; direct and first-class-callable
             // use still work through the EIR path.
             | "serialize" | "unserialize"
-            // mb_ereg_match / mb_strlen are EIR-only builtins (registry `builtin!`, no
-            // frozen legacy-backend emitter in src/codegen/builtins/strings/). The
-            // deferred-closure wrapper body would fall through to the user-function-call
-            // path and emit an unresolved _fn_mb_ereg_match / _fn_mb_strlen reference the
-            // linker cannot satisfy. Direct calls and EIR first-class-callable use still
-            // work through the EIR path.
-            | "mb_ereg_match" | "mb_strlen"
+            // mb_ereg_match / mb_strlen / mb_strpos are EIR-only builtins (registry
+            // `builtin!`, no frozen legacy-backend emitter in src/codegen/builtins/strings/).
+            // The deferred-closure wrapper body would fall through to the user-function-call
+            // path and emit an unresolved _fn_mb_ereg_match / _fn_mb_strlen / _fn_mb_strpos
+            // reference the linker cannot satisfy. Direct calls and EIR first-class-callable
+            // use still work through the EIR path.
+            | "mb_ereg_match" | "mb_strlen" | "mb_strpos"
+            // strtr / random_bytes / assert / getmypid are EIR-only builtins (no frozen
+            // legacy-backend emitter); the deferred-closure wrapper would emit an unresolved
+            // _fn_strtr / _fn_random_bytes / _fn_assert / _fn_getmypid the linker cannot
+            // satisfy. Direct EIR calls still work.
+            | "strtr" | "random_bytes" | "assert" | "getmypid"
             // array_merge / array_merge_recursive have a registry sig of
             // variadic(&[], "arrays") — 0 regular params, 1 variadic.  The wrapper
             // body emitted by function_wrapper_body() is therefore

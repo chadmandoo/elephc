@@ -16,6 +16,7 @@ use crate::types::date_constants::DATE_INT_CONSTANTS;
 use crate::types::json_constants::JSON_INT_CONSTANTS;
 use crate::types::stream_constants::STREAM_INT_CONSTANTS;
 use crate::types::preg_constants::PREG_INT_CONSTANTS;
+use crate::types::sort_constants::SORT_INT_CONSTANTS;
 use crate::types::PhpType;
 
 use super::super::Checker;
@@ -111,6 +112,18 @@ impl Checker {
         }
         for (name, _value) in DATE_INT_CONSTANTS {
             constants.insert((*name).to_string(), PhpType::Int);
+        }
+        for (name, _value) in SORT_INT_CONSTANTS {
+            constants.insert((*name).to_string(), PhpType::Int);
+        }
+        // password_hash() algorithm identifiers (PHP 7.4+ string values).
+        for password_algo in [
+            "PASSWORD_DEFAULT",
+            "PASSWORD_BCRYPT",
+            "PASSWORD_ARGON2I",
+            "PASSWORD_ARGON2ID",
+        ] {
+            constants.insert(password_algo.to_string(), PhpType::Str);
         }
 
         Self {

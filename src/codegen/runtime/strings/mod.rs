@@ -68,6 +68,9 @@ mod md5;
 mod sha1;
 mod crc32;
 mod mb_strlen;
+mod mb_strpos;
+mod strtr;
+mod random_bytes;
 mod hash;
 pub(crate) mod hash_algos;
 mod hash_context;
@@ -196,6 +199,12 @@ pub use sha1::emit_sha1;
 pub use crc32::emit_crc32;
 /// Emit mb_strlen UTF-8 code-point-count helper.
 pub use mb_strlen::emit_mb_strlen;
+/// Emit mb_strpos UTF-8 code-point-position helper.
+pub use mb_strpos::emit_mb_strpos;
+/// Emit strtr 3-argument character-translation helper.
+pub use strtr::emit_strtr;
+/// Emit random_bytes CSPRNG owned-string helper.
+pub use random_bytes::emit_random_bytes;
 /// Emit SHA1 hash helper.
 pub use hash::emit_hash;
 /// Emit generic hash helper.
