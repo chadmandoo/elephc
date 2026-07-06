@@ -472,3 +472,15 @@ fn test_sequential_try_catch_does_not_blow_up_codegen() {
     let out = compile_and_run(&php);
     assert_eq!(out, expected);
 }
+
+/// EC-10 (#493): the builtin exception constructors accept PHP's third `$previous` parameter
+/// (positional or the `previous:` named argument). It is not stored — `getPrevious()` remains
+/// synthesized as null — but wrap-and-rethrow code compiles and the message/code round-trip is
+/// byte-identical to PHP 8.5 (ward-schema ForeignKeyNode pattern).
+#[test]
+fn test_exception_constructor_accepts_previous() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); function f(): string { try { try { throw new \\ValueError('inner'); } catch (\\ValueError $e) { throw new \\InvalidArgumentException('outer: ' . $e->getMessage(), $e->getCode(), previous: $e); } } catch (\\InvalidArgumentException $x) { return $x->getMessage() . '/' . $x->getCode(); } } echo f();",
+    );
+    assert_eq!(out, "outer: inner/0");
+}

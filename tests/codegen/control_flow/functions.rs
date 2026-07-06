@@ -214,3 +214,15 @@ fn test_mixed_array_element_into_typed_params() {
     );
     assert_eq!(out, "ok:b:R+");
 }
+
+/// EC-10 follow-on (#493): foreach KEYS over an unknown-element array (an `array`-hinted
+/// param — elements known only to phpdoc) are Mixed, not Int: the value may be associative
+/// at runtime (ward-http `foreach ($headers as $name => $values)` with string keys into a
+/// `string $name` parameter). Byte-parity vs PHP 8.5.
+#[test]
+fn test_foreach_key_over_unknown_element_array() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); final class H { private array $headers = []; public function setHeader(string $name, string $value): void { $this->headers[$name] = $value; } public function all(array $headers): string { $out = ''; foreach ($headers as $name => $value) { $this->setHeader($name, $value); $out .= $name . '=' . $value . ';'; } return $out; } } function main(): void { echo (new H())->all(['a' => '1', 'b' => '2']); } main();",
+    );
+    assert_eq!(out, "a=1;b=2;");
+}

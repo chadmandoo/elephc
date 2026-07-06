@@ -481,3 +481,23 @@ echo \App\C\K::mk()->t->p;
     );
     assert_eq!(out, "/");
 }
+
+/// EC-10 (#493): `use const PHP_INT_MAX;` — the lexer eagerly tokenizes such constants, so the
+/// use-declaration parser must accept the dedicated tokens as import names (the import itself
+/// is inert; expression uses lower to literals). ward-layout RegionEntry pattern.
+#[test]
+fn test_use_const_of_lexer_tokenized_constant() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+
+namespace App;
+
+use const PHP_INT_MAX;
+use const PHP_INT_MIN;
+
+echo PHP_INT_MAX > 0 ? 'max' : '?', ':', PHP_INT_MIN < 0 ? 'min' : '?';
+"#,
+    );
+    assert_eq!(out, "max:min");
+}

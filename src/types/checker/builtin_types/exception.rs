@@ -70,6 +70,15 @@ pub(super) fn builtin_exception_constructor_method() -> ClassMethod {
                 )),
                 false,
             ),
+            // PHP's third parameter, `?Throwable $previous = null`. Accepted (positionally and
+            // as the `previous:` named argument) but not stored: the compact throwable payload
+            // has no previous slot and `getPrevious()` is already synthesized as null.
+            (
+                "previous".to_string(),
+                None,
+                Some(Expr::new(ExprKind::Null, crate::span::Span::dummy())),
+                false,
+            ),
         ],
         variadic: None,
         variadic_type: None,

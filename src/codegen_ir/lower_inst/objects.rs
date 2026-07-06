@@ -845,7 +845,7 @@ fn lower_builtin_throwable_new(
     class_name: &str,
     class_id: u64,
 ) -> Result<()> {
-    if inst.operands.len() > 2 {
+    if inst.operands.len() > 3 {
         return Err(CodegenIrError::unsupported(format!(
             "{}::__construct with {} EIR operands",
             class_name,
@@ -856,6 +856,9 @@ fn lower_builtin_throwable_new(
     preserve_throwable_for_init(ctx);
     emit_throwable_message_fields(ctx, inst.operands.first().copied())?;
     emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
+    // Operand 2 is PHP's `$previous`: its expression was evaluated (side effects preserved),
+    // but the compact throwable payload has no previous slot — `getPrevious()` is synthesized
+    // as null — so the value is intentionally not stored.
     restore_throwable_after_init(ctx);
     store_if_result(ctx, inst)
 }
