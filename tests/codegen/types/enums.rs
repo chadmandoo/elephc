@@ -584,3 +584,16 @@ fn test_enum_satisfies_unitenum_backedenum_hints() {
     );
     assert_eq!(out, "BUU");
 }
+
+/// EC-35 (#518) capstone run-clean spot check: exercises several features from the
+/// application-coverage sweep together in one compiled+run program — `$expr::class`
+/// (#509), a `\BackedEnum` parameter accepting an enum case (#514), and the `strtr` /
+/// `mb_strpos` / `getmypid` builtins (#512) — and asserts byte-identical output vs PHP 8.5.
+/// Fixture asserts `Widget|s|hippo|2|pid`.
+#[test]
+fn test_sweep_capstone_run_clean() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); enum Status: string { case Active = 'A'; case Closed = 'C'; } function badge(\\BackedEnum $s): string { return \"s\"; } class Widget {} $w = new Widget(); echo $w::class, '|', badge(Status::Active), '|', strtr(\"hello\", \"el\", \"ip\"), '|', mb_strpos(\"héllo\", \"llo\"), '|', (getmypid() > 0 ? \"pid\" : \"x\");",
+    );
+    assert_eq!(out, "Widget|s|hippo|2|pid");
+}
