@@ -32,3 +32,14 @@ fn test_string_spaceship_php8_semantics() {
     );
     assert_eq!(out, "-1:1:0:1:-1:alpha,mid,zeta");
 }
+
+/// urlencode/rawurlencode pass decimal digits through unencoded: the classification checked
+/// letters FIRST, and its below-'A' shortcut routed digits (which sit below 'A') straight to
+/// the punctuation set, percent-encoding them ("2" became "%32"). Byte-parity vs PHP 8.5.
+#[test]
+fn test_urlencode_passes_digits_through()  {
+    let out = compile_and_run(
+        "<?php echo urlencode('a2b9z'), '|', urlencode('name asc'), '|', rawurlencode('a2 b9~'), '|', urlencode('x-1_2.3');",
+    );
+    assert_eq!(out, "a2b9z|name+asc|a2%20b9~|x-1_2.3");
+}

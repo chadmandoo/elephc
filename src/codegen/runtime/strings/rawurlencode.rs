@@ -45,6 +45,12 @@ pub fn emit_rawurlencode(emitter: &mut Emitter) {
     emitter.instruction("ldrb w12, [x1], #1");                                  // load source byte, advance
     emitter.instruction("sub x11, x11, #1");                                    // decrement remaining
 
+    // -- check 0-9 first: digits sit below 'A', so the letter checks' below-'A' shortcut
+    // would otherwise skip straight to the punctuation set and percent-encode them --
+    emitter.instruction("cmp w12, #48");                                        // >= '0'?
+    emitter.instruction("b.lt __rt_rawurlencode_chk_safe");                     // no -> check safe chars
+    emitter.instruction("cmp w12, #57");                                        // <= '9'?
+    emitter.instruction("b.le __rt_rawurlencode_pass");                         // yes -> pass through
     // -- check alphanumeric: A-Z --
     emitter.instruction("cmp w12, #65");                                        // >= 'A'?
     emitter.instruction("b.lt __rt_rawurlencode_chk_safe");                     // no -> check safe chars
@@ -54,11 +60,6 @@ pub fn emit_rawurlencode(emitter: &mut Emitter) {
     emitter.instruction("cmp w12, #97");                                        // >= 'a'?
     emitter.instruction("b.lt __rt_rawurlencode_chk_safe");                     // no -> check safe chars
     emitter.instruction("cmp w12, #122");                                       // <= 'z'?
-    emitter.instruction("b.le __rt_rawurlencode_pass");                         // yes -> pass through
-    // -- check 0-9 --
-    emitter.instruction("cmp w12, #48");                                        // >= '0'?
-    emitter.instruction("b.lt __rt_rawurlencode_chk_safe");                     // no -> check safe chars
-    emitter.instruction("cmp w12, #57");                                        // <= '9'?
     emitter.instruction("b.le __rt_rawurlencode_pass");                         // yes -> pass through
 
     // -- check safe chars: - (45), _ (95), . (46), ~ (126) --
@@ -139,6 +140,12 @@ fn emit_rawurlencode_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov dl, BYTE PTR [rsi]");                              // load one source byte before deciding whether rawurlencode() must encode it
     emitter.instruction("add rsi, 1");                                          // advance the borrowed source string cursor after consuming one byte
     emitter.instruction("sub rcx, 1");                                          // decrement the remaining source length after consuming one byte
+    // digits first: they sit below 'A', which the letter checks' below-'A'
+    // shortcut would otherwise route past the digit range into percent-encoding
+    emitter.instruction("cmp dl, 48");                                          // is the current source byte at least '0', which could make it a decimal digit safe to pass through?
+    emitter.instruction("jb __rt_rawurlencode_chk_safe_linux_x86_64");          // continue with the punctuation safe-byte checks when the byte falls below '0'
+    emitter.instruction("cmp dl, 57");                                          // is the current source byte at most '9', which keeps it inside the decimal-digit safe range?
+    emitter.instruction("jbe __rt_rawurlencode_passthru_linux_x86_64");         // pass decimal digits straight through without percent-encoding them
     emitter.instruction("cmp dl, 65");                                          // is the current source byte at least 'A', which could make it an uppercase ASCII safe character?
     emitter.instruction("jb __rt_rawurlencode_chk_safe_linux_x86_64");          // continue with the remaining safe-byte checks when the byte falls below 'A'
     emitter.instruction("cmp dl, 90");                                          // is the current source byte at most 'Z', which keeps it inside the uppercase ASCII safe range?
@@ -147,10 +154,6 @@ fn emit_rawurlencode_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jb __rt_rawurlencode_chk_safe_linux_x86_64");          // continue with the remaining safe-byte checks when the byte falls below 'a'
     emitter.instruction("cmp dl, 122");                                         // is the current source byte at most 'z', which keeps it inside the lowercase ASCII safe range?
     emitter.instruction("jbe __rt_rawurlencode_passthru_linux_x86_64");         // pass lowercase ASCII letters straight through without percent-encoding them
-    emitter.instruction("cmp dl, 48");                                          // is the current source byte at least '0', which could make it a decimal digit safe to pass through?
-    emitter.instruction("jb __rt_rawurlencode_chk_safe_linux_x86_64");          // continue with the punctuation safe-byte checks when the byte falls below '0'
-    emitter.instruction("cmp dl, 57");                                          // is the current source byte at most '9', which keeps it inside the decimal-digit safe range?
-    emitter.instruction("jbe __rt_rawurlencode_passthru_linux_x86_64");         // pass decimal digits straight through without percent-encoding them
 
     emitter.label("__rt_rawurlencode_chk_safe_linux_x86_64");
     emitter.instruction("cmp dl, 45");                                          // is the current source byte '-' which rawurlencode() leaves untouched?

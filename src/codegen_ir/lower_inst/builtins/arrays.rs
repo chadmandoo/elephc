@@ -1708,7 +1708,9 @@ pub(crate) fn lower_array_multisort(ctx: &mut FunctionContext<'_>, inst: &Instru
 
 /// Lowers `array_search()` for indexed arrays with integer-like payloads.
 pub(crate) fn lower_array_search(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    super::ensure_arg_count(inst, "array_search", 2)?;
+    // Accept the optional `strict` (3rd) arg; the per-type comparison below already matches
+    // strict `===` membership for homogeneously-typed arrays (same rationale as in_array).
+    super::ensure_arg_count_between(inst, "array_search", 2, 3)?;
     let needle = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
     let needle_ty = ctx.value_php_type(needle)?;

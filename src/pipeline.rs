@@ -154,6 +154,13 @@ pub(crate) fn compile(config: CliConfig) {
     let ast = var_export_prelude::inject_if_used(ast);
     timings.record_since("var-export-prelude", phase_started);
 
+    // Inject the stdlib prelude (mb_substr/mb_ltrim/array_last/array_count_values/
+    // http_build_query/filter_var, pure elephc-PHP) only when the program references
+    // one of the names and does not declare its own, so other binaries carry nothing.
+    let phase_started = Instant::now();
+    let ast = crate::stdlib_prelude::inject_if_used(ast);
+    timings.record_since("stdlib-prelude", phase_started);
+
     // Inject the image standard-library prelude (elephc_image externs + GD/Exif/
     // Imagick/Gmagick/Cairo surface, written in elephc-PHP) only when the program
     // references an image symbol, so non-image binaries never declare the

@@ -26,6 +26,7 @@ mod type_builtins;
 mod casts_and_constants;
 mod include_paths;
 mod magic_constants;
+mod stdlib_prelude;
 mod strings;
 mod io;
 mod pdo;

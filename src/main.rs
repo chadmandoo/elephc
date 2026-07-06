@@ -37,6 +37,7 @@ mod pipeline;
 mod resolver;
 mod runtime_cache;
 mod source_map;
+mod stdlib_prelude;
 mod span;
 mod string_bytes;
 mod superglobals;

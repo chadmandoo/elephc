@@ -61,6 +61,7 @@ pub mod types;
 /// Conditionally-injected timezone-introspection prelude (extern + marshalling).
 pub mod tz_prelude;
 /// Conditionally-injected `var_export` prelude (elephc-PHP rendering function).
+pub mod stdlib_prelude;
 pub mod var_export_prelude;
 /// Conditionally-injected `--web` request prelude (extern declarations for bridge getters).
 pub mod web_prelude;

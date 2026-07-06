@@ -55,6 +55,37 @@ impl Checker {
         ] {
             constants.insert(ent.to_string(), PhpType::Int);
         }
+        for upload_or_filter in [
+            "UPLOAD_ERR_OK",
+            "UPLOAD_ERR_INI_SIZE",
+            "UPLOAD_ERR_FORM_SIZE",
+            "UPLOAD_ERR_PARTIAL",
+            "UPLOAD_ERR_NO_FILE",
+            "UPLOAD_ERR_NO_TMP_DIR",
+            "UPLOAD_ERR_CANT_WRITE",
+            "UPLOAD_ERR_EXTENSION",
+            "FILTER_VALIDATE_INT",
+            "FILTER_VALIDATE_BOOLEAN",
+            "FILTER_VALIDATE_BOOL",
+            "FILTER_VALIDATE_FLOAT",
+            "FILTER_VALIDATE_REGEXP",
+            "FILTER_VALIDATE_DOMAIN",
+            "FILTER_VALIDATE_URL",
+            "FILTER_VALIDATE_EMAIL",
+            "FILTER_VALIDATE_IP",
+            "FILTER_VALIDATE_MAC",
+            "FILTER_DEFAULT",
+            "PHP_URL_SCHEME",
+            "PHP_URL_HOST",
+            "PHP_URL_PORT",
+            "PHP_URL_USER",
+            "PHP_URL_PASS",
+            "PHP_URL_PATH",
+            "PHP_URL_QUERY",
+            "PHP_URL_FRAGMENT",
+        ] {
+            constants.insert(upload_or_filter.to_string(), PhpType::Int);
+        }
         constants.insert("FNM_NOESCAPE".to_string(), PhpType::Int);
         constants.insert("FNM_PATHNAME".to_string(), PhpType::Int);
         constants.insert("FNM_PERIOD".to_string(), PhpType::Int);

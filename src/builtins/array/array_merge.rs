@@ -46,6 +46,12 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let ty1 = cx.checker.infer_type(&cx.args[0], cx.env)?;
     let ty2 = cx.checker.infer_type(&cx.args[1], cx.env)?;
+    // A Mixed operand (an `array`-hinted property's element, a `?? []` result) is an array at
+    // runtime in well-typed code — runtime-enforced PHP, same trust posture as the argument
+    // boundary. The merged result is Mixed because the element type is unknown.
+    if matches!(ty1, PhpType::Mixed) {
+        return Ok(PhpType::Mixed);
+    }
     if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. }) {
         return Err(CompileError::new(
             cx.span,

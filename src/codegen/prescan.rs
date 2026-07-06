@@ -77,6 +77,50 @@ pub(crate) fn collect_constants(
             (ExprKind::IntLiteral(ent_value), PhpType::Int),
         );
     }
+    // File-upload error codes (PHP standard values; UPLOAD_ERR_5 was never assigned).
+    for (upload_name, upload_value) in [
+        ("UPLOAD_ERR_OK", 0),
+        ("UPLOAD_ERR_INI_SIZE", 1),
+        ("UPLOAD_ERR_FORM_SIZE", 2),
+        ("UPLOAD_ERR_PARTIAL", 3),
+        ("UPLOAD_ERR_NO_FILE", 4),
+        ("UPLOAD_ERR_NO_TMP_DIR", 6),
+        ("UPLOAD_ERR_CANT_WRITE", 7),
+        ("UPLOAD_ERR_EXTENSION", 8),
+    ] {
+        constants.insert(
+            upload_name.to_string(),
+            (ExprKind::IntLiteral(upload_value), PhpType::Int),
+        );
+    }
+    // filter_var() filter ids (PHP standard values) — the validation filters the synthetic
+    // `filter_var` prelude supports, plus the family's neighbours for completeness.
+    for (filter_name, filter_value) in [
+        ("FILTER_VALIDATE_INT", 257),
+        ("FILTER_VALIDATE_BOOLEAN", 258),
+        ("FILTER_VALIDATE_BOOL", 258),
+        ("FILTER_VALIDATE_FLOAT", 259),
+        ("FILTER_VALIDATE_REGEXP", 272),
+        ("FILTER_VALIDATE_DOMAIN", 277),
+        ("FILTER_VALIDATE_URL", 273),
+        ("FILTER_VALIDATE_EMAIL", 274),
+        ("FILTER_VALIDATE_IP", 275),
+        ("FILTER_VALIDATE_MAC", 276),
+        ("FILTER_DEFAULT", 516),
+        ("PHP_URL_SCHEME", 0),
+        ("PHP_URL_HOST", 1),
+        ("PHP_URL_PORT", 2),
+        ("PHP_URL_USER", 3),
+        ("PHP_URL_PASS", 4),
+        ("PHP_URL_PATH", 5),
+        ("PHP_URL_QUERY", 6),
+        ("PHP_URL_FRAGMENT", 7),
+    ] {
+        constants.insert(
+            filter_name.to_string(),
+            (ExprKind::IntLiteral(filter_value), PhpType::Int),
+        );
+    }
     let (fnm_noescape, fnm_pathname) = match target_platform {
         Platform::MacOS => (1, 2),
         Platform::Linux => (2, 1),
