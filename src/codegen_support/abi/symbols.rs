@@ -13,12 +13,14 @@ use crate::codegen_support::{emit::Emitter, platform::Arch};
 use crate::types::PhpType;
 
 use super::calls::emit_call_label;
-use super::frame::{
-    emit_load_from_address, emit_store_to_address, load_at_offset_scratch, store_at_offset_scratch,
-};
+use super::frame::{emit_load_from_address, emit_store_to_address};
+#[cfg(test)]
+use super::frame::{load_at_offset_scratch, store_at_offset_scratch};
+#[cfg(test)]
+use super::registers::tertiary_scratch_reg;
 use super::registers::{
     float_result_reg, int_result_reg, is_float_register, secondary_scratch_reg, string_result_regs,
-    symbol_scratch_reg, tertiary_scratch_reg,
+    symbol_scratch_reg,
 };
 use super::values::{emit_decref_if_refcounted, emit_load_int_immediate};
 
@@ -26,6 +28,7 @@ use super::values::{emit_decref_if_refcounted, emit_load_int_immediate};
 /// Loads the value from `offset` relative to the frame pointer, then writes it
 /// to `symbol` at `byte_offset`.  Handles Float (single register), Str (pointer
 /// + length pair), Void (null sentinel), and scalar/pointer types differently.
+#[cfg(test)]
 pub fn emit_store_local_slot_to_symbol(
     emitter: &mut Emitter,
     symbol: &str,
@@ -62,6 +65,7 @@ pub fn emit_store_local_slot_to_symbol(
 /// Reads from `symbol` at `byte_offset` and writes it to `offset` relative to
 /// the frame pointer.  Dispatches on `ty` to handle Float, Str (pointer +
 /// length), Void (null sentinel), and scalar/pointer types.
+#[cfg(test)]
 pub fn emit_load_symbol_to_local_slot(
     emitter: &mut Emitter,
     symbol: &str,
@@ -339,32 +343,6 @@ pub fn emit_store_zero_to_symbol(emitter: &mut Emitter, symbol: &str, byte_offse
                 // zero the requested symbol byte offset through the computed address
             }
         }
-    }
-}
-
-/// Loads a 64-bit value from a symbol using the AArch64 paged addressing idiom:
-/// `adrp addr_reg, sym` followed by `ldr dest, [addr_reg, :lo12:sym]` (two
-/// instructions, matching the historical hand-written emission). In PIC mode
-/// the GOT entry is resolved into `addr_reg` first and the payload loaded
-/// through it. `addr_reg` is clobbered in both modes; `dest` may be an integer
-/// or floating-point register. AArch64-only: x86_64 callers use
-/// `emit_load_symbol_to_reg`, which already covers both modes there.
-pub fn emit_load_symbol_to_reg_via_page(
-    emitter: &mut Emitter,
-    dest: &str,
-    addr_reg: &str,
-    symbol: &str,
-) {
-    emitter
-        .target
-        .ensure_aarch64_backend("paged symbol load emission");
-    if emitter.pic_data_refs {
-        emitter.adrp_got(addr_reg, symbol); // load the GOT page that points at the requested symbol
-        emitter.ldr_got_lo12(addr_reg, addr_reg, symbol); // resolve the GOT entry into the symbol address
-        emitter.instruction(&format!("ldr {}, [{}]", dest, addr_reg)); // load the symbol payload through the GOT-resolved address
-    } else {
-        emitter.adrp(addr_reg, symbol); // load the page address that contains the symbol storage
-        emitter.ldr_lo12(dest, addr_reg, symbol); // load the symbol payload from its page offset
     }
 }
 

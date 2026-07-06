@@ -11,9 +11,7 @@
 use crate::codegen_support::{emit::Emitter, platform::Arch};
 
 use super::{
-    emit_load_int_immediate, emit_store_reg_to_symbol,
-    process_argc_reg,
-    process_argv_reg,
+    emit_load_int_immediate, emit_store_reg_to_symbol, process_argc_reg, process_argv_reg,
     temp_int_reg,
 };
 
@@ -31,8 +29,13 @@ pub fn emit_enable_heap_debug_flag(emitter: &mut Emitter) {
 }
 
 /// Copy the current frame pointer into the destination scratch register.
+#[cfg(test)]
 pub fn emit_copy_frame_pointer(emitter: &mut Emitter, dest: &str) {
-    emitter.instruction(&format!("mov {}, {}", dest, super::registers::frame_pointer_reg(emitter))); // copy the current frame pointer into the requested scratch register
+    emitter.instruction(&format!(
+        "mov {}, {}",
+        dest,
+        super::registers::frame_pointer_reg(emitter)
+    )); // copy the current frame pointer into the requested scratch register
 }
 
 /// Emit a process-exit sequence for the current target, then return control to the OS.
@@ -50,13 +53,13 @@ pub fn emit_exit(emitter: &mut Emitter, code: u32) {
     match (emitter.target.platform, emitter.target.arch) {
         (super::super::platform::Platform::MacOS, Arch::AArch64)
         | (super::super::platform::Platform::Linux, Arch::AArch64) => {
-            emitter.instruction(&format!("mov x0, #{}", code));                 // load the requested process exit code into the ABI return register
+            emitter.instruction(&format!("mov x0, #{}", code)); // load the requested process exit code into the ABI return register
             emitter.syscall(1);
         }
         (super::super::platform::Platform::Linux, Arch::X86_64) => {
-            emitter.instruction(&format!("mov edi, {}", code));                 // load the requested process exit code into the SysV first-argument register
-            emitter.instruction("mov eax, 60");                                 // Linux x86_64 syscall 60 = exit
-            emitter.instruction("syscall");                                     // terminate the process through the Linux x86_64 syscall ABI
+            emitter.instruction(&format!("mov edi, {}", code)); // load the requested process exit code into the SysV first-argument register
+            emitter.instruction("mov eax, 60"); // Linux x86_64 syscall 60 = exit
+            emitter.instruction("syscall"); // terminate the process through the Linux x86_64 syscall ABI
         }
         (super::super::platform::Platform::MacOS, Arch::X86_64) => {
             panic!("process exit emission is not implemented yet for target macos-x86_64");
@@ -86,9 +89,9 @@ pub fn emit_exit_with_result_reg(emitter: &mut Emitter) {
             emitter.syscall(1);
         }
         (super::super::platform::Platform::Linux, Arch::X86_64) => {
-            emitter.instruction("mov edi, eax");                                // move the C return value into the SysV exit argument register
-            emitter.instruction("mov eax, 60");                                 // Linux x86_64 syscall 60 = exit
-            emitter.instruction("syscall");                                     // terminate the process with the bridge return code
+            emitter.instruction("mov edi, eax"); // move the C return value into the SysV exit argument register
+            emitter.instruction("mov eax, 60"); // Linux x86_64 syscall 60 = exit
+            emitter.instruction("syscall"); // terminate the process with the bridge return code
         }
         (super::super::platform::Platform::MacOS, Arch::X86_64) => {
             panic!("process exit emission is not implemented yet for target macos-x86_64");

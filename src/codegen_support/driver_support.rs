@@ -122,9 +122,3 @@ pub fn generate_runtime_with_features_pic(
     }
     output
 }
-
-/// Rounds `n` up to the nearest 16-byte boundary. Used to align stack frame sizes
-/// and heap allocation sizes to the 16-byte ABI requirement on both AArch64 and x86_64.
-pub(super) fn align16(n: usize) -> usize {
-    (n + 15) & !15
-}

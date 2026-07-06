@@ -338,10 +338,6 @@ fn runtime_extern_descriptor_cases(
             label: entry_label,
             descriptor_label,
             php_name: Some(decl.name.clone()),
-            sig: wrapper_sig,
-            captures: Vec::new(),
-            has_invoker: true,
-            invoker_label: Some(invoker_label),
         });
     }
     Ok(cases)
@@ -408,10 +404,6 @@ fn runtime_builtin_descriptor_cases(
             label: entry_label,
             descriptor_label,
             php_name: Some(name.to_string()),
-            sig: case_sig,
-            captures: Vec::new(),
-            has_invoker: true,
-            invoker_label: Some(invoker_label),
         });
     }
     Ok(cases)
@@ -456,10 +448,6 @@ fn runtime_user_function_descriptor_cases(
             label: function_symbol(&function.name),
             descriptor_label,
             php_name: Some(function.name.clone()),
-            sig: case_sig,
-            captures: Vec::new(),
-            has_invoker: true,
-            invoker_label: Some(invoker_label),
         });
     }
     cases
@@ -993,10 +981,6 @@ fn runtime_static_method_descriptor_cases(
             label: entry_label,
             descriptor_label,
             php_name: Some(php_name),
-            sig: wrapper_sig,
-            captures: Vec::new(),
-            has_invoker: true,
-            invoker_label: Some(invoker_label),
         };
         cases.push(callable_dispatch::RuntimeStaticMethodCallableCase {
             class_name,

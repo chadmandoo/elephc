@@ -269,19 +269,6 @@ fn emit_box_current_owned_refcounted_as_mixed_for_container(emitter: &mut Emitte
     }
 }
 
-/// Converts an Iterable to Mixed, returning true if the conversion was applied.
-pub(crate) fn emit_box_iterable_value_for_mixed_container(
-    emitter: &mut Emitter,
-    ty: &mut PhpType,
-) -> bool {
-    if !matches!(ty, PhpType::Iterable) {
-        return false;
-    }
-    emit_box_iterable_as_mixed(emitter);
-    *ty = PhpType::Mixed;
-    true
-}
-
 /// Boxes an iterable by probing its concrete heap kind and mapping it to a Mixed tag.
 fn emit_box_iterable_as_mixed(emitter: &mut Emitter) {
     match emitter.target.arch {

@@ -54,7 +54,6 @@ thread_local! {
     static DECLARED_CLASS_NAMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DECLARED_INTERFACE_NAMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DECLARED_TRAIT_NAMES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
-    static DECLARED_TRAIT_USES: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
 }
 
 /// Sets the number of autoload rules registered.
@@ -83,7 +82,6 @@ pub fn prepare_declared_name_order(
     interfaces: &HashMap<String, InterfaceInfo>,
 ) {
     let declared_trait_order = collect_declared_trait_names(program);
-    DECLARED_TRAIT_USES.with(|uses| *uses.borrow_mut() = collect_declared_trait_uses(program));
     set_declared_name_order(
         collect_declared_class_names(program, classes),
         collect_declared_interface_names(program, interfaces),
@@ -109,20 +107,6 @@ pub(crate) fn declared_trait_names() -> Vec<String> {
     DECLARED_TRAIT_NAMES.with(|names| names.borrow().clone())
 }
 
-/// Provides the Declared trait uses helper used by the codegen module.
-pub(crate) fn declared_trait_uses(name: &str) -> Vec<String> {
-    let key = crate::names::php_symbol_key(name.trim_start_matches('\\'));
-    DECLARED_TRAIT_USES.with(|uses| {
-        uses.borrow()
-            .iter()
-            .find(|(candidate, _)| {
-                crate::names::php_symbol_key(candidate.trim_start_matches('\\')) == key
-            })
-            .map(|(_, traits)| traits.clone())
-            .unwrap_or_default()
-    })
-}
-
 use crate::parser::ast::{Expr, ExprKind, Program, Stmt, StmtKind};
 use crate::types::{ClassInfo, InterfaceInfo};
 pub(crate) use arrays::emit_array_value_type_stamp;
@@ -137,11 +121,11 @@ pub use runtime_features::RuntimeFeatures;
 pub use runtime_features::{
     required_libraries_for_runtime_features, runtime_features_for_program_and_classes,
 };
-pub(crate) use sentinels::{NULL_SENTINEL, UNINITIALIZED_TYPED_PROPERTY_SENTINEL};
+pub(crate) use sentinels::NULL_SENTINEL;
 pub(crate) use value_boxing::{
     emit_box_current_owned_value_as_mixed, emit_box_current_value_as_mixed,
-    emit_box_iterable_value_for_mixed_container, emit_box_runtime_payload_as_mixed,
-    emit_release_pushed_refcounted_temp_after_array_push, runtime_value_tag,
+    emit_box_runtime_payload_as_mixed, emit_release_pushed_refcounted_temp_after_array_push,
+    runtime_value_tag,
 };
 pub(crate) use wrappers::emit_fiber_wrapper;
 
@@ -205,36 +189,6 @@ fn collect_declared_trait_names(program: &Program) -> Vec<String> {
         }
     }
     names
-}
-
-/// Collects declared trait uses for the surrounding analysis or metadata result.
-fn collect_declared_trait_uses(program: &Program) -> HashMap<String, Vec<String>> {
-    let mut uses = HashMap::new();
-    for stmt in program {
-        match &stmt.kind {
-            StmtKind::TraitDecl {
-                name, trait_uses, ..
-            } => {
-                uses.insert(
-                    name.clone(),
-                    trait_uses
-                        .iter()
-                        .flat_map(|use_decl| {
-                            use_decl
-                                .trait_names
-                                .iter()
-                                .map(|trait_name| trait_name.as_str().to_string())
-                        })
-                        .collect(),
-                );
-            }
-            StmtKind::NamespaceBlock { body, .. } => {
-                uses.extend(collect_declared_trait_uses(body));
-            }
-            _ => {}
-        }
-    }
-    uses
 }
 
 /// Helper for collecting declared names of a specific AST statement kind.

@@ -20,14 +20,9 @@ pub(crate) struct RuntimeCallableCase {
     pub(crate) label: String,
     pub(crate) descriptor_label: String,
     pub(crate) php_name: Option<String>,
-    pub(crate) sig: FunctionSig,
-    pub(crate) captures: Vec<(String, PhpType, bool)>,
-    pub(crate) has_invoker: bool,
-    pub(crate) invoker_label: Option<String>,
 }
 
 pub(crate) enum RuntimeCallableSelector<'a> {
-    Address(&'a str),
     StringNameStack {
         ptr_offset: usize,
         len_offset: usize,
@@ -252,9 +247,6 @@ pub(crate) fn emit_branch_if_callable_case_mismatch(
     data: &mut DataSection,
 ) {
     match selector {
-        RuntimeCallableSelector::Address(call_reg) => {
-            emit_branch_if_address_mismatch(call_reg, &case.label, next_case, emitter);
-        }
         RuntimeCallableSelector::StringNameStack {
             ptr_offset,
             len_offset,
@@ -320,27 +312,6 @@ pub(crate) fn specialized_runtime_case_sig(
         }
     }
     sig
-}
-
-/// Emits assembly for branch if address mismatch.
-fn emit_branch_if_address_mismatch(
-    call_reg: &str,
-    candidate_label: &str,
-    next_case: &str,
-    emitter: &mut Emitter,
-) {
-    match emitter.target.arch {
-        Arch::AArch64 => {
-            abi::emit_symbol_address(emitter, "x9", candidate_label);
-            emitter.instruction(&format!("cmp {}, x9", call_reg)); // does the runtime callable entry match this AOT signature case?
-            emitter.instruction(&format!("b.ne {}", next_case)); // try the next callable signature case when the pointer differs
-        }
-        Arch::X86_64 => {
-            abi::emit_symbol_address(emitter, "r10", candidate_label);
-            emitter.instruction(&format!("cmp {}, r10", call_reg)); // does the runtime callable entry match this AOT signature case?
-            emitter.instruction(&format!("jne {}", next_case)); // try the next callable signature case when the pointer differs
-        }
-    }
 }
 
 /// Emits assembly for branch if string name mismatch.

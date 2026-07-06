@@ -24,17 +24,11 @@ use crate::types::{FunctionSig, PhpType};
 pub(crate) const CALLABLE_DESC_KIND_CLOSURE: u64 = CallableDescriptorShape::Closure as u64;
 pub(crate) const CALLABLE_DESC_KIND_FIRST_CLASS: u64 =
     CallableDescriptorShape::FirstClass as u64;
-pub(crate) const CALLABLE_DESC_KIND_CALLBACK_ADAPTER: u64 =
-    CallableDescriptorShape::CallbackAdapter as u64;
 pub(crate) const CALLABLE_DESC_KIND_FUNCTION: u64 = CallableDescriptorShape::Function as u64;
 pub(crate) const CALLABLE_DESC_KIND_BUILTIN: u64 = CallableDescriptorShape::Builtin as u64;
 pub(crate) const CALLABLE_DESC_KIND_EXTERN: u64 = CallableDescriptorShape::Extern as u64;
 pub(crate) const CALLABLE_DESC_KIND_STATIC_METHOD: u64 =
     CallableDescriptorShape::StaticMethod as u64;
-pub(crate) const CALLABLE_DESC_KIND_OBJECT_INVOKE: u64 =
-    CallableDescriptorShape::ObjectInvoke as u64;
-pub(crate) const CALLABLE_DESC_KIND_INSTANCE_METHOD: u64 =
-    CallableDescriptorShape::InstanceMethod as u64;
 
 pub(crate) const CALLABLE_DESC_ENTRY_OFFSET: usize = 8;
 #[allow(dead_code)]
@@ -140,6 +134,7 @@ impl CallableDescriptorInvocation {
 
 /// Emits a descriptor with signature, environment, and invocation side records.
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 pub(crate) fn static_descriptor_with_meta(
     data: &mut DataSection,
     entry_label: &str,
@@ -234,33 +229,6 @@ fn static_descriptor_from_spec(
         invocation_word,
         invoker_word,
     ])
-}
-
-/// Emits assembly for loading a descriptor address with side metadata.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn emit_load_descriptor_address_with_meta(
-    emitter: &mut Emitter,
-    data: &mut DataSection,
-    dest_reg: &str,
-    entry_label: &str,
-    php_name: Option<&str>,
-    kind: u64,
-    sig: Option<&FunctionSig>,
-    captures: &[(String, PhpType, bool)],
-    hidden_params: &[(String, PhpType, bool)],
-    invocation: CallableDescriptorInvocation,
-) {
-    let descriptor_label = static_descriptor_with_meta(
-        data,
-        entry_label,
-        php_name,
-        kind,
-        sig,
-        captures,
-        hidden_params,
-        invocation,
-    );
-    abi::emit_symbol_address(emitter, dest_reg, &descriptor_label);
 }
 
 /// Emits assembly for loading the ABI entry slot from a descriptor.
