@@ -22,6 +22,7 @@ sidebar:
 
 The following runtime helpers are referenced:
 - `__rt_preg_match`
+- `__rt_preg_match_all`
 - `__rt_preg_match_capture`
 
 ## Signature summary
