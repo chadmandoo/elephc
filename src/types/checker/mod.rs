@@ -95,6 +95,11 @@ pub(crate) struct Checker {
     pub interfaces: HashMap<String, InterfaceInfo>,
     /// Class definitions collected during the first pass, keyed by canonical name.
     pub classes: HashMap<String, ClassInfo>,
+    /// `(declaring_class_key, method_key)` pairs whose RETURN was declared `: static`
+    /// (or `?static`) in source. The relative-type pre-pass rewrites the annotation to
+    /// the declaring class, so this set is how call-site inference knows to substitute
+    /// the RECEIVER's class instead (late static binding).
+    pub static_return_methods: HashSet<(String, String)>,
     /// Canonical class names declared in the program, available for forward references
     /// before the full class definitions are available.
     pub declared_classes: HashSet<String>,

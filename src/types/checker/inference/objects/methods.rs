@@ -417,6 +417,18 @@ impl Checker {
             .and_then(|class_info| class_info.method_impl_classes.get(&method_key))
             .cloned()
             .unwrap_or_else(|| class_name.to_string());
+        // Late static binding: a method DECLARED `: static` returns the RECEIVER's class, not
+        // the declaring class the relative-type pre-pass resolved the annotation to
+        // (Field::with(): static called on a NumberField yields NumberField).
+        let declaring_key = self
+            .classes
+            .get(class_name)
+            .and_then(|class_info| class_info.method_declaring_classes.get(&method_key))
+            .map(|declaring| php_symbol_key(declaring))
+            .unwrap_or_else(|| php_symbol_key(class_name));
+        let declares_static_return = self
+            .static_return_methods
+            .contains(&(declaring_key, method_key.clone()));
         let declared_flags = self
             .classes
             .get(&impl_class_name)
@@ -473,7 +485,25 @@ impl Checker {
                             wider_type_syntactic(existing_elem_ty.as_ref(), &elem_ty);
                     }
                 }
-                return Ok(sig.return_type.clone());
+                let mut return_ty = sig.return_type.clone();
+                if declares_static_return {
+                    return_ty = match return_ty {
+                        PhpType::Object(_) => PhpType::Object(class_name.to_string()),
+                        PhpType::Union(members) => PhpType::Union(
+                            members
+                                .into_iter()
+                                .map(|member| match member {
+                                    PhpType::Object(_) => {
+                                        PhpType::Object(class_name.to_string())
+                                    }
+                                    other => other,
+                                })
+                                .collect(),
+                        ),
+                        other => other,
+                    };
+                }
+                return Ok(return_ty);
             }
         }
         Ok(PhpType::Int)

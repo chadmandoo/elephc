@@ -635,3 +635,15 @@ echo $c->value;
     );
     assert_eq!(out, "42:42");
 }
+
+/// EC-19 (#502): an inherited method declared `: static` late-binds its return to the
+/// RECEIVER's class — `Leaf::bump()` chaining the base's `with(): static` type-checks as Leaf
+/// and `new static` allocates the runtime subclass (the ward-forms Field::with pattern).
+/// Byte-parity vs PHP 8.5.
+#[test]
+fn test_late_static_return_propagates_to_receiver() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); abstract class Base { final public function __construct(public string $v, public int $n) {} public function with(string $v): static { return new static($v, $this->n + 1); } abstract public function tag(): string; } final class Leaf extends Base { public function bump(string $v): static { return $this->with($v); } public function tag(): string { return 'leaf:' . $this->v . ':' . $this->n; } } echo (new Leaf('a', 0))->bump('b')->with('c')->tag();",
+    );
+    assert_eq!(out, "leaf:c:2");
+}

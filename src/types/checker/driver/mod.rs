@@ -83,7 +83,8 @@ pub(super) fn check_types_impl(
     // now that inheritance and trait flattening have settled the concrete enclosing class. This
     // single pass feeds the schema signatures, the body-check pass, and codegen (which all read
     // the flattened method/property declarations), so no later stage sees a symbolic `self`.
-    substitute_relative_class_types_in_flattened(&mut flattened_classes);
+    checker.static_return_methods =
+        substitute_relative_class_types_in_flattened(&mut flattened_classes);
     let declared_traits: HashSet<String> = program
         .iter()
         .filter_map(|stmt| match &stmt.kind {
@@ -348,18 +349,47 @@ fn flatten_enum_methods(program: &[Stmt]) -> Vec<FlattenedClass> {
     units
 }
 
-/// Rewrites `self`/`static`/`parent` annotations across flattened class metadata.
-fn substitute_relative_class_types_in_flattened(classes: &mut [FlattenedClass]) {
+/// Rewrites `self`/`static`/`parent` annotations across flattened class metadata. Returns the
+/// `(declaring_class_key, method_key)` pairs whose return was declared `: static` — recorded
+/// BEFORE the rewrite erases the distinction, so call-site inference can late-bind them to
+/// the receiver's class.
+fn substitute_relative_class_types_in_flattened(
+    classes: &mut [FlattenedClass],
+) -> HashSet<(String, String)> {
+    let mut static_returns = HashSet::new();
     for class in classes.iter_mut() {
         let self_class = class.name.clone();
         let parent = class.extends.clone();
         let parent_ref = parent.as_deref();
+        for method in class.methods.iter() {
+            if method
+                .return_type
+                .as_ref()
+                .is_some_and(type_expr_declares_static)
+            {
+                static_returns
+                    .insert((php_symbol_key(&self_class), php_symbol_key(&method.name)));
+            }
+        }
         substitute_relative_class_types_in_methods(&mut class.methods, &self_class, parent_ref);
         for property in class.properties.iter_mut() {
             if let Some(ty) = property.type_expr.as_mut() {
                 *ty = ty.substitute_relative_class_types(&self_class, parent_ref);
             }
         }
+    }
+    static_returns
+}
+
+/// Returns true when a return annotation is `static` (or `?static`) — the late-static-bound
+/// return form.
+fn type_expr_declares_static(ty: &crate::parser::ast::TypeExpr) -> bool {
+    match ty {
+        crate::parser::ast::TypeExpr::Named(name) => {
+            name.as_str().eq_ignore_ascii_case("static")
+        }
+        crate::parser::ast::TypeExpr::Nullable(inner) => type_expr_declares_static(inner),
+        _ => false,
     }
 }
 
