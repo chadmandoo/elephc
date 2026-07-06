@@ -215,12 +215,10 @@ pub(super) fn parse_use_stmt(
         } else {
             default_kind.clone()
         };
-        let name = parse_name(
-            tokens,
-            pos,
-            span,
-            "Expected imported name after ',' in use declaration",
-        )?;
+        // Use the import-name-aware prefix parser (not the generic `parse_name`)
+        // so a comma-list continuation accepts constant-name tokens too, e.g.
+        // `use const PHP_EOL, PHP_INT_MAX;` (EC-27).
+        let name = parse_use_prefix(tokens, pos, span)?;
         all_imports.push(parse_single_use_item_after_name(
             tokens, pos, span, name, item_kind,
         )?);
@@ -365,6 +363,12 @@ fn token_as_import_name(token: &Token) -> Option<String> {
         Token::MLog10e => "M_LOG10E",
         Token::Stdin => "STDIN",
         Token::Stdout => "STDOUT",
+        Token::Stderr => "STDERR",
+        // Constant-name tokens the lexer promotes to dedicated tokens still need to
+        // be importable via `use const` (EC-27: `use const PHP_EOL;` is common).
+        Token::PhpEol => "PHP_EOL",
+        Token::PhpOs => "PHP_OS",
+        Token::DirectorySeparator => "DIRECTORY_SEPARATOR",
         _ => return None,
     };
     Some(name.to_string())

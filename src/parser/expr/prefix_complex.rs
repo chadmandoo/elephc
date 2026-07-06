@@ -181,6 +181,11 @@ pub(super) fn parse_closure(
                     ));
                 }
                 *pos += 1;
+                // PHP 8.0+ allows a trailing comma in the use() capture list
+                // (common in multi-line captures — EC-27).
+                if tokens.get(*pos).map(|(t, _)| t) == Some(&Token::RParen) {
+                    break;
+                }
             }
             let is_ref = if tokens.get(*pos).map(|(token, _)| token) == Some(&Token::Ampersand) {
                 *pos += 1;

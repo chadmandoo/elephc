@@ -546,3 +546,45 @@ fn test_trait_constants_flatten_into_using_class() {
     );
     assert_eq!(out, "yn");
 }
+
+/// EC-27 (#510): `use const PHP_EOL` and `use function strlen` symbol imports — including
+/// lexer-promoted constant-name tokens (PHP_EOL/PHP_INT_MAX) and the comma-list form.
+/// Byte-parity vs PHP 8.5.
+#[test]
+fn test_use_const_and_function_imports() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+use function strlen, strtoupper;
+use const PHP_EOL, PHP_INT_MAX;
+function main(): void {
+    echo strtoupper('hi'), ':', strlen('abc'), PHP_EOL, PHP_INT_MAX;
+}
+main();
+"#,
+    );
+    assert_eq!(out, "HI:3\n9223372036854775807");
+}
+
+/// EC-27 (#510): a trailing comma in a multi-line closure `use (...)` capture list
+/// (PHP 8.0+). Byte-parity vs PHP 8.5.
+#[test]
+fn test_closure_use_capture_trailing_comma() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $a = 1; $b = 2; $c = 3;
+    $fn = static function (int $x) use (
+        $a,
+        $b,
+        $c,
+    ): int {
+        return $x + $a + $b + $c;
+    };
+    echo $fn(10);
+}
+main();
+"#,
+    );
+    assert_eq!(out, "16");
+}
