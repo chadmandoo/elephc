@@ -1783,6 +1783,89 @@ echo eval('return call_user_func("eval_cuf_join", "A", "B")
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// Verifies static method callbacks can use literal eval EIR AOT.
+#[test]
+fn test_literal_eval_static_method_callbacks_use_aot_without_magician() {
+    let dir = make_cli_test_dir("elephc_literal_eval_static_method_callbacks_aot");
+    let source = r#"<?php
+class EvalAotStaticMethodCallbackBox {
+    public static function join(string $left, string $right, bool $bang = false): string {
+        return $left . ":" . $right . ($bang ? "!" : ".");
+    }
+
+    public static function inc(int $x): int {
+        return $x + 1;
+    }
+}
+echo eval('return call_user_func("EvalAotStaticMethodCallbackBox::join", "A", "B")
+    . "|" . call_user_func(["EvalAotStaticMethodCallbackBox", "join"], "C", "D", true)
+    . "|" . call_user_func_array("EvalAotStaticMethodCallbackBox::join", ["right" => "F", "left" => "E"])
+    . "|" . call_user_func_array(["EvalAotStaticMethodCallbackBox", "inc"], [41]);');
+"#;
+    let (user_asm, runtime_asm, required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("eval literal AOT compiled EIR function"),
+        "static method callbacks should use EIR AOT:\n{user_asm}"
+    );
+    assert!(
+        !user_asm.contains("__elephc_eval_execute"),
+        "static method callbacks should not call the bridge:\n{user_asm}"
+    );
+    assert!(
+        !user_asm.contains("__elephc_eval_"),
+        "native-only static method callback eval should not reference eval helpers:\n{user_asm}"
+    );
+    assert!(
+        !runtime_asm.contains("__elephc_eval_"),
+        "native-only static method callback eval should not emit eval helpers:\n{runtime_asm}"
+    );
+    assert!(
+        !required_libraries
+            .iter()
+            .any(|lib| lib == "elephc_magician"),
+        "native-only static method callback eval should not link elephc_magician: {required_libraries:?}"
+    );
+    let runtime_obj = runtime_obj_for_asm(&runtime_asm);
+    let out = assemble_and_run(
+        &user_asm,
+        &runtime_obj,
+        &dir,
+        &required_libraries,
+        &default_link_paths(),
+        &[],
+    );
+    assert_eq!(out, "A:B.|C:D!|E:F.|42");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// Verifies static method callbacks without declared scalar signatures keep the bridge fallback.
+#[test]
+fn test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback() {
+    let dir = make_cli_test_dir("elephc_literal_eval_static_method_callback_untyped_bridge");
+    let source = r#"<?php
+class EvalAotUntypedStaticMethodCallbackBox {
+    public static function add($left, $right) {
+        return $left + $right;
+    }
+}
+echo eval('return call_user_func("EvalAotUntypedStaticMethodCallbackBox::add", 1, 2);');
+"#;
+    let (user_asm, _runtime_asm, required_libraries) =
+        compile_source_to_asm_with_options(source, &dir, 8_388_608, false, false);
+    assert!(
+        user_asm.contains("__elephc_eval_execute"),
+        "untyped static method callbacks should keep the interpreter bridge fallback:\n{user_asm}"
+    );
+    assert!(
+        required_libraries
+            .iter()
+            .any(|lib| lib == "elephc_magician"),
+        "untyped static method callbacks should link elephc_magician for fallback: {required_libraries:?}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// Verifies dynamic `call_user_func()` callbacks keep the eval bridge fallback.
 #[test]
 fn test_literal_eval_dynamic_call_user_func_callback_keeps_bridge_fallback() {

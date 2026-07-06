@@ -3337,3 +3337,22 @@ Verifiche locali:
 - `cargo check --tests`
 - `rustfmt --check src/eval_aot.rs src/ir_lower/program.rs src/ir_lower/expr/mod.rs src/codegen_ir/lower_inst/builtins/eval.rs tests/codegen/eval.rs`
 - `git diff --check -- src/eval_aot.rs src/ir_lower/program.rs src/ir_lower/expr/mod.rs src/codegen_ir/lower_inst/builtins/eval.rs tests/codegen/eval.rs .plans/elephc-eval-aot-complete-plan.md`
+
+## Aggiornamento: callback a metodi statici
+
+Tranche completata:
+
+- il classificatore AOT per literal eval riconosce callback statiche
+  compile-time in forma `"Class::method"` e `["Class", "method"]`;
+- `call_user_func()` e `call_user_func_array()` possono restare nel percorso
+  EIR AOT quando il metodo statico target e' pubblico, tipizzato e supportato
+  dagli stessi predicate delle chiamate statiche dirette;
+- callback statiche verso metodi non tipizzati o non supportati continuano a
+  usare il fallback magician.
+
+Verifiche locali:
+
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_callbacks_use_aot_without_magician -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_call_user_func_user_function_uses_aot_without_magician -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_uses_aot_without_magician -- --exact --nocapture`

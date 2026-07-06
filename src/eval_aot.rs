@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::names::php_symbol_key;
+use crate::names::{php_symbol_key, Name};
 use crate::parser::ast::{
     BinOp, CallableTarget, CastType, Expr, ExprKind, Program, StaticReceiver, Stmt, StmtKind,
 };
@@ -3519,7 +3519,7 @@ where
     }
 }
 
-/// Returns true when a compile-time string callback names a safe builtin or user function.
+/// Returns true when a compile-time callback names a safe function or static method.
 fn static_callback_call_is_eir_safe<S>(
     callback: &Expr,
     callback_args: &[Expr],
@@ -3530,16 +3530,66 @@ fn static_callback_call_is_eir_safe<S>(
 where
     S: EirStaticCallSupport,
 {
-    let ExprKind::StringLiteral(callback_name) = &callback.kind else {
-        return false;
-    };
-    if callback_name.contains("::") {
-        return false;
+    if let Some((receiver, method)) = static_callback_static_method_parts(callback) {
+        return support.static_method_supported(&receiver, method.as_str(), callback_args);
     }
-    let short_callback = callback_name.trim_start_matches('\\');
-    eir_runtime_builtin_call_is_safe(short_callback, callback_args, support, facts, scope_reads)
-        || fold_static_builtin_call(short_callback, callback_args).is_some()
-        || support.function_supported(short_callback, callback_args)
+    static_callback_function_name(callback).is_some_and(|callback_name| {
+        let short_callback = callback_name.trim_start_matches('\\');
+        eir_runtime_builtin_call_is_safe(short_callback, callback_args, support, facts, scope_reads)
+            || fold_static_builtin_call(short_callback, callback_args).is_some()
+            || support.function_supported(short_callback, callback_args)
+    })
+}
+
+/// Returns the function name from a compile-time callback expression.
+fn static_callback_function_name(callback: &Expr) -> Option<&str> {
+    match &callback.kind {
+        ExprKind::StringLiteral(name) if !name.contains("::") => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+/// Returns the named receiver and method from a compile-time static-method callback.
+fn static_callback_static_method_parts(callback: &Expr) -> Option<(StaticReceiver, String)> {
+    match &callback.kind {
+        ExprKind::StringLiteral(name) => static_callback_static_method_string_parts(name),
+        ExprKind::ArrayLiteral(items) => static_callback_static_method_array_parts(items),
+        _ => None,
+    }
+}
+
+/// Splits a literal `Class::method` callback into its receiver and method.
+fn static_callback_static_method_string_parts(name: &str) -> Option<(StaticReceiver, String)> {
+    let (class_name, method) = name.trim_start_matches('\\').rsplit_once("::")?;
+    if class_name.is_empty() || method.is_empty() {
+        return None;
+    }
+    Some((
+        StaticReceiver::Named(Name::from(class_name.trim_start_matches('\\').to_string())),
+        method.to_string(),
+    ))
+}
+
+/// Extracts a literal `["Class", "method"]` callback target.
+fn static_callback_static_method_array_parts(items: &[Expr]) -> Option<(StaticReceiver, String)> {
+    let [class_expr, method_expr] = items else {
+        return None;
+    };
+    let ExprKind::StringLiteral(class_name) = &class_expr.kind else {
+        return None;
+    };
+    let ExprKind::StringLiteral(method) = &method_expr.kind else {
+        return None;
+    };
+    if class_name.is_empty() || method.is_empty() {
+        return None;
+    }
+    Some((
+        StaticReceiver::Named(Name::from(
+            class_name.as_str().trim_start_matches('\\').to_string(),
+        )),
+        method.clone(),
+    ))
 }
 
 /// Converts a static `call_user_func_array()` argument array into callback args.
