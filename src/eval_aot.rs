@@ -3545,6 +3545,7 @@ where
 fn static_callback_function_name(callback: &Expr) -> Option<&str> {
     match &callback.kind {
         ExprKind::StringLiteral(name) if !name.contains("::") => Some(name.as_str()),
+        ExprKind::FirstClassCallable(CallableTarget::Function(name)) => Some(name.as_str()),
         _ => None,
     }
 }
@@ -3553,6 +3554,9 @@ fn static_callback_function_name(callback: &Expr) -> Option<&str> {
 fn static_callback_static_method_parts(callback: &Expr) -> Option<(StaticReceiver, String)> {
     match &callback.kind {
         ExprKind::StringLiteral(name) => static_callback_static_method_string_parts(name),
+        ExprKind::FirstClassCallable(CallableTarget::StaticMethod { receiver, method }) => {
+            Some((receiver.clone(), method.clone()))
+        }
         ExprKind::ArrayLiteral(items) => static_callback_static_method_array_parts(items),
         _ => None,
     }

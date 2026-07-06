@@ -3374,3 +3374,22 @@ Verifiche locali:
 
 - `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_callbacks_use_aot_without_magician -- --exact --nocapture`
 - `cargo test --test codegen_tests codegen::eval::test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback -- --exact --nocapture`
+
+## Aggiornamento: callback first-class statici
+
+Tranche completata:
+
+- il gate AOT riconosce callback first-class compile-time in
+  `call_user_func()` e `call_user_func_array()` per funzioni note e metodi
+  statici nominali;
+- la classificazione generale di un first-class callable come valore resta
+  conservativa: il supporto vale solo quando il callable e' usato come callback
+  statico immediato;
+- i predicate esistenti continuano a escludere metodi non tipizzati, receiver
+  non nominali e signature fuori subset.
+
+Verifiche locali:
+
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_call_user_func_user_function_uses_aot_without_magician -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_callbacks_use_aot_without_magician -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback -- --exact --nocapture`
