@@ -221,3 +221,34 @@ echo Derived::get() . "\n";
     );
     assert_eq!(out, "10\n20\n");
 }
+
+/// EC-26 (#509): `$expr::class` — PHP 8.0 dynamic class-name-of on a value. An object
+/// receiver yields its runtime FQCN (incl. a subclass instance through a parent-typed
+/// variable and a Mixed receiver read from an array); `Name::class`/`static::class`
+/// still fold statically. Byte-parity vs PHP 8.5.
+#[test]
+fn test_dynamic_expr_class_name() {
+    let out = compile_and_run(
+        r#"<?php
+interface Shape {}
+class Circle implements Shape {}
+class Square implements Shape {}
+class Ring extends Circle {}
+function nameOf(Shape $s): string { return $s::class; }
+function main(): void {
+    $c = new Circle();
+    echo $c::class, ';';
+    echo nameOf(new Square()), ';';
+    foreach ([new Circle(), new Square()] as $sh) { echo $sh::class, ','; }
+    $ring = new Ring();
+    echo ';', $ring::class;
+    $arr = ['x' => new Square()];
+    $got = $arr['x'];
+    echo ';', $got::class;
+    echo ';', ($c::class === Circle::class ? 'eq' : 'ne');
+}
+main();
+"#,
+    );
+    assert_eq!(out, "Circle;Square;Circle,Square,;Ring;Square;eq");
+}

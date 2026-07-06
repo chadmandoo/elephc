@@ -365,6 +365,40 @@ pub(crate) fn lower_class_name_lookup(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `__elephc_class_name_of(value)` — the dynamic `$expr::class` resolver.
+///
+/// Dispatches on the receiver's static type: an OBJECT reads its class name from
+/// the dense `_class_name_entries` table (shared with `get_class`); a STRING is
+/// its own class name (identity); a Mixed/Union value routes to
+/// `__rt_class_name_of`, which unwraps the boxed cell (object payload → class
+/// name, string payload → its bytes). Matches PHP `::class` semantics, which
+/// differ from `get_class()` (that errors on a non-object).
+pub(crate) fn lower_dynamic_class_name_of(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "__elephc_class_name_of", 1)?;
+    let value = expect_operand(inst, 0)?;
+    match ctx.value_php_type(value)? {
+        PhpType::Object(_) => {
+            ctx.load_value_to_result(value)?;
+            emit_dynamic_object_class_name(ctx, "get_class");
+        }
+        PhpType::Str => {
+            // A string receiver is already the class name.
+            ctx.load_value_to_result(value)?;
+        }
+        _ => {
+            match ctx.emitter.target.arch {
+                Arch::AArch64 => ctx.load_value_to_reg(value, "x0")?,
+                Arch::X86_64 => ctx.load_value_to_reg(value, "rdi")?,
+            };
+            abi::emit_call_label(ctx.emitter, "__rt_class_name_of");
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `is_a()` and `is_subclass_of()` for object operands and literal targets.
 pub(crate) fn lower_is_a_relation(
     ctx: &mut FunctionContext<'_>,

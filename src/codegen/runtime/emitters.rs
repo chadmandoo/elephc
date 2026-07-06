@@ -337,6 +337,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     objects::emit_new_by_name(emitter);
     objects::emit_class_file_by_name(emitter);
     system::emit_get_debug_type(emitter);
+    system::emit_class_name_of(emitter);
     objects::emit_call_object_destructor(emitter);
     objects::emit_json_encode_stdclass(emitter);
 

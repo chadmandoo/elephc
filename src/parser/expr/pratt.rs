@@ -81,6 +81,23 @@ pub(super) fn parse_expr_bp(
                 // `call_user_func([$cls, $method], ...args)`, reusing the runtime dispatch path.
                 let span = tokens[*pos].1;
                 *pos += 1; // consume '::'
+                // `$expr::class` — PHP 8.0 dynamic class-name-of on a value. Unlike
+                // `Name::class` / `static::class` (folded statically in the prefix
+                // parser), an expression receiver resolves at runtime: an object
+                // yields its class name, a string yields itself. Desugar to the
+                // internal `__elephc_class_name_of` intrinsic, which dispatches on
+                // the receiver's type (EC-26).
+                if matches!(tokens.get(*pos).map(|(t, _)| t), Some(Token::Class)) {
+                    *pos += 1; // consume 'class'
+                    lhs = Expr::new(
+                        ExprKind::FunctionCall {
+                            name: crate::names::Name::unqualified("__elephc_class_name_of"),
+                            args: vec![lhs],
+                        },
+                        span,
+                    );
+                    continue;
+                }
                 let member = match tokens.get(*pos).map(|(token, s)| (token.clone(), *s)) {
                     Some((Token::Identifier(name), name_span)) => {
                         *pos += 1;

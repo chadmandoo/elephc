@@ -578,6 +578,8 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // get_debug_type is EIR-only (static fold + __rt_get_debug_type dispatch);
             // the legacy wrapper body would emit an unresolved _fn_get_debug_type.
             | "get_debug_type"
+            // __elephc_class_name_of is the internal $expr::class resolver (EIR-only).
+            | "__elephc_class_name_of"
             // set_error_handler/restore_error_handler are EIR-only accepted no-ops.
             | "set_error_handler" | "restore_error_handler"
             // serialize/unserialize are EIR-only builtins with no legacy-backend
