@@ -6151,7 +6151,7 @@ fn lower_store_global(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
     };
     ctx.data
         .add_comm(symbol.clone(), store_ty.codegen_repr().stack_size().max(8));
-    abi::emit_store_result_to_symbol(ctx.emitter, &symbol, &store_ty, false);
+    abi::emit_store_result_to_symbol(ctx.emitter, &symbol, &store_ty, true);
     Ok(())
 }
 

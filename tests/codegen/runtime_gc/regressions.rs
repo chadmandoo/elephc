@@ -1102,6 +1102,32 @@ unset($box);
     );
 }
 
+/// Regression test: ordinary PHP global overwrites release the previous Mixed box
+/// and the final global value is released before heap-debug leak reporting.
+#[test]
+fn test_ordinary_global_reassignment_releases_previous_mixed() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$g = 0;
+function set_global(int $value): void {
+    global $g;
+    $g = $value;
+}
+for ($i = 0; $i < 200; $i++) {
+    set_global($i);
+}
+echo "done";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "done");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test for issue #408 (in-place promotion): a string-key write that
 /// promotes a freshly built indexed array literal to hash storage must also free
 /// the source array. Repeated promotion in a loop keeps GC allocs and frees

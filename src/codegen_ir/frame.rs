@@ -22,6 +22,7 @@ use crate::codegen::context::TRY_HANDLER_SLOT_SIZE;
 use crate::codegen::platform::{Arch, Target};
 use crate::ir::{Function, Immediate, LocalKind, LocalSlotId, Op, ValueDef, ValueId};
 use crate::ir_passes::{allocate_registers, Allocation};
+use crate::names::ir_global_symbol;
 use crate::types::PhpType;
 
 use super::context::FunctionContext;
@@ -228,6 +229,7 @@ pub(super) fn emit_main_epilogue(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.comment("epilogue + exit(0)");
     emit_main_local_epilogue_cleanup(ctx);
     emit_main_static_local_cleanup(ctx);
+    emit_main_global_epilogue_cleanup(ctx);
     emit_callee_saved_restores(ctx);
     abi::emit_frame_restore(ctx.emitter, ctx.frame_size);
     if ctx.gc_stats {
@@ -264,6 +266,28 @@ fn emit_main_static_local_cleanup(ctx: &mut FunctionContext<'_>) {
         abi::emit_store_zero_to_symbol(ctx.emitter, &record.symbol, 8);
         abi::emit_store_zero_to_symbol(ctx.emitter, &record.init_symbol, 0);
         ctx.emitter.label(&done);
+    }
+}
+
+/// Releases global symbol storage owned by the top-level EIR body before diagnostics.
+fn emit_main_global_epilogue_cleanup(ctx: &mut FunctionContext<'_>) {
+    let globals = ctx.module.data.global_names.clone();
+    for name in globals {
+        let ty = if crate::superglobals::is_superglobal(&name) {
+            crate::superglobals::superglobal_type().codegen_repr()
+        } else {
+            PhpType::Mixed
+        };
+        if !cleanup_tracked_codegen_type(&ty) {
+            continue;
+        }
+        let symbol = ir_global_symbol(&name);
+        ctx.emitter.comment(&format!("epilogue cleanup global ${}", name));
+        emit_static_symbol_value_cleanup(ctx, &symbol, &ty);
+        abi::emit_store_zero_to_symbol(ctx.emitter, &symbol, 0);
+        if ty == PhpType::Str {
+            abi::emit_store_zero_to_symbol(ctx.emitter, &symbol, 8);
+        }
     }
 }
 
@@ -689,6 +713,23 @@ fn local_kind_needs_epilogue_cleanup(kind: LocalKind) -> bool {
 
 /// Returns the local slot whose cleanup this return path must skip, if ownership is transferred.
 pub(super) fn return_cleanup_skip_slot(function: &Function, value: ValueId) -> Option<LocalSlotId> {
+    let result_ty = function.value(value)?.php_type.codegen_repr();
+    let return_ty = function.return_php_type.codegen_repr();
+    let mut visited = HashSet::new();
+    return_cleanup_skip_slot_inner(function, value, &result_ty, &return_ty, &mut visited)
+}
+
+/// Recursively traces forwarding return values back to the owned local they transfer.
+fn return_cleanup_skip_slot_inner(
+    function: &Function,
+    value: ValueId,
+    result_ty: &PhpType,
+    return_ty: &PhpType,
+    visited: &mut HashSet<ValueId>,
+) -> Option<LocalSlotId> {
+    if !visited.insert(value) {
+        return None;
+    }
     let value_ref = function.value(value)?;
     let ValueDef::Instruction { inst, .. } = value_ref.def else {
         return None;
@@ -700,10 +741,8 @@ pub(super) fn return_cleanup_skip_slot(function: &Function, value: ValueId) -> O
                 return None;
             };
             let local_ty = local_codegen_type(function, slot)?;
-            let result_ty = value_ref.php_type.codegen_repr();
-            let return_ty = function.return_php_type.codegen_repr();
-            if local_load_transfers_stored_owner(&local_ty, &result_ty)
-                && return_preserves_result_owner(&result_ty, &return_ty)
+            if local_load_transfers_stored_owner(&local_ty, result_ty)
+                && return_preserves_result_owner(result_ty, return_ty)
             {
                 Some(slot)
             } else {
@@ -712,24 +751,33 @@ pub(super) fn return_cleanup_skip_slot(function: &Function, value: ValueId) -> O
         }
         Op::ArrayToMixed | Op::HashToMixed => {
             let source = *inst.operands.first()?;
-            let slot = direct_return_local_slot(function, source)?;
+            let slot = direct_return_local_slot_inner(function, source, visited)?;
             let local_ty = local_codegen_type(function, slot)?;
-            let result_ty = value_ref.php_type.codegen_repr();
-            let return_ty = function.return_php_type.codegen_repr();
             if cleanup_tracked_codegen_type(&local_ty)
-                && return_preserves_result_owner(&result_ty, &return_ty)
+                && return_preserves_result_owner(result_ty, return_ty)
             {
                 Some(slot)
             } else {
                 None
             }
         }
+        Op::Move | Op::Borrow => {
+            let source = *inst.operands.first()?;
+            return_cleanup_skip_slot_inner(function, source, result_ty, return_ty, visited)
+        }
         _ => None,
     }
 }
 
-/// Returns the local slot behind a returned local or in-place converted local.
-fn direct_return_local_slot(function: &Function, value: crate::ir::ValueId) -> Option<LocalSlotId> {
+/// Recursively traces forwarding values to the local slot that backs them.
+fn direct_return_local_slot_inner(
+    function: &Function,
+    value: crate::ir::ValueId,
+    visited: &mut HashSet<ValueId>,
+) -> Option<LocalSlotId> {
+    if !visited.insert(value) {
+        return None;
+    }
     let value = function.value(value)?;
     let ValueDef::Instruction { inst, .. } = value.def else {
         return None;
@@ -742,7 +790,11 @@ fn direct_return_local_slot(function: &Function, value: crate::ir::ValueId) -> O
         },
         Op::ArrayToMixed | Op::HashToMixed => {
             let source = *inst.operands.first()?;
-            direct_return_local_slot(function, source)
+            direct_return_local_slot_inner(function, source, visited)
+        }
+        Op::Move | Op::Borrow => {
+            let source = *inst.operands.first()?;
+            direct_return_local_slot_inner(function, source, visited)
         }
         _ => None,
     }
