@@ -468,6 +468,13 @@ fn widen_loop_grown_arrays(
             if let Some((_, ty)) = overrides.iter().find(|(n, _)| *n == name) {
                 return Some(ty.clone());
             }
+            // A name with no declared slot yet (first assigned inside the loop body) is
+            // genuinely unknown at loop entry: report it as such instead of the Mixed
+            // fallback `local_type` would return, so the prescan does not take Mixed as
+            // widening evidence for it (mirrors the checker's `env.get` lookup).
+            if !ctx.local_slots.contains_key(name) {
+                return None;
+            }
             Some(ctx.local_type(name))
         };
         crate::types::checker::loop_grown_mixed_array_pushes(body, update, &lookup)

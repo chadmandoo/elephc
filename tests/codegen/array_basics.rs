@@ -1075,3 +1075,43 @@ echo (in_array("hello", $a) ? "y" : "n"),
     );
     assert_eq!(out, "yyn");
 }
+
+/// Regression: the loop-widening prescan must not treat a variable defined only inside
+/// the loop from a non-literal source as `mixed` evidence. The compiler-synthesized
+/// `MultipleIterator::detachIterator` body rebuilds an `array<Iterator>` through such a
+/// variable; a spurious widen made its typed-property storeback fail to compile.
+#[test]
+fn test_loop_rebuild_of_typed_array_not_spuriously_widened() {
+    let out = compile_and_run(
+        r#"<?php
+$multi = new MultipleIterator();
+$it = new ArrayIterator([1]);
+$multi->attachIterator($it);
+$multi->detachIterator($it);
+echo $multi->countIterators();
+"#,
+    );
+    assert_eq!(out, "0");
+}
+
+/// Regression companion for #452: heterogeneous scalars carried through loop-defined
+/// variables (literal assignments inside the body) must still widen the pushed array —
+/// the literal-assignment scan supplies the evidence the loop-entry lookup lacks.
+#[test]
+fn test_loop_grown_mixed_array_via_local_literals() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) {
+    $a = 1;
+    $vals[] = $a;
+    $b = 2.0;
+    $vals[] = $b;
+}
+$sum = 0;
+foreach ($vals as $v) { $sum += intval($v); }
+echo $sum;
+"#,
+    );
+    assert_eq!(out, "6");
+}
