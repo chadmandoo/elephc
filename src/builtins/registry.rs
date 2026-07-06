@@ -192,8 +192,21 @@ pub fn function_sig(name: &str) -> Option<FunctionSig> {
 pub fn first_class_callable_sig(name: &str) -> Option<FunctionSig> {
     let sig = function_sig(name)?;
     let mut fcc_sig = callable_wrapper_sig(&sig);
+    refine_first_class_callable_sig(name, &mut fcc_sig);
     fcc_sig.declared_return = true;
     Some(fcc_sig)
+}
+
+/// Applies first-class-callable refinements that are broader in the direct builtin spec.
+fn refine_first_class_callable_sig(name: &str, sig: &mut FunctionSig) {
+    match crate::names::php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "preg_replace_callback" => {
+            if let Some((_, callback_ty)) = sig.params.get_mut(1) {
+                *callback_ty = PhpType::Callable;
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Returns the minimum and maximum arity for the named builtin.

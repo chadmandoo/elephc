@@ -591,7 +591,8 @@ where
     abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
 
     let call_reg = abi::nested_call_reg(ctx.emitter);
-    let cases = runtime_string_descriptor_cases(ctx, source_arg_ty)?;
+    let specialization_ty = visible_arg_types.first().or(source_arg_ty);
+    let cases = runtime_string_descriptor_cases(ctx, specialization_ty)?;
 
     let done_label = ctx.next_label(&format!("{}_runtime_string_callback_done", owner));
     let selector = callable_dispatch::RuntimeCallableSelector::StringNameStack {

@@ -37,192 +37,100 @@ pub(crate) struct RuntimeStaticMethodCallableCase {
     pub(crate) case: RuntimeCallableCase,
 }
 
-/// Returns true for builtins excluded from generic runtime string-callable dispatch.
+/// Returns true for builtins supported by generic runtime string-callable dispatch.
 ///
-/// These entries either are internal implementation hooks, require literal/by-ref/resource
-/// argument semantics that a generic runtime wrapper cannot preserve, or are variadic callback
-/// adapters whose direct and first-class-callable lowering is handled by EIR-specific paths.
-pub(crate) fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
+/// These names have stable fixed-arity EIR wrapper signatures and do not require literal,
+/// by-reference, resource, hidden runtime-state, or callback-adapter semantics. Other builtins
+/// remain available through direct calls or first-class callable lowering when that path supports
+/// them, but runtime string dispatch must not pre-emit wrappers it cannot prove safe.
+pub(crate) fn runtime_builtin_wrapper_supported(
+    name: &str,
+    source_arg_ty: Option<&PhpType>,
+) -> bool {
+    let name = crate::names::php_symbol_key(name.trim_start_matches('\\'));
+    if !runtime_builtin_name_supported(&name) {
+        return false;
+    }
+    let source_arg_ty = source_arg_ty.map(PhpType::codegen_repr);
+    match name.as_str() {
+        "abs" => source_arg_ty.is_none_or(|source_arg_ty| {
+            matches!(
+                source_arg_ty,
+                PhpType::Bool
+                    | PhpType::Float
+                    | PhpType::Int
+                    | PhpType::Mixed
+                    | PhpType::Never
+                    | PhpType::TaggedScalar
+                    | PhpType::Union(_)
+                    | PhpType::Void
+            )
+        }),
+        "boolval" => source_arg_ty.is_some_and(|source_arg_ty| {
+            matches!(
+                source_arg_ty,
+                PhpType::AssocArray { .. }
+                    | PhpType::Array(_)
+                    | PhpType::Bool
+                    | PhpType::Float
+                    | PhpType::Int
+                    | PhpType::Iterable
+                    | PhpType::Never
+                    | PhpType::Str
+                    | PhpType::Void
+            )
+        }),
+        "floatval" => source_arg_ty.is_some_and(|source_arg_ty| {
+            matches!(
+                source_arg_ty,
+                PhpType::Bool
+                    | PhpType::Float
+                    | PhpType::Int
+                    | PhpType::Never
+                    | PhpType::Str
+                    | PhpType::Void
+            )
+        }),
+        "intval" => source_arg_ty.is_none_or(|source_arg_ty| {
+            matches!(
+                source_arg_ty,
+                PhpType::Bool
+                    | PhpType::Float
+                    | PhpType::Int
+                    | PhpType::Mixed
+                    | PhpType::Never
+                    | PhpType::Str
+                    | PhpType::Union(_)
+                    | PhpType::Void
+            )
+        }),
+        "strlen" => source_arg_ty.is_none_or(|source_arg_ty| {
+            matches!(
+                source_arg_ty,
+                PhpType::Mixed | PhpType::Str | PhpType::Union(_)
+            )
+        }),
+        "strtolower" | "strtoupper" | "trim" => source_arg_ty.is_none_or(|source_arg_ty| {
+            matches!(source_arg_ty, PhpType::Str)
+        }),
+        "gettype" => true,
+        _ => false,
+    }
+}
+
+/// Returns true when a builtin has a generic runtime wrapper implementation.
+fn runtime_builtin_name_supported(name: &str) -> bool {
     matches!(
         name,
-        "call_user_func"
-            | "call_user_func_array"
-            | "iterator_apply"
-            | "preg_replace_callback"
-            | "__elephc_mktime_raw"
-            | "__elephc_gmmktime_raw"
-            | "__elephc_strtotime_raw"
-            | "serialize"
-            | "unserialize"
-            | "array_merge"
-            | "array_merge_recursive"
-            | "gzcompress"
-            | "gzdeflate"
-            | "gzinflate"
-            | "gzuncompress"
-            | "array_diff_assoc"
-            | "array_intersect_assoc"
-            | "array_is_list"
-            | "array_key_first"
-            | "array_key_last"
-            | "array_multisort"
-            | "array_replace"
-            | "array_replace_recursive"
-            | "array_find"
-            | "array_any"
-            | "array_all"
-            | "array_udiff"
-            | "array_uintersect"
-            | "array_walk_recursive"
-            | "ptr"
-            | "ptr_null"
-            | "ptr_is_null"
-            | "ptr_sizeof"
-            | "ptr_offset"
-            | "ptr_get"
-            | "ptr_set"
-            | "ptr_read8"
-            | "ptr_read32"
-            | "ptr_write8"
-            | "ptr_write32"
-            | "getenv"
-            | "putenv"
-            | "http_response_code"
-            | "header"
-            | "exec"
-            | "shell_exec"
-            | "system"
-            | "passthru"
-            | "define"
-            | "class_attribute_names"
-            | "class_attribute_args"
-            | "class_get_attributes"
-            | "preg_match"
-            | "preg_match_all"
-            | "preg_replace"
-            | "preg_split"
-            | "var_dump"
-            | "print_r"
-            | "realpath_cache_get"
-            | "realpath_cache_size"
-            | "disk_free_space"
-            | "disk_total_space"
-            | "clearstatcache"
-            | "fstat"
-            | "file_put_contents"
-            | "copy"
-            | "rename"
-            | "unlink"
-            | "mkdir"
-            | "rmdir"
-            | "chdir"
-            | "scandir"
-            | "glob"
-            | "lchown"
-            | "lchgrp"
-            | "umask"
-            | "readfile"
-            | "fopen"
-            | "fclose"
-            | "fread"
-            | "fwrite"
-            | "fprintf"
-            | "vfprintf"
-            | "fscanf"
-            | "fgets"
-            | "feof"
-            | "fseek"
-            | "ftell"
-            | "rewind"
-            | "fgetc"
-            | "fpassthru"
-            | "fgetcsv"
-            | "fputcsv"
-            | "flock"
-            | "tmpfile"
-            | "popen"
-            | "pclose"
-            | "opendir"
-            | "readdir"
-            | "closedir"
-            | "rewinddir"
-            | "stream_context_create"
-            | "stream_context_get_default"
-            | "stream_context_set_default"
-            | "stream_context_set_option"
-            | "stream_context_set_params"
-            | "stream_context_get_options"
-            | "stream_context_get_params"
-            | "stream_filter_append"
-            | "stream_filter_prepend"
-            | "stream_filter_remove"
-            | "stream_filter_register"
-            | "stream_bucket_make_writeable"
-            | "stream_bucket_new"
-            | "stream_bucket_append"
-            | "stream_bucket_prepend"
-            | "stream_wrapper_register"
-            | "stream_wrapper_unregister"
-            | "stream_wrapper_restore"
-            | "stream_is_local"
-            | "stream_resolve_include_path"
-            | "stream_select"
-            | "stream_set_chunk_size"
-            | "stream_set_read_buffer"
-            | "stream_set_write_buffer"
-            | "stream_get_filters"
-            | "stream_get_transports"
-            | "stream_get_wrappers"
-            | "stream_isatty"
-            | "stream_supports_lock"
-            | "stream_set_blocking"
-            | "stream_set_timeout"
-            | "stream_get_line"
-            | "stream_get_meta_data"
-            | "stream_get_contents"
-            | "stream_copy_to_stream"
-            | "stream_socket_server"
-            | "stream_socket_client"
-            | "stream_socket_accept"
-            | "stream_socket_enable_crypto"
-            | "stream_socket_sendto"
-            | "stream_socket_recvfrom"
-            | "stream_socket_get_name"
-            | "stream_socket_pair"
-            | "stream_socket_shutdown"
-            | "fsockopen"
-            | "pfsockopen"
-            | "gethostname"
-            | "gethostbyname"
-            | "gethostbyaddr"
-            | "getprotobyname"
-            | "getprotobynumber"
-            | "getservbyname"
-            | "getservbyport"
-            | "is_array"
-            | "is_object"
-            | "is_scalar"
-            | "is_callable"
-            | "is_resource"
-            | "get_resource_type"
-            | "get_resource_id"
-            | "settype"
-            | "class_alias"
-            | "class_exists"
-            | "interface_exists"
-            | "trait_exists"
-            | "enum_exists"
-            | "class_implements"
-            | "class_parents"
-            | "class_uses"
-            | "get_class"
-            | "get_parent_class"
-            | "is_a"
-            | "is_subclass_of"
-            | "get_declared_classes"
-            | "get_declared_interfaces"
-            | "get_declared_traits"
-            | "function_exists"
+        "abs"
+            | "boolval"
+            | "floatval"
+            | "gettype"
+            | "intval"
+            | "strlen"
+            | "strtolower"
+            | "strtoupper"
+            | "trim"
     )
 }
 
@@ -292,7 +200,7 @@ pub(crate) fn specialized_runtime_case_sig(
             continue;
         }
         if let Some((_, param_ty)) = sig.params.get_mut(i) {
-            if !matches!(param_ty.codegen_repr(), PhpType::Int) {
+            if !matches!(param_ty.codegen_repr(), PhpType::Int | PhpType::Mixed) {
                 continue;
             }
             *param_ty = source_ty.clone();

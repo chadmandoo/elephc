@@ -1467,8 +1467,15 @@ pub(super) fn emit_runtime_builtin_wrapper_inline(
 pub(super) fn runtime_builtin_wrapper_sig(name: &str, sig: &FunctionSig) -> FunctionSig {
     let mut sig = sig.clone();
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "count" => truncate_wrapper_params(&mut sig, 1),
         "array_sum" | "array_product" => {
             set_wrapper_param_type(&mut sig, 0, PhpType::Array(Box::new(PhpType::Int)))
+        }
+        "clamp" => {
+            set_wrapper_param_type(&mut sig, 0, PhpType::Int);
+            set_wrapper_param_type(&mut sig, 1, PhpType::Int);
+            set_wrapper_param_type(&mut sig, 2, PhpType::Int);
+            sig.return_type = PhpType::Int;
         }
         "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort" | "arsort" => {
             set_wrapper_param_type(&mut sig, 0, PhpType::Array(Box::new(PhpType::Int)))
@@ -1476,6 +1483,21 @@ pub(super) fn runtime_builtin_wrapper_sig(name: &str, sig: &FunctionSig) -> Func
         _ => {}
     }
     sig
+}
+
+/// Truncates wrapper parameters to the runtime-supported visible arity.
+fn truncate_wrapper_params(sig: &mut FunctionSig, count: usize) {
+    sig.params.truncate(count);
+    sig.defaults.truncate(count);
+    sig.ref_params.truncate(count);
+    sig.declared_params.truncate(count);
+    if sig
+        .variadic
+        .as_deref()
+        .is_some_and(|name| !sig.params.iter().any(|(param_name, _)| param_name == name))
+    {
+        sig.variadic = None;
+    }
 }
 
 /// Replaces one wrapper parameter type when the parameter exists.
@@ -6756,6 +6778,7 @@ fn lower_invoker_ref_arg(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
         source_tag_reg,
         crate::codegen::runtime_value_tag(&source_ty) as i64,
     );
+    ctx.emitter.comment("cufa_invoker_ref_cell");
     emit_box_runtime_payload_as_mixed(ctx.emitter, marker_tag_reg, ref_cell_reg, source_tag_reg);
     store_if_result(ctx, inst)
 }

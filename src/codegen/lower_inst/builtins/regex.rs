@@ -185,7 +185,9 @@ fn preg_replace_callback_target(
             env: PregReplaceCallbackEnv::None,
         });
     }
-    match ctx.value_php_type(callback)?.codegen_repr() {
+    let callback_ty = ctx.raw_value_php_type(callback)?;
+    let callback_codegen_ty = callback_ty.codegen_repr();
+    match callback_codegen_ty {
         PhpType::Str => {
             return Ok(PregReplaceCallbackTarget {
                 entry_label: emit_descriptor_callback_wrapper(ctx),
@@ -218,9 +220,20 @@ fn preg_replace_callback_target(
         }
         _ => {}
     }
-    Err(CodegenIrError::unsupported(
-        "preg_replace_callback callback with unsupported EIR type",
-    ))
+    let value_ref = ctx
+        .function
+        .value(callback)
+        .ok_or_else(|| CodegenIrError::missing_entry("value", callback.as_raw()))?;
+    let source_op = value_source_instruction(ctx, callback)?
+        .map(|inst| format!("{:?}", inst.op))
+        .unwrap_or_else(|| "non-instruction".to_string());
+    Err(CodegenIrError::unsupported(format!(
+        "preg_replace_callback callback with unsupported EIR type {:?} (raw {:?}, ir {:?}, source {})",
+        ctx.value_php_type(callback)?,
+        callback_ty,
+        value_ref.ir_type,
+        source_op
+    )))
 }
 
 /// Resolves a literal string callback to a module-local function entry.

@@ -369,7 +369,7 @@ fn runtime_builtin_descriptor_cases(
 ) -> Result<Vec<callable_dispatch::RuntimeCallableCase>> {
     let mut cases = Vec::new();
     for name in crate::types::checker::builtins::supported_builtin_function_names() {
-        if callable_dispatch::runtime_builtin_wrapper_excluded(name)
+        if !callable_dispatch::runtime_builtin_wrapper_supported(name, source_arg_ty)
             || ctx
                 .module
                 .extern_decls
@@ -1821,9 +1821,9 @@ fn emit_normalized_invoker_arg_container(
             }
             ctx.load_value_to_reg(arg_container, dest_reg)?;
             let mut labels = [
-                ctx.next_label("invoker_normalize_mixed_indexed"),
-                ctx.next_label("invoker_normalize_mixed_assoc"),
-                ctx.next_label("invoker_normalize_mixed_done"),
+                ctx.next_label("cufa_normalize_mixed_indexed"),
+                ctx.next_label("cufa_normalize_mixed_assoc"),
+                ctx.next_label("cufa_normalize_mixed_done"),
             ]
             .into_iter();
             callable_invoker_args::emit_clone_runtime_mixed_invoker_arg_as_mixed(

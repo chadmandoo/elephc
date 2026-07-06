@@ -206,9 +206,9 @@ fn emit_loaded_mixed_array_callback_call(
         Arch::AArch64 => ("x20", "x21", "x22"),
         Arch::X86_64 => ("r13", "r14", "r15"),
     };
-    let indexed_label = ctx.next_label("invoker_mixed_indexed");
-    let assoc_label = ctx.next_label("invoker_mixed_assoc");
-    let done_label = ctx.next_label("invoker_mixed_done");
+    let indexed_label = ctx.next_label("cufa_mixed_indexed");
+    let assoc_label = ctx.next_label("cufa_mixed_assoc");
+    let done_label = ctx.next_label("cufa_mixed_done");
     let indexed_ty = PhpType::Array(Box::new(PhpType::Mixed));
     let assoc_ty = PhpType::AssocArray {
         key: Box::new(PhpType::Mixed),
@@ -909,6 +909,72 @@ fn emit_branch_if_invoker_ref_cell_tag(tag_reg: &str, label: &str, emitter: &mut
     }
 }
 
+/// Branches when the raw hash lookup value carries the requested runtime tag.
+fn emit_branch_if_hash_value_tag(
+    raw_tag_reg: &str,
+    tag: u8,
+    label: &str,
+    emitter: &mut Emitter,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("cmp {}, #{}", raw_tag_reg, tag));
+            emitter.instruction(&format!("b.eq {}", label));
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("cmp {}, {}", raw_tag_reg, tag));
+            emitter.instruction(&format!("je {}", label));
+        }
+    }
+}
+
+/// Branches when a hash value is a boxed Mixed invoker ref-cell marker.
+fn emit_branch_if_boxed_invoker_ref_cell(
+    raw_lo_reg: &str,
+    raw_tag_reg: &str,
+    label: &str,
+    emitter: &mut Emitter,
+    ctx: &mut InvokerEmitContext,
+) {
+    let not_boxed_label = ctx.next_label("hash_invoker_ref_not_boxed");
+    let marker_tag_reg = abi::temp_int_reg(emitter.target);
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("cmp {}, #7", raw_tag_reg));
+            emitter.instruction(&format!("b.ne {}", not_boxed_label));
+            abi::emit_load_from_address(emitter, marker_tag_reg, raw_lo_reg, 0);
+            emitter.instruction(&format!(
+                "cmp {}, #{}",
+                marker_tag_reg, INVOKER_ARG_REF_CELL_TAG
+            ));
+            emitter.instruction(&format!("b.eq {}", label));
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("cmp {}, 7", raw_tag_reg));
+            emitter.instruction(&format!("jne {}", not_boxed_label));
+            abi::emit_load_from_address(emitter, marker_tag_reg, raw_lo_reg, 0);
+            emitter.instruction(&format!(
+                "cmp {}, {}",
+                marker_tag_reg, INVOKER_ARG_REF_CELL_TAG
+            ));
+            emitter.instruction(&format!("je {}", label));
+        }
+    }
+    emitter.label(&not_boxed_label);
+}
+
+/// Extracts ref-cell pointer and source tag from a boxed Mixed invoker marker.
+fn load_boxed_invoker_ref_cell_to_raw_regs(
+    raw_lo_reg: &str,
+    raw_hi_reg: &str,
+    emitter: &mut Emitter,
+) {
+    let marker_reg = abi::temp_int_reg(emitter.target);
+    emitter.instruction(&format!("mov {}, {}", marker_reg, raw_lo_reg));
+    abi::emit_load_from_address(emitter, raw_lo_reg, marker_reg, 8);
+    abi::emit_load_from_address(emitter, raw_hi_reg, marker_reg, 16);
+}
+
 /// Coerces and pushes a loaded indexed-array element as a call argument.
 fn push_loaded_array_element_arg(
     source_elem_ty: &PhpType,
@@ -1116,24 +1182,52 @@ fn push_loaded_mixed_hash_value_arg(
     data: &mut DataSection,
 ) -> PhpType {
     let direct_marker_label = ctx.next_label("hash_invoker_ref_value_direct");
+    let boxed_marker_label = ctx.next_label("hash_invoker_ref_value_boxed");
     let ordinary_label = ctx.next_label("hash_invoker_ref_value_ordinary");
+    let ordinary_boxed_label = ctx.next_label("hash_invoker_ref_value_ordinary_boxed");
+    let ordinary_raw_label = ctx.next_label("hash_invoker_ref_value_ordinary_raw");
     let done_label = ctx.next_label("hash_invoker_ref_value_done");
     let (raw_lo_reg, raw_hi_reg, raw_tag_reg) = raw_hash_value_regs(emitter);
 
     emit_branch_if_invoker_ref_cell_tag(raw_tag_reg, &direct_marker_label, emitter);
+    emit_branch_if_boxed_invoker_ref_cell(
+        raw_lo_reg,
+        raw_tag_reg,
+        &boxed_marker_label,
+        emitter,
+        ctx,
+    );
     abi::emit_jump(emitter, &ordinary_label);
 
     emitter.label(&ordinary_label);
+    emit_branch_if_hash_value_tag(raw_tag_reg, 7, &ordinary_boxed_label, emitter);
+    abi::emit_jump(emitter, &ordinary_raw_label);
+
+    emitter.label(&ordinary_boxed_label);
     materialize_hash_value_to_result(emitter, &PhpType::Mixed);
-    let ordinary_ty = push_materialized_mixed_hash_value_arg(target_ty, false, emitter, ctx, data);
+    let ordinary_boxed_ty =
+        push_materialized_mixed_hash_value_arg(target_ty, false, emitter, ctx, data);
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&ordinary_raw_label);
+    box_raw_hash_value_to_mixed_result(emitter);
+    let ordinary_raw_ty =
+        push_materialized_mixed_hash_value_arg(target_ty, true, emitter, ctx, data);
     abi::emit_jump(emitter, &done_label);
 
     emitter.label(&direct_marker_label);
     let direct_ty =
         push_raw_invoker_ref_cell_value_arg(raw_lo_reg, raw_hi_reg, target_ty, emitter, ctx, data);
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&boxed_marker_label);
+    load_boxed_invoker_ref_cell_to_raw_regs(raw_lo_reg, raw_hi_reg, emitter);
+    let boxed_ty =
+        push_raw_invoker_ref_cell_value_arg(raw_lo_reg, raw_hi_reg, target_ty, emitter, ctx, data);
 
     emitter.label(&done_label);
-    widen_callback_arg_type(&ordinary_ty, &direct_ty)
+    let ordinary_ty = widen_callback_arg_type(&ordinary_boxed_ty, &ordinary_raw_ty);
+    widen_callback_arg_type(&widen_callback_arg_type(&ordinary_ty, &direct_ty), &boxed_ty)
 }
 
 /// Pushes a Mixed hash value as a by-reference argument, honoring invoker ref markers.
@@ -1144,11 +1238,21 @@ fn push_loaded_mixed_hash_value_ref_arg(
     data: &mut DataSection,
 ) -> PhpType {
     let direct_marker_label = ctx.next_label("hash_invoker_ref_direct");
+    let boxed_marker_label = ctx.next_label("hash_invoker_ref_boxed");
     let ordinary_label = ctx.next_label("hash_invoker_ref_ordinary");
+    let ordinary_boxed_label = ctx.next_label("hash_invoker_ref_ordinary_boxed");
+    let ordinary_raw_label = ctx.next_label("hash_invoker_ref_ordinary_raw");
     let done_label = ctx.next_label("hash_invoker_ref_done");
-    let (_raw_lo_reg, _raw_hi_reg, raw_tag_reg) = raw_hash_value_regs(emitter);
+    let (raw_lo_reg, raw_hi_reg, raw_tag_reg) = raw_hash_value_regs(emitter);
 
     emit_branch_if_invoker_ref_cell_tag(raw_tag_reg, &direct_marker_label, emitter);
+    emit_branch_if_boxed_invoker_ref_cell(
+        raw_lo_reg,
+        raw_tag_reg,
+        &boxed_marker_label,
+        emitter,
+        ctx,
+    );
     abi::emit_jump(emitter, &ordinary_label);
 
     emitter.label(&direct_marker_label);
@@ -1156,8 +1260,23 @@ fn push_loaded_mixed_hash_value_ref_arg(
     abi::emit_push_result_value(emitter, &PhpType::Int);
     abi::emit_jump(emitter, &done_label);
 
+    emitter.label(&boxed_marker_label);
+    load_boxed_invoker_ref_cell_to_raw_regs(raw_lo_reg, raw_hi_reg, emitter);
+    move_raw_hash_value_lo_to_result(emitter);
+    abi::emit_push_result_value(emitter, &PhpType::Int);
+    abi::emit_jump(emitter, &done_label);
+
     emitter.label(&ordinary_label);
+    emit_branch_if_hash_value_tag(raw_tag_reg, 7, &ordinary_boxed_label, emitter);
+    abi::emit_jump(emitter, &ordinary_raw_label);
+
+    emitter.label(&ordinary_boxed_label);
     materialize_hash_value_to_result(emitter, &PhpType::Mixed);
+    push_current_result_ref_arg_address(&PhpType::Mixed, target_ty, emitter, ctx, data);
+    abi::emit_jump(emitter, &done_label);
+
+    emitter.label(&ordinary_raw_label);
+    box_raw_hash_value_to_mixed_result(emitter);
     push_current_result_ref_arg_address(&PhpType::Mixed, target_ty, emitter, ctx, data);
 
     emitter.label(&done_label);
@@ -1274,6 +1393,12 @@ fn materialize_hash_value_to_result(emitter: &mut Emitter, source_elem_ty: &PhpT
         PhpType::Void => {}
         _ => move_raw_hash_value_lo_to_result(emitter),
     }
+}
+
+/// Boxes the current raw hash lookup payload into a canonical Mixed result.
+fn box_raw_hash_value_to_mixed_result(emitter: &mut Emitter) {
+    let (raw_lo_reg, raw_hi_reg, raw_tag_reg) = raw_hash_value_regs(emitter);
+    emit_box_runtime_payload_as_mixed(emitter, raw_tag_reg, raw_lo_reg, raw_hi_reg);
 }
 
 /// Emits and pushes a default value argument.
