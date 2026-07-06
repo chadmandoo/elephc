@@ -318,7 +318,7 @@ pub(super) fn parse_expr_bp(
             continue;
         }
 
-        if let Some((op, l_bp, r_bp)) = assignment_bp(&tokens[*pos].0) {
+        if let Some((op, l_bp, _r_bp)) = assignment_bp(&tokens[*pos].0) {
             if l_bp < min_bp {
                 break;
             }
@@ -327,70 +327,7 @@ pub(super) fn parse_expr_bp(
                 return Err(CompileError::new(lhs.span, "Invalid assignment target"));
             }
 
-            let span = tokens[*pos].1;
-            *pos += 1;
-            let rhs = parse_expr_bp(tokens, pos, r_bp)?;
-            if is_non_local_assignment_target(&lhs) {
-                let null_coalesce_assign = matches!(op, AssignmentOperator::NullCoalesce);
-
-                let mut lowerer = AssignmentExpressionLowerer::new(span);
-                let target = lowerer.stabilize_non_local_target(lhs, &rhs);
-                let conditional_value_temp =
-                    null_coalesce_assign.then(|| lowerer.reserve_value_temp());
-                let rhs = if null_coalesce_assign {
-                    rhs
-                } else {
-                    lowerer.bind_value(&target, rhs)
-                };
-                let (value, result_target) = match op {
-                    AssignmentOperator::Assign => (rhs.clone(), rhs),
-                    AssignmentOperator::NullCoalesce => {
-                        let value = assignment_value(
-                            target.clone(),
-                            AssignmentOperator::NullCoalesce,
-                            rhs,
-                            span,
-                        );
-                        (value, target.clone())
-                    }
-                    AssignmentOperator::Compound(op) => {
-                        let value = assignment_value(
-                            target.clone(),
-                            AssignmentOperator::Compound(op),
-                            rhs,
-                            span,
-                        );
-                        let result_value = lowerer.bind_result_value(value);
-                        (result_value.clone(), result_value)
-                    }
-                };
-                let prelude = lowerer.finish();
-                lhs = Expr::new(
-                    ExprKind::Assignment {
-                        target: Box::new(target.clone()),
-                        value: Box::new(value),
-                        result_target: Some(Box::new(result_target)),
-                        prelude,
-                        conditional_value_temp,
-                    },
-                    span,
-                );
-            } else {
-                let value = match op {
-                    AssignmentOperator::Assign => rhs,
-                    op => assignment_value(lhs.clone(), op, rhs, span),
-                };
-                lhs = Expr::new(
-                    ExprKind::Assignment {
-                        target: Box::new(lhs),
-                        value: Box::new(value),
-                        result_target: None,
-                        prelude: Vec::new(),
-                        conditional_value_temp: None,
-                    },
-                    span,
-                );
-            }
+            lhs = parse_assignment_continuation(tokens, pos, lhs, op)?;
             continue;
         }
 
@@ -435,7 +372,17 @@ pub(super) fn parse_expr_bp(
 
         let span = tokens[*pos].1;
         *pos += 1;
-        let rhs = parse_expr_bp(tokens, pos, r_bp)?;
+        let mut rhs = parse_expr_bp(tokens, pos, r_bp)?;
+        // PHP admits a full assignment as `??`'s right operand even though
+        // assignment binds looser — continue it here (see
+        // `parse_assignment_continuation`).
+        if op == BinOp::NullCoalesce && *pos < tokens.len() {
+            if let Some((assign_op, _l, _r)) = assignment_bp(&tokens[*pos].0) {
+                if is_assignment_expression_target(&rhs) {
+                    rhs = parse_assignment_continuation(tokens, pos, rhs, assign_op)?;
+                }
+            }
+        }
         if op == BinOp::NullCoalesce {
             lhs = Expr::new(
                 ExprKind::NullCoalesce {
@@ -589,6 +536,89 @@ fn assignment_bp(token: &Token) -> Option<(AssignmentOperator, u8, u8)> {
         _ => return None,
     };
     Some((op, 7, 6))
+}
+
+
+/// Parses the remainder of an assignment expression whose target (`lhs`) and
+/// operator have already been consumed up to the operator token. Shared by the
+/// main assignment infix arm and the `??` right-operand continuation: PHP
+/// permits a full assignment as the coalesce default (`$a ?? $b = $c` is
+/// `$a ?? ($b = $c)`), but assignment's binding power sits below `??`'s right
+/// binding power, so the memoization staple would otherwise reject with
+/// "Invalid assignment target" on the whole coalesce (EC-23).
+fn parse_assignment_continuation(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    lhs: Expr,
+    op: AssignmentOperator,
+) -> Result<Expr, CompileError> {
+    let r_bp = 6;
+    let mut lhs = lhs;
+            let span = tokens[*pos].1;
+            *pos += 1;
+            let rhs = parse_expr_bp(tokens, pos, r_bp)?;
+            if is_non_local_assignment_target(&lhs) {
+                let null_coalesce_assign = matches!(op, AssignmentOperator::NullCoalesce);
+
+                let mut lowerer = AssignmentExpressionLowerer::new(span);
+                let target = lowerer.stabilize_non_local_target(lhs, &rhs);
+                let conditional_value_temp =
+                    null_coalesce_assign.then(|| lowerer.reserve_value_temp());
+                let rhs = if null_coalesce_assign {
+                    rhs
+                } else {
+                    lowerer.bind_value(&target, rhs)
+                };
+                let (value, result_target) = match op {
+                    AssignmentOperator::Assign => (rhs.clone(), rhs),
+                    AssignmentOperator::NullCoalesce => {
+                        let value = assignment_value(
+                            target.clone(),
+                            AssignmentOperator::NullCoalesce,
+                            rhs,
+                            span,
+                        );
+                        (value, target.clone())
+                    }
+                    AssignmentOperator::Compound(op) => {
+                        let value = assignment_value(
+                            target.clone(),
+                            AssignmentOperator::Compound(op),
+                            rhs,
+                            span,
+                        );
+                        let result_value = lowerer.bind_result_value(value);
+                        (result_value.clone(), result_value)
+                    }
+                };
+                let prelude = lowerer.finish();
+                lhs = Expr::new(
+                    ExprKind::Assignment {
+                        target: Box::new(target.clone()),
+                        value: Box::new(value),
+                        result_target: Some(Box::new(result_target)),
+                        prelude,
+                        conditional_value_temp,
+                    },
+                    span,
+                );
+            } else {
+                let value = match op {
+                    AssignmentOperator::Assign => rhs,
+                    op => assignment_value(lhs.clone(), op, rhs, span),
+                };
+                lhs = Expr::new(
+                    ExprKind::Assignment {
+                        target: Box::new(lhs),
+                        value: Box::new(value),
+                        result_target: None,
+                        prelude: Vec::new(),
+                        conditional_value_temp: None,
+                    },
+                    span,
+                );
+            }
+    Ok(lhs)
 }
 
 /// Computes the value expression for an assignment operator applied to `target`

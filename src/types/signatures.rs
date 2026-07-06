@@ -416,6 +416,13 @@ pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
             sig.ref_params[2] = true;
             Some(sig)
         }
+        "get_debug_type" => Some(fixed(&["value"])),
+        "set_error_handler" => Some(optional(
+            &["callback", "error_levels"],
+            1,
+            vec![int_lit(32767)],
+        )),
+        "restore_error_handler" => Some(fixed(&[])),
         "preg_match_all" => {
             let mut sig = optional(
                 &["pattern", "subject", "matches", "flags"],

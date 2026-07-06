@@ -521,6 +521,18 @@ fn ensure_static_property_value_supported(
     if is_empty_array_for_array_static_property(value_ty, &slot.php_type) {
         return Ok(());
     }
+    // A string-key write promotes an array property's storage to a hash at
+    // runtime (EC-23); both containers are single-pointer payloads, so an
+    // AssocArray value stores into an Array-typed slot (and vice versa) —
+    // readers dispatch on the runtime header, mirroring the local promotion.
+    if matches!(value_ty.codegen_repr(), PhpType::Array(_) | PhpType::AssocArray { .. })
+        && matches!(
+            slot.php_type.codegen_repr(),
+            PhpType::Array(_) | PhpType::AssocArray { .. }
+        )
+    {
+        return Ok(());
+    }
     Err(CodegenIrError::unsupported(format!(
         "{} assigning PHP type {:?} to {}::${} with PHP type {:?}",
         inst.op.name(),

@@ -54,6 +54,21 @@ impl Checker {
         let Some((receiver, target, inverted)) = guard_receiver_and_type(cond) else {
             return Ok(None);
         };
+        // `instanceof self` (and `static`) narrows to the ENCLOSING class, not to a
+        // literal class named "self" — an unresolved relative name would fail every
+        // later compatibility check (EC-21 follow-on: LogLevel::fromMixed's
+        // `$level instanceof self` guard returned Object("self")).
+        let target = match target {
+            PhpType::Object(name)
+                if name.eq_ignore_ascii_case("self") || name.eq_ignore_ascii_case("static") =>
+            {
+                match self.current_class.clone() {
+                    Some(current) => PhpType::Object(current),
+                    None => return Ok(None),
+                }
+            }
+            other => other,
+        };
         let negated = negated ^ inverted;
         let Some(key) = Self::guard_env_key(receiver) else {
             return Ok(None);

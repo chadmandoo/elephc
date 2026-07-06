@@ -637,6 +637,19 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let release_source_after_store = self.value_needs_release_after_retaining_store(value);
         let transfer_callable_source_to_store = source_is_owning_temporary
             && matches!(php_type.codegen_repr(), PhpType::Callable);
+        // Acquire (persist/incref) the incoming value BEFORE releasing the slot's
+        // previous occupant. The source is often a VIEW into the previous value's
+        // buffer (`$s = substr($s, ...)` — the substr lowering advances a pointer,
+        // it does not copy), so freeing the old buffer first makes the acquire's
+        // `__rt_str_persist` copy from freed memory — an allocator-state-dependent
+        // use-after-free that surfaced as content corruption (EC-20).
+        let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
+            && !transfer_callable_source_to_store
+        {
+            crate::ir_lower::ownership::acquire_if_refcounted(self, value, span)
+        } else {
+            value
+        };
         if !uses_global
             && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
@@ -666,13 +679,6 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         {
             self.release_stored_local_value(name, slot, span);
         }
-        let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
-            && !transfer_callable_source_to_store
-        {
-            crate::ir_lower::ownership::acquire_if_refcounted(self, value, span)
-        } else {
-            value
-        };
         if uses_global {
             self.store_global_name(name, slot, value, span);
             self.set_local_type(name, php_type);

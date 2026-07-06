@@ -104,7 +104,16 @@ pub(super) fn lower_array_to_hash(ctx: &mut FunctionContext<'_>, inst: &Instruct
         )));
     }
     let array = expect_operand(inst, 0)?;
-    require_indexed_array(ctx.value_php_type(array)?.codegen_repr(), inst)?;
+    // Mixed/assoc operands are admitted: the nested-write desugar (EC-23) feeds
+    // the coalesce result here, which may be a raw hash, an empty indexed array,
+    // or a boxed cell wrapping either — the emitted dispatch below handles all.
+    let operand_repr = ctx.value_php_type(array)?.codegen_repr();
+    if !matches!(
+        operand_repr,
+        PhpType::Mixed | PhpType::Union(_) | PhpType::AssocArray { .. }
+    ) {
+        require_indexed_array(operand_repr, inst)?;
+    }
     let result_value_ty = require_array_to_hash_result(&inst.result_php_type.codegen_repr(), inst)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
@@ -112,6 +121,19 @@ pub(super) fn lower_array_to_hash(ctx: &mut FunctionContext<'_>, inst: &Instruct
             let convert = ctx.next_label("array_to_hash_convert");
             let done = ctx.next_label("array_to_hash_done");
             ctx.load_value_to_reg(array, "x0")?;
+            // Unwrap a boxed Mixed cell carrying a container payload (EC-23).
+            let cell_done = ctx.next_label("array_to_hash_cell_done");
+            ctx.emitter.instruction(&format!("cbz x0, {}", cell_done));         // null passes to the dispatch below
+            ctx.emitter.instruction("ldr x9, [x0, #-8]");                       // load the uniform heap header
+            ctx.emitter.instruction("and x9, x9, #0xff");                       // isolate the heap kind byte
+            ctx.emitter.instruction("cmp x9, #5");                              // kind 5 = mixed cell?
+            ctx.emitter.instruction(&format!("b.ne {}", cell_done));            // raw containers pass through
+            ctx.emitter.instruction("ldr x9, [x0]");                            // load the cell's runtime value tag
+            ctx.emitter.instruction("cmp x9, #4");                              // indexed-array payload?
+            ctx.emitter.instruction("ccmp x9, #5, #4, ne");                     // ... or hash payload?
+            ctx.emitter.instruction(&format!("b.ne {}", cell_done));            // non-container cells pass through
+            ctx.emitter.instruction("ldr x0, [x0, #8]");                        // replace the cell with its container payload
+            ctx.emitter.label(&cell_done);
             abi::emit_push_reg(ctx.emitter, "x0");
             abi::emit_call_label(ctx.emitter, "__rt_heap_kind");
             ctx.emitter.instruction("cmp x0, #3");                              // check whether the source is already associative hash storage
@@ -158,6 +180,23 @@ pub(super) fn lower_array_to_hash(ctx: &mut FunctionContext<'_>, inst: &Instruct
             let convert = ctx.next_label("array_to_hash_convert");
             let done = ctx.next_label("array_to_hash_done");
             ctx.load_value_to_reg(array, "rax")?;
+            // Unwrap a boxed Mixed cell carrying a container payload (EC-23).
+            let cell_done = ctx.next_label("array_to_hash_cell_done");
+            let cell_unwrap = ctx.next_label("array_to_hash_cell_unwrap");
+            ctx.emitter.instruction("test rax, rax");                           // null passes to the dispatch below
+            ctx.emitter.instruction(&format!("je {}", cell_done));
+            ctx.emitter.instruction("mov r10, QWORD PTR [rax - 8]");            // load the uniform heap header
+            ctx.emitter.instruction("and r10, 0xff");                           // isolate the heap kind byte
+            ctx.emitter.instruction("cmp r10, 5");                              // kind 5 = mixed cell?
+            ctx.emitter.instruction(&format!("jne {}", cell_done));             // raw containers pass through
+            ctx.emitter.instruction("mov r10, QWORD PTR [rax]");                // load the cell's runtime value tag
+            ctx.emitter.instruction("cmp r10, 4");                              // indexed-array payload?
+            ctx.emitter.instruction(&format!("je {}", cell_unwrap));
+            ctx.emitter.instruction("cmp r10, 5");                              // hash payload?
+            ctx.emitter.instruction(&format!("jne {}", cell_done));             // non-container cells pass through
+            ctx.emitter.label(&cell_unwrap);
+            ctx.emitter.instruction("mov rax, QWORD PTR [rax + 8]");            // replace the cell with its container payload
+            ctx.emitter.label(&cell_done);
             abi::emit_push_reg(ctx.emitter, "rax");
             abi::emit_call_label(ctx.emitter, "__rt_heap_kind");
             ctx.emitter.instruction("cmp rax, 3");                              // check whether the source is already associative hash storage
@@ -665,6 +704,12 @@ fn emit_array_get_in_bounds_aarch64(
         other if other.is_refcounted() => {
             ctx.emitter.instruction(&format!("add {}, {}, #24", array_reg, array_reg)); // skip the indexed-array header to reach pointer payloads
             ctx.emitter.instruction(&format!("ldr {}, [{}, {}, lsl #3]", index_reg, array_reg, index_reg)); // load the selected refcounted indexed-array element
+            if matches!(
+                other.codegen_repr(),
+                PhpType::Array(_) | PhpType::AssocArray { .. }
+            ) {
+                emit_unwrap_array_cell_aarch64(ctx, index_reg, array_reg);
+            }
             abi::emit_incref_if_refcounted(ctx.emitter, other);
         }
         other => {
@@ -675,6 +720,37 @@ fn emit_array_get_in_bounds_aarch64(
         }
     }
     Ok(())
+}
+
+/// Unwraps a boxed Mixed cell that carries an array/hash payload, in place.
+///
+/// Writers legitimately produce BOTH element layouts for array-valued slots: a
+/// raw child array pointer (push_refcounted) or a tag-4/5 Mixed cell wrapping it
+/// (the mixed-element append path taken when the destination's element type has
+/// widened to Mixed). A read statically typed as an array element must therefore
+/// tolerate a cell at runtime and unwrap to the payload (EC-20 — the reverse of
+/// `__rt_mixed_array_get`'s raw-array adaptivity). `value_reg` holds the loaded
+/// element; `scratch_reg` is a register that is dead after the load.
+fn emit_unwrap_array_cell_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    value_reg: &str,
+    scratch_reg: &str,
+) {
+    let done = ctx.next_label("array_get_unwrap_done");
+    let unwrap = ctx.next_label("array_get_unwrap_hit");
+    ctx.emitter.instruction(&format!("cbz {}, {}", value_reg, done));           // empty slots stay empty
+    ctx.emitter.instruction(&format!("ldr {}, [{}, #-8]", scratch_reg, value_reg)); // load the uniform heap header
+    ctx.emitter.instruction(&format!("and {0}, {0}, #0xff", scratch_reg));      // isolate the heap kind byte
+    ctx.emitter.instruction(&format!("cmp {}, #5", scratch_reg));               // kind 5 = mixed cell?
+    ctx.emitter.instruction(&format!("b.ne {}", done));                         // raw array/hash pointers pass through
+    ctx.emitter.instruction(&format!("ldr {}, [{}]", scratch_reg, value_reg));  // load the cell's runtime value tag
+    ctx.emitter.instruction(&format!("cmp {}, #4", scratch_reg));               // tag 4 = indexed-array payload?
+    ctx.emitter.instruction(&format!("b.eq {}", unwrap));                       // unwrap indexed payloads
+    ctx.emitter.instruction(&format!("cmp {}, #5", scratch_reg));               // tag 5 = hash payload?
+    ctx.emitter.instruction(&format!("b.ne {}", done));                         // non-array cells pass through untouched
+    ctx.emitter.label(&unwrap);
+    ctx.emitter.instruction(&format!("ldr {0}, [{0}, #8]", value_reg));         // replace the cell with its array payload
+    ctx.emitter.label(&done);
 }
 
 /// Emits the in-bounds indexed-array payload load for x86_64.
@@ -727,6 +803,12 @@ fn emit_array_get_in_bounds_x86_64(
         other if other.is_refcounted() => {
             ctx.emitter.instruction(&format!("lea {}, [{} + 24]", array_reg, array_reg)); // skip the indexed-array header to reach pointer payloads
             ctx.emitter.instruction(&format!("mov {}, QWORD PTR [{} + {} * 8]", index_reg, array_reg, index_reg)); // load the selected refcounted indexed-array element
+            if matches!(
+                other.codegen_repr(),
+                PhpType::Array(_) | PhpType::AssocArray { .. }
+            ) {
+                emit_unwrap_array_cell_x86_64(ctx, index_reg, array_reg);
+            }
             abi::emit_incref_if_refcounted(ctx.emitter, other);
         }
         other => {
@@ -737,6 +819,30 @@ fn emit_array_get_in_bounds_x86_64(
         }
     }
     Ok(())
+}
+
+/// x86_64 variant of `emit_unwrap_array_cell_aarch64` (see its doc for the rationale).
+fn emit_unwrap_array_cell_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    value_reg: &str,
+    scratch_reg: &str,
+) {
+    let done = ctx.next_label("array_get_unwrap_done");
+    let unwrap = ctx.next_label("array_get_unwrap_hit");
+    ctx.emitter.instruction(&format!("test {0}, {0}", value_reg));              // empty slots stay empty
+    ctx.emitter.instruction(&format!("je {}", done));
+    ctx.emitter.instruction(&format!("mov {}, QWORD PTR [{} - 8]", scratch_reg, value_reg)); // load the uniform heap header
+    ctx.emitter.instruction(&format!("and {}, 0xff", scratch_reg));             // isolate the heap kind byte
+    ctx.emitter.instruction(&format!("cmp {}, 5", scratch_reg));                // kind 5 = mixed cell?
+    ctx.emitter.instruction(&format!("jne {}", done));                          // raw array/hash pointers pass through
+    ctx.emitter.instruction(&format!("mov {}, QWORD PTR [{}]", scratch_reg, value_reg)); // load the cell's runtime value tag
+    ctx.emitter.instruction(&format!("cmp {}, 4", scratch_reg));                // tag 4 = indexed-array payload?
+    ctx.emitter.instruction(&format!("je {}", unwrap));                         // unwrap indexed payloads
+    ctx.emitter.instruction(&format!("cmp {}, 5", scratch_reg));                // tag 5 = hash payload?
+    ctx.emitter.instruction(&format!("jne {}", done));                          // non-array cells pass through untouched
+    ctx.emitter.label(&unwrap);
+    ctx.emitter.instruction(&format!("mov {0}, QWORD PTR [{0} + 8]", value_reg)); // replace the cell with its array payload
+    ctx.emitter.label(&done);
 }
 
 /// Emits PHP's undefined integer array-key warning for the key in the result register.

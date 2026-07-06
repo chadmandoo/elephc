@@ -120,3 +120,51 @@ fn test_static_arrow_function_runs() {
     let out = compile_and_run("<?php $g = static fn($x) => $x * 2; echo $g(5);");
     assert_eq!(out, "10");
 }
+
+/// EC-23 (#506): a static array property with STRING keys — the single-level
+/// memoized-singleton registry idiom `self::$instances[$name] = new static($name)`
+/// gated by isset. String keys promote the property's storage to a hash; repeated
+/// lookups return the identical instance. Byte-parity vs PHP 8.5.
+#[test]
+fn test_static_property_string_key_memoization() {
+    let out = compile_and_run(
+        r#"<?php
+class Reg {
+    /** @var array<string, Reg> */
+    private static array $instances = [];
+    public function __construct(public string $tag) {}
+    public static function of(string $name): Reg {
+        if (!isset(self::$instances[$name])) {
+            self::$instances[$name] = new static($name);
+        }
+        return self::$instances[$name];
+    }
+}
+$a = Reg::of('x');
+$b = Reg::of('x');
+$c = Reg::of('y');
+echo $a->tag, $c->tag, ':', $a === $b ? 'same' : 'diff';
+"#,
+    );
+    assert_eq!(out, "xy:same");
+}
+
+/// EC-23 (#506): the `??`-assignment memoization form (`$v = self::$p[$k] ?? self::$p[$k] = ...`)
+/// parses and runs — assignment is admitted as the coalesce default even though it binds
+/// looser than `??`. Byte-parity vs PHP 8.5.
+#[test]
+fn test_static_property_coalesce_assign_memoization() {
+    let out = compile_and_run(
+        r#"<?php
+class R {
+    public static array $p = [];
+    public static function f(string $k): int {
+        $v = self::$p[$k] ?? self::$p[$k] = 7;
+        return $v;
+    }
+}
+echo R::f('a'), R::f('a');
+"#,
+    );
+    assert_eq!(out, "77");
+}

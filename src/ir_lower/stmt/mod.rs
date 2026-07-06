@@ -765,15 +765,101 @@ fn promoted_assoc_array_type(current_ty: PhpType, value_ty: PhpType) -> PhpType 
 
 /// Lowers a nested array assignment that already carries an expression target.
 fn lower_nested_array_assign(ctx: &mut LoweringContext<'_, '_>, target: &Expr, value: &Expr, span: Span) {
-    let target = lower_expr(ctx, target);
-    let value = lower_expr(ctx, value);
-    ctx.emit_void(
-        Op::RuntimeCall,
-        vec![target.value, value.value],
-        None,
-        effects_lookup::runtime_effects(),
-        Some(span),
+    // Nested element writes (`$base[i][j] = v`) desugar to read-modify-writeback
+    // via a hidden Mixed temp, grounding out on the single-level statement kinds
+    // that already reallocate-and-store correctly:
+    //   $__t = <base> ?? [];  $__t[<j>] = <value>;  <base> = $__t;
+    // The intermediate `??` read copies (PHP array value semantics), so the temp
+    // does not alias the source; the write mutates the temp's container in place
+    // (`__rt_mixed_array_set`, which promotes indexed→hash for string keys), and
+    // the write-back stores the mutated temp back through the base's own single-
+    // level path. Deeper-than-two-level chains recurse through this same routine.
+    let ExprKind::ArrayAccess { array, index } = &target.kind else {
+        let target = lower_expr(ctx, target);
+        let value = lower_expr(ctx, value);
+        ctx.emit_void(
+            Op::RuntimeCall,
+            vec![target.value, value.value],
+            None,
+            effects_lookup::runtime_effects(),
+            Some(span),
+        );
+        return;
+    };
+    let tmp = ctx.declare_hidden_temp(PhpType::Mixed);
+    let read = Expr::new(
+        ExprKind::NullCoalesce {
+            value: array.clone(),
+            default: Box::new(Expr::new(ExprKind::ArrayLiteral(Vec::new()), span)),
+        },
+        span,
     );
+    let read_value = lower_expr(ctx, &read);
+    let read_ty = ctx.builder.value_php_type(read_value.value);
+    ctx.store_local(&tmp, read_value, read_ty.clone(), Some(span));
+    ctx.mark_local_initialized(&tmp);
+    lower_array_assign(ctx, &tmp, index, value, span);
+    let tmp_var = Expr::new(ExprKind::Variable(tmp.clone()), span);
+    match &array.kind {
+        ExprKind::Variable(name) => {
+            let written = lower_expr(ctx, &tmp_var);
+            let ty = ctx.builder.value_php_type(written.value);
+            ctx.store_local(name, written, ty, Some(span));
+        }
+        ExprKind::ArrayAccess { .. } => lower_nested_array_assign(ctx, array, &tmp_var, span),
+        ExprKind::StaticPropertyAccess { receiver, property } => {
+            lower_static_property_assign(ctx, receiver, property, &tmp_var, span);
+        }
+        ExprKind::PropertyAccess { object, property } => {
+            lower_property_assign(ctx, object, property, &tmp_var, span);
+        }
+        _ => {
+            let base = lower_expr(ctx, array);
+            let written = lower_expr(ctx, &tmp_var);
+            ctx.emit_void(
+                Op::RuntimeCall,
+                vec![base.value, written.value],
+                None,
+                effects_lookup::runtime_effects(),
+                Some(span),
+            );
+        }
+    }
+}
+/// Returns the static key classification for a static-property array write,
+/// resolving variable keys through the lowering env (a bare variable would
+/// otherwise class as Int and coerce a string key — the EC-17 lesson).
+fn index_expr_key_type_for_static_prop(ctx: &LoweringContext<'_, '_>, index: &Expr) -> PhpType {
+    match &index.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name.as_str())
+            .cloned()
+            .unwrap_or(PhpType::Mixed),
+        ExprKind::ClassConstant { .. } => PhpType::Str,
+        _ => crate::types::checker::infer_expr_type_syntactic(index),
+    }
+}
+
+/// Boxes a hash-entry value into a Mixed cell so static-property hashes hold a
+/// uniform boxed layout regardless of the written value's static type.
+fn box_static_prop_hash_value(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    span: Span,
+) -> LoweredValue {
+    let value_ty = ctx.builder.value_php_type(value.value);
+    if matches!(value_ty.codegen_repr(), PhpType::Mixed) {
+        return value;
+    }
+    ctx.emit_value(
+        Op::MixedBox,
+        vec![value.value],
+        None,
+        PhpType::Mixed,
+        Op::MixedBox.default_effects(),
+        Some(span),
+    )
 }
 
 /// Lowers `$array[] = value`.
@@ -2316,15 +2402,73 @@ fn lower_static_property_array_assign(
         static_property_type(ctx, receiver, property).filter(is_indexed_array_type)
     {
         let array_ty = property_ty.clone();
+        let index_ty = index_expr_key_type_for_static_prop(ctx, index);
         let property_value = load_static_property_as(ctx, receiver, property, property_ty, span);
         let index = lower_expr(ctx, index);
         let value = lower_expr(ctx, value);
+        // String and runtime-tagged keys mirror the local-array paths: a string
+        // key promotes storage to a hash (idempotently — see __rt_array_to_hash);
+        // a Mixed key dispatches its tag at runtime via ArraySetMixedKey. Both
+        // store the (possibly reallocated) container back into the property.
+        if index_ty == PhpType::Str {
+            let boxed_value = box_static_prop_hash_value(ctx, value, span);
+            let hash = ctx.emit_value(
+                Op::ArrayToHash,
+                vec![property_value.value],
+                None,
+                PhpType::AssocArray {
+                    key: Box::new(PhpType::Mixed),
+                    value: Box::new(PhpType::Mixed),
+                },
+                Op::ArrayToHash.default_effects(),
+                Some(span),
+            );
+            ctx.emit_void(
+                Op::HashSet,
+                vec![hash.value, index.value, boxed_value.value],
+                None,
+                Op::HashSet.default_effects(),
+                Some(span),
+            );
+            store_static_property(ctx, receiver, property, hash.value, span);
+            return;
+        }
+        if index_ty != PhpType::Int {
+            let boxed_value = box_static_prop_hash_value(ctx, value, span);
+            let result = ctx.emit_value(
+                Op::ArraySetMixedKey,
+                vec![property_value.value, index.value, boxed_value.value],
+                None,
+                PhpType::Array(Box::new(PhpType::Mixed)),
+                Op::ArraySetMixedKey.default_effects(),
+                Some(span),
+            );
+            store_static_property(ctx, receiver, property, result.value, span);
+            return;
+        }
         let value = coerce_indexed_array_set_value(ctx, &array_ty, value, Some(span));
         ctx.emit_void(
             Op::ArraySet,
             vec![property_value.value, index.value, value.value],
             None,
             Op::ArraySet.default_effects(),
+            Some(span),
+        );
+        store_static_property(ctx, receiver, property, property_value.value, span);
+        return;
+    }
+    if let Some(property_ty) = static_property_type(ctx, receiver, property)
+        .filter(|ty| matches!(ty.codegen_repr(), PhpType::AssocArray { .. }))
+    {
+        let property_value = load_static_property_as(ctx, receiver, property, property_ty, span);
+        let index = lower_expr(ctx, index);
+        let value = lower_expr(ctx, value);
+        let boxed_value = box_static_prop_hash_value(ctx, value, span);
+        ctx.emit_void(
+            Op::HashSet,
+            vec![property_value.value, index.value, boxed_value.value],
+            None,
+            Op::HashSet.default_effects(),
             Some(span),
         );
         store_static_property(ctx, receiver, property, property_value.value, span);

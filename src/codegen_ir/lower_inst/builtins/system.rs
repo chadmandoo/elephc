@@ -993,3 +993,50 @@ fn ensure_arg_count_between(
         inst.operands.len()
     )))
 }
+
+/// Lowers `get_debug_type(value)` for Mixed/Union arguments through the runtime
+/// kind-tag dispatcher. Statically-typed arguments never reach this hook — the EIR
+/// frontend folds them to constant type-name strings (`lower_static_get_debug_type`);
+/// the declared `Mixed` parameter boxes whatever remains, so the runtime always
+/// receives a heap value whose header/tag it can dispatch on.
+pub(crate) fn lower_get_debug_type(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "get_debug_type", 1)?;
+    let value = super::expect_operand(inst, 0)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(value, "x0")?;
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(value, "rdi")?;
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_get_debug_type");
+    super::store_if_result(ctx, inst)
+}
+
+/// Lowers `set_error_handler(...)` to the shared PHP null sentinel — the "no
+/// previous handler" result of the accepted no-op (natives have no error
+/// machinery to install into; see the builtin's module note).
+pub(crate) fn lower_error_handler_noop(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count_between(inst, "set_error_handler", 1, 2)?;
+    let reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_int_immediate(ctx.emitter, reg, 0x7fff_ffff_ffff_fffe);
+    super::store_if_result(ctx, inst)
+}
+
+/// Lowers `restore_error_handler()` to constant true (accepted no-op).
+pub(crate) fn lower_restore_error_handler(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "restore_error_handler", 0)?;
+    let reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_int_immediate(ctx.emitter, reg, 1);
+    super::store_if_result(ctx, inst)
+}

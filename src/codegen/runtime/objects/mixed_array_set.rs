@@ -72,7 +72,7 @@ fn emit_mixed_array_set_aarch64(emitter: &mut Emitter) {
     emitter.instruction("cbz x10, __rt_mixed_array_set_drop");                  // null array payloads cannot be mutated
     emitter.instruction("ldr x11, [sp, #16]");                                  // reload key_hi
     emitter.instruction("cmn x11, #1");                                         // does key_hi carry the integer-key sentinel?
-    emitter.instruction("b.ne __rt_mixed_array_set_drop");                      // string keys are not valid for indexed-array writes
+    emitter.instruction("b.ne __rt_mixed_array_set_promote");                   // string keys promote the indexed payload to a hash (EC-23)
     emitter.instruction("ldr x9, [sp, #8]");                                    // reload the requested integer index
     emitter.instruction("cmp x9, #0");                                          // reject negative indexes before touching storage
     emitter.instruction("b.lt __rt_mixed_array_set_drop");                      // negative indexed writes are ignored by this helper
@@ -134,6 +134,14 @@ fn emit_mixed_array_set_aarch64(emitter: &mut Emitter) {
     emitter.instruction("str x12, [x10]");                                      // store the extended logical length
     emitter.instruction("b __rt_mixed_array_set_done");                         // finish after extending the array
 
+    emitter.label("__rt_mixed_array_set_promote");
+    emitter.instruction("mov x0, x10");                                         // pass the indexed payload to the hash conversion helper
+    emitter.instruction("bl __rt_array_to_hash");                               // promote indexed storage to a hash (idempotent, cell-adaptive)
+    emitter.instruction("ldr x10, [sp, #0]");                                   // reload the owning Mixed cell after the helper call
+    emitter.instruction("str x0, [x10, #8]");                                   // publish the hash payload back into the Mixed cell
+    emitter.instruction("mov x9, #5");                                          // runtime tag 5 = associative array payload
+    emitter.instruction("str x9, [x10]");                                       // retag the Mixed cell as associative
+    emitter.instruction("mov x0, x10");                                         // the assoc arm expects the Mixed cell in x0
     emitter.label("__rt_mixed_array_set_assoc");
     emitter.instruction("ldr x10, [x0, #8]");                                   // load the associative-array hash pointer from the Mixed payload
     emitter.instruction("cbz x10, __rt_mixed_array_set_drop");                  // null hash payloads cannot be mutated
@@ -258,7 +266,7 @@ fn emit_mixed_array_set_x86_64(emitter: &mut Emitter) {
     emitter.instruction("je __rt_mixed_array_set_drop");                        // drop the value when the array payload is absent
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // reload key_hi
     emitter.instruction("cmp r11, -1");                                         // does key_hi carry the integer-key sentinel?
-    emitter.instruction("jne __rt_mixed_array_set_drop");                       // string keys are not valid for indexed-array writes
+    emitter.instruction("jne __rt_mixed_array_set_promote_x86");                // string keys promote the indexed payload to a hash (EC-23)
     emitter.instruction("mov r9, QWORD PTR [rbp - 16]");                        // reload the requested integer index
     emitter.instruction("cmp r9, 0");                                           // reject negative indexes before touching storage
     emitter.instruction("jl __rt_mixed_array_set_drop");                        // negative indexed writes are ignored by this helper
@@ -319,6 +327,13 @@ fn emit_mixed_array_set_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov QWORD PTR [r10], r8");                             // store the extended logical length
     emitter.instruction("jmp __rt_mixed_array_set_done");                       // finish after extending the array
 
+    emitter.label("__rt_mixed_array_set_promote_x86");
+    emitter.instruction("mov rdi, r10");                                        // pass the indexed payload to the hash conversion helper
+    emitter.instruction("call __rt_array_to_hash");                             // promote indexed storage to a hash (idempotent, cell-adaptive)
+    emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the owning Mixed cell after the helper call
+    emitter.instruction("mov QWORD PTR [r10 + 8], rax");                        // publish the hash payload back into the Mixed cell
+    emitter.instruction("mov QWORD PTR [r10], 5");                              // retag the Mixed cell as associative (tag 5)
+    emitter.instruction("mov rdi, r10");                                        // the assoc arm expects the Mixed cell in rdi
     emitter.label("__rt_mixed_array_set_assoc");
     emitter.instruction("mov r10, QWORD PTR [rdi + 8]");                        // load the associative-array hash pointer from the Mixed payload
     emitter.instruction("test r10, r10");                                       // null hash payloads cannot be mutated

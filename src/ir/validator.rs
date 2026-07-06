@@ -408,9 +408,20 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         HashArrayUnion => check_hash_array_union(function, inst_id, inst),
         HashSpread => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)"),
         ArrayLen | ArrayGet | ArrayGetSilent | ArrayIsset | ArraySet | ArrayPush | ArrayEnsureUnique
-        | ArrayCloneShallow | ArrayToHash | ArraySetMixedKey | ArrayGetMixedKey
+        | ArrayCloneShallow | ArraySetMixedKey | ArrayGetMixedKey
         | ArrayGetMixedKeySilent => {
             check_first_heap(function, inst_id, inst, IrHeapKind::Array, "Heap(Array)")
+        }
+        // ArrayToHash's runtime is dispatch-adaptive (EC-23): hash input passes
+        // through, indexed input converts, and a boxed Mixed cell wrapping either
+        // container unwraps — so any heap operand is representable.
+        ArrayToHash => {
+            check_count(inst_id, inst, 1, "1")?;
+            let operand = inst.operands[0];
+            match function.value(operand).map(|value| value.ir_type) {
+                Some(IrType::Heap(_)) => Ok(()),
+                _ => check_first_heap(function, inst_id, inst, IrHeapKind::Array, "Heap(Array)"),
+            }
         }
         MixedArrayAppend => {
             check_count(inst_id, inst, 2, "2")?;

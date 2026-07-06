@@ -619,6 +619,13 @@ pub(crate) fn string_op_uses_scratch_storage(op: Op) -> bool {
             | Op::StrCharAt
             | Op::StrInterpolate
             | Op::RuntimeCall
+            // Builtin string results are not universally owned copies: substr()
+            // lowers as a VIEW into its source (a pointer advance, no copy), so a
+            // `return substr($param, ...)` would hand the caller a pointer into a
+            // buffer the caller may free on reassignment (EC-20). Persisting
+            // builtin string returns costs one copy on already-owned results but
+            // makes returned strings independent by construction.
+            | Op::BuiltinCall
     )
 }
 
@@ -1674,6 +1681,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         return value;
     }
     if let Some(value) = lower_static_explode_limit(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_get_debug_type(ctx, canonical, args, expr) {
         return value;
     }
     apply_preg_match_capture_local_type(ctx, canonical, args);
@@ -4133,6 +4143,53 @@ fn lower_static_preg_match_all_capture(
         span: expr.span,
     };
     Some(lower_expr(ctx, &count_call))
+}
+
+
+/// Folds `get_debug_type($x)` to a constant type-name string when the argument's
+/// type is statically concrete. Unboxed values carry no runtime tag, so this
+/// static half is what makes the builtin total: everything it cannot resolve
+/// (Mixed/Union/TaggedScalar locals, non-variable expressions) falls through to
+/// the runtime dispatcher over the boxed `Mixed` parameter. Restricted to
+/// variable arguments — no side effects are skipped by not lowering the operand.
+fn lower_static_get_debug_type(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "get_debug_type" {
+        return None;
+    }
+    if args.len() != 1 {
+        return None;
+    }
+    let ExprKind::Variable(local) = &args[0].kind else {
+        return None;
+    };
+    let ty = ctx.local_types.get(local.as_str())?.clone();
+    let type_name = static_debug_type_name(&ty)?;
+    let literal = Expr {
+        kind: ExprKind::StringLiteral(type_name),
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &literal))
+}
+
+/// Maps a statically concrete type to PHP's `get_debug_type()` name, or `None`
+/// for types whose name only resolves at runtime.
+fn static_debug_type_name(ty: &PhpType) -> Option<String> {
+    match ty {
+        PhpType::Int => Some("int".to_string()),
+        PhpType::Float => Some("float".to_string()),
+        PhpType::Bool => Some("bool".to_string()),
+        PhpType::Str => Some("string".to_string()),
+        PhpType::Array(_) | PhpType::AssocArray { .. } => Some("array".to_string()),
+        PhpType::Void | PhpType::Never => Some("null".to_string()),
+        PhpType::Callable => Some("Closure".to_string()),
+        PhpType::Object(class_name) if !class_name.is_empty() => Some(class_name.clone()),
+        _ => None,
+    }
 }
 
 /// Desugars 3-argument `explode(sep, str, limit)` into the stdlib prelude's

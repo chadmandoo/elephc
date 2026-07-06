@@ -1366,3 +1366,26 @@ echo $result;
     );
     assert_eq!(out, "yoy");
 }
+
+/// EC-20 (#503): a self-reassigning substr chain whose offsets come from guard-narrowed
+/// strpos results must keep its content. The store released the previous value's buffer
+/// BEFORE `__rt_str_persist` copied the substr VIEW pointing into it — an allocator-
+/// state-dependent use-after-free that only surfaced once earlier calls (the strpos
+/// materializations) shaped the free lists. Byte-parity vs PHP 8.5.
+#[test]
+fn test_self_substr_chain_with_strpos_offsets() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $rest = 'scheme://host/path?query';
+    $pos = strpos($rest, '://');
+    if ($pos !== false) { $rest = substr($rest, $pos + 3); }
+    $q = strpos($rest, '?');
+    if ($q !== false) { $rest = substr($rest, 0, $q); }
+    echo $rest, '|', strlen($rest);
+}
+main();
+"#,
+    );
+    assert_eq!(out, "host/path|9");
+}

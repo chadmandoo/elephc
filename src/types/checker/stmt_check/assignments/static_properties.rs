@@ -145,7 +145,89 @@ pub(super) fn check_static_property_array_assign(
         }
     }
     if idx_ty != PhpType::Int {
-        return Err(CompileError::new(span, "Array index must be integer"));
+        // String (and runtime-tagged) keys write associative entries, mirroring the
+        // local-array string-key promotion (EC-23: the memoized-singleton registry
+        // idiom `self::$instances[static::class][$name] = ...`). The lowering
+        // promotes storage to a hash; an undeclared property's type follows.
+        let stringish = matches!(
+            idx_ty,
+            PhpType::Str | PhpType::Mixed | PhpType::TaggedScalar | PhpType::Union(_)
+        );
+        if !stringish {
+            return Err(CompileError::new(span, "Array index must be integer"));
+        }
+        let updated_prop_ty = match target.prop_ty.clone() {
+            PhpType::Array(elem_ty) => {
+                if target.property_has_declared_type {
+                    checker.require_compatible_arg_type(
+                        elem_ty.as_ref(),
+                        &val_ty,
+                        span,
+                        &format!("Static property {}::${}[]", target.class_name, property),
+                    )?;
+                    PhpType::Array(elem_ty)
+                } else {
+                    let merged_ty = if *elem_ty == val_ty {
+                        val_ty.clone()
+                    } else {
+                        checker
+                            .merge_array_element_type(&elem_ty, &val_ty)
+                            .unwrap_or(PhpType::Mixed)
+                    };
+                    PhpType::AssocArray {
+                        key: Box::new(PhpType::Mixed),
+                        value: Box::new(merged_ty),
+                    }
+                }
+            }
+            PhpType::AssocArray { key, value } => {
+                if target.property_has_declared_type {
+                    checker.require_compatible_arg_type(
+                        value.as_ref(),
+                        &val_ty,
+                        span,
+                        &format!("Static property {}::${}[]", target.class_name, property),
+                    )?;
+                    PhpType::AssocArray { key, value }
+                } else {
+                    let merged_ty = if *value == val_ty {
+                        val_ty.clone()
+                    } else {
+                        checker
+                            .merge_array_element_type(&value, &val_ty)
+                            .unwrap_or(PhpType::Mixed)
+                    };
+                    PhpType::AssocArray {
+                        key,
+                        value: Box::new(merged_ty),
+                    }
+                }
+            }
+            PhpType::Int | PhpType::Void if !target.property_has_declared_type => {
+                PhpType::AssocArray {
+                    key: Box::new(PhpType::Mixed),
+                    value: Box::new(val_ty.clone()),
+                }
+            }
+            other => {
+                return Err(CompileError::new(
+                    span,
+                    &format!(
+                        "Array index assignment requires an array static property, got {}",
+                        other
+                    ),
+                ));
+            }
+        };
+        if !target.property_has_declared_type {
+            update_static_property_type(
+                checker,
+                property,
+                &target.declaring_class,
+                updated_prop_ty,
+            );
+        }
+        return Ok(());
     }
 
     let updated_prop_ty = match target.prop_ty {

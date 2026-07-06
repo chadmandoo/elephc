@@ -191,3 +191,82 @@ echo $x;
 }
 
 // --- Missing type function tests ---
+
+/// EC-21 (#504): `get_debug_type()` — statically-typed arguments fold to constant
+/// names at compile time; Mixed arguments dispatch on the boxed cell's kind tag at
+/// runtime (objects resolve their FQCN through the class table). Byte-parity vs PHP 8.5.
+#[test]
+fn test_get_debug_type_static_and_mixed() {
+    let out = compile_and_run(
+        r#"<?php
+class Widget {}
+function describe(mixed $level): string {
+    return get_debug_type($level);
+}
+function main(): void {
+    $i = 7;
+    $s = 'x';
+    $f = 1.5;
+    $b = true;
+    $a = [1, 2];
+    $o = new Widget();
+    echo get_debug_type($i), ':', get_debug_type($s), ':', get_debug_type($f), ':', get_debug_type($b), ':', get_debug_type($a), ':', get_debug_type($o), '|';
+    echo describe(7), ':', describe('x'), ':', describe(1.5), ':', describe(false), ':', describe([1]), ':', describe(new Widget()), ':', describe(null), '|';
+    echo describe(json_decode('42'));
+}
+main();
+"#,
+    );
+    assert_eq!(
+        out,
+        "int:string:float:bool:array:Widget|int:string:float:bool:array:Widget:null|int"
+    );
+}
+
+/// EC-21 follow-on (#504): `instanceof self` narrows to the ENCLOSING class, not to a
+/// literal class named "self" — the LogLevel::fromMixed guard shape (return the
+/// narrowed receiver from a `: self`-typed factory). Byte-parity vs PHP 8.5.
+#[test]
+fn test_instanceof_self_guard_narrowing() {
+    let out = compile_and_run(
+        r#"<?php
+class Level {
+    public function __construct(public string $name) {}
+    public static function fromMixed(mixed $level): self {
+        if ($level instanceof self) {
+            return $level;
+        }
+        return new self('default');
+    }
+}
+function main(): void {
+    $direct = Level::fromMixed(new Level('warn'));
+    $fallback = Level::fromMixed('warn');
+    echo $direct->name, ':', $fallback->name;
+}
+main();
+"#,
+    );
+    assert_eq!(out, "warn:default");
+}
+
+/// EC-22 (#505): `set_error_handler`/`restore_error_handler` are accepted no-ops —
+/// the closure argument compiles and is evaluated, set returns null ("no previous
+/// handler"), restore returns true, and the guarded call's stdout behavior matches
+/// PHP (natives emit no PHP-level warnings for a handler to swallow).
+#[test]
+fn test_error_handler_noops() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $prev = set_error_handler(static fn (): bool => true);
+    echo $prev === null ? 'null' : 'set', ';';
+    $h = fopen('/etc/hostname', 'r');
+    echo $h === false ? 'false' : 'handle', ';';
+    echo restore_error_handler() ? 'true' : 'false';
+}
+main();
+"#,
+    );
+    assert_eq!(out, "null;handle;true");
+}

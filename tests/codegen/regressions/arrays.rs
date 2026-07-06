@@ -1024,3 +1024,39 @@ main();
     );
     assert_eq!(out, "2|1");
 }
+
+/// EC-20 (#503): a list whose element type unions Str with an array shape (different
+/// appends per branch) must survive nesting into an outer array and a function return.
+/// Writers legitimately produce both slot layouts (raw child pointer vs a tag-4 Mixed
+/// cell wrapping it, chosen by how far the destination's element type widened), so the
+/// readers adapt: `__rt_mixed_array_get` indexes raw arrays received as Mixed, and the
+/// inline array-element read unwraps array-payload cells. Byte-parity vs PHP 8.5.
+#[test]
+fn test_union_element_list_survives_nesting_and_return() {
+    let out = compile_and_run(
+        r#"<?php
+function mk(bool $pairs): array {
+    $m = [];
+    preg_match('~\{([^}]+)\}~', 'x{id:int}y', $m);
+    $text = $m[1];
+    $list = [];
+    if ($pairs) {
+        $list[] = [$text, 7];
+    } else {
+        $list[] = $text;
+    }
+    $result = [];
+    $result[] = $list;
+    return $result;
+}
+function main(): void {
+    $r = mk(true);
+    echo 'pair=', $r[0][0][0], '@', $r[0][0][1], ';';
+    $p = mk(false);
+    echo 'plain=', $p[0][0], ';len=', strlen($p[0][0] . '');
+}
+main();
+"#,
+    );
+    assert_eq!(out, "pair=id:int@7;plain=id:int;len=6");
+}

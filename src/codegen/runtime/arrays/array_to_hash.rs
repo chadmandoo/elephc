@@ -27,6 +27,31 @@ pub fn emit_array_to_hash(emitter: &mut Emitter) {
     emitter.blank();
     emitter.comment("--- runtime: array_to_hash ---");
     emitter.label_global("__rt_array_to_hash");
+    // Idempotence guard: a value that is ALREADY hash storage (heap kind 3)
+    // passes through unchanged — repeated string-key writes to a declared-array
+    // static property re-run the conversion on every write (EC-23), and
+    // re-reading a hash as an indexed array would rebuild garbage.
+    emitter.instruction("ldr x9, [x0, #-8]");                                   // load the uniform heap-kind header word
+    emitter.instruction("and x9, x9, #0xff");                                   // isolate the heap kind byte
+    emitter.instruction("cmp x9, #3");                                          // already hash storage?
+    emitter.instruction("b.ne __rt_array_to_hash_not_hash");                    // indexed/cell inputs continue below
+    emitter.instruction("ret");                                                 // hash input passes through in x0
+    emitter.label("__rt_array_to_hash_not_hash");
+    emitter.instruction("cmp x9, #5");                                          // boxed mixed cell wrapping a container?
+    emitter.instruction("b.ne __rt_array_to_hash_convert");                     // raw indexed arrays convert below
+    emitter.instruction("ldr x9, [x0]");                                        // load the cell's runtime value tag
+    emitter.instruction("cmp x9, #4");                                          // indexed-array payload?
+    emitter.instruction("b.eq __rt_array_to_hash_unwrap");                      // unwrap one level (bounded)
+    emitter.instruction("cmp x9, #5");                                          // hash payload?
+    emitter.instruction("b.ne __rt_array_to_hash_convert");                     // non-container cells keep today's behavior
+    emitter.label("__rt_array_to_hash_unwrap");
+    emitter.instruction("ldr x0, [x0, #8]");                                    // replace the cell with its container payload
+    emitter.instruction("ldr x9, [x0, #-8]");                                   // reload the payload's heap header (single unwrap, no loop)
+    emitter.instruction("and x9, x9, #0xff");                                   // isolate the heap kind byte
+    emitter.instruction("cmp x9, #3");                                          // hash payload passes through
+    emitter.instruction("b.ne __rt_array_to_hash_convert");                     // indexed payload converts below
+    emitter.instruction("ret");                                                 // return the unwrapped hash
+    emitter.label("__rt_array_to_hash_convert");
     emitter.instruction("sub sp, sp, #80");                                     // allocate the conversion stack frame
     emitter.instruction("stp x29, x30, [sp, #64]");                             // save frame pointer and return address
     emitter.instruction("add x29, sp, #64");                                    // set up the new frame pointer
@@ -108,6 +133,33 @@ fn emit_array_to_hash_linux_x86_64(emitter: &mut Emitter) {
     emitter.label_global("__rt_array_to_hash");
     emitter.instruction("push rbp");                                            // preserve the caller frame pointer
     emitter.instruction("mov rbp, rsp");                                        // establish a stable frame base
+    // Idempotence guard (see the AArch64 emitter note): hash input passes through;
+    // container-wrapping mixed cells unwrap and re-dispatch.
+    emitter.instruction("mov r10, QWORD PTR [rdi - 8]");                        // load the uniform heap-kind header word
+    emitter.instruction("and r10, 0xff");                                       // isolate the heap kind byte
+    emitter.instruction("cmp r10, 3");                                          // already hash storage?
+    emitter.instruction("jne __rt_array_to_hash_not_hash_x86");                 // indexed/cell inputs continue below
+    emitter.instruction("mov rax, rdi");                                        // hash input passes through
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the hash unchanged
+    emitter.label("__rt_array_to_hash_not_hash_x86");
+    emitter.instruction("cmp r10, 5");                                          // boxed mixed cell wrapping a container?
+    emitter.instruction("jne __rt_array_to_hash_convert_x86");                  // raw indexed arrays convert below
+    emitter.instruction("mov r10, QWORD PTR [rdi]");                            // load the cell's runtime value tag
+    emitter.instruction("cmp r10, 4");                                          // indexed-array payload?
+    emitter.instruction("je __rt_array_to_hash_unwrap_x86");                    // unwrap one level (bounded)
+    emitter.instruction("cmp r10, 5");                                          // hash payload?
+    emitter.instruction("jne __rt_array_to_hash_convert_x86");                  // non-container cells keep today's behavior
+    emitter.label("__rt_array_to_hash_unwrap_x86");
+    emitter.instruction("mov rdi, QWORD PTR [rdi + 8]");                        // replace the cell with its container payload
+    emitter.instruction("mov r10, QWORD PTR [rdi - 8]");                        // reload the payload's heap header (single unwrap, no loop)
+    emitter.instruction("and r10, 0xff");                                       // isolate the heap kind byte
+    emitter.instruction("cmp r10, 3");                                          // hash payload passes through
+    emitter.instruction("jne __rt_array_to_hash_convert_x86");                  // indexed payload converts below
+    emitter.instruction("mov rax, rdi");                                        // return the unwrapped hash
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the unwrapped hash
+    emitter.label("__rt_array_to_hash_convert_x86");
     emitter.instruction("sub rsp, 64");                                         // reserve local slots for the conversion loop state
     emitter.instruction("mov QWORD PTR [rbp - 8], rdi");                        // save the indexed array pointer
     emitter.instruction("mov rax, QWORD PTR [rdi]");                            // load the indexed array length

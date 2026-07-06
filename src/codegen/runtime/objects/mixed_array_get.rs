@@ -63,6 +63,17 @@ fn emit_mixed_array_get_aarch64(emitter: &mut Emitter) {
     emitter.instruction("str x2, [sp, #16]");                                   // save key_hi
 
     emitter.instruction("cbz x0, __rt_mixed_array_get_null");                   // null Mixed → Mixed(null)
+    // A statically-Mixed value can hold a RAW array/hash pointer rather than a
+    // boxed cell (element slots of nested arrays store raw child pointers; the
+    // static type at a deeper access level often widens to Mixed — EC-20).
+    // Dispatch on the uniform heap header first: kind 2 = indexed array,
+    // kind 3 = hash, kind 5 = mixed cell (falls through to the tag dispatch).
+    emitter.instruction("ldr x9, [x0, #-8]");                                   // load the uniform heap header
+    emitter.instruction("and x9, x9, #0xff");                                   // isolate the heap kind byte
+    emitter.instruction("cmp x9, #2");                                          // raw indexed array passed as Mixed?
+    emitter.instruction("b.eq __rt_mixed_array_get_raw_indexed");               // index it directly
+    emitter.instruction("cmp x9, #3");                                          // raw hash passed as Mixed?
+    emitter.instruction("b.eq __rt_mixed_array_get_raw_assoc");                 // hash-get it directly
     emitter.instruction("ldr x9, [x0]");                                        // load tag from mixed[0]
     emitter.instruction("cmp x9, #4");                                          // tag = 4 (indexed array)?
     emitter.instruction("b.eq __rt_mixed_array_get_indexed");                   // branch on the current JSON decoder condition
@@ -73,8 +84,12 @@ fn emit_mixed_array_get_aarch64(emitter: &mut Emitter) {
     emitter.instruction("b __rt_mixed_array_get_null");                         // any other payload → null
 
     // Indexed array: integer key only. key_hi == -1 marks int keys.
+    emitter.label("__rt_mixed_array_get_raw_indexed");
+    emitter.instruction("mov x10, x0");                                         // the Mixed value IS the array pointer
+    emitter.instruction("b __rt_mixed_array_get_indexed_body");                 // share the indexed read body
     emitter.label("__rt_mixed_array_get_indexed");
     emitter.instruction("ldr x10, [x0, #8]");                                   // x10 = array pointer
+    emitter.label("__rt_mixed_array_get_indexed_body");
     emitter.instruction("cbz x10, __rt_mixed_array_get_null");                  // defensive null guard
     emitter.instruction("ldr x11, [sp, #16]");                                  // load key_hi
     emitter.instruction("cmn x11, #1");                                         // compare with -1 (int-key sentinel)
@@ -132,8 +147,12 @@ fn emit_mixed_array_get_aarch64(emitter: &mut Emitter) {
     emitter.instruction("b __rt_mixed_array_get_null");                         // return boxed Mixed(null) after the warning
 
     // Associative array: hash_get with normalized key.
+    emitter.label("__rt_mixed_array_get_raw_assoc");
+    emitter.instruction("mov x10, x0");                                         // the Mixed value IS the hash pointer
+    emitter.instruction("b __rt_mixed_array_get_assoc_body");                   // share the hash read body
     emitter.label("__rt_mixed_array_get_assoc");
     emitter.instruction("ldr x10, [x0, #8]");                                   // x10 = hash pointer
+    emitter.label("__rt_mixed_array_get_assoc_body");
     emitter.instruction("cbz x10, __rt_mixed_array_get_null");                  // defensive null guard
     emitter.instruction("mov x0, x10");                                         // x0 = hash pointer for hash_get
     emitter.instruction("ldr x1, [sp, #8]");                                    // x1 = key_lo
@@ -276,6 +295,15 @@ fn emit_mixed_array_get_x86_64(emitter: &mut Emitter) {
 
     emitter.instruction("test rdi, rdi");                                       // null Mixed → null
     emitter.instruction("je __rt_mixed_array_get_null");                        // branch on the current JSON decoder condition
+    // A statically-Mixed value can hold a RAW array/hash pointer rather than a
+    // boxed cell (see the AArch64 emitter note — EC-20). Dispatch on the
+    // uniform heap header first: kind 2 = indexed, 3 = hash, 5 = mixed cell.
+    emitter.instruction("mov r10, QWORD PTR [rdi - 8]");                        // load the uniform heap header
+    emitter.instruction("and r10, 0xff");                                       // isolate the heap kind byte
+    emitter.instruction("cmp r10, 2");                                          // raw indexed array passed as Mixed?
+    emitter.instruction("je __rt_mixed_array_get_raw_indexed");                 // index it directly
+    emitter.instruction("cmp r10, 3");                                          // raw hash passed as Mixed?
+    emitter.instruction("je __rt_mixed_array_get_raw_assoc");                   // hash-get it directly
     emitter.instruction("mov r10, QWORD PTR [rdi]");                            // load tag from mixed[0]
     emitter.instruction("cmp r10, 4");                                          // tag = 4 (indexed array)?
     emitter.instruction("je __rt_mixed_array_get_indexed");                     // branch on the current JSON decoder condition
@@ -285,8 +313,12 @@ fn emit_mixed_array_get_x86_64(emitter: &mut Emitter) {
     emitter.instruction("je __rt_mixed_array_get_object");                      // branch on the current JSON decoder condition
     emitter.instruction("jmp __rt_mixed_array_get_null");                       // any other payload → null
 
+    emitter.label("__rt_mixed_array_get_raw_indexed");
+    emitter.instruction("mov r10, rdi");                                        // the Mixed value IS the array pointer
+    emitter.instruction("jmp __rt_mixed_array_get_indexed_body");               // share the indexed read body
     emitter.label("__rt_mixed_array_get_indexed");
     emitter.instruction("mov r10, QWORD PTR [rdi + 8]");                        // r10 = array pointer
+    emitter.label("__rt_mixed_array_get_indexed_body");
     emitter.instruction("test r10, r10");                                       // defensive null guard
     emitter.instruction("je __rt_mixed_array_get_null");                        // branch on the current JSON decoder condition
     emitter.instruction("mov r11, QWORD PTR [rbp - 24]");                       // load key_hi
@@ -348,8 +380,12 @@ fn emit_mixed_array_get_x86_64(emitter: &mut Emitter) {
     emitter.instruction("call __rt_warn_undefined_array_key_int");              // emit or suppress the undefined-array-key warning
     emitter.instruction("jmp __rt_mixed_array_get_null");                       // return boxed Mixed(null) after the warning
 
+    emitter.label("__rt_mixed_array_get_raw_assoc");
+    emitter.instruction("mov r10, rdi");                                        // the Mixed value IS the hash pointer
+    emitter.instruction("jmp __rt_mixed_array_get_assoc_body");                 // share the hash read body
     emitter.label("__rt_mixed_array_get_assoc");
     emitter.instruction("mov r10, QWORD PTR [rdi + 8]");                        // r10 = hash pointer
+    emitter.label("__rt_mixed_array_get_assoc_body");
     emitter.instruction("test r10, r10");                                       // defensive null guard
     emitter.instruction("je __rt_mixed_array_get_null");                        // branch on the current JSON decoder condition
     emitter.instruction("mov rdi, r10");                                        // rdi = hash pointer for hash_get

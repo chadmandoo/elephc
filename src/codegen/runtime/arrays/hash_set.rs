@@ -26,6 +26,19 @@ pub fn emit_hash_set(emitter: &mut Emitter) {
     emitter.comment("--- runtime: hash_set ---");
     emitter.label_global("__rt_hash_set");
 
+    // A statically-Mixed container can arrive as a boxed cell wrapping the hash
+    // (EC-23 nested-write temps) — unwrap to the payload before inserting.
+    emitter.instruction("cbz x0, __rt_hash_set_container_ready");               // defensive: null falls through to the existing paths
+    emitter.instruction("ldr x9, [x0, #-8]");                                   // load the uniform heap header
+    emitter.instruction("and x9, x9, #0xff");                                   // isolate the heap kind byte
+    emitter.instruction("cmp x9, #5");                                          // kind 5 = mixed cell?
+    emitter.instruction("b.ne __rt_hash_set_container_ready");                  // raw hashes pass through
+    emitter.instruction("ldr x9, [x0]");                                        // load the cell's runtime value tag
+    emitter.instruction("cmp x9, #5");                                          // tag 5 = hash payload?
+    emitter.instruction("b.ne __rt_hash_set_container_ready");                  // non-hash cells keep today's behavior
+    emitter.instruction("ldr x0, [x0, #8]");                                    // replace the cell with its hash payload
+    emitter.label("__rt_hash_set_container_ready");
+
     // -- set up stack frame, save all inputs --
     // Stack layout:
     //   [sp, #0]  = hash_table_ptr (x0)
@@ -236,6 +249,19 @@ fn emit_hash_set_linux_x86_64(emitter: &mut Emitter) {
     emitter.blank();
     emitter.comment("--- runtime: hash_set ---");
     emitter.label_global("__rt_hash_set");
+
+    // Cell-wrapped container unwrap (see the AArch64 emitter note — EC-23).
+    emitter.instruction("test rdi, rdi");                                       // defensive: null falls through
+    emitter.instruction("je __rt_hash_set_container_ready_x86");
+    emitter.instruction("mov r10, QWORD PTR [rdi - 8]");                        // load the uniform heap header
+    emitter.instruction("and r10, 0xff");                                       // isolate the heap kind byte
+    emitter.instruction("cmp r10, 5");                                          // kind 5 = mixed cell?
+    emitter.instruction("jne __rt_hash_set_container_ready_x86");               // raw hashes pass through
+    emitter.instruction("mov r10, QWORD PTR [rdi]");                            // load the cell's runtime value tag
+    emitter.instruction("cmp r10, 5");                                          // tag 5 = hash payload?
+    emitter.instruction("jne __rt_hash_set_container_ready_x86");               // non-hash cells keep today's behavior
+    emitter.instruction("mov rdi, QWORD PTR [rdi + 8]");                        // replace the cell with its hash payload
+    emitter.label("__rt_hash_set_container_ready_x86");
 
     emitter.instruction("push rbp");                                            // preserve the caller frame pointer before reserving hash-insert spill slots
     emitter.instruction("mov rbp, rsp");                                        // establish a stable frame base for the saved table/key/value tuple
