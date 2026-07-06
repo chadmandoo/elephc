@@ -167,7 +167,17 @@ impl Checker {
 
         match (expected, actual) {
             (PhpType::Mixed, _) => true,
+            // A `mixed` VALUE flowing into a narrower declared type is legal PHP — the engine
+            // enforces it at runtime (TypeError on mismatch). Trust the declaration, matching
+            // the runtime's boxed-Mixed representation funnels at the boundary.
+            (_, PhpType::Mixed) => true,
             (_, PhpType::Never) => true, // never is the bottom type — compatible with any expected type
+            // A union VALUE with at least one member the declaration accepts is likewise
+            // runtime-enforced PHP (e.g. an `int|false` seek result passed to an `int` param on
+            // the success path). A union with NO compatible member stays rejected.
+            (_, PhpType::Union(members)) if !matches!(expected, PhpType::Union(_)) => {
+                members.iter().any(|m| Self::types_compatible(expected, m))
+            }
             (PhpType::Iterable, PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable) => true,
             (PhpType::Union(members), _) => {
                 members.iter().any(|m| Self::types_compatible(m, actual))
