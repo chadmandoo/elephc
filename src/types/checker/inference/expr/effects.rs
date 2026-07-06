@@ -208,7 +208,10 @@ impl Checker {
                         if builtin_name.eq_ignore_ascii_case("preg_replace_callback") && idx == 1 {
                             continue;
                         }
-                        if builtin_name.eq_ignore_ascii_case("preg_match") && idx == 2 {
+                        if (builtin_name.eq_ignore_ascii_case("preg_match")
+                            || builtin_name.eq_ignore_ascii_case("preg_match_all"))
+                            && idx == 2
+                        {
                             continue;
                         }
                         // The user-sort comparator is type-checked by `check_builtin`
@@ -234,6 +237,34 @@ impl Checker {
                     if let Some(arg) = expanded_args.get(2) {
                         if let Some(name) = preg_match_output_var(arg) {
                             env.insert(name.clone(), PhpType::Array(Box::new(PhpType::Str)));
+                        }
+                    }
+                }
+                // preg_match_all fills `$matches` with per-group lists: strings by
+                // default, `[text, offset]` pairs when the flags argument statically
+                // contains PREG_OFFSET_CAPTURE. The shape must mirror the EIR desugar's
+                // builder selection (`lower_static_preg_match_all_capture`), which uses
+                // the same static flags evaluation and falls back to the texts shape
+                // for dynamic flags.
+                if builtin_name.eq_ignore_ascii_case("preg_match_all") {
+                    if let Some(arg) = expanded_args.get(2) {
+                        if let Some(name) = preg_match_output_var(arg) {
+                            let with_offsets = expanded_args
+                                .get(3)
+                                .and_then(|flags| {
+                                    crate::types::preg_constants::static_preg_flags_value(
+                                        flags,
+                                    )
+                                })
+                                .is_some_and(|flags| flags & 256 == 256);
+                            let group_ty = if with_offsets {
+                                PhpType::Array(Box::new(PhpType::Array(Box::new(
+                                    PhpType::Mixed,
+                                ))))
+                            } else {
+                                PhpType::Array(Box::new(PhpType::Str))
+                            };
+                            env.insert(name.clone(), PhpType::Array(Box::new(group_ty)));
                         }
                     }
                 }

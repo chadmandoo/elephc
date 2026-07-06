@@ -20,6 +20,27 @@ pub(crate) const PREG_INT_CONSTANTS: &[(&str, i64)] = &[
     ("PREG_SPLIT_OFFSET_CAPTURE", 4),
 ];
 
+/// Statically evaluates a preg flags argument expression.
+///
+/// Returns the value for int literals and `PREG_*` constant references (with or
+/// without a leading backslash), or `None` for dynamic expressions. The checker's
+/// `preg_match_all` output typing and the EIR desugar both key the matches-array
+/// shape off this, so they must agree on what counts as statically known.
+pub(crate) fn static_preg_flags_value(expr: &crate::parser::ast::Expr) -> Option<i64> {
+    match &expr.kind {
+        crate::parser::ast::ExprKind::IntLiteral(value) => Some(*value),
+        crate::parser::ast::ExprKind::ConstRef(name) => {
+            let key = name.as_str();
+            let key = key.strip_prefix('\\').unwrap_or(key);
+            PREG_INT_CONSTANTS
+                .iter()
+                .find(|(constant, _)| *constant == key)
+                .map(|(_, value)| *value)
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::PREG_INT_CONSTANTS;

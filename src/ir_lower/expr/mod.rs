@@ -1670,6 +1670,13 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_is_callable(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_preg_match_all_capture(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_explode_limit(ctx, canonical, args, expr) {
+        return value;
+    }
+    apply_preg_match_capture_local_type(ctx, canonical, args);
     let sig = call_signature(ctx, canonical, args);
     let is_extern = ctx.extern_functions.contains_key(canonical);
     let is_user_function = ctx.functions.contains_key(canonical);
@@ -3926,7 +3933,7 @@ fn lower_builtin_call_args(
         {
             lower_preg_replace_callback_args(ctx, sig, args)
         }
-        "preg_match" | "preg_split"
+        "preg_match" | "preg_match_all" | "preg_split"
             if !crate::types::call_args::has_named_args(args)
                 && !args.iter().any(is_spread_arg) =>
         {
@@ -4045,6 +4052,150 @@ fn zero_arity_call_signature(name: &str, sig: Option<&FunctionSig>) -> bool {
 /// Returns true when a signature has no regular or variadic parameters.
 fn is_zero_arity_signature(sig: &FunctionSig) -> bool {
     crate::types::call_args::regular_param_count(sig) == 0 && sig.variadic.is_none()
+}
+
+/// Desugars `preg_match_all(p, s, $matches [, flags])` into prelude-impl composition.
+///
+/// The capture-building runtime only exists for single-match `preg_match`; the global
+/// variant composes it in PHP via the stdlib prelude's builders, which return the
+/// nested per-group matches array. This lowers the call as
+/// `$matches = __elephc_preg_match_all_texts(p, s)` (or `..._offsets` when the flags
+/// argument statically contains PREG_OFFSET_CAPTURE) followed by `count($matches[0])`
+/// (the match count PHP returns), synthesizing plain AST nodes so the ordinary
+/// expression lowering does all the work. The two builders exist because each keeps a
+/// uniform element shape — `$matches` is retyped to `Array(Array(Str))` for texts or
+/// `Array(Array(Array(Mixed)))` for `[text, offset]` pairs, exactly matching what the
+/// selected builder constructs (and the checker's post-call env fact). A dynamic flags
+/// expression falls back to the texts builder, matching the checker's default.
+///
+/// Returns `None` (deferring to the builtin path and its arity/shape errors) for the
+/// 2-argument count-only form, named/spread arguments, or a non-variable `$matches`.
+fn lower_static_preg_match_all_capture(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "preg_match_all" {
+        return None;
+    }
+    if args.len() < 3 || args.len() > 4 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let ExprKind::Variable(matches_name) = &args[2].kind else {
+        return None;
+    };
+    let matches_name = matches_name.clone();
+    let with_offsets = args
+        .get(3)
+        .and_then(crate::types::preg_constants::static_preg_flags_value)
+        .is_some_and(|flags| flags & 256 == 256);
+    let builder = if with_offsets {
+        "__elephc_preg_match_all_offsets"
+    } else {
+        "__elephc_preg_match_all_texts"
+    };
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from(builder),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    let nested = lower_expr(ctx, &impl_call);
+    let group_ty = if with_offsets {
+        PhpType::Array(Box::new(PhpType::Array(Box::new(PhpType::Mixed))))
+    } else {
+        PhpType::Array(Box::new(PhpType::Str))
+    };
+    let matches_ty = PhpType::Array(Box::new(group_ty));
+    ctx.store_local(&matches_name, nested, matches_ty, Some(expr.span));
+    let count_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("count"),
+            args: vec![Expr {
+                kind: ExprKind::ArrayAccess {
+                    array: Box::new(Expr {
+                        kind: ExprKind::Variable(matches_name),
+                        span: expr.span,
+                    }),
+                    index: Box::new(Expr {
+                        kind: ExprKind::IntLiteral(0),
+                        span: expr.span,
+                    }),
+                },
+                span: expr.span,
+            }],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &count_call))
+}
+
+/// Desugars 3-argument `explode(sep, str, limit)` into the stdlib prelude's
+/// `__elephc_explode_limit`, which applies PHP's positive/zero/negative limit
+/// semantics over the builtin two-argument split. The 2-argument form stays on the
+/// dedicated emitter; named/spread shapes fall through to the builtin path's error.
+fn lower_static_explode_limit(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "explode" {
+        return None;
+    }
+    if args.len() != 3 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_explode_limit"),
+            args: args.to_vec(),
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+/// Retypes `preg_match()`'s `$matches` output local to the runtime-built string array.
+///
+/// The checker records this effect in its own env (`infer_type_with_assignment_effects`),
+/// but lowering tracks local types independently from assignments it walks. Without this
+/// mirror, a function-scope `$matches` keeps its pre-call type (`Array(Void)` from an
+/// `$m = []` init, or an unbound default), so element reads lower to the static null
+/// sentinel instead of reading the array the capture runtime stored into the slot.
+/// The type is applied before argument lowering so an uninitialized `$matches` declares
+/// its slot as an array pointer rather than a boxed Mixed cell.
+fn apply_preg_match_capture_local_type(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+) {
+    if php_symbol_key(name.trim_start_matches('\\')) != "preg_match" {
+        return;
+    }
+    let Some(arg) = args.get(2) else {
+        return;
+    };
+    let target = match &arg.kind {
+        ExprKind::Variable(local) => Some(local),
+        ExprKind::NamedArg { value, .. } => match &value.kind {
+            ExprKind::Variable(local) => Some(local),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(local) = target {
+        let matches_ty = PhpType::Array(Box::new(PhpType::Str));
+        ctx.set_local_type(local, matches_ty);
+    }
 }
 
 /// Lowers `settype($local, "type")` and updates subsequent local type facts.

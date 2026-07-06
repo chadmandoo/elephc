@@ -1885,6 +1885,111 @@ if (preg_match("/([A-Z]+)/", "abcXYZ", $matches)) {
     assert_eq!(out, "XYZ");
 }
 
+/// Verifies `preg_match()` populates `$matches` inside a function body, where the
+/// lowering must retype the output local (an `$m = []` init would otherwise leave the
+/// slot's element reads lowered against the empty-array type).
+#[test]
+fn test_preg_match_capture_in_function_scope() {
+    let out = compile_and_run(
+        r#"<?php
+function scan(string $path): string {
+    $m = [];
+    $ok = preg_match('/\{([^}]+)\}/', $path, $m);
+    return $ok . "|" . count($m) . "|" . $m[0] . "," . $m[1];
+}
+echo scan("x{id:int}y");
+"#,
+    );
+    assert_eq!(out, "1|2|{id:int},id:int");
+}
+
+/// Verifies `preg_match()` strips `~` pattern delimiters like PHP (the delimiter set
+/// also covers `#`, `%`, and `@`; only `/` worked before).
+#[test]
+fn test_preg_match_tilde_delimited_pattern() {
+    let out = compile_and_run(
+        r#"<?php
+function grab(string $s): string {
+    $m = [];
+    preg_match('~\{([^}]+)\}~', $s, $m);
+    return $m[1];
+}
+echo grab("x{id}y") . "|" . preg_match('#[0-9]+#', "a7b") . preg_match('%[a-z]+%', "Q") . preg_match('@qq@', "aqqb");
+"#,
+    );
+    assert_eq!(out, "id|101");
+}
+
+/// Verifies `preg_match_all()` fills `$matches` with PREG_PATTERN_ORDER group lists.
+#[test]
+fn test_preg_match_all_pattern_order_matches() {
+    let out = compile_and_run(
+        r#"<?php
+function scan(string $path): string {
+    $n = preg_match_all('~\{([^}]+)\}~', $path, $m);
+    $out = "n=" . $n;
+    foreach ($m[0] as $i => $t) {
+        $out = $out . "[" . $t . "/" . $m[1][$i] . "]";
+    }
+    return $out;
+}
+echo scan("/users/{id:int}/posts/{slug}");
+"#,
+    );
+    assert_eq!(out, "n=2[{id:int}/id:int][{slug}/slug]");
+}
+
+/// Verifies `preg_match_all()` under PREG_OFFSET_CAPTURE yields `[text, offset]` pairs
+/// for the full match and capture groups (the route-compiler consumption shape).
+#[test]
+fn test_preg_match_all_offset_capture_matches() {
+    let out = compile_and_run(
+        r#"<?php
+function scan(string $path): string {
+    $n = preg_match_all('~\{([^}]+)\}~', $path, $m, PREG_OFFSET_CAPTURE);
+    $out = "n=" . $n;
+    foreach ($m[0] as $i => $pm) {
+        $out = $out . "[" . $pm[0] . "@" . $pm[1] . "->" . $m[1][$i][0] . "@" . $m[1][$i][1] . "]";
+    }
+    return $out;
+}
+echo scan("/users/{id:int}/posts/{slug}");
+"#,
+    );
+    assert_eq!(out, "n=2[{id:int}@7->id:int@8][{slug}@22->slug@23]");
+}
+
+/// Verifies a non-matching `preg_match_all()` still yields one empty list per group
+/// (group 0 plus each capture group), like PHP.
+#[test]
+fn test_preg_match_all_no_match_group_lists() {
+    let out = compile_and_run(
+        r#"<?php
+function scan(): string {
+    $n = preg_match_all('/z(9)k/', "abc", $m);
+    return $n . "|" . count($m) . "|" . count($m[0]) . "|" . count($m[1]);
+}
+echo scan();
+"#,
+    );
+    assert_eq!(out, "0|2|0|0");
+}
+
+/// Verifies the 2-argument count-only `preg_match_all()` form still lowers through the
+/// dedicated runtime counter.
+#[test]
+fn test_preg_match_all_count_only_form() {
+    let out = compile_and_run(
+        r#"<?php
+function tally(string $s): int {
+    return preg_match_all("/[0-9]+/", $s);
+}
+echo tally("a1b22c333");
+"#,
+    );
+    assert_eq!(out, "3");
+}
+
 /// Verifies `preg_match("/[0-9]+/", "abcdef")` returns 0 when no digits are present.
 #[test]
 fn test_preg_match_no_digits() {

@@ -63,12 +63,22 @@ pub(crate) fn lower_mb_ereg_match(
     super::store_if_result(ctx, inst)
 }
 
-/// Lowers `preg_match_all(pattern, subject)` through the shared regex runtime helper.
+/// Lowers count-only `preg_match_all(pattern, subject)` through the regex runtime helper.
+///
+/// Calls that pass `$matches` are desugared by the EIR frontend into the stdlib
+/// prelude's `__elephc_preg_match_all_impl` and never reach this hook as builtin
+/// calls; a 3+-operand form here means the desugar declined the call shape (named
+/// or spread `$matches` argument), which is unsupported.
 pub(crate) fn lower_preg_match_all(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
 ) -> Result<()> {
-    super::ensure_arg_count(inst, "preg_match_all", 2)?;
+    super::ensure_arg_count_between(inst, "preg_match_all", 2, 4)?;
+    if inst.operands.len() > 2 {
+        return Err(CodegenIrError::unsupported(
+            "preg_match_all matches argument that is not a direct local variable",
+        ));
+    }
     let pattern = super::expect_operand(inst, 0)?;
     let subject = super::expect_operand(inst, 1)?;
     load_pattern_and_subject(ctx, pattern, subject)?;

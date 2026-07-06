@@ -416,7 +416,18 @@ pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
             sig.ref_params[2] = true;
             Some(sig)
         }
-        "preg_match_all" => Some(fixed(&["pattern", "subject"])),
+        "preg_match_all" => {
+            let mut sig = optional(
+                &["pattern", "subject", "matches", "flags"],
+                2,
+                vec![
+                    Expr::new(ExprKind::ArrayLiteral(Vec::new()), Span::dummy()),
+                    int_lit(1),
+                ],
+            );
+            sig.ref_params[2] = true;
+            Some(sig)
+        }
         "preg_replace_callback" => Some(fixed(&["pattern", "callback", "subject"])),
         "preg_replace" => Some(fixed(&["pattern", "replacement", "subject"])),
         "preg_split" => Some(optional(

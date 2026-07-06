@@ -292,3 +292,37 @@ fn test_multiarg_string_builtins_of_mixed_argument() {
     );
     assert_eq!(out, "hell0 w0rld|6|hello,world");
 }
+
+/// Verifies 3-argument `explode()` applies PHP's limit semantics: a positive limit
+/// keeps the separator-joined remainder in the last element, a negative limit drops
+/// that many trailing pieces, and limit 0 behaves like 1.
+#[test]
+fn test_explode_with_limit() {
+    let out = compile_and_run(
+        r#"<?php
+function parts(string $spec): string {
+    $p = explode(":", $spec, 2);
+    $n = explode(":", "a:b:c:d", -2);
+    $z = explode(":", "a:b:c", 0);
+    return count($p) . "|" . $p[0] . "|" . $p[1] . "|" . implode(",", $n) . "|" . implode(",", $z);
+}
+echo parts("id:int:extra");
+"#,
+    );
+    assert_eq!(out, "2|id|int:extra|a,b|a:b:c");
+}
+
+/// Verifies `preg_quote()` escapes PHP's regex special characters, leaves `/` alone
+/// unless it is the passed delimiter, and escapes an explicit delimiter character.
+#[test]
+fn test_preg_quote_specials_and_delimiter() {
+    let out = compile_and_run(
+        r#"<?php
+function q(): string {
+    return preg_quote("a.b+c*d?e") . "|" . preg_quote("/users/{id}", "~") . "|" . preg_quote("x~y", "~");
+}
+echo q();
+"#,
+    );
+    assert_eq!(out, "a\\.b\\+c\\*d\\?e|/users/\\{id\\}|x\\~y");
+}

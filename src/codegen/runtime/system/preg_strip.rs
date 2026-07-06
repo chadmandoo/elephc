@@ -12,13 +12,17 @@ use crate::codegen::{emit::Emitter, platform::Arch};
 
 /// Emits the `__rt_preg_strip` runtime helper for stripping PHP regex delimiters.
 ///
-/// Transforms PHP PCRE patterns by removing leading/trailing '/' delimiters and extracting
-/// PCRE2 POSIX-wrapper flags. For example, `"/pattern/i"` becomes
-/// `("pattern", REG_ICASE)`.
+/// Transforms PHP PCRE patterns by removing matching leading/trailing delimiters and
+/// extracting PCRE2 POSIX-wrapper flags. The supported delimiter set is `/ ~ # % @`
+/// (the common PHP choices); the closing delimiter must be the same byte as the
+/// opening one. For example, `"/pattern/i"` becomes `("pattern", REG_ICASE)` and
+/// `"~pattern~"` becomes `("pattern", 0)`. Bracket-pair delimiters are not supported.
 ///
 /// Dispatches to `emit_preg_strip_linux_x86_64` on x86_64; ARM64 uses inline scalar
-/// loads/stores in the main emitter. Undelimited patterns (no leading '/') are returned
-/// unchanged with flags=0.
+/// loads/stores in the main emitter. Undelimited patterns (no recognized leading
+/// delimiter) are returned unchanged with flags=0 — `mb_ereg_*` callers rely on this
+/// raw pass-through, so a bare pattern starting with a delimiter byte (for example
+/// `@\w+`) is intentionally the trade-off this set keeps small.
 ///
 /// Input:  x1=pattern ptr, x2=pattern len
 /// Output: x1=stripped pattern ptr, x2=stripped len, x3=PCRE2 POSIX cflags
@@ -42,10 +46,20 @@ pub(crate) fn emit_preg_strip(emitter: &mut Emitter) {
     emitter.instruction("mov x3, #0");                                          // flags = 0
     emitter.instruction("str x3, [sp, #16]");                                   // save flags
 
-    // -- check if pattern starts with '/' --
+    // -- check if pattern starts with a supported delimiter: / ~ # % @ --
     emitter.instruction("ldrb w9, [x1]");                                       // load first byte
     emitter.instruction("cmp w9, #47");                                         // compare with '/'
+    emitter.instruction("b.eq __rt_preg_strip_delimited");                      // slash-delimited pattern
+    emitter.instruction("cmp w9, #126");                                        // compare with '~'
+    emitter.instruction("b.eq __rt_preg_strip_delimited");                      // tilde-delimited pattern
+    emitter.instruction("cmp w9, #35");                                         // compare with '#'
+    emitter.instruction("b.eq __rt_preg_strip_delimited");                      // hash-delimited pattern
+    emitter.instruction("cmp w9, #37");                                         // compare with '%'
+    emitter.instruction("b.eq __rt_preg_strip_delimited");                      // percent-delimited pattern
+    emitter.instruction("cmp w9, #64");                                         // compare with '@'
     emitter.instruction("b.ne __rt_preg_strip_done");                           // not delimited, return as-is
+    emitter.label("__rt_preg_strip_delimited");
+    emitter.instruction("mov w11, w9");                                         // remember the opening delimiter byte for the closing scan
 
     // -- find closing delimiter by scanning from the end --
     emitter.instruction("sub x10, x2, #1");                                     // start from last char
@@ -53,7 +67,7 @@ pub(crate) fn emit_preg_strip(emitter: &mut Emitter) {
     emitter.instruction("cmp x10, #1");                                         // must have at least 1 char between delimiters
     emitter.instruction("b.lt __rt_preg_strip_done");                           // no closing delimiter found
     emitter.instruction("ldrb w9, [x1, x10]");                                  // load byte at position
-    emitter.instruction("cmp w9, #47");                                         // check for closing '/'
+    emitter.instruction("cmp w9, w11");                                         // check for the matching closing delimiter
     emitter.instruction("b.eq __rt_preg_strip_found");                          // found it
 
     // -- check supported PCRE2 POSIX-wrapper flags --
@@ -118,16 +132,26 @@ fn emit_preg_strip_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("jz __rt_preg_strip_done_linux_x86_64");                // empty patterns already behave like raw undelimited regex payloads
     emitter.instruction("movzx r8d, BYTE PTR [rax]");                           // load the first pattern byte so delimiter detection can inspect the opening character
     emitter.instruction("cmp r8d, 47");                                         // test whether the pattern starts with the canonical '/' regex delimiter
-    emitter.instruction("jne __rt_preg_strip_done_linux_x86_64");               // return the original pattern unchanged when it is not slash-delimited
+    emitter.instruction("je __rt_preg_strip_delimited_linux_x86_64");           // slash-delimited pattern
+    emitter.instruction("cmp r8d, 126");                                        // test for the '~' regex delimiter
+    emitter.instruction("je __rt_preg_strip_delimited_linux_x86_64");           // tilde-delimited pattern
+    emitter.instruction("cmp r8d, 35");                                         // test for the '#' regex delimiter
+    emitter.instruction("je __rt_preg_strip_delimited_linux_x86_64");           // hash-delimited pattern
+    emitter.instruction("cmp r8d, 37");                                         // test for the '%' regex delimiter
+    emitter.instruction("je __rt_preg_strip_delimited_linux_x86_64");           // percent-delimited pattern
+    emitter.instruction("cmp r8d, 64");                                         // test for the '@' regex delimiter
+    emitter.instruction("jne __rt_preg_strip_done_linux_x86_64");               // return the original pattern unchanged when it is not delimited
+    emitter.label("__rt_preg_strip_delimited_linux_x86_64");
+    emitter.instruction("mov r10d, r8d");                                       // remember the opening delimiter byte for the closing scan
     emitter.instruction("mov r9, rdx");                                         // seed the reverse scan cursor from the full source pattern length
     emitter.instruction("sub r9, 1");                                           // start scanning from the final byte looking for flags or the closing delimiter
 
     emitter.label("__rt_preg_strip_scan_linux_x86_64");
     emitter.instruction("cmp r9, 1");                                           // stop when there is no room left for a distinct closing delimiter
-    emitter.instruction("jl __rt_preg_strip_done_linux_x86_64");                // malformed slash patterns fall back to the original undelimited payload
-    emitter.instruction("movzx r8d, BYTE PTR [rax + r9]");                      // load the current reverse-scan byte from the slash-delimited pattern literal
-    emitter.instruction("cmp r8d, 47");                                         // did the reverse scan find the closing '/' delimiter?
-    emitter.instruction("je __rt_preg_strip_found_linux_x86_64");               // stop once the closing slash delimiter is located
+    emitter.instruction("jl __rt_preg_strip_done_linux_x86_64");                // malformed delimited patterns fall back to the original undelimited payload
+    emitter.instruction("movzx r8d, BYTE PTR [rax + r9]");                      // load the current reverse-scan byte from the delimited pattern literal
+    emitter.instruction("cmp r8d, r10d");                                       // did the reverse scan find the matching closing delimiter?
+    emitter.instruction("je __rt_preg_strip_found_linux_x86_64");               // stop once the closing delimiter is located
     emitter.instruction("cmp r8d, 105");                                        // detect the trailing 'i' case-insensitive modifier while walking backward
     emitter.instruction("jne __rt_preg_strip_flag_m_linux_x86_64");             // try the next supported regex modifier
     emitter.instruction("or rcx, 1");                                           // record REG_ICASE for PCRE2 POSIX compilation
