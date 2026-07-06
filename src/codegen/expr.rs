@@ -251,6 +251,11 @@ pub fn emit_expr(
             emit_expr(inner, emitter, ctx, data)
         }
         ExprKind::NamedArg { value, .. } => emit_expr(value, emitter, ctx, data),
+        // `clone` is EIR-only: the checker admits it only on the EIR path and the frozen
+        // legacy backend never receives it (deferred wrapper bodies are synthesized calls).
+        ExprKind::Clone(_) => unreachable!(
+            "ExprKind::Clone is EIR-only; the frozen legacy backend never lowers it"
+        ),
         ExprKind::NewObject { class_name, args } => {
             objects::emit_new_object(class_name.as_str(), args, emitter, ctx, data)
         }
