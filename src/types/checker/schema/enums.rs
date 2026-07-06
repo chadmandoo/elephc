@@ -389,10 +389,23 @@ pub(crate) fn insert_enum_metadata(
         constants.insert(constant.name.clone(), constant.value.clone());
     }
 
-    let interfaces: Vec<String> = implements
+    let mut interfaces: Vec<String> = implements
         .iter()
         .map(|interface| interface.as_str().to_string())
         .collect();
+    // Every enum implicitly implements `UnitEnum`; a backed enum also implements
+    // `BackedEnum`. Add them without duplicating a spelling the user already declared,
+    // so an enum satisfies a `UnitEnum`/`BackedEnum` type hint (PHP's implicit contract).
+    for implicit in std::iter::once("UnitEnum")
+        .chain(backing_type.is_some().then_some("BackedEnum"))
+    {
+        if !interfaces
+            .iter()
+            .any(|existing| php_symbol_key(existing) == php_symbol_key(implicit))
+        {
+            interfaces.push(implicit.to_string());
+        }
+    }
 
     checker.classes.insert(
         name.to_string(),

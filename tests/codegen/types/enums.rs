@@ -572,3 +572,15 @@ fn test_keyword_named_enum_case_access() {
     );
     assert_eq!(out, "error:match:default:Error");
 }
+
+/// EC-31 (#514): enums implicitly implement the PHP `\UnitEnum` / `\BackedEnum` marker
+/// interfaces, so an enum case satisfies those type hints. A backed enum satisfies BOTH
+/// `\BackedEnum` and (by inheritance) `\UnitEnum`; a pure enum satisfies `\UnitEnum`.
+/// Fixture asserts `BUU` (backed→BackedEnum, pure→UnitEnum, backed→UnitEnum).
+#[test]
+fn test_enum_satisfies_unitenum_backedenum_hints() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); enum Suit: string { case Hearts = 'H'; } enum Dir { case N; } function backed(\\BackedEnum $e): string { return \"B\"; } function unit(\\UnitEnum $e): string { return \"U\"; } echo backed(Suit::Hearts), unit(Dir::N), unit(Suit::Hearts);",
+    );
+    assert_eq!(out, "BUU");
+}
