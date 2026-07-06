@@ -13,7 +13,7 @@
 //!   `\ValueError` from `__rt_hash`.
 
 use super::file_get_contents::box_file_get_contents_result;
-use crate::codegen_support::builtins::strings::hash_crypto;
+use crate::codegen_support::hash_crypto;
 use crate::codegen_support::context::Context;
 use crate::codegen_support::data_section::DataSection;
 use crate::codegen_support::emit::Emitter;

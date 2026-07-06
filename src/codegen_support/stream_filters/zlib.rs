@@ -28,7 +28,7 @@ use crate::codegen_support::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
-use super::stream_arg::emit_stream_fd_arg;
+use crate::codegen_support::builtins::io::stream_arg::emit_stream_fd_arg;
 
 /// Size of the libz `z_stream` struct on LP64 targets, in bytes.
 const Z_STREAM_SIZE: i64 = 112;
@@ -54,7 +54,7 @@ pub fn emit_zlib_deflate_attach(
     // Both literal forms are honored at compile time; anything else keeps the
     // default. The `window` (fixed at -15 for the raw-deflate round-trip with
     // compress.zlib://) and `memory` sub-options are not exposed.
-    let level = super::stream_filter::const_int_param(args, "level", true, -1, 9).unwrap_or(-1);
+    let level = crate::codegen_support::builtins::io::stream_filter::const_int_param(args, "level", true, -1, 9).unwrap_or(-1);
 
     let fwrite_label = ctx.next_label("zlib_deflate_fwrite");
     let close_label = ctx.next_label("zlib_deflate_close");

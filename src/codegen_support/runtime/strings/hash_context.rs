@@ -27,7 +27,7 @@
 //!   Hash Context resource", whereas elephc keeps hashing the still-live context.
 
 use crate::codegen_support::abi;
-use crate::codegen_support::builtins::hash_crypto;
+use crate::codegen_support::hash_crypto;
 use crate::codegen_support::emit::Emitter;
 use crate::codegen_support::platform::Arch;
 use crate::codegen_support::runtime::data::HASH_INIT_UNKNOWN_ALGO_MSG;

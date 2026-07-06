@@ -37,7 +37,7 @@ use crate::codegen_support::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
-use super::stream_arg::emit_stream_fd_arg;
+use crate::codegen_support::builtins::io::stream_arg::emit_stream_fd_arg;
 
 /// Size of the libbz2 `bz_stream` struct on LP64 targets, in bytes.
 const BZ_STREAM_SIZE: i64 = 80;
@@ -63,9 +63,9 @@ pub fn emit_bzip2_compress_attach(
     // 'work' => 30]`) from which `blocks` (blockSize100k) and `work` (workFactor,
     // 0..250) are read. Both literal forms are honored at compile time; anything
     // else keeps the defaults (blocks 9, work 0 = libbz2's default).
-    let block_size = super::stream_filter::const_int_param(args, "blocks", true, 1, 9).unwrap_or(9);
+    let block_size = crate::codegen_support::builtins::io::stream_filter::const_int_param(args, "blocks", true, 1, 9).unwrap_or(9);
     let work_factor =
-        super::stream_filter::const_int_param(args, "work", false, 0, 250).unwrap_or(0);
+        crate::codegen_support::builtins::io::stream_filter::const_int_param(args, "work", false, 0, 250).unwrap_or(0);
 
     let fwrite_label = ctx.next_label("bz2_compress_fwrite");
     let close_label = ctx.next_label("bz2_compress_close");
@@ -105,8 +105,14 @@ pub fn emit_bzip2_decompress_attach(
     emitter.comment("stream_filter_append(bzip2.decompress)");
     emit_stream_fd_arg("stream_filter_append", &args[0], emitter, ctx, data);
     match emitter.target.arch {
-        Arch::AArch64 => super::compress_bzip2_stream::emit_arm64(emitter, |prefix| ctx.next_label(prefix)),
-        Arch::X86_64 => super::compress_bzip2_stream::emit_x86_64(emitter, |prefix| ctx.next_label(prefix)),
+        Arch::AArch64 => crate::codegen_support::builtins::io::compress_bzip2_stream::emit_arm64(
+            emitter,
+            |prefix| ctx.next_label(prefix),
+        ),
+        Arch::X86_64 => crate::codegen_support::builtins::io::compress_bzip2_stream::emit_x86_64(
+            emitter,
+            |prefix| ctx.next_label(prefix),
+        ),
     }
     Some(PhpType::Mixed)
 }
@@ -116,7 +122,7 @@ pub(crate) fn emit_decompress_arm64<F>(emitter: &mut Emitter, next_label: F)
 where
     F: FnMut(&str) -> String,
 {
-    super::compress_bzip2_stream::emit_arm64(emitter, next_label);
+    crate::codegen_support::builtins::io::compress_bzip2_stream::emit_arm64(emitter, next_label);
 }
 
 /// Emits the reusable x86_64 `bzip2.decompress` read-filter body.
@@ -124,7 +130,7 @@ pub(crate) fn emit_decompress_x86_64<F>(emitter: &mut Emitter, next_label: F)
 where
     F: FnMut(&str) -> String,
 {
-    super::compress_bzip2_stream::emit_x86_64(emitter, next_label);
+    crate::codegen_support::builtins::io::compress_bzip2_stream::emit_x86_64(emitter, next_label);
 }
 
 /// Emits the ARM64 compress helpers, then the bz_stream initialization.

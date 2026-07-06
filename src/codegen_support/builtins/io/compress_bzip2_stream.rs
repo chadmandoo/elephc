@@ -117,7 +117,7 @@ pub fn emit(
 ///   [sp, 56..64)  padding
 ///   [sp, 64..72)  saved x29
 ///   [sp, 72..80)  saved x30
-pub(super) fn emit_arm64<F>(emitter: &mut Emitter, mut next_label: F)
+pub(crate) fn emit_arm64<F>(emitter: &mut Emitter, mut next_label: F)
 where
     F: FnMut(&str) -> String,
 {
@@ -229,7 +229,7 @@ where
 }
 
 /// x86_64: same shape as ARM64. Frame is rbp-relative (-88 bytes).
-pub(super) fn emit_x86_64<F>(emitter: &mut Emitter, mut next_label: F)
+pub(crate) fn emit_x86_64<F>(emitter: &mut Emitter, mut next_label: F)
 where
     F: FnMut(&str) -> String,
 {

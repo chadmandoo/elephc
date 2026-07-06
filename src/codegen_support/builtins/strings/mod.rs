@@ -34,7 +34,7 @@ mod hash_algos;
 mod hash_context;
 mod hash_equals;
 mod hash_hmac;
-pub(crate) mod hash_crypto;
+use crate::codegen_support::hash_crypto;
 mod hex2bin;
 mod html_entity_decode;
 mod htmlentities;

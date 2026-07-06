@@ -217,7 +217,7 @@ pub(crate) fn lower_hash(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> R
         Arch::AArch64 => lower_hash_aarch64(ctx, inst)?,
         Arch::X86_64 => lower_hash_x86_64(ctx, inst)?,
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash");
@@ -236,7 +236,7 @@ pub(crate) fn lower_hash_hmac(ctx: &mut FunctionContext<'_>, inst: &Instruction)
         Arch::AArch64 => lower_hash_hmac_aarch64(ctx, inst)?,
         Arch::X86_64 => lower_hash_hmac_x86_64(ctx, inst)?,
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash_hmac");
@@ -266,7 +266,7 @@ pub(crate) fn lower_hash_algos(ctx: &mut FunctionContext<'_>, inst: &Instruction
 pub(crate) fn lower_hash_init(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     super::ensure_arg_count(inst, "hash_init", 1)?;
     load_string_arg_to_regs(ctx, inst, 0, "hash_init", string_ptr_reg(ctx), string_len_reg(ctx))?;
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash_init");
@@ -291,7 +291,7 @@ pub(crate) fn lower_hash_update(ctx: &mut FunctionContext<'_>, inst: &Instructio
             abi::emit_pop_reg(ctx.emitter, "rdi");
         }
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash_update");
@@ -322,7 +322,7 @@ pub(crate) fn lower_hash_final(ctx: &mut FunctionContext<'_>, inst: &Instruction
             abi::emit_pop_reg(ctx.emitter, "rdi");
         }
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash_final");
@@ -337,7 +337,7 @@ pub(crate) fn lower_hash_copy(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     if ctx.emitter.target.arch == Arch::X86_64 {
         ctx.emitter.instruction("mov rdi, rax");                                // pass the hash context handle to the C ABI helper
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash_copy");
@@ -391,7 +391,7 @@ fn lower_fixed_hash(
             abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
         }
     }
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, runtime_label);

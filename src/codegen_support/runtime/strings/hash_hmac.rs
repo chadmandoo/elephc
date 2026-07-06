@@ -18,7 +18,7 @@
 //!   register contract `__rt_hash` uses.
 
 use crate::codegen_support::abi;
-use crate::codegen_support::builtins::hash_crypto;
+use crate::codegen_support::hash_crypto;
 use crate::codegen_support::emit::Emitter;
 use crate::codegen_support::platform::Arch;
 use crate::codegen_support::runtime::data::HASH_HMAC_UNKNOWN_ALGO_MSG;

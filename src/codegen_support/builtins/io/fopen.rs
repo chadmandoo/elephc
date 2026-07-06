@@ -132,7 +132,7 @@ pub fn emit(
 }
 
 /// Evaluates the mode argument and any currently-ignored optional fopen arguments.
-pub(super) fn emit_mode_and_ignored_optional_args(
+pub(crate) fn emit_mode_and_ignored_optional_args(
     args: &[Expr],
     emitter: &mut Emitter,
     ctx: &mut Context,
@@ -204,7 +204,7 @@ fn emit_standard_stream_resource(fd: i64, emitter: &mut Emitter) {
 /// Boxes the fopen result: if `x0`/`rax` is negative, emits PHP false (tag 3, payload 0);
 /// otherwise emits a PHP resource (tag 9, descriptor in low word). Uses `__rt_mixed_from_value`
 /// via ABI calling convention.
-pub(super) fn box_fopen_result(emitter: &mut Emitter, ctx: &mut Context) {
+pub(crate) fn box_fopen_result(emitter: &mut Emitter, ctx: &mut Context) {
     let false_label = ctx.next_label("fopen_false");
     let done_label = ctx.next_label("fopen_done");
 

@@ -26,7 +26,7 @@ use crate::codegen_support::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
-use super::stream_arg::emit_stream_fd_arg;
+use crate::codegen_support::builtins::io::stream_arg::emit_stream_fd_arg;
 
 /// Capacity of the shared `_stream_filter_buf` scratch, reused here as the
 /// compressed-input slurp buffer.

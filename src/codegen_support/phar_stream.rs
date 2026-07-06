@@ -67,7 +67,7 @@ pub fn emit(
     };
     // Read-mode literal phar:// URLs embed the resolved payload; optional fopen
     // args are still evaluated for PHP-visible side effects.
-    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
+    crate::codegen_support::builtins::io::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     match bytes {
         Some(payload) => {
             let (symbol, len) = data.add_string(&payload);
@@ -88,7 +88,7 @@ pub fn emit(
             Arch::X86_64 => emitter.instruction("mov rax, -1"),                 // unresolved phar:// entry lowers to PHP false
         },
     }
-    super::fopen::box_fopen_result(emitter, ctx);
+    crate::codegen_support::builtins::io::fopen::box_fopen_result(emitter, ctx);
     Some(PhpType::Mixed)
 }
 
@@ -138,7 +138,7 @@ fn emit_write(
 ) -> Option<PhpType> {
     // The mode is a string literal here; evaluate it plus optional args for
     // parity with the read path.
-    super::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
+    crate::codegen_support::builtins::io::fopen::emit_mode_and_ignored_optional_args(args, emitter, ctx, data);
     let target = match &args[0].kind {
         ExprKind::StringLiteral(url) => resolve_write_target(url),
         _ => None,
@@ -150,7 +150,7 @@ fn emit_write(
             let (path_sym, path_len) = data.add_string(archive.as_bytes());
             // The phar signature is computed with elephc-crypto SHA1, so publish
             // its entry pointers before __rt_phar_write_finalize runs at fclose().
-            crate::codegen_support::builtins::hash_crypto::publish_elephc_crypto_function_pointers(emitter);
+            crate::codegen_support::hash_crypto::publish_elephc_crypto_function_pointers(emitter);
             match emitter.target.arch {
                 Arch::AArch64 => {
                     abi::emit_symbol_address(emitter, "x9", &path_sym);
@@ -183,7 +183,7 @@ fn emit_write(
             Arch::X86_64 => emitter.instruction("mov rax, -1"),                 // unresolved phar:// write target → PHP false
         },
     }
-    super::fopen::box_fopen_result(emitter, ctx);
+    crate::codegen_support::builtins::io::fopen::box_fopen_result(emitter, ctx);
     Some(PhpType::Mixed)
 }
 
@@ -207,7 +207,7 @@ pub(crate) fn emit_file_put_contents_write(
     let (path_sym, path_len) = data.add_string(archive.as_bytes());
     // The phar signature is computed with elephc-crypto SHA1, so publish its
     // entry pointers before the inline finalize signs the archive.
-    crate::codegen_support::builtins::hash_crypto::publish_elephc_crypto_function_pointers(emitter);
+    crate::codegen_support::hash_crypto::publish_elephc_crypto_function_pointers(emitter);
     match emitter.target.arch {
         Arch::AArch64 => {
             abi::emit_symbol_address(emitter, "x9", &path_sym);

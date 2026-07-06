@@ -70,7 +70,7 @@ pub(super) fn filter_id(name: &str) -> Option<i64> {
 /// the C library. `primary` marks the key a bare scalar maps to (only the
 /// primary key consumes a bare int; secondary keys like `"work"` come only from
 /// the array form).
-pub(super) fn const_int_param(
+pub(crate) fn const_int_param(
     args: &[Expr],
     key: &str,
     primary: bool,

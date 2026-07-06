@@ -31,7 +31,7 @@ use crate::codegen_support::platform::Arch;
 use crate::parser::ast::Expr;
 use crate::types::PhpType;
 
-use super::stream_arg::emit_stream_fd_arg;
+use crate::codegen_support::builtins::io::stream_arg::emit_stream_fd_arg;
 
 /// Capacity of the shared `_stream_filter_buf` scratch, reused as the input slurp buffer.
 const FILTER_BUF_SIZE: i64 = 65536;
@@ -87,7 +87,7 @@ pub fn emit(
             emit_read_arm64(emitter, &from_sym, &to_sym, |prefix| ctx.next_label(prefix)); // READ / ALL: attach-time read transform
             emitter.instruction(&format!("b {}", after_label));                 // skip the write-attach path
             emitter.label(&write_label);
-            super::stream_filter_iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
+            crate::codegen_support::stream_filters::iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
             emitter.label(&after_label);
         }
         Arch::X86_64 => {
@@ -104,7 +104,7 @@ pub fn emit(
             emit_read_x86_64(emitter, &from_sym, &to_sym, |prefix| ctx.next_label(prefix)); // READ / ALL: attach-time read transform
             emitter.instruction(&format!("jmp {}", after_label));               // skip the write-attach path
             emitter.label(&write_label);
-            super::stream_filter_iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
+            crate::codegen_support::stream_filters::iconv_write::emit_iconv_write_attach(emitter, ctx, &from_sym, &to_sym);
             emitter.label(&after_label);
         }
     }

@@ -14,7 +14,7 @@ use crate::codegen_support::context::{Context, HeapOwnership};
 use crate::codegen_support::Emit;
 use crate::codegen_support::data_section::DataSection;
 use crate::codegen_support::emit::Emitter;
-use crate::codegen_support::{abi, builtins, functions, runtime, stmt};
+use crate::codegen_support::{abi, functions, runtime, stmt, tls};
 use crate::parser::ast::{ExprKind, Program, StmtKind};
 use crate::types::{
     ClassInfo, EnumInfo, ExternClassInfo, ExternFunctionSig, FunctionSig, InterfaceInfo,
@@ -145,7 +145,7 @@ pub(super) fn emit_main_and_finalize(
     let frame_size = align16(ctx.stack_offset + 16);
     emit_main_prologue(&mut emitter, &mut ctx, frame_size, heap_debug, uses_argc, uses_argv);
     if requires_elephc_tls {
-        builtins::publish_tls_function_pointers(&mut emitter);
+        tls::publish_tls_function_pointers(&mut emitter);
     }
     zero_initialize_main_locals(&mut emitter, &ctx, uses_argc, uses_argv);
     functions::emit_local_ref_cell_flag_zero_init(&mut emitter, &ctx);

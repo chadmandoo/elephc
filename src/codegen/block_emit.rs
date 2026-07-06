@@ -715,7 +715,7 @@ fn emit_main_function(
         frame::emit_main_prologue(&mut ctx);
     }
     if requires_elephc_tls {
-        crate::codegen::builtins::publish_tls_function_pointers(ctx.emitter);
+        crate::codegen::tls::publish_tls_function_pointers(ctx.emitter);
     }
     emit_enum_singleton_initializers(&mut ctx);
     emit_static_property_initializers(&mut ctx)?;

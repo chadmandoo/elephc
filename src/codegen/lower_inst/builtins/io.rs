@@ -845,7 +845,7 @@ fn lower_literal_phar_file_get_contents(
     inst: &Instruction,
     path: &str,
 ) -> Result<()> {
-    match crate::codegen::builtins::phar_stream::extract_phar_entry(path) {
+    match crate::codegen::phar_stream::extract_phar_entry(path) {
         Some(payload) => {
             let (symbol, len) = ctx.data.add_string(&payload);
             match ctx.emitter.target.arch {
@@ -886,7 +886,7 @@ fn lower_literal_phar_fopen_read(
 
 /// Emits the boxed result for a literal read-mode `phar://` stream open.
 fn emit_literal_phar_fopen_read_result(ctx: &mut FunctionContext<'_>, path: &str) -> Result<()> {
-    match crate::codegen::builtins::phar_stream::extract_phar_entry(path) {
+    match crate::codegen::phar_stream::extract_phar_entry(path) {
         Some(payload) => {
             let (symbol, len) = ctx.data.add_string(&payload);
             match ctx.emitter.target.arch {
@@ -942,16 +942,16 @@ fn emit_literal_phar_fopen_write_result(ctx: &mut FunctionContext<'_>, path: &st
 
 /// Seeds the PHAR write buffer for a literal target and records the output archive path.
 fn emit_phar_write_open_for_literal(ctx: &mut FunctionContext<'_>, url: &str) -> Result<bool> {
-    let Some((archive, entry)) = crate::codegen::builtins::phar_stream::resolve_write_target(url)
+    let Some((archive, entry)) = crate::codegen::phar_stream::resolve_write_target(url)
     else {
         return Ok(false);
     };
-    let template = crate::codegen::builtins::phar_stream::build_phar_write_template(&entry);
+    let template = crate::codegen::phar_stream::build_phar_write_template(&entry);
     let (template_label, template_len) = ctx.data.add_string(&template);
     let (path_label, path_len) = ctx.data.add_string(archive.as_bytes());
     let (entry_label, entry_len) = ctx.data.add_string(entry.as_bytes());
     publish_phar_write_function_pointer(ctx);
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(ctx.emitter);
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(ctx.emitter);
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             abi::emit_symbol_address(ctx.emitter, "x9", &path_label);
@@ -1589,14 +1589,14 @@ fn lower_zlib_deflate_stream_filter_attach(
     let close_label = ctx.next_label("zlib_deflate_close");
     let skip_label = ctx.next_label("zlib_deflate_skip_helpers");
     match ctx.emitter.target.arch {
-        Arch::AArch64 => crate::codegen::builtins::stream_filter_zlib::emit_arm64(
+        Arch::AArch64 => crate::codegen::stream_filters::zlib::emit_arm64(
             ctx.emitter,
             &fwrite_label,
             &close_label,
             &skip_label,
             level,
         ),
-        Arch::X86_64 => crate::codegen::builtins::stream_filter_zlib::emit_x86_64(
+        Arch::X86_64 => crate::codegen::stream_filters::zlib::emit_x86_64(
             ctx.emitter,
             &fwrite_label,
             &close_label,
@@ -1634,7 +1634,7 @@ fn emit_zlib_inflate_attach_in_place(ctx: &mut FunctionContext<'_>) {
                 ctx.next_label("zlib_inflate_written"),
             ];
             let mut labels = labels.into_iter();
-            crate::codegen::builtins::stream_filter_inflate::emit_arm64(ctx.emitter, |_| {
+            crate::codegen::stream_filters::inflate::emit_arm64(ctx.emitter, |_| {
                 labels.next().expect("zlib inflate ARM64 label")
             });
         }
@@ -1649,7 +1649,7 @@ fn emit_zlib_inflate_attach_in_place(ctx: &mut FunctionContext<'_>) {
                 ctx.next_label("zlib_inflate_written"),
             ];
             let mut labels = labels.into_iter();
-            crate::codegen::builtins::stream_filter_inflate::emit_x86_64(ctx.emitter, |_| {
+            crate::codegen::stream_filters::inflate::emit_x86_64(ctx.emitter, |_| {
                 labels.next().expect("zlib inflate x86_64 label")
             });
         }
@@ -1669,7 +1669,7 @@ fn lower_bzip2_compress_stream_filter_attach(
     let close_label = ctx.next_label("bz2_compress_close");
     let skip_label = ctx.next_label("bz2_compress_skip_helpers");
     match ctx.emitter.target.arch {
-        Arch::AArch64 => crate::codegen::builtins::stream_filter_bzip2::emit_compress_arm64(
+        Arch::AArch64 => crate::codegen::stream_filters::bzip2::emit_compress_arm64(
             ctx.emitter,
             &fwrite_label,
             &close_label,
@@ -1677,7 +1677,7 @@ fn lower_bzip2_compress_stream_filter_attach(
             block_size,
             work_factor,
         ),
-        Arch::X86_64 => crate::codegen::builtins::stream_filter_bzip2::emit_compress_x86_64(
+        Arch::X86_64 => crate::codegen::stream_filters::bzip2::emit_compress_x86_64(
             ctx.emitter,
             &fwrite_label,
             &close_label,
@@ -1716,7 +1716,7 @@ fn emit_bzip2_decompress_attach_in_place(ctx: &mut FunctionContext<'_>) {
                 ctx.next_label("bz2_done_arm"),
             ];
             let mut labels = labels.into_iter();
-            crate::codegen::builtins::stream_filter_bzip2::emit_decompress_arm64(ctx.emitter, |_| {
+            crate::codegen::stream_filters::bzip2::emit_decompress_arm64(ctx.emitter, |_| {
                 labels.next().expect("bzip2 decompress ARM64 label")
             });
         }
@@ -1730,7 +1730,7 @@ fn emit_bzip2_decompress_attach_in_place(ctx: &mut FunctionContext<'_>) {
                 ctx.next_label("bz2_done_x"),
             ];
             let mut labels = labels.into_iter();
-            crate::codegen::builtins::stream_filter_bzip2::emit_decompress_x86_64(ctx.emitter, |_| {
+            crate::codegen::stream_filters::bzip2::emit_decompress_x86_64(ctx.emitter, |_| {
                 labels.next().expect("bzip2 decompress x86_64 label")
             });
         }
@@ -1896,13 +1896,13 @@ fn emit_iconv_read_transform_for_current_fd(
     ];
     let mut labels = labels.into_iter();
     match ctx.emitter.target.arch {
-        Arch::AArch64 => crate::codegen::builtins::stream_filter_iconv::emit_read_arm64(
+        Arch::AArch64 => crate::codegen::stream_filters::iconv::emit_read_arm64(
             ctx.emitter,
             from_sym,
             to_sym,
             |_| labels.next().expect("iconv read transform label"),
         ),
-        Arch::X86_64 => crate::codegen::builtins::stream_filter_iconv::emit_read_x86_64(
+        Arch::X86_64 => crate::codegen::stream_filters::iconv::emit_read_x86_64(
             ctx.emitter,
             from_sym,
             to_sym,
@@ -1927,7 +1927,7 @@ fn emit_iconv_write_transform_for_current_fd(
         ctx.next_label("iconv_w_skip_store"),
     ];
     let mut labels = labels.into_iter();
-    crate::codegen::builtins::stream_filter_iconv_write::emit_iconv_write_attach_with_labels(
+    crate::codegen::stream_filters::iconv_write::emit_iconv_write_attach_with_labels(
         ctx.emitter,
         from_sym,
         to_sym,
@@ -7121,7 +7121,7 @@ fn lower_stream_socket_enable_crypto_attach_aarch64(
     ctx: &mut FunctionContext<'_>,
     done_label: &str,
 ) {
-    crate::codegen::builtins::publish_tls_function_pointers(ctx.emitter);
+    crate::codegen::tls::publish_tls_function_pointers(ctx.emitter);
     let fail_label = ctx.next_label("ssec_attach_fail");
     let peer_ok = ctx.next_label("ssec_peer_ok");
     let host_default = ctx.next_label("ssec_host_default");
@@ -7202,7 +7202,7 @@ fn lower_stream_socket_enable_crypto_attach_x86_64(
     ctx: &mut FunctionContext<'_>,
     done_label: &str,
 ) {
-    crate::codegen::builtins::publish_tls_function_pointers(ctx.emitter);
+    crate::codegen::tls::publish_tls_function_pointers(ctx.emitter);
     let fail_label = ctx.next_label("ssec_attach_fail");
     let peer_ok = ctx.next_label("ssec_peer_ok");
     let host_default = ctx.next_label("ssec_host_default");
@@ -8450,7 +8450,7 @@ fn lower_hash_file_aarch64(
     ctx.emitter.instruction("ldr x5, [sp]");                                    // restore the raw-output flag into the hash ABI register
     ctx.emitter.instruction("ldp x1, x2, [sp, #32]");                           // restore the hash algorithm string
     ctx.emitter.instruction("add sp, sp, #48");                                 // discard saved algorithm, filename, and flag slots
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash");
@@ -8488,7 +8488,7 @@ fn lower_hash_file_x86_64(
     ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 32]");                   // restore the algorithm string pointer
     ctx.emitter.instruction("mov rdx, QWORD PTR [rsp + 40]");                   // restore the algorithm string length
     ctx.emitter.instruction("add rsp, 48");                                     // discard saved algorithm, filename, and flag slots
-    crate::codegen::builtins::hash_crypto::publish_elephc_crypto_function_pointers(
+    crate::codegen::hash_crypto::publish_elephc_crypto_function_pointers(
         ctx.emitter,
     );
     abi::emit_call_label(ctx.emitter, "__rt_hash");

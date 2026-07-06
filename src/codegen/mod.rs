@@ -21,9 +21,9 @@ pub mod value_placement;
 mod web;
 
 pub(crate) use crate::codegen_support::{
-    abi, builtins, callable_descriptor, callable_dispatch, callable_invoker_args, cdylib,
-    data_section, emit, interface_wrappers, reflection, runtime, runtime_callable_invoker,
-    sentinels, visibility,
+    abi, callable_descriptor, callable_dispatch, callable_invoker_args, cdylib,
+    data_section, emit, hash_crypto, interface_wrappers, phar_stream, reflection, runtime,
+    runtime_callable_invoker, sentinels, stream_filters, tls, visibility,
 };
 pub(crate) use crate::codegen_support::{
     autoload_rule_count, declared_class_names, declared_interface_names, declared_trait_names,
