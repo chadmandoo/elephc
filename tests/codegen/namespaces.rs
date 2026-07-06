@@ -501,3 +501,48 @@ echo PHP_INT_MAX > 0 ? 'max' : '?', ':', PHP_INT_MIN < 0 ? 'min' : '?';
     );
     assert_eq!(out, "max:min");
 }
+
+/// A `new $class(...)` dynamic construction resolves names inside its ARGUMENTS — the
+/// resolver previously had no NewDynamic arm, so an imported enum case in a named argument
+/// (`variant: ButtonVariant::Primary`) stayed unresolved. Byte-parity vs PHP 8.5.
+#[test]
+fn test_dynamic_new_resolves_argument_names() {
+    let out = compile_and_run(
+        r#"<?php
+
+namespace Kit;
+
+enum Variant: string {
+    case Primary = 'primary';
+}
+
+class Widget {
+    public function __construct(public string $label, public Variant $variant) {}
+}
+
+namespace App;
+
+use Kit\Variant;
+use Kit\Widget;
+
+function build(string $class): string {
+    $w = new $class(label: 'Go', variant: Variant::Primary);
+    return $w->label . ':' . $w->variant->value;
+}
+
+echo build(Widget::class);
+"#,
+    );
+    assert_eq!(out, "Go:primary");
+}
+
+/// PHP 8.2 trait constants flatten into the using class: `self::PATTERN` declared in a trait
+/// resolves on the using class (the ward-http RequestBehavior::METHOD_PATTERN shape).
+/// Byte-parity vs PHP 8.5.
+#[test]
+fn test_trait_constants_flatten_into_using_class() {
+    let out = compile_and_run(
+        "<?php trait Guard { private const string PATTERN = '/^[a-z]+$/'; public function ok(string $v): bool { return preg_match(self::PATTERN, $v) === 1; } } final class Checker2 { use Guard; } echo (new Checker2())->ok('abc') ? 'y' : 'n', (new Checker2())->ok('AB1') ? 'y' : 'n';",
+    );
+    assert_eq!(out, "yn");
+}

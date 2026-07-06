@@ -223,6 +223,16 @@ pub(super) fn resolve_expr(
                 .map(|arg| resolve_expr(arg, current_namespace, imports, symbols))
                 .collect(),
         },
+        // `new $class(...)` — the class is runtime-selected, but the name expression and the
+        // ARGUMENTS still contain resolvable names (imported enum cases, class constants);
+        // without this arm the whole expression escaped rewriting.
+        ExprKind::NewDynamic { name_expr, args } => ExprKind::NewDynamic {
+            name_expr: Box::new(resolve_expr(name_expr, current_namespace, imports, symbols)),
+            args: args
+                .iter()
+                .map(|arg| resolve_expr(arg, current_namespace, imports, symbols))
+                .collect(),
+        },
         ExprKind::PropertyAccess { object, property } => ExprKind::PropertyAccess {
             object: Box::new(resolve_expr(object, current_namespace, imports, symbols)),
             property: property.clone(),

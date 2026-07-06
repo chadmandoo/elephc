@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
-use crate::parser::ast::{ClassMethod, ClassProperty, TraitAdaptation, TraitUse, Visibility};
+use crate::parser::ast::{ClassMethod, ClassProperty, TraitAdaptation, TraitUse, Visibility, ClassConst};
 use crate::span::Span;
 
 use super::{ExpandedTrait, ImportedMethod, TraitDeclInfo};
@@ -55,7 +55,7 @@ fn expand_trait(
     )?;
 
     stack.push(trait_name.to_string());
-    let (imported_props, imported_methods) = resolve_trait_uses(
+    let (imported_props, imported_methods, imported_constants) = resolve_trait_uses(
         &trait_info.trait_uses,
         trait_map,
         cache,
@@ -78,7 +78,20 @@ fn expand_trait(
         trait_info.span,
         &format!("trait {}", trait_name),
     )?;
-    let expanded = ExpandedTrait { properties, methods };
+    let constants = {
+        let mut merged: Vec<ClassConst> = imported_constants
+            .into_iter()
+            .filter(|imported| {
+                !trait_info
+                    .constants
+                    .iter()
+                    .any(|own| own.name == imported.name)
+            })
+            .collect();
+        merged.extend(trait_info.constants.clone());
+        merged
+    };
+    let expanded = ExpandedTrait { properties, methods, constants };
     cache.insert(trait_name.to_string(), expanded.clone());
     Ok(expanded)
 }
@@ -98,9 +111,10 @@ pub(super) fn resolve_trait_uses(
     stack: &mut Vec<String>,
     owner_label: &str,
     owner_span: Span,
-) -> Result<(Vec<ClassProperty>, Vec<ClassMethod>), CompileError> {
+) -> Result<(Vec<ClassProperty>, Vec<ClassMethod>, Vec<ClassConst>), CompileError> {
     let mut all_properties = Vec::new();
     let mut all_methods = Vec::new();
+    let mut all_constants: Vec<ClassConst> = Vec::new();
 
     for trait_use in trait_uses {
         let mut imported_properties = Vec::new();
@@ -127,6 +141,11 @@ pub(super) fn resolve_trait_uses(
                     owner_label,
                     false,
                 )?;
+            }
+            for constant in expanded.constants {
+                if !all_constants.iter().any(|existing| existing.name == constant.name) {
+                    all_constants.push(constant);
+                }
             }
             for method in expanded.methods {
                 let method_key = php_symbol_key(&method.name);
@@ -254,7 +273,7 @@ pub(super) fn resolve_trait_uses(
         merge_imported_method_set(&mut all_methods, selected_methods, owner_span, owner_label)?;
     }
 
-    Ok((all_properties, all_methods))
+    Ok((all_properties, all_methods, all_constants))
 }
 
 /// Filters `candidates` using `suppressed` trait-of-origin, applies visibility
