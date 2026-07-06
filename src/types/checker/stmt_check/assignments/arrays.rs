@@ -162,7 +162,7 @@ fn buffer_element_accepts_assignment(expected: &PhpType, actual: &PhpType) -> bo
     }
     matches!(
         (expected, actual),
-        (PhpType::Int | PhpType::Bool, PhpType::Int | PhpType::Bool | PhpType::Mixed)
+        (PhpType::Float | PhpType::Int | PhpType::Bool, PhpType::Mixed)
     )
 }
 
