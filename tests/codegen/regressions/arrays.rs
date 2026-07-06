@@ -934,3 +934,93 @@ echo $typed->line(), "\n", $untyped->line(), "\n", $three->line();
     );
     assert_eq!(out, "1|hi\n1|hi\n1|x|1.5");
 }
+
+/// EC-17 (#500): an indexed read of a local array APPENDED later in the same loop body
+/// must see the appended elements on subsequent iterations. Lowering walks statements
+/// once in source order, so without loop-entry widening the read is typed against the
+/// pre-loop empty-array literal — its element load folds to the null sentinel and a
+/// `?? ` coalesce statically decides "always unset" forever. Byte-parity vs PHP 8.5.
+#[test]
+fn test_loop_read_of_array_appended_in_same_loop() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $keys = [];
+    foreach (['a', 'b', 'c'] as $v) {
+        echo $keys[0] ?? '?';
+        $keys[] = $v;
+    }
+    echo '|', count($keys), $keys[0], $keys[2];
+}
+main();
+"#,
+    );
+    assert_eq!(out, "?aa|3ac");
+}
+
+/// EC-17 (#500): the membership-scan-then-append dedupe staple — reads the array being
+/// built inside the same loop through an inner while over count(). Byte-parity vs PHP 8.5.
+#[test]
+fn test_loop_membership_scan_then_append_dedupe() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $seen = [];
+    foreach (['b', 'a', 'b', 'c', 'a'] as $v) {
+        $dup = false;
+        $i = 0;
+        while ($i < count($seen)) {
+            if ($seen[$i] === $v) { $dup = true; }
+            $i = $i + 1;
+        }
+        if (!$dup) { $seen[] = $v; }
+    }
+    echo implode(',', $seen);
+}
+main();
+"#,
+    );
+    assert_eq!(out, "b,a,c");
+}
+
+/// EC-17 (#500): a Mixed-key write into an empty array promotes storage to a hash at
+/// runtime; subsequent reads must find the entry through EVERY read form — the same
+/// Mixed key (the x86 hash path read hash_get's value from the wrong registers and
+/// returned value_hi as the Mixed cell: segfault), a literal string key (previously
+/// empty), isset, count, and iteration. Byte-parity vs PHP 8.5.
+#[test]
+fn test_mixed_key_write_then_reads() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $k = json_decode('"name"');
+    $a = [];
+    $a[$k] = 5;
+    $direct = $a[$k];
+    echo 'direct=', $direct, ';lit=', $a['name'], ';iss=', isset($a['name']) ? 'y' : 'n', ';cnt=', count($a), ';';
+    foreach ($a as $key => $v) { echo $key, '=', $v; }
+}
+main();
+"#,
+    );
+    assert_eq!(out, "direct=5;lit=5;iss=y;cnt=1;name=5");
+}
+
+/// EC-17 (#500): a string-typed VARIABLE key must not be classed as an int key (the
+/// syntactic fallback routed it down the inline int-indexed path, coercing the key to 0).
+#[test]
+fn test_string_variable_key_read_after_promotion() {
+    let out = compile_and_run(
+        r#"<?php
+function main(): void {
+    $a = [];
+    $a['x'] = 1;
+    $a['y'] = 2;
+    $key = 'y';
+    echo $a[$key], '|', $a['x'];
+}
+main();
+"#,
+    );
+    assert_eq!(out, "2|1");
+}

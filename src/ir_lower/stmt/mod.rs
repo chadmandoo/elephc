@@ -470,6 +470,7 @@ fn lower_while(ctx: &mut LoweringContext<'_, '_>, condition: &Expr, body: &[Stmt
         continue_block: header,
         cleanup: None,
     });
+    widen_loop_appended_array_locals(ctx, body);
     lower_block(ctx, body);
     ctx.loop_stack.pop();
     branch_to(ctx, header);
@@ -490,6 +491,7 @@ fn lower_do_while(ctx: &mut LoweringContext<'_, '_>, body: &[Stmt], condition: &
         continue_block: cond_block,
         cleanup: None,
     });
+    widen_loop_appended_array_locals(ctx, body);
     lower_block(ctx, body);
     ctx.loop_stack.pop();
     branch_to(ctx, cond_block);
@@ -552,6 +554,7 @@ fn lower_for(
         continue_block: update_block,
         cleanup: None,
     });
+    widen_loop_appended_array_locals(ctx, body);
     lower_block(ctx, body);
     ctx.loop_stack.pop();
     branch_to(ctx, update_block);
@@ -1152,6 +1155,7 @@ fn lower_foreach(
         );
         ctx.store_local(value_var, value, value_ty, Some(array.span));
     }
+    widen_loop_appended_array_locals(ctx, body);
     lower_block(ctx, body);
     ctx.loop_stack.pop();
     branch_to(ctx, header);
@@ -3056,5 +3060,134 @@ fn normalize_value_php_type(php_type: PhpType) -> PhpType {
         PhpType::Void
     } else {
         php_type
+    }
+}
+
+/// Pre-widens empty-array locals that the loop body appends to, so element reads
+/// lowered BEFORE the (source-order later) appends see the post-append element
+/// type. Lowering walks statements once in source order: without this, a read
+/// like `$keys[0] ?? '?'` inside the loop is typed against the pre-loop
+/// `Array(Never)` from `$keys = []` — its element load folds to the null
+/// sentinel and the coalesce statically decides "always unset" for every
+/// iteration, even though the appends grow the array correctly (EC-17).
+///
+/// Deliberately conservative: only locals whose current element type is `Never`
+/// (an empty-array literal init — no pre-existing elements whose storage layout
+/// a retype could misread) are widened, and only when every append's value type
+/// resolves through the safe syntactic subset below to one concrete type.
+/// Anything else keeps today's behavior.
+fn widen_loop_appended_array_locals(ctx: &mut LoweringContext<'_, '_>, body: &[Stmt]) {
+    let mut appends: Vec<(String, Option<PhpType>)> = Vec::new();
+    collect_loop_array_pushes(ctx, body, &mut appends);
+    for (name, value_ty) in appends {
+        let Some(value_ty) = value_ty else { continue };
+        let PhpType::Array(elem) = ctx.local_type(&name) else {
+            continue;
+        };
+        if *elem != PhpType::Never {
+            continue;
+        }
+        ctx.set_local_type(&name, PhpType::Array(Box::new(value_ty)));
+    }
+}
+
+/// Collects `$local[] = value` append targets in a loop body (recursing into
+/// nested control flow), merging each local's appended value types: `None`
+/// (unresolvable or conflicting) disables widening for that local.
+fn collect_loop_array_pushes(
+    ctx: &LoweringContext<'_, '_>,
+    stmts: &[Stmt],
+    out: &mut Vec<(String, Option<PhpType>)>,
+) {
+    for stmt in stmts {
+        match &stmt.kind {
+            StmtKind::ArrayPush { array, value } => {
+                let ty = loop_append_value_type(ctx, value);
+                match out.iter_mut().find(|(name, _)| name == array) {
+                    Some((_, existing)) => {
+                        if *existing != ty {
+                            *existing = None;
+                        }
+                    }
+                    None => out.push((array.clone(), ty)),
+                }
+            }
+            StmtKind::If {
+                then_body,
+                elseif_clauses,
+                else_body,
+                ..
+            } => {
+                collect_loop_array_pushes(ctx, then_body, out);
+                for (_, elseif_body) in elseif_clauses {
+                    collect_loop_array_pushes(ctx, elseif_body, out);
+                }
+                if let Some(else_body) = else_body {
+                    collect_loop_array_pushes(ctx, else_body, out);
+                }
+            }
+            StmtKind::While { body, .. }
+            | StmtKind::DoWhile { body, .. }
+            | StmtKind::For { body, .. }
+            | StmtKind::Foreach { body, .. }
+            | StmtKind::Synthetic(body)
+            | StmtKind::NamespaceBlock { body, .. } => {
+                collect_loop_array_pushes(ctx, body, out);
+            }
+            StmtKind::Switch { cases, default, .. } => {
+                for (_, case_body) in cases {
+                    collect_loop_array_pushes(ctx, case_body, out);
+                }
+                if let Some(default_body) = default {
+                    collect_loop_array_pushes(ctx, default_body, out);
+                }
+            }
+            StmtKind::Try {
+                try_body,
+                catches,
+                finally_body,
+            } => {
+                collect_loop_array_pushes(ctx, try_body, out);
+                for catch_clause in catches {
+                    collect_loop_array_pushes(ctx, &catch_clause.body, out);
+                }
+                if let Some(finally_body) = finally_body {
+                    collect_loop_array_pushes(ctx, finally_body, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Resolves an appended value's type through a deliberately small syntactic
+/// subset: literals, locals with a known concrete type, string concatenation,
+/// and homogeneous array literals of those. Returns `None` for anything else —
+/// a wrong guess here would make the append emit for the wrong element layout,
+/// so unknown shapes must skip widening rather than approximate.
+fn loop_append_value_type(ctx: &LoweringContext<'_, '_>, expr: &Expr) -> Option<PhpType> {
+    match &expr.kind {
+        ExprKind::StringLiteral(_) => Some(PhpType::Str),
+        ExprKind::IntLiteral(_) => Some(PhpType::Int),
+        ExprKind::FloatLiteral(_) => Some(PhpType::Float),
+        ExprKind::BoolLiteral(_) => Some(PhpType::Bool),
+        ExprKind::Variable(name) => ctx.local_types.get(name.as_str()).cloned(),
+        ExprKind::BinaryOp {
+            op: crate::parser::ast::BinOp::Concat,
+            ..
+        } => Some(PhpType::Str),
+        ExprKind::ArrayLiteral(elems) if !elems.is_empty() => {
+            let mut merged: Option<PhpType> = None;
+            for elem in elems {
+                let ty = loop_append_value_type(ctx, elem)?;
+                merged = Some(match merged {
+                    None => ty,
+                    Some(existing) if existing == ty => existing,
+                    Some(_) => PhpType::Mixed,
+                });
+            }
+            merged.map(|elem_ty| PhpType::Array(Box::new(elem_ty)))
+        }
+        _ => None,
     }
 }

@@ -7206,8 +7206,19 @@ fn lower_nullable_array_access(
 
 /// Returns the statically-known key type for an array index expression.
 /// Used to decide between Op::ArrayGet (int key) and Op::ArrayGetMixedKey.
-fn index_expr_key_type(_ctx: &LoweringContext<'_, '_>, index: &Expr) -> PhpType {
-    let ty = infer_expr_type_syntactic(index);
+fn index_expr_key_type(ctx: &LoweringContext<'_, '_>, index: &Expr) -> PhpType {
+    // A local variable key must use its tracked type: the syntactic fallback
+    // classes unknown expressions as Int, which routed a Mixed/Str-keyed read
+    // down the inline int-indexed path (coercing the key and misreading
+    // hash-promoted storage as packed slots — EC-17).
+    let ty = match &index.kind {
+        ExprKind::Variable(name) => ctx
+            .local_types
+            .get(name.as_str())
+            .cloned()
+            .unwrap_or_else(|| infer_expr_type_syntactic(index)),
+        _ => infer_expr_type_syntactic(index),
+    };
     normalized_array_key_type(index, ty)
 }
 
