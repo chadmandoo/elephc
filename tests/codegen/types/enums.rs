@@ -833,3 +833,14 @@ fn test_backed_int_enum_tryfrom_mixed() {
     );
     assert_eq!(out, "HighnullLow");
 }
+
+/// An enum-case parameter default (`Level $l = Level::Low`) types as the ENUM, not its backing
+/// scalar, so the declared parameter type accepts the default and calls without the argument use
+/// it. Byte-parity vs PHP 8.5.
+#[test]
+fn test_enum_case_parameter_default() {
+    let out = compile_and_run(
+        "<?php enum Level: string { case Low = 'low'; case High = 'high'; } function tag(Level $l = Level::Low): string { return $l->value; } echo tag(), ':', tag(Level::High);",
+    );
+    assert_eq!(out, "low:high");
+}
