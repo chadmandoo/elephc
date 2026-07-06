@@ -34,7 +34,17 @@ impl Checker {
         env: &TypeEnv,
     ) -> Result<PhpType, CompileError> {
         let lt = self.infer_type(left, env)?;
-        let rt = self.infer_type(right, env)?;
+        // Short-circuit narrowing: the right operand of `&&` is only evaluated where the left
+        // conjunct HOLDS (and of `||` where it FAILED), so recognized guards in the left side
+        // narrow the right side's environment — `$this->min !== null && $number < $this->min`.
+        let rt = match op {
+            BinOp::And | BinOp::Or => {
+                let mut right_env = env.clone();
+                self.apply_short_circuit_guards(left, matches!(op, BinOp::And), &mut right_env)?;
+                self.infer_type(right, &right_env)?
+            }
+            _ => self.infer_type(right, env)?,
+        };
         match op {
             BinOp::Pow => {
                 let lt_ok = is_numeric_operand_type(self, &lt);
@@ -132,7 +142,10 @@ impl Checker {
                     is_numeric_operand_type(self, &lt) && is_numeric_operand_type(self, &rt);
                 let datetime_ok =
                     is_datetime_family_object(&lt) && is_datetime_family_object(&rt);
-                if !numeric_ok && !datetime_ok {
+                // PHP 8 orders two strings with `<=>` (numeric strings numerically, otherwise
+                // byte-for-byte) — the usort-comparator staple `$a->name() <=> $b->name()`.
+                let string_ok = lt == PhpType::Str && rt == PhpType::Str;
+                if !numeric_ok && !datetime_ok && !string_ok {
                     return Err(CompileError::new(
                         expr.span,
                         "Spaceship operator requires numeric operands",
@@ -1191,6 +1204,14 @@ fn is_numeric_operand_type(checker: &Checker, ty: &PhpType) -> bool {
         ty,
         PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Void | PhpType::Mixed
     ) || checker.is_union_with_mixed_int_dispatch(ty)
+        // A union of numeric members (e.g. `int|float` after a null-guard on an
+        // `int|float|null` property) is numeric: every runtime inhabitant compares numerically.
+        || matches!(ty, PhpType::Union(members) if members.iter().all(|member| {
+            matches!(
+                member,
+                PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Void
+            )
+        }))
 }
 
 /// Returns `true` if `ty` is a concrete `DateTime`/`DateTimeImmutable` object, the family PHP orders

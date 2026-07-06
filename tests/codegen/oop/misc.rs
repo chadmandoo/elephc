@@ -113,3 +113,15 @@ fn test_class_named_enum_declares() {
     );
     assert_eq!(out, "e");
 }
+
+/// EC-3 (#486): `new static(...)` inside an ABSTRACT class type-checks — late static binding
+/// can only ever resolve to a concrete subclass at runtime, so the abstract base is not a
+/// constructor target to validate (the ward-forms Field::with() pattern). Byte-parity vs
+/// PHP 8.5.
+#[test]
+fn test_new_static_in_abstract_class() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); abstract class Base { final public function __construct(public string $v) {} public function with(string $v): static { return new static($v); } abstract public function tag(): string; } final class Leaf extends Base { public function tag(): string { return 'leaf:' . $this->v; } } echo (new Leaf('a'))->with('b')->tag();",
+    );
+    assert_eq!(out, "leaf:b");
+}

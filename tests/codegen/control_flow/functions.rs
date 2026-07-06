@@ -226,3 +226,25 @@ fn test_foreach_key_over_unknown_element_array() {
     );
     assert_eq!(out, "a=1;b=2;");
 }
+
+/// EC-3 (#486): short-circuit narrowing — a guard in the left conjunct of `&&` narrows the
+/// right conjunct (`$this->min !== null && $n < $this->min` on an `int|float|null` property),
+/// and a union of numeric members is a numeric comparison operand. Byte-parity vs PHP 8.5.
+#[test]
+fn test_conjunct_guard_narrows_right_operand() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); final class R { public function __construct(private int|float|null $min, private int|float|null $max) {} public function check(float $n): string { if ($this->min !== null && $n < $this->min) { return 'low'; } if ($this->max !== null && $n > $this->max) { return 'high'; } return 'ok'; } } function main(): void { $r = new R(2, 8.5); echo $r->check(1.0), ':', $r->check(5.0), ':', $r->check(9.9), ':', (new R(null, null))->check(42.0); } main();",
+    );
+    assert_eq!(out, "low:ok:high:ok");
+}
+
+/// EC-3 (#486): the return-type collector applies the same if-guard narrowing as statement
+/// checking — `return $value;` inside `if ($value instanceof Message)` reports Message, not
+/// the un-narrowed binding type (ward-forms Field::messageOption). Byte-parity vs PHP 8.5.
+#[test]
+fn test_return_collector_applies_guard_narrowing() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); final class Message { public function __construct(public string $k, public string $t) {} } final class F { private array $options; public function __construct() { $this->options = []; } public function m(string $key, string $default = ''): Message { $value = $this->options[$key] ?? $default; if ($value instanceof Message) { return $value; } $text = is_string($value) ? $value : $default; return new Message($text, $text); } } function main(): void { echo (new F())->m('x', 'd')->k; } main();",
+    );
+    assert_eq!(out, "d");
+}

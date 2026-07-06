@@ -51,9 +51,10 @@ impl Checker {
             ExprKind::Not(inner) => (inner.as_ref(), true),
             _ => (condition, false),
         };
-        let Some((receiver, target)) = guard_receiver_and_type(cond) else {
+        let Some((receiver, target, inverted)) = guard_receiver_and_type(cond) else {
             return Ok(None);
         };
+        let negated = negated ^ inverted;
         let Some(key) = Self::guard_env_key(receiver) else {
             return Ok(None);
         };
@@ -107,6 +108,38 @@ impl Checker {
     /// visible assignments already update those bindings directly.
     pub(crate) fn purge_property_narrowings(env: &mut TypeEnv) {
         env.retain(|key, _| !key.starts_with('\u{1}'));
+    }
+
+    /// Applies short-circuit narrowing guards from one side of a lazy boolean operator into
+    /// `env`. The right operand of `&&` is only evaluated where the left conjunct HOLDS
+    /// (`truthy = true`), and of `||` where it FAILED (`truthy = false`), so recognized guards
+    /// in the left side narrow the right side's environment —
+    /// `$this->min !== null && $number < $this->min`. Conjunction trees recurse
+    /// (`a && b && c`); guards apply left-to-right, so later conjuncts see earlier narrowings.
+    pub(crate) fn apply_short_circuit_guards(
+        &mut self,
+        condition: &Expr,
+        truthy: bool,
+        env: &mut TypeEnv,
+    ) -> Result<(), CompileError> {
+        match &condition.kind {
+            ExprKind::BinaryOp { left, op: BinOp::And, right } if truthy => {
+                self.apply_short_circuit_guards(left, true, env)?;
+                self.apply_short_circuit_guards(right, true, env)?;
+            }
+            // `A || B` being false implies both disjuncts were false.
+            ExprKind::BinaryOp { left, op: BinOp::Or, right } if !truthy => {
+                self.apply_short_circuit_guards(left, false, env)?;
+                self.apply_short_circuit_guards(right, false, env)?;
+            }
+            _ => {
+                if let Some(guard) = self.guard_narrowing(condition, env)? {
+                    let ty = if truthy { guard.then_ty } else { guard.else_ty };
+                    env.insert(guard.var, ty);
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Narrows `current` to the guard-true type. Inside the branch the guard guarantees the target,
@@ -187,11 +220,12 @@ impl Checker {
     }
 }
 
-/// Extracts the guarded receiver expression and the target type from a (non-negated) guard
-/// expression. Recognizes the scalar `is_*` predicates, `is_null`, `instanceof <Name>`, and
-/// `=== false` / `=== null`. The receiver may be any expression here — `guard_env_key` decides
-/// which receivers narrowing can actually key (variables and simple property accesses).
-fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
+/// Extracts the guarded receiver expression, the target type, and whether the guard is
+/// INVERTED from a guard expression. Recognizes the scalar `is_*` predicates, `is_null`,
+/// `instanceof <Name>`, and `=== / !== false|null` (`!==` reports `inverted = true`). The
+/// receiver may be any expression here — `guard_env_key` decides which receivers narrowing can
+/// actually key (variables and simple property accesses).
+fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType, bool)> {
     match &cond.kind {
         ExprKind::FunctionCall { name, args } if args.len() == 1 => {
             let target = match name.as_str().to_ascii_lowercase().as_str() {
@@ -205,18 +239,23 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 "is_null" => PhpType::Void,
                 _ => return None,
             };
-            Some((&args[0], target))
+            Some((&args[0], target, false))
         }
         ExprKind::InstanceOf { value, target } => {
             let InstanceOfTarget::Name(class) = target else {
                 return None;
             };
-            Some((value, PhpType::Object(class.as_str().to_string())))
+            Some((value, PhpType::Object(class.as_str().to_string()), false))
         }
         // `$var === false` / `false === $var`: narrow to Bool in the then-branch; the else-branch
         // (guard false) strips the false-ish Bool member (e.g. int|false → int). Enables the common
         // `if ($x === false) { throw; } return $x;` guard (ward-http StreamGuards::requireInt etc.).
-        ExprKind::BinaryOp { left, op: BinOp::StrictEq, right } => {
+        // `!==` is the same guard with the branches swapped (`$x !== null && <$x is non-null>`).
+        ExprKind::BinaryOp {
+            left,
+            op: op @ (BinOp::StrictEq | BinOp::StrictNotEq),
+            right,
+        } => {
             let (receiver, lit) = match (&left.kind, &right.kind) {
                 (ExprKind::Variable(_) | ExprKind::PropertyAccess { .. }, _) => {
                     (left.as_ref(), &right.kind)
@@ -226,11 +265,12 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 }
                 _ => return None,
             };
+            let inverted = matches!(op, BinOp::StrictNotEq);
             match lit {
-                ExprKind::BoolLiteral(false) => Some((receiver, PhpType::Bool)),
+                ExprKind::BoolLiteral(false) => Some((receiver, PhpType::Bool, inverted)),
                 // `$x === null`: strip the null-ish member (elephc models a `?T` value's null as
                 // Void), e.g. `?self` / self|null → self after `if ($x === null) { throw; }`.
-                ExprKind::Null => Some((receiver, PhpType::Void)),
+                ExprKind::Null => Some((receiver, PhpType::Void, inverted)),
                 _ => None,
             }
         }

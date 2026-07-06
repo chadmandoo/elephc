@@ -13,6 +13,7 @@ mod concat;
 mod ftoa;
 mod str_eq;
 mod str_loose_eq;
+mod str_spaceship;
 mod str_to_number;
 mod str_to_int;
 mod number_format;
@@ -89,6 +90,7 @@ pub use ftoa::emit_ftoa;
 pub use str_eq::emit_str_eq;
 /// Emit case-sensitive string equality check.
 pub use str_loose_eq::emit_str_loose_eq;
+pub use str_spaceship::emit_str_spaceship;
 /// Emit case-insensitive string equality check.
 pub use str_to_number::emit_str_to_number;
 /// Emit string-to-number conversion helper.

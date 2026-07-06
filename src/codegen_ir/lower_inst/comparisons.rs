@@ -664,6 +664,23 @@ pub(super) fn lower_spaceship(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     let rhs = expect_operand(inst, 1)?;
     let lhs_ty = ctx.value_php_type(lhs)?;
     let rhs_ty = ctx.value_php_type(rhs)?;
+    // String spaceship goes through `__rt_str_spaceship`, which applies PHP 8's rule
+    // (numeric strings order numerically, otherwise byte-for-byte) and returns -1/0/1
+    // directly in the integer result register.
+    if lhs_ty == PhpType::Str && rhs_ty == PhpType::Str {
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.load_string_value_to_regs(lhs, "x1", "x2")?;
+                ctx.load_string_value_to_regs(rhs, "x3", "x4")?;
+            }
+            Arch::X86_64 => {
+                ctx.load_string_value_to_regs(lhs, "rdi", "rsi")?;
+                ctx.load_string_value_to_regs(rhs, "rdx", "rcx")?;
+            }
+        }
+        abi::emit_call_label(ctx.emitter, "__rt_str_spaceship");
+        return store_if_result(ctx, inst);
+    }
     let uses_float_compare = lhs_ty == PhpType::Float || rhs_ty == PhpType::Float;
     if uses_float_compare {
         emit_numeric_float_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty)?;

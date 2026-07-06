@@ -71,6 +71,13 @@ impl Checker {
                 self.infer_type_with_assignment_effects(left, env)?;
                 if matches!(op, BinOp::And | BinOp::Or) {
                     let mut right_env = env.clone();
+                    // Short-circuit narrowing: guards in the left side hold (for `&&`) or
+                    // failed (for `||`) wherever the right side evaluates.
+                    self.apply_short_circuit_guards(
+                        left,
+                        matches!(op, BinOp::And),
+                        &mut right_env,
+                    )?;
                     self.infer_type_with_assignment_effects(right, &mut right_env)?;
                     Ok(PhpType::Bool)
                 } else {
