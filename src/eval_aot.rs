@@ -3561,13 +3561,11 @@ fn static_callback_static_method_parts(callback: &Expr) -> Option<(StaticReceive
 /// Splits a literal `Class::method` callback into its receiver and method.
 fn static_callback_static_method_string_parts(name: &str) -> Option<(StaticReceiver, String)> {
     let (class_name, method) = name.trim_start_matches('\\').rsplit_once("::")?;
-    if class_name.is_empty() || method.is_empty() {
+    let receiver = static_callback_static_method_named_receiver(class_name)?;
+    if method.is_empty() {
         return None;
     }
-    Some((
-        StaticReceiver::Named(Name::from(class_name.trim_start_matches('\\').to_string())),
-        method.to_string(),
-    ))
+    Some((receiver, method.to_string()))
 }
 
 /// Extracts a literal `["Class", "method"]` callback target.
@@ -3575,21 +3573,36 @@ fn static_callback_static_method_array_parts(items: &[Expr]) -> Option<(StaticRe
     let [class_expr, method_expr] = items else {
         return None;
     };
-    let ExprKind::StringLiteral(class_name) = &class_expr.kind else {
-        return None;
-    };
+    let receiver = static_callback_static_method_array_receiver(class_expr)?;
     let ExprKind::StringLiteral(method) = &method_expr.kind else {
         return None;
     };
-    if class_name.is_empty() || method.is_empty() {
+    if method.is_empty() {
         return None;
     }
-    Some((
-        StaticReceiver::Named(Name::from(
-            class_name.as_str().trim_start_matches('\\').to_string(),
-        )),
-        method.clone(),
-    ))
+    Some((receiver, method.clone()))
+}
+
+/// Returns the static receiver from the class part of a callable array.
+fn static_callback_static_method_array_receiver(class_expr: &Expr) -> Option<StaticReceiver> {
+    match &class_expr.kind {
+        ExprKind::StringLiteral(class_name) => {
+            static_callback_static_method_named_receiver(class_name)
+        }
+        ExprKind::ClassConstant {
+            receiver: StaticReceiver::Named(name),
+        } => Some(StaticReceiver::Named(name.clone())),
+        _ => None,
+    }
+}
+
+/// Returns a named static receiver from a literal class name.
+fn static_callback_static_method_named_receiver(class_name: &str) -> Option<StaticReceiver> {
+    let class_name = class_name.trim_start_matches('\\');
+    if class_name.is_empty() {
+        return None;
+    }
+    Some(StaticReceiver::Named(Name::from(class_name.to_string())))
 }
 
 /// Converts a static `call_user_func_array()` argument array into callback args.

@@ -3356,3 +3356,21 @@ Verifiche locali:
 - `cargo test --test codegen_tests codegen::eval::test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback -- --exact --nocapture`
 - `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_call_user_func_user_function_uses_aot_without_magician -- --exact --nocapture`
 - `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_uses_aot_without_magician -- --exact --nocapture`
+
+## Aggiornamento: callback statici con Class::class
+
+Tranche completata:
+
+- il classificatore AOT accetta anche callable array statici in forma
+  `[NamedClass::class, "method"]`;
+- il supporto resta limitato a receiver nominali, lasciando fuori `self::class`,
+  `static::class` e `parent::class` finche' il gate AOT non riceve il contesto
+  di classe necessario;
+- la stessa copertura AOT verifica string callback, callable array con stringa,
+  callable array con `Class::class`, `call_user_func()` e
+  `call_user_func_array()`.
+
+Verifiche locali:
+
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_static_method_callbacks_use_aot_without_magician -- --exact --nocapture`
+- `cargo test --test codegen_tests codegen::eval::test_literal_eval_untyped_static_method_callback_keeps_bridge_fallback -- --exact --nocapture`
