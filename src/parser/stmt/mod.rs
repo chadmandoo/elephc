@@ -502,6 +502,13 @@ pub(crate) fn parse_name(
                 parts.push(name.clone());
                 *pos += 1;
             }
+            // `enum` is only a soft keyword: `Enum` is a legal class name and name segment
+            // (`new Enum`, `extends Enum`, `MabeEnum\Enum`). Statement-position `enum`
+            // dispatches to the enum-declaration parser before parse_name is consulted.
+            Some(Token::Enum) => {
+                parts.push("Enum".to_string());
+                *pos += 1;
+            }
             _ if parts.is_empty() => return Err(CompileError::new(span, first_error)),
             _ => {
                 return Err(CompileError::new(

@@ -480,3 +480,22 @@ echo \App\C\K::mk()->t->p;
     );
     assert_eq!(out, "/");
 }
+
+/// `use const PHP_INT_MAX;` — the lexer eagerly tokenizes such constants, so the
+/// use-declaration parser must accept the dedicated tokens as import names (the import itself
+/// is inert; expression uses lower to literals).
+#[test]
+fn test_use_const_of_lexer_tokenized_constant() {
+    let out = compile_and_run(
+        r#"<?php
+
+namespace App;
+
+use const PHP_INT_MAX;
+use const PHP_INT_MIN;
+
+echo PHP_INT_MAX > 0 ? 'max' : '?', ':', PHP_INT_MIN < 0 ? 'min' : '?';
+"#,
+    );
+    assert_eq!(out, "max:min");
+}

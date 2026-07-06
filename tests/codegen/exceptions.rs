@@ -624,3 +624,15 @@ try { echo $c->foo(); echo 'no'; } catch (Error $e) { echo 'err'; }
     );
     assert_eq!(out, "err");
 }
+
+/// The builtin exception constructors accept PHP's third `$previous` parameter (positional or
+/// the `previous:` named argument). It is not stored — `getPrevious()` remains synthesized as
+/// null — but wrap-and-rethrow code compiles and the message/code round-trip is byte-identical
+/// to PHP 8.5.
+#[test]
+fn test_exception_constructor_accepts_previous() {
+    let out = compile_and_run(
+        "<?php function f(): string { try { try { throw new \\ValueError('inner'); } catch (\\ValueError $e) { throw new \\InvalidArgumentException('outer: ' . $e->getMessage(), $e->getCode(), previous: $e); } } catch (\\InvalidArgumentException $x) { return $x->getMessage() . '/' . $x->getCode(); } } echo f();",
+    );
+    assert_eq!(out, "outer: inner/0");
+}

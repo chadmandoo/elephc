@@ -39,6 +39,12 @@ pub(in crate::parser::stmt) fn parse_class_decl(
             *pos += 1;
             n
         }
+        // `enum` is only a soft keyword — `class Enum {}` is legal PHP (vendor precedent:
+        // marc-mabe/php-enum). The lexer always tokenizes the word, so accept it here.
+        Some(Token::Enum) => {
+            *pos += 1;
+            "Enum".to_string()
+        }
         _ => return Err(CompileError::new(span, "Expected class name after 'class'")),
     };
 

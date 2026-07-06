@@ -102,3 +102,14 @@ fn test_example_v017_trio_compiles_and_runs() {
     let out = compile_and_run(include_str!("../../../examples/v017-trio/main.php"));
     assert_eq!(out, "health:[ok]:missing");
 }
+
+/// EC-10 (#493): `enum` is only a soft keyword — `class Enum {}` is legal PHP (vendor
+/// precedent: marc-mabe/php-enum). The always-tokenizing lexer must not block the class
+/// declaration. Byte-parity vs PHP 8.5.
+#[test]
+fn test_class_named_enum_declares() {
+    let out = compile_and_run(
+        "<?php class Enum { public function tag(): string { return 'e'; } } echo (new Enum())->tag();",
+    );
+    assert_eq!(out, "e");
+}
