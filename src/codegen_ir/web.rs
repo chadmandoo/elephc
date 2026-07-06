@@ -81,7 +81,7 @@ pub(super) fn emit_web_reset(emitter: &mut Emitter, module: &Module, data: &Data
         emit_static_property_release(emitter, &symbol, &php_type, &mut labels);
     }
     for name in &module.data.global_names {
-        if !superglobals::is_superglobal(name) {
+        if !superglobals::is_superglobal(name) && !module.extern_globals.contains_key(name) {
             emit_ordinary_global_reset(emitter, &ir_global_symbol(name), &mut labels);
         }
     }
