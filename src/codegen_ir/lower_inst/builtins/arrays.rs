@@ -1385,7 +1385,11 @@ fn predicate_callback_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
     match ty.codegen_repr() {
         PhpType::Array(elem) => {
             let elem = elem.codegen_repr();
-            if matches!(elem, PhpType::Int | PhpType::Bool) {
+            // int/bool are 8-byte scalars; an object element is an 8-byte pointer —
+            // both pass through the single integer argument register the predicate
+            // runtime uses, so the callback receives them directly (EC-28). String
+            // (ptr+len) and float (float register) still need a wider path.
+            if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Object(_)) {
                 Ok(elem)
             } else {
                 Err(CodegenIrError::unsupported(format!(
@@ -2295,6 +2299,10 @@ fn array_map_callback_array_element_type(ty: PhpType) -> Result<PhpType> {
             if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never | PhpType::Mixed) {
                 return Ok(elem);
             }
+            // Object-element array_map result-collection is not yet correct in the
+            // EIR backend (the mapped callback receives the wrong element); walled
+            // here so the checker reports it early rather than miscompiling (EC-28
+            // follow-up).
             Err(CodegenIrError::unsupported(format!(
                 "array_map indexed-array element PHP type {:?}",
                 elem

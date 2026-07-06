@@ -1210,14 +1210,22 @@ pub(crate) fn array_filter_callback_dummy_args(
     arr_ty: &PhpType,
     mode_arg: Option<&Expr>,
     span: crate::span::Span,
-) -> Vec<Expr> {
+) -> (Vec<Expr>, Option<(String, PhpType)>) {
+    // The VALUE element uses the object-aware dummy (a synthetic binding for
+    // object/Mixed elements) so an unannotated object-element predicate type-checks
+    // (EC-28); the KEY position is always int/string, so a scalar placeholder.
+    let elem_ty = array_element_type(arr_ty);
+    let (value_arg, binding) = comparator_dummy_arg_for_elem(&elem_ty, span);
     match mode_arg.and_then(static_array_filter_mode_value) {
-        Some(1) => vec![
-            dummy_arg_for_array_scalar_elem(arr_ty, span),
-            Expr::new(ExprKind::IntLiteral(0), span),
-        ],
-        Some(2) => vec![Expr::new(ExprKind::IntLiteral(0), span)],
-        _ => vec![dummy_arg_for_array_scalar_elem(arr_ty, span)],
+        // ARRAY_FILTER_USE_BOTH: ($value, $key)
+        Some(1) => (
+            vec![value_arg, Expr::new(ExprKind::IntLiteral(0), span)],
+            binding,
+        ),
+        // ARRAY_FILTER_USE_KEY: ($key) — key only, no value binding needed
+        Some(2) => (vec![Expr::new(ExprKind::IntLiteral(0), span)], None),
+        // default: ($value)
+        _ => (vec![value_arg], binding),
     }
 }
 

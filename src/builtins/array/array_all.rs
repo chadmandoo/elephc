@@ -25,6 +25,7 @@ builtin! {
     params: [array: Mixed, callback: Mixed],
     returns: Bool,
     check: check,
+    lazy_check: true,
     lower: lower,
     summary: "Returns true when every array element satisfies the predicate callback.",
     php_manual: "https://www.php.net/manual/en/function.array-all.php",
@@ -36,9 +37,10 @@ builtin! {
 /// dummy element argument derived from the array element type. Arity (exactly 2 args) is
 /// pre-validated by `check_arity`.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    for arg in cx.args {
-        cx.checker.infer_type(arg, cx.env)?;
-    }
+    // Only the array is inferred here; the callback is checked below with its
+    // element parameter typed from the array element, so DON'T eagerly infer it
+    // (an unannotated object-element predicate would fail on property access if
+    // its parameter defaulted to Int — EC-28).
     let arr_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
     if !matches!(arr_ty, PhpType::Array(_)) {
         return Err(CompileError::new(
@@ -46,18 +48,26 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             &format!("{}() first argument must be array", cx.name),
         ));
     }
-    let dummy_args = vec![
-        crate::types::checker::builtins::dummy_arg_for_array_scalar_elem(
-            &arr_ty, cx.span,
-        ),
-    ];
+    let elem_ty = crate::types::checker::builtins::array_element_type(&arr_ty);
+    let (elem_arg, elem_binding) =
+        crate::types::checker::builtins::comparator_dummy_arg_for_elem(&elem_ty, cx.span);
+    let dummy_args = vec![elem_arg];
+    let mut env_with_elem;
+    let cb_env: &crate::types::TypeEnv = match &elem_binding {
+        Some((binding_name, binding_ty)) => {
+            env_with_elem = cx.env.clone();
+            env_with_elem.insert(binding_name.clone(), binding_ty.clone());
+            &env_with_elem
+        }
+        None => cx.env,
+    };
     let label = format!("{}() callback", cx.name);
     crate::types::checker::builtins::check_callback_builtin_call(
         cx.checker,
         &cx.args[1],
         &dummy_args,
         cx.span,
-        cx.env,
+        cb_env,
         &label,
     )?;
     Ok(PhpType::Bool)

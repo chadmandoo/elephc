@@ -1238,3 +1238,30 @@ echo count(Array_Uintersect([1, 2, 3, 4], [2, 4], "cmp"));
     );
     assert_eq!(out, "22");
 }
+
+/// EC-28 (#511): array_all/array_any/array_filter over an array of OBJECTS type-check
+/// their unannotated callback's element parameter from the object element type (the usort
+/// generalization) and lower it (an object element is an 8-byte pointer, same register
+/// class as the predicate runtime's int path). Scalar callbacks still work. Byte-parity vs
+/// PHP 8.5.
+#[test]
+fn test_array_predicate_callbacks_over_objects() {
+    let out = compile_and_run(
+        r#"<?php
+final class Item { public function __construct(public int $weight) {} }
+function main(): void {
+    $items = [new Item(3), new Item(1)];
+    $all = array_all($items, fn ($it) => $it->weight > 0);
+    $any = array_any($items, fn ($it) => $it->weight < 2);
+    $heavy = array_filter($items, fn ($it) => $it->weight > 1);
+    // scalar callbacks still work
+    $nums = [1, 2, 3, 4];
+    $even = array_filter($nums, fn ($n) => $n % 2 === 0);
+    $mapped = array_map(fn ($n) => $n * 2, $nums);
+    echo ($all ? 'y' : 'n'), ($any ? 'y' : 'n'), count($heavy), ':', count($even), ':', implode(',', $mapped);
+}
+main();
+"#,
+    );
+    assert_eq!(out, "yy1:2:2,4,6,8");
+}
