@@ -273,7 +273,8 @@ fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result
         ConstF64 => require_immediate(inst_id, inst, "f64", |imm| matches!(imm, Imm::F64(_))),
         ConstBool => require_immediate(inst_id, inst, "bool", |imm| matches!(imm, Imm::Bool(_))),
         ConstStr | ConstClassName | DataAddr | Warn | IncludeOnceMark | IncludeOnceGuard
-        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell => {
+        | FunctionVariantMark | FunctionVariantDispatch | LoadPropRefCell
+        | EnumBackingStringToInt | EnumBackingMixedToInt => {
             require_immediate(inst_id, inst, "data id", |imm| matches!(imm, Imm::Data(_)))
         }
         LoadLocal | StoreLocal | UnsetLocal | LoadRefCell | StoreRefCell | ReleaseLocalRefCell
@@ -361,6 +362,9 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         ObjectNew => Ok(()),
         IAdd | ISub | IMul | IDiv | ISDiv | ISMod | IPow | IBitAnd | IBitOr | IBitXor
         | IShl | IShrA => check_binary(function, inst_id, inst, IrType::I64, "I64"),
+        ICheckedAdd | ICheckedSub | ICheckedMul => {
+            check_binary(function, inst_id, inst, IrType::I64, "I64")
+        }
         FAdd | FSub | FMul | FDiv | FPow => check_binary(function, inst_id, inst, IrType::F64, "F64"),
         MixedNumericBinop => check_count(inst_id, inst, 2, "2"),
         INeg | IBitNot => check_unary(function, inst_id, inst, IrType::I64, "I64"),
@@ -407,7 +411,7 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         ArrayHashUnion => check_array_hash_union(function, inst_id, inst),
         HashArrayUnion => check_hash_array_union(function, inst_id, inst),
         HashSpread => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)"),
-        ArrayLen | ArrayGet | ArrayGetSilent | ArrayIsset | ArraySet | ArrayPush | ArrayEnsureUnique
+        ArrayLen | ArrayGet | ArrayGetSilent | ArrayIsset | ArrayElemAddr | ArraySet | ArrayPush | ArrayEnsureUnique
         | ArrayCloneShallow | ArraySetMixedKey | ArrayGetMixedKey
         | ArrayGetMixedKeySilent => {
             check_first_heap(function, inst_id, inst, IrHeapKind::Array, "Heap(Array)")

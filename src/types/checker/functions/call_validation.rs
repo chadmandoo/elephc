@@ -105,6 +105,24 @@ fn is_assoc_spread_source(expr: &Expr, env: &TypeEnv) -> bool {
 }
 
 impl Checker {
+    /// Returns true when an argument expression is an l-value supported by by-reference calls.
+    pub(crate) fn is_by_ref_argument_lvalue(
+        &mut self,
+        arg: &Expr,
+        env: &TypeEnv,
+    ) -> Result<bool, CompileError> {
+        match &arg.kind {
+            ExprKind::Variable(_) => Ok(true),
+            ExprKind::ArrayAccess { array, .. } if matches!(array.kind, ExprKind::Variable(_)) => {
+                Ok(matches!(
+                    self.infer_type(array, env)?.codegen_repr(),
+                    PhpType::Array(_)
+                ))
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// Normalizes arguments for a user-defined function call, allowing unknown named arguments
     /// to be collected into the variadic parameter.
     pub(crate) fn normalize_named_call_args(
@@ -175,6 +193,8 @@ impl Checker {
             // A union VALUE with at least one member the declaration accepts is likewise
             // runtime-enforced PHP (e.g. an `int|false` seek result passed to an `int` param on
             // the success path). A union with NO compatible member stays rejected.
+            // (Upstream's scalar+Mixed coercive arm is subsumed by the `(_, Mixed) => true`
+            // arm above, which already accepts any Mixed value into a narrower declared type.)
             (_, PhpType::Union(members)) if !matches!(expected, PhpType::Union(_)) => {
                 members.iter().any(|m| Self::types_compatible(expected, m))
             }
@@ -340,7 +360,7 @@ impl Checker {
             }
             if param_idx < regular_param_count {
                 if sig.ref_params.get(param_idx).copied().unwrap_or(false)
-                    && !matches!(arg.kind, ExprKind::Variable(_))
+                    && !self.is_by_ref_argument_lvalue(arg, caller_env)?
                 {
                     let param_name = sig
                         .params
