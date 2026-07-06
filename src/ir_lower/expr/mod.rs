@@ -11,8 +11,8 @@
 //!   conservative effects until Phase 04 gives them target-specific meaning.
 
 use crate::ir::{
-    BlockId, CmpPredicate, Effects, Immediate, IrHeapKind, IrType, LocalSlotId, MixedNumericOp, Op,
-    Ownership, Terminator, ValueId,
+    BlockId, CmpPredicate, Effects, Immediate, IrHeapKind, IrType, LocalKind, LocalSlotId,
+    MixedNumericOp, Op, Ownership, Terminator, ValueId,
 };
 use crate::ir_lower::context::{
     value_ir_type, ClosureCapture, LoweredValue, LoweringContext, StaticCallableBinding,
@@ -1186,7 +1186,9 @@ fn lower_null_coalesce(
     let result_type = null_coalesce_result_type(ctx, value.value, default);
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
     let split_initialized = ctx.initialized_slots_snapshot();
-    let default_block = ctx.builder.create_named_block("coalesce.default", Vec::new());
+    let default_block = ctx
+        .builder
+        .create_named_block("coalesce.default", Vec::new());
     let value_block = ctx.builder.create_named_block("coalesce.value", Vec::new());
     let merge = ctx.builder.create_named_block("coalesce.merge", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
@@ -1301,9 +1303,15 @@ fn lower_short_ternary(
     let result_type = fallback_expr_type(expr);
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
     let split_initialized = ctx.initialized_slots_snapshot();
-    let value_block = ctx.builder.create_named_block("short_ternary.value", Vec::new());
-    let default_block = ctx.builder.create_named_block("short_ternary.default", Vec::new());
-    let merge = ctx.builder.create_named_block("short_ternary.merge", Vec::new());
+    let value_block = ctx
+        .builder
+        .create_named_block("short_ternary.value", Vec::new());
+    let default_block = ctx
+        .builder
+        .create_named_block("short_ternary.default", Vec::new());
+    let merge = ctx
+        .builder
+        .create_named_block("short_ternary.merge", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
         cond: cond.value,
         then_target: value_block,
@@ -1520,8 +1528,7 @@ fn lower_assignment_expr(
         assigned_name.and_then(|_| reflection_property_binding_for_expr(ctx, value));
     let reflected_method =
         assigned_name.and_then(|_| reflection_method_binding_for_expr(ctx, value));
-    let reflected_args =
-        assigned_name.and_then(|_| reflection_arg_array_binding_for_expr(value));
+    let reflected_args = assigned_name.and_then(|_| reflection_arg_array_binding_for_expr(value));
     let fiber_start_sig =
         assigned_name.and_then(|_| crate::ir_lower::fibers::start_sig_for_expr(ctx, value));
     let callable_array = assigned_name
@@ -1927,10 +1934,390 @@ fn emit_builtin_call_value(
         Some(span),
     );
     release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), span);
+    let eval_needs_barrier = match eval_literal {
+        Some(fragment) => eval_literal_needs_barrier(ctx, fragment),
+        None => true,
+    };
     if php_symbol_key(name.trim_start_matches('\\')) == "eval" {
-        ctx.apply_eval_barrier();
+        if eval_needs_barrier {
+            ctx.apply_eval_barrier();
+        } else if eval_literal
+            .is_some_and(|fragment| eval_literal_needs_scope_barrier(ctx, fragment))
+        {
+            ctx.apply_eval_scope_barrier();
+        }
     }
     call
+}
+
+/// Returns true when a literal `eval` call may still need runtime scope/interpreter state.
+fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
+    if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
+        return false;
+    }
+    if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
+        return false;
+    }
+    if eval_literal_local_scalar_direct_sync_supported_by_lowering(ctx, fragment) {
+        return false;
+    }
+    let static_call_supported = |name: &str, args: &[Expr]| {
+        eval_literal_static_function_supported_by_lowering(ctx, name, args)
+    };
+    let plan = crate::eval_aot::plan_literal_fragment_with_source_path_and_static_and_method_calls(
+        fragment,
+        ctx.source_path(),
+        static_call_supported,
+        |receiver, method, args| {
+            eval_literal_static_method_supported_by_lowering(ctx, receiver, method, args)
+        },
+    );
+    if plan.is_fully_static_no_bridge() {
+        return false;
+    }
+    if plan.uses_scope_read_params()
+        && eval_literal_scope_read_params_supported_by_lowering(
+            ctx,
+            plan.reads(),
+            plan.array_read_constraints(),
+            plan.assoc_array_read_constraints(),
+            plan.float_predicate_read_constraints(),
+        )
+    {
+        return false;
+    }
+    if plan.requires_runtime_eval_scope()
+        && eval_literal_scope_constraints_supported_by_lowering(
+            ctx,
+            plan.array_read_constraints(),
+            plan.assoc_array_read_constraints(),
+            plan.float_predicate_read_constraints(),
+        )
+    {
+        return false;
+    }
+    true
+}
+
+/// Returns true when a literal `eval` only needs materialized eval-scope state.
+fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
+    if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
+        return false;
+    }
+    if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
+        return false;
+    }
+    if eval_literal_local_scalar_direct_sync_supported_by_lowering(ctx, fragment) {
+        return false;
+    }
+    let static_call_supported = |name: &str, args: &[Expr]| {
+        eval_literal_static_function_supported_by_lowering(ctx, name, args)
+    };
+    let plan = crate::eval_aot::plan_literal_fragment_with_source_path_and_static_and_method_calls(
+        fragment,
+        ctx.source_path(),
+        static_call_supported,
+        |receiver, method, args| {
+            eval_literal_static_method_supported_by_lowering(ctx, receiver, method, args)
+        },
+    );
+    plan.requires_runtime_eval_scope()
+        && eval_literal_scope_constraints_supported_by_lowering(
+            ctx,
+            plan.array_read_constraints(),
+            plan.assoc_array_read_constraints(),
+            plan.float_predicate_read_constraints(),
+        )
+}
+
+/// Returns true when a boxed read/write eval can use direct caller locals.
+fn eval_literal_direct_read_write_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    fragment: &str,
+) -> bool {
+    let Some(writes) = crate::eval_aot::literal_fragment_direct_local_read_write_writes(fragment)
+    else {
+        return false;
+    };
+    writes
+        .iter()
+        .all(|(name, kind)| eval_literal_direct_read_write_name_supported(ctx, name, *kind))
+}
+
+/// Returns true when one direct read/write target is an initialized scalar local.
+fn eval_literal_direct_read_write_name_supported(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(slot) = ctx.local_slots.get(name) else {
+        return false;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    if !ctx.initialized_slots_snapshot().contains(slot) {
+        return false;
+    }
+    ctx.local_types
+        .get(name)
+        .is_some_and(|ty| eval_literal_direct_read_write_type_supported(ty, kind))
+}
+
+/// Returns true when a read/write eval result kind fits the caller local type.
+fn eval_literal_direct_read_write_type_supported(
+    ty: &PhpType,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    match ty.codegen_repr() {
+        PhpType::Int => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        PhpType::Float => kind == crate::eval_aot::DirectLocalStoreScalarKind::Float,
+        _ => false,
+    }
+}
+
+/// Returns true when local-scalar eval writes can be synced without eval scope state.
+fn eval_literal_local_scalar_direct_sync_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    fragment: &str,
+) -> bool {
+    let Some(writes) = crate::eval_aot::literal_fragment_local_scalar_writes_with_static_calls(
+        fragment,
+        |name, args| eval_literal_static_function_supported_by_lowering(ctx, name, args),
+    ) else {
+        return false;
+    };
+    writes
+        .iter()
+        .all(|(name, kind)| eval_literal_local_scalar_direct_sync_name_supported(ctx, name, *kind))
+}
+
+/// Returns true when one local-scalar write can target caller storage directly or be ignored.
+fn eval_literal_local_scalar_direct_sync_name_supported(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(_slot) = ctx.local_slots.get(name) else {
+        return true;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    let Some(ty) = ctx.local_types.get(name) else {
+        return false;
+    };
+    eval_literal_local_scalar_direct_sync_type_supported(ty, kind)
+}
+
+/// Returns true when a local-scalar write kind fits the caller local type.
+fn eval_literal_local_scalar_direct_sync_type_supported(
+    ty: &PhpType,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    match ty.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => true,
+        PhpType::Int => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        PhpType::Float => kind == crate::eval_aot::DirectLocalStoreScalarKind::Float,
+        PhpType::Bool => kind == crate::eval_aot::DirectLocalStoreScalarKind::Bool,
+        PhpType::TaggedScalar => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        _ => false,
+    }
+}
+
+/// Returns true when all scope-read variables can be passed as direct Mixed params.
+fn eval_literal_scope_read_params_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    read_names: &std::collections::BTreeSet<String>,
+    array_read_constraints: &std::collections::BTreeSet<String>,
+    assoc_array_read_constraints: &std::collections::BTreeSet<String>,
+    float_predicate_read_constraints: &std::collections::BTreeSet<String>,
+) -> bool {
+    read_names
+        .iter()
+        .all(|name| eval_literal_scope_read_param_supported_by_lowering(ctx, name))
+        && array_read_constraints
+            .iter()
+            .all(|name| eval_literal_scope_read_array_param_supported_by_lowering(ctx, name))
+        && assoc_array_read_constraints
+            .iter()
+            .all(|name| eval_literal_scope_read_assoc_array_param_supported_by_lowering(ctx, name))
+        && float_predicate_read_constraints.iter().all(|name| {
+            eval_literal_scope_read_float_predicate_param_supported_by_lowering(ctx, name)
+        })
+}
+
+/// Returns true when all constrained scope reads fit caller local types.
+fn eval_literal_scope_constraints_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    array_read_constraints: &std::collections::BTreeSet<String>,
+    assoc_array_read_constraints: &std::collections::BTreeSet<String>,
+    float_predicate_read_constraints: &std::collections::BTreeSet<String>,
+) -> bool {
+    array_read_constraints
+        .iter()
+        .all(|name| eval_literal_scope_read_array_param_supported_by_lowering(ctx, name))
+        && assoc_array_read_constraints
+            .iter()
+            .all(|name| eval_literal_scope_read_assoc_array_param_supported_by_lowering(ctx, name))
+        && float_predicate_read_constraints.iter().all(|name| {
+            eval_literal_scope_read_float_predicate_param_supported_by_lowering(ctx, name)
+        })
+}
+
+/// Returns true when one read variable has no eval runtime state dependency.
+fn eval_literal_scope_read_param_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(slot) = ctx.local_slots.get(name) else {
+        return true;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    let Some(ty) = ctx.local_types.get(name) else {
+        return false;
+    };
+    eval_literal_scope_read_param_type_supported(ty)
+        && ctx.initialized_slots_snapshot().contains(slot)
+}
+
+/// Returns true when one direct read-param is statically known to be array-like.
+fn eval_literal_scope_read_array_param_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(slot) = ctx.local_slots.get(name) else {
+        return false;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    let Some(ty) = ctx.local_types.get(name) else {
+        return false;
+    };
+    eval_literal_scope_read_array_param_type_supported(ty)
+        && ctx.initialized_slots_snapshot().contains(slot)
+}
+
+/// Returns true when one direct read-param is statically known to be associative-array-like.
+fn eval_literal_scope_read_assoc_array_param_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(slot) = ctx.local_slots.get(name) else {
+        return false;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    let Some(ty) = ctx.local_types.get(name) else {
+        return false;
+    };
+    eval_literal_scope_read_assoc_array_param_type_supported(ty)
+        && ctx.initialized_slots_snapshot().contains(slot)
+}
+
+/// Returns true when one direct read-param can feed float predicate builtins safely.
+fn eval_literal_scope_read_float_predicate_param_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name)
+        || (ctx.in_main && ctx.all_global_var_names.contains(name))
+    {
+        return false;
+    }
+    let Some(slot) = ctx.local_slots.get(name) else {
+        return false;
+    };
+    if ctx.is_ref_bound_local(name) {
+        return false;
+    }
+    if ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal) {
+        return false;
+    }
+    let Some(ty) = ctx.local_types.get(name) else {
+        return false;
+    };
+    eval_literal_scope_read_float_predicate_param_type_supported(ty)
+        && ctx.initialized_slots_snapshot().contains(slot)
+}
+
+/// Returns true when a local type can be boxed to the param-mode Mixed ABI.
+fn eval_literal_scope_read_param_type_supported(ty: &PhpType) -> bool {
+    matches!(
+        ty.codegen_repr(),
+        PhpType::Int
+            | PhpType::Bool
+            | PhpType::Float
+            | PhpType::Str
+            | PhpType::Void
+            | PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Object(_)
+            | PhpType::Mixed
+            | PhpType::Union(_)
+    )
+}
+
+/// Returns true when a local type satisfies array-only direct read-param semantics.
+fn eval_literal_scope_read_array_param_type_supported(ty: &PhpType) -> bool {
+    matches!(
+        ty.codegen_repr(),
+        PhpType::Array(_) | PhpType::AssocArray { .. }
+    )
+}
+
+/// Returns true when a local type satisfies associative-array direct read-param semantics.
+fn eval_literal_scope_read_assoc_array_param_type_supported(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::AssocArray { .. })
+}
+
+/// Returns true when a local type can reach IEEE float predicates without TypeError.
+fn eval_literal_scope_read_float_predicate_param_type_supported(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::Int | PhpType::Float)
 }
 
 /// Returns the literal eval fragment when the call is a simple `eval('...')`.
@@ -1946,6 +2333,58 @@ fn eval_literal_fragment<'a>(name: &str, args: &'a [Expr]) -> Option<&'a str> {
         ExprKind::StringLiteral(fragment) => Some(fragment.as_str()),
         _ => None,
     }
+}
+
+/// Returns true when a literal-eval static function call can avoid the eval barrier.
+fn eval_literal_static_function_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+) -> bool {
+    if args.len() > 6 {
+        return false;
+    }
+    let key = php_symbol_key(name.trim_start_matches('\\'));
+    let Some(signature) = ctx
+        .functions
+        .iter()
+        .find(|(function_name, _)| php_symbol_key(function_name.trim_start_matches('\\')) == key)
+        .map(|(_, signature)| signature)
+    else {
+        return false;
+    };
+    crate::eval_aot::static_function_signature_supported(signature, args)
+}
+
+/// Returns true when a literal-eval static method call can avoid the eval barrier.
+fn eval_literal_static_method_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    receiver: &StaticReceiver,
+    method: &str,
+    args: &[Expr],
+) -> bool {
+    if args.len() > 6 || !matches!(receiver, StaticReceiver::Named(_)) {
+        return false;
+    }
+    let Some(class_name) = static_receiver_class_name(ctx, receiver) else {
+        return false;
+    };
+    let method_key = php_symbol_key(method);
+    let Some(class_info) = ctx.classes.get(class_name.as_str()) else {
+        return false;
+    };
+    if class_info
+        .static_method_visibilities
+        .get(&method_key)
+        .unwrap_or(&Visibility::Public)
+        != &Visibility::Public
+    {
+        return false;
+    }
+    let Some(signature) = static_method_implementation_signature(ctx, receiver, method) else {
+        return false;
+    };
+    crate::eval_aot::static_function_signature_supported(signature, args)
 }
 
 /// Returns true when a dynamic eval fallback can preserve simple positional call semantics.
@@ -2293,9 +2732,15 @@ fn lower_nullable_native_isset_offset_probe(
         Some(expr.span),
     );
     let temp_name = ctx.declare_hidden_temp(PhpType::Bool);
-    let null_block = ctx.builder.create_named_block("isset.native.null", Vec::new());
-    let probe_block = ctx.builder.create_named_block("isset.native.probe", Vec::new());
-    let merge = ctx.builder.create_named_block("isset.native.merge", Vec::new());
+    let null_block = ctx
+        .builder
+        .create_named_block("isset.native.null", Vec::new());
+    let probe_block = ctx
+        .builder
+        .create_named_block("isset.native.probe", Vec::new());
+    let merge = ctx
+        .builder
+        .create_named_block("isset.native.merge", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
         cond: is_null.value,
         then_target: null_block,
@@ -2899,13 +3344,12 @@ fn lower_dynamic_call_user_func_array(
     }
     let signature = callable_descriptor_signature_for_expr(ctx, callback_expr);
     let callback = lower_expr(ctx, callback_expr);
-    let arg_array =
-        lower_descriptor_invoker_arg_array_for_call_user_func_array(
-            ctx,
-            arg_array_expr,
-            signature.as_ref(),
-        )
-        .unwrap_or_else(|| lower_expr(ctx, arg_array_expr));
+    let arg_array = lower_descriptor_invoker_arg_array_for_call_user_func_array(
+        ctx,
+        arg_array_expr,
+        signature.as_ref(),
+    )
+    .unwrap_or_else(|| lower_expr(ctx, arg_array_expr));
     Some(emit_callable_descriptor_invoke(
         ctx,
         callback,
@@ -4672,11 +5116,8 @@ fn lower_static_array_push(
         Op::ArrayPush.default_effects(),
         Some(expr.span),
     );
-    let elem_ty = super::stmt::indexed_array_write_element_type(
-        ctx,
-        array_value,
-        updated_ty.as_ref(),
-    );
+    let elem_ty =
+        super::stmt::indexed_array_write_element_type(ctx, array_value, updated_ty.as_ref());
     super::stmt::finish_indexed_array_local_write(
         ctx,
         array_name,
@@ -5147,7 +5588,10 @@ fn coerce_operands_to_params(
         if !matches!(operand_ty, PhpType::Int | PhpType::Bool) {
             continue;
         }
-        let lowered = LoweredValue { value, ir_type: IrType::I64 };
+        let lowered = LoweredValue {
+            value,
+            ir_type: IrType::I64,
+        };
         operands[index] = coerce_to_float_at_span(ctx, lowered, None).value;
     }
     operands
@@ -8040,9 +8484,15 @@ fn lower_nullable_array_access(
     );
     let result_type = PhpType::Mixed;
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
-    let null_block = ctx.builder.create_named_block("nullable.index.null", Vec::new());
-    let read_block = ctx.builder.create_named_block("nullable.index.read", Vec::new());
-    let merge = ctx.builder.create_named_block("nullable.index.merge", Vec::new());
+    let null_block = ctx
+        .builder
+        .create_named_block("nullable.index.null", Vec::new());
+    let read_block = ctx
+        .builder
+        .create_named_block("nullable.index.read", Vec::new());
+    let merge = ctx
+        .builder
+        .create_named_block("nullable.index.merge", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
         cond: is_null.value,
         then_target: null_block,
@@ -8849,7 +9299,9 @@ fn lower_closure_call(ctx: &mut LoweringContext<'_, '_>, var: &str, args: &[Expr
     let callable = ctx.load_local(var, Some(expr.span));
     let result_type = result_type.unwrap_or_else(|| dynamic_callable_result_type(ctx, callable.value, expr));
     if instance_signature.is_none() {
-        if let Some(arg_container) = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span) {
+        if let Some(arg_container) =
+            lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span)
+        {
             return emit_callable_descriptor_invoke(
                 ctx,
                 callable,
@@ -8939,7 +9391,9 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
         }
     }
     let result_type = dynamic_callable_result_type(ctx, lowered_callee.value, expr);
-    if let Some(arg_container) = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span) {
+    if let Some(arg_container) =
+        lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span)
+    {
         return emit_callable_descriptor_invoke(
             ctx,
             lowered_callee,
@@ -8989,14 +9443,10 @@ fn lower_expr_call_from_value(
     expr: &Expr,
 ) -> LoweredValue {
     let result_type = dynamic_callable_result_type(ctx, callee.value, expr);
-    if let Some(arg_container) = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span) {
-        return emit_callable_descriptor_invoke(
-            ctx,
-            callee,
-            arg_container,
-            result_type,
-            expr.span,
-        );
+    if let Some(arg_container) =
+        lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span)
+    {
+        return emit_callable_descriptor_invoke(ctx, callee, arg_container, result_type, expr.span);
     }
     let mut operands = vec![callee.value];
     operands.extend(lower_args(ctx, args));
@@ -9303,7 +9753,8 @@ fn lower_first_class_callable_expr_call(
                 .as_ref()
                 .map(|signature| normalize_value_php_type(signature.return_type.codegen_repr()))
                 .unwrap_or_else(|| dynamic_callable_result_type(ctx, callable.value, expr));
-            let arg_container = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span)?;
+            let arg_container =
+                lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span)?;
             Some(emit_callable_descriptor_invoke(
                 ctx,
                 callable,
@@ -10187,22 +10638,14 @@ fn lower_method_call(
         return null_value;
     }
     if op == Op::MethodCall {
-        if let Some(value) = lower_reflection_function_invoke_call(
-            ctx,
-            Some(object_expr),
-            method,
-            args,
-            expr,
-        ) {
+        if let Some(value) =
+            lower_reflection_function_invoke_call(ctx, Some(object_expr), method, args, expr)
+        {
             return value;
         }
-        if let Some(value) = lower_reflection_method_invoke_call(
-            ctx,
-            Some(object_expr),
-            method,
-            args,
-            expr,
-        ) {
+        if let Some(value) =
+            lower_reflection_method_invoke_call(ctx, Some(object_expr), method, args, expr)
+        {
             return value;
         }
     }
@@ -10413,9 +10856,15 @@ fn lower_nullable_regular_method_call(
 ) -> LoweredValue {
     let result_type = method_call_result_type(ctx, object.value, method, Op::MethodCall, expr);
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
-    let fatal_block = ctx.builder.create_named_block("method.null.fatal", Vec::new());
-    let call_block = ctx.builder.create_named_block("method.non_null.call", Vec::new());
-    let merge = ctx.builder.create_named_block("method.nullable.merge", Vec::new());
+    let fatal_block = ctx
+        .builder
+        .create_named_block("method.null.fatal", Vec::new());
+    let call_block = ctx
+        .builder
+        .create_named_block("method.non_null.call", Vec::new());
+    let merge = ctx
+        .builder
+        .create_named_block("method.nullable.merge", Vec::new());
     let is_null = ctx.emit_value(
         Op::IsNull,
         vec![object.value],
@@ -10777,11 +11226,19 @@ fn lower_reflection_method_invoke_call(
         "invokeargs" => reflection_method_invoke_args_array(ctx, args),
         _ => return None,
     }) else {
-        return Some(lower_reflection_method_invoke_unsupported(ctx, &method_key, expr));
+        return Some(lower_reflection_method_invoke_unsupported(
+            ctx,
+            &method_key,
+            expr,
+        ));
     };
     let Some(target_kind) = reflection_method_target_kind(ctx, &class_name, &reflected_method)
     else {
-        return Some(lower_reflection_method_invoke_unsupported(ctx, &method_key, expr));
+        return Some(lower_reflection_method_invoke_unsupported(
+            ctx,
+            &method_key,
+            expr,
+        ));
     };
     match target_kind {
         ReflectionMethodTargetKind::Static => Some(lower_reflection_static_method_invoke(
@@ -10813,11 +11270,7 @@ fn lower_reflection_static_method_invoke(
 ) -> LoweredValue {
     let ignored_object = lower_expr(ctx, object_arg);
     if ctx.value_is_owning_temporary(ignored_object) {
-        crate::ir_lower::ownership::release_if_owned(
-            ctx,
-            ignored_object,
-            Some(object_arg.span),
-        );
+        crate::ir_lower::ownership::release_if_owned(ctx, ignored_object, Some(object_arg.span));
     }
     let receiver = StaticReceiver::Named(Name::from(class_name.to_string()));
     lower_static_method_call(ctx, &receiver, reflected_method, forwarded_args, expr)
@@ -10838,7 +11291,13 @@ fn lower_reflection_instance_method_invoke(
         return null_value;
     }
     if value_is_nullable(ctx, object.value) {
-        return lower_nullable_regular_method_call(ctx, object, reflected_method, forwarded_args, expr);
+        return lower_nullable_regular_method_call(
+            ctx,
+            object,
+            reflected_method,
+            forwarded_args,
+            expr,
+        );
     }
     lower_method_call_with_receiver(
         ctx,
@@ -10864,7 +11323,10 @@ fn reflection_method_invoke_args(args: &[Expr]) -> Option<(Expr, Vec<Expr>)> {
     let mut args = args.into_iter();
     if let Some(first) = args.next() {
         match first.kind {
-            ExprKind::NamedArg { ref name, ref value } if php_symbol_key(name) == "object" => {
+            ExprKind::NamedArg {
+                ref name,
+                ref value,
+            } if php_symbol_key(name) == "object" => {
                 object = Some((**value).clone());
             }
             ExprKind::NamedArg { .. } => forwarded.push(first),
@@ -10873,7 +11335,10 @@ fn reflection_method_invoke_args(args: &[Expr]) -> Option<(Expr, Vec<Expr>)> {
     }
     for arg in args {
         match arg.kind {
-            ExprKind::NamedArg { ref name, ref value } if php_symbol_key(name) == "object" => {
+            ExprKind::NamedArg {
+                ref name,
+                ref value,
+            } if php_symbol_key(name) == "object" => {
                 if object.replace((**value).clone()).is_some() {
                     return None;
                 }
@@ -12609,7 +13074,10 @@ fn resolve_known_class_name(ctx: &LoweringContext<'_, '_>, class_name: &str) -> 
 }
 
 /// Resolves a PHP function name case-insensitively against known user functions.
-fn resolve_known_function_name(ctx: &LoweringContext<'_, '_>, function_name: &str) -> Option<String> {
+fn resolve_known_function_name(
+    ctx: &LoweringContext<'_, '_>,
+    function_name: &str,
+) -> Option<String> {
     let key = php_symbol_key(function_name.trim_start_matches('\\'));
     ctx.functions
         .keys()
@@ -13744,8 +14212,10 @@ fn lower_yield_from_array(
     let body = ctx.builder.create_named_block("yieldfrom.body", Vec::new());
     let exit = ctx.builder.create_named_block("yieldfrom.exit", Vec::new());
     if !ctx.builder.insertion_block_is_terminated() {
-        ctx.builder
-            .terminate(Terminator::Br { target: header, args: Vec::new() });
+        ctx.builder.terminate(Terminator::Br {
+            target: header,
+            args: Vec::new(),
+        });
     }
 
     ctx.builder.position_at_end(header);
@@ -13794,8 +14264,10 @@ fn lower_yield_from_array(
         Some(span),
     );
     if !ctx.builder.insertion_block_is_terminated() {
-        ctx.builder
-            .terminate(Terminator::Br { target: header, args: Vec::new() });
+        ctx.builder.terminate(Terminator::Br {
+            target: header,
+            args: Vec::new(),
+        });
     }
 
     ctx.builder.position_at_end(exit);

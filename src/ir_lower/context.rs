@@ -11,11 +11,11 @@
 //! - Control-flow joins can reload locals from slots, so Phase 03 does not need
 //!   to synthesize block-parameter phis for every PHP variable yet.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use crate::ir::{
-    BlockId, Builder, DataId, DataPool, Effects, Immediate, IrType, LocalKind, LocalSlotId, Op,
-    Ownership, ValueId, Function,
+    BlockId, Builder, DataId, DataPool, Effects, Function, Immediate, IrType, LocalKind,
+    LocalSlotId, Op, Ownership, ValueId,
 };
 use crate::names::{php_symbol_key, property_hook_get_method, property_hook_set_method};
 use crate::parser::ast::{Expr, ExprKind, StaticReceiver, Stmt, TypeExpr};
@@ -149,6 +149,11 @@ pub(crate) struct LoweringContext<'m, 'f> {
     closure_counter: usize,
     hidden_temp_counter: usize,
     eval_barrier_active: bool,
+    eval_scope_read_param: Option<String>,
+    eval_scope_read_names: HashSet<String>,
+    eval_scope_write_names: HashSet<String>,
+    eval_scope_flush_names: BTreeSet<String>,
+    source_path: Option<String>,
 }
 
 impl<'m, 'f> LoweringContext<'m, 'f> {
@@ -174,6 +179,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         return_php_type: PhpType,
         in_main: bool,
         all_global_var_names: HashSet<String>,
+        source_path: Option<String>,
     ) -> Self {
         let return_type = return_ir_type(&return_php_type);
         Self {
@@ -219,7 +225,17 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             closure_counter: 0,
             hidden_temp_counter: 0,
             eval_barrier_active: false,
+            eval_scope_read_param: None,
+            eval_scope_read_names: HashSet::new(),
+            eval_scope_write_names: HashSet::new(),
+            eval_scope_flush_names: BTreeSet::new(),
+            source_path,
         }
+    }
+
+    /// Returns the canonical PHP source path associated with this lowered body, if known.
+    pub(crate) fn source_path(&self) -> Option<&str> {
+        self.source_path.as_deref()
     }
 
     /// Interns a string literal or metadata name in the module data pool.
@@ -233,7 +249,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             TypeExpr::Named(name) => {
                 let name = name.as_str().trim_start_matches('\\');
                 let php_type = named_type_expr_to_php_type(name);
-                if matches!(php_type, PhpType::Object(_)) && self.packed_classes.contains_key(name) {
+                if matches!(php_type, PhpType::Object(_)) && self.packed_classes.contains_key(name)
+                {
                     PhpType::Packed(name.to_string())
                 } else {
                     php_type
@@ -245,9 +262,10 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             TypeExpr::Array(inner) => {
                 PhpType::Array(Box::new(self.type_expr_to_php_type_for_value(inner)))
             }
-            TypeExpr::Nullable(inner) => {
-                PhpType::Union(vec![PhpType::Void, self.type_expr_to_php_type_for_value(inner)])
-            }
+            TypeExpr::Nullable(inner) => PhpType::Union(vec![
+                PhpType::Void,
+                self.type_expr_to_php_type_for_value(inner),
+            ]),
             TypeExpr::Union(members) => PhpType::Union(
                 members
                     .iter()
@@ -275,7 +293,10 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 
     /// Returns the current known PHP type for a local or `Mixed` when unknown.
     pub(crate) fn local_type(&self, name: &str) -> PhpType {
-        self.local_types.get(name).cloned().unwrap_or(PhpType::Mixed)
+        self.local_types
+            .get(name)
+            .cloned()
+            .unwrap_or(PhpType::Mixed)
     }
 
     /// Records a foreach loop-key local whose source is a concretely-indexed
@@ -402,12 +423,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             return *slot;
         }
         let ir_type = value_ir_type(&php_type);
-        let slot = self.builder.add_local(
-            Some(name.to_string()),
-            ir_type,
-            php_type.clone(),
-            kind,
-        );
+        let slot = self
+            .builder
+            .add_local(Some(name.to_string()), ir_type, php_type.clone(), kind);
         self.local_slots.insert(name.to_string(), slot);
         self.local_kinds.insert(name.to_string(), kind);
         self.local_types.entry(name.to_string()).or_insert(php_type);
@@ -473,7 +491,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 
     /// Ensures this function has a persistent eval context handle slot.
     pub(crate) fn declare_eval_context_local(&mut self) -> LocalSlotId {
-        self.declare_local_with_kind(EVAL_CONTEXT_LOCAL_NAME, PhpType::Int, LocalKind::EvalContext)
+        self.declare_local_with_kind(
+            EVAL_CONTEXT_LOCAL_NAME,
+            PhpType::Int,
+            LocalKind::EvalContext,
+        )
     }
 
     /// Ensures this function has a persistent eval scope handle slot.
@@ -526,6 +548,53 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         }
     }
 
+    /// Enables direct eval-scope reads for selected variable names in an AOT eval body.
+    pub(crate) fn enable_eval_scope_access(
+        &mut self,
+        scope_param: String,
+        read_names: HashSet<String>,
+        write_names: HashSet<String>,
+        flush_names: BTreeSet<String>,
+    ) {
+        self.eval_scope_read_param = Some(scope_param);
+        self.eval_scope_read_names = read_names;
+        self.eval_scope_write_names = write_names;
+        self.eval_scope_flush_names = flush_names;
+    }
+
+    /// Flushes selected local slots back into the eval scope before function exit.
+    pub(crate) fn emit_eval_scope_finalizer(&mut self, span: Option<Span>) {
+        let Some(scope_param) = self.eval_scope_read_param.clone() else {
+            return;
+        };
+        let names = self
+            .eval_scope_flush_names
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in names {
+            if !self.local_slots.contains_key(&name) {
+                continue;
+            }
+            let scope = self.load_local(&scope_param, span);
+            let value = self.load_local(&name, span);
+            let name_data = self.intern_global_name(&name);
+            self.emit_void(
+                Op::EvalScopeSet,
+                vec![scope.value, value.value],
+                Some(Immediate::GlobalName(name_data)),
+                Op::EvalScopeSet.default_effects(),
+                span,
+            );
+        }
+    }
+
+    /// Applies only the materialized local-scope part needed by EIR eval AOT.
+    pub(crate) fn apply_eval_scope_barrier(&mut self) {
+        self.eval_barrier_active = true;
+        self.declare_eval_scope_local();
+    }
+
     /// Ensures top-level eval fragments can see `$argc` and `$argv` by name.
     fn declare_eval_main_superglobals(&mut self) {
         if !self.in_main {
@@ -547,7 +616,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let name = format!("__eir_ref_owner{}_{}", self.hidden_temp_counter, variable);
         self.hidden_temp_counter += 1;
         let slot = self.declare_local_with_kind(&name, php_type, LocalKind::RefCell);
-        self.ref_cell_owner_locals.insert(variable.to_string(), slot);
+        self.ref_cell_owner_locals
+            .insert(variable.to_string(), slot);
         slot
     }
 
@@ -609,6 +679,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         if let Some(php_type) = self.extern_global_type(name) {
             return self.load_extern_global(name, php_type, span);
         }
+        if self.should_load_from_eval_scope(name) {
+            return self.load_eval_scope_name(name, span);
+        }
         let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, kind);
         // Superglobals carry a fixed `AssocArray{Str, Mixed}` type in every scope.
@@ -650,6 +723,102 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         LoweredValue { value, ir_type }
     }
 
+    /// Returns true when a variable read should be sourced from the eval scope handle.
+    fn should_load_from_eval_scope(&self, name: &str) -> bool {
+        let Some(scope_param) = &self.eval_scope_read_param else {
+            return false;
+        };
+        name != scope_param
+            && !self.local_slots.contains_key(name)
+            && (self.eval_scope_read_names.contains(name)
+                || self.eval_scope_write_names.contains(name))
+    }
+
+    /// Emits an `EvalScopeGet` for a selected eval-scope variable read.
+    fn load_eval_scope_name(&mut self, name: &str, span: Option<Span>) -> LoweredValue {
+        let scope_param = self
+            .eval_scope_read_param
+            .clone()
+            .expect("eval scope read mode has a scope parameter");
+        let scope = self.load_local(&scope_param, span);
+        let name_data = self.intern_global_name(name);
+        let value = self
+            .builder
+            .emit_with_effects(
+                Op::EvalScopeGet,
+                vec![scope.value],
+                Some(Immediate::GlobalName(name_data)),
+                IrType::Heap(crate::ir::IrHeapKind::Mixed),
+                PhpType::Mixed,
+                Ownership::Borrowed,
+                Op::EvalScopeGet.default_effects(),
+                span,
+            )
+            .expect("eval_scope_get produces a Mixed value");
+        LoweredValue {
+            value,
+            ir_type: IrType::Heap(crate::ir::IrHeapKind::Mixed),
+        }
+    }
+
+    /// Returns true when a variable write should be stored into the eval scope handle.
+    fn should_store_to_eval_scope(&self, name: &str) -> bool {
+        let Some(scope_param) = &self.eval_scope_read_param else {
+            return false;
+        };
+        name != scope_param && self.eval_scope_write_names.contains(name)
+    }
+
+    /// Emits an `EvalScopeSet` for a selected eval-scope variable write.
+    fn store_eval_scope_name(
+        &mut self,
+        name: &str,
+        value: LoweredValue,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        let php_type = self.builder.value_php_type(value.value).codegen_repr();
+        let previous_slot = self.local_slots.get(name).copied();
+        let previous_kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
+        let scope_param = self
+            .eval_scope_read_param
+            .clone()
+            .expect("eval scope write mode has a scope parameter");
+        let scope = self.load_local(&scope_param, span);
+        let name_data = self.intern_global_name(name);
+        self.emit_void(
+            Op::EvalScopeSet,
+            vec![scope.value, value.value],
+            Some(Immediate::GlobalName(name_data)),
+            Op::EvalScopeSet.default_effects(),
+            span,
+        );
+        let slot = self.declare_local(name, php_type.clone());
+        self.builder
+            .widen_local_storage_type(slot, php_type.clone());
+        if local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
+        {
+            self.release_stored_local_value(name, slot, span);
+        }
+        if local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value(name, slot, span);
+        }
+        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
+        self.store_slot_with_op(slot, stored, Op::StoreLocal, span);
+        self.set_local_type(name, php_type);
+        if self.value_needs_release_after_retaining_store(value) {
+            crate::ir_lower::ownership::release_if_owned(self, value, span);
+        }
+        stored
+    }
+
     /// Emits a load using the local slot's concrete frame-storage type.
     ///
     /// This is for cleanup paths that must release the value already present in
@@ -664,9 +833,14 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     ) -> LoweredValue {
         let ir_type = value_ir_type(&php_type);
         let ownership = Ownership::for_php_type(&php_type);
-        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, kind);
-        let is_ref_bound = self.is_ref_bound_local(name) && !uses_global && kind == LocalKind::PhpLocal;
+        let is_ref_bound =
+            self.is_ref_bound_local(name) && !uses_global && kind == LocalKind::PhpLocal;
         let op = match (is_ref_bound, uses_global, kind) {
             (true, _, _) => Op::LoadRefCell,
             (false, true, _) => Op::LoadGlobal,
@@ -695,7 +869,12 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Releases the value currently stored in a local slot using frame-storage metadata.
-    pub(crate) fn release_stored_local_value(&mut self, name: &str, slot: LocalSlotId, span: Option<Span>) {
+    pub(crate) fn release_stored_local_value(
+        &mut self,
+        name: &str,
+        slot: LocalSlotId,
+        span: Option<Span>,
+    ) {
         let storage_type = self.builder.local_php_type(slot);
         if !Ownership::php_type_needs_lifetime_tracking(&storage_type) {
             return;
@@ -705,7 +884,13 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Emits a store to a PHP local slot, updates type facts, and returns the stored value.
-    pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) -> LoweredValue {
+    pub(crate) fn store_local(
+        &mut self,
+        name: &str,
+        value: LoweredValue,
+        php_type: PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
         self.clear_static_callable_local(name);
         self.clear_reflection_class_local(name);
         self.clear_reflection_function_local(name);
@@ -722,9 +907,16 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             }
             return value;
         }
+        if self.should_store_to_eval_scope(name) {
+            return self.store_eval_scope_name(name, value, span);
+        }
         let previous_slot = self.local_slots.get(name).copied();
         let previous_type = self.local_type(name);
-        let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let previous_kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, previous_kind);
         let php_type = if uses_global {
             self.global_alias_type(name)
@@ -814,7 +1006,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             }
             return value;
         }
-        let is_ref_bound = self.is_ref_bound_local(name) && !uses_global && previous_kind == LocalKind::PhpLocal;
+        let is_ref_bound =
+            self.is_ref_bound_local(name) && !uses_global && previous_kind == LocalKind::PhpLocal;
         let op = match (is_ref_bound, previous_kind) {
             (true, _) => Op::StoreRefCell,
             (false, LocalKind::StaticLocal) => Op::StoreStaticLocal,
@@ -872,6 +1065,56 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         )
     }
 
+    /// Stores a synthetic foreach initializer in the local frame without eval-scope sync.
+    ///
+    /// Fresh `foreach` key/value locals need a concrete frame slot before the first
+    /// iteration, but PHP must not observe that setup when the iterable is empty.
+    /// Runtime eval-scope writes therefore use this path for the pre-loop null seed
+    /// and keep normal `store_local` for values assigned inside the loop body.
+    pub(crate) fn store_foreach_initializer_local_only(
+        &mut self,
+        name: &str,
+        value: LoweredValue,
+        php_type: PhpType,
+        span: Option<Span>,
+    ) -> LoweredValue {
+        let previous_slot = self.local_slots.get(name).copied();
+        let previous_kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
+        let slot = self.declare_local(name, php_type.clone());
+        self.builder
+            .widen_local_storage_type(slot, php_type.clone());
+        if local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
+        {
+            self.release_stored_local_value(name, slot, span);
+        }
+        if local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value(name, slot, span);
+        }
+        if local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_none()
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value(name, slot, span);
+        }
+        let source = value;
+        let release_source_after_store = self.value_needs_release_after_retaining_store(value);
+        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
+        self.store_slot_with_op(slot, stored, Op::StoreLocal, span);
+        self.set_local_type(name, php_type);
+        if release_source_after_store {
+            crate::ir_lower::ownership::release_if_owned(self, source, span);
+        }
+        stored
+    }
+
     /// Returns the declared PHP type for an extern global visible as a variable.
     fn extern_global_type(&self, name: &str) -> Option<PhpType> {
         self.extern_globals.get(name).cloned()
@@ -904,12 +1147,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Emits a write to a C extern global symbol using the already-lowered source value.
-    fn store_extern_global_name(
-        &mut self,
-        name: &str,
-        value: LoweredValue,
-        span: Option<Span>,
-    ) {
+    fn store_extern_global_name(&mut self, name: &str, value: LoweredValue, span: Option<Span>) {
         let data = self.intern_global_name(name);
         self.builder.emit_with_effects(
             Op::ExternGlobalStore,
@@ -938,7 +1176,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         self.clear_reflection_method_local(name);
         self.clear_reflection_arg_array_local(name);
         self.clear_fiber_start_sig(name);
-        let previous_kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let previous_kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
         let uses_global = self.uses_global_storage(name, previous_kind);
         let slot = self.declare_local(name, php_type.clone());
         if uses_global {
@@ -946,8 +1188,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             self.set_local_type(name, php_type);
             return value;
         }
-        let is_ref_bound =
-            self.is_ref_bound_local(name) && previous_kind == LocalKind::PhpLocal;
+        let is_ref_bound = self.is_ref_bound_local(name) && previous_kind == LocalKind::PhpLocal;
         match (is_ref_bound, previous_kind) {
             (true, _) => self.store_ref_cell_slot(slot, value, php_type, span),
             (false, LocalKind::StaticLocal) => {
@@ -963,7 +1204,12 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Emits `unset($local)`, breaking by-reference aliases without writing through them.
-    pub(crate) fn unset_local(&mut self, name: &str, null: LoweredValue, span: Option<Span>) -> LoweredValue {
+    pub(crate) fn unset_local(
+        &mut self,
+        name: &str,
+        null: LoweredValue,
+        span: Option<Span>,
+    ) -> LoweredValue {
         if !self.is_ref_bound_local(name) {
             return self.store_local(name, null, PhpType::Void, span);
         }
@@ -1276,10 +1522,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let op = self.builder.value_defining_op(value);
         (matches!(php_type, PhpType::Mixed | PhpType::Union(_))
             || (php_type.is_refcounted() && php_type != PhpType::Str))
-            && matches!(
-                op,
-                Some(Op::ArrayGet | Op::HashGet)
-            )
+            && matches!(op, Some(Op::ArrayGet | Op::HashGet))
     }
 
     /// Returns true for builtin calls whose return value is newly allocated for the caller.
@@ -1301,16 +1544,16 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 
     /// Returns true when straight-line callable binding metadata is safe for a local.
     pub(crate) fn can_track_static_callable_local(&self, name: &str) -> bool {
-        let kind = self.local_kinds.get(name).copied().unwrap_or(LocalKind::PhpLocal);
+        let kind = self
+            .local_kinds
+            .get(name)
+            .copied()
+            .unwrap_or(LocalKind::PhpLocal);
         !self.uses_global_storage(name, kind) && kind == LocalKind::PhpLocal
     }
 
     /// Records that a PHP local currently holds a compile-time-known callable.
-    pub(crate) fn bind_static_callable_local(
-        &mut self,
-        name: &str,
-        target: StaticCallableBinding,
-    ) {
+    pub(crate) fn bind_static_callable_local(&mut self, name: &str, target: StaticCallableBinding) {
         if self.can_track_static_callable_local(name) {
             self.static_callable_locals.insert(name.to_string(), target);
         }
@@ -1579,7 +1822,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let ownership = Ownership::for_php_type(&php_type);
         let value = self
             .builder
-            .emit_with_effects(op, operands, immediate, ir_type, php_type, ownership, effects, span)
+            .emit_with_effects(
+                op, operands, immediate, ir_type, php_type, ownership, effects, span,
+            )
             .expect("value opcode produces a value");
         LoweredValue { value, ir_type }
     }
@@ -1604,7 +1849,10 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
 fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
     matches!(
         kind,
-        LocalKind::PhpLocal | LocalKind::HiddenTemp | LocalKind::OwnedTemp | LocalKind::NamedArgTemp
+        LocalKind::PhpLocal
+            | LocalKind::HiddenTemp
+            | LocalKind::OwnedTemp
+            | LocalKind::NamedArgTemp
     )
 }
 
@@ -1703,10 +1951,14 @@ pub(crate) fn type_expr_to_php_type(type_expr: &TypeExpr) -> PhpType {
         TypeExpr::Never => PhpType::Never,
         TypeExpr::Iterable => PhpType::Iterable,
         TypeExpr::Array(inner) => PhpType::Array(Box::new(type_expr_to_php_type(inner))),
-        TypeExpr::Ptr(name) => PhpType::Pointer(name.as_ref().map(|name| name.as_str().to_string())),
+        TypeExpr::Ptr(name) => {
+            PhpType::Pointer(name.as_ref().map(|name| name.as_str().to_string()))
+        }
         TypeExpr::Buffer(inner) => PhpType::Buffer(Box::new(type_expr_to_php_type(inner))),
         TypeExpr::Named(name) => named_type_expr_to_php_type(name.as_str()),
-        TypeExpr::Nullable(inner) => PhpType::Union(vec![PhpType::Void, type_expr_to_php_type(inner)]),
+        TypeExpr::Nullable(inner) => {
+            PhpType::Union(vec![PhpType::Void, type_expr_to_php_type(inner)])
+        }
         TypeExpr::Union(members) => {
             PhpType::Union(members.iter().map(type_expr_to_php_type).collect())
         }

@@ -16,6 +16,7 @@ mod data;
 mod diagnostics;
 mod emitters;
 mod eval_bridge;
+mod eval_scope;
 mod exceptions;
 mod fibers;
 /// Runtime helpers for generator state management (yield, resume, stack frames).

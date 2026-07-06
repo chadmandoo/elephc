@@ -112,18 +112,36 @@ pub enum Immediate {
     Bool(bool),
     Data(DataId),
     LocalSlot(LocalSlotId),
-    LocalSlotPair { first: LocalSlotId, second: LocalSlotId },
+    LocalSlotPair {
+        first: LocalSlotId,
+        second: LocalSlotId,
+    },
     GlobalName(DataId),
     FunctionRef(FunctionId),
     BuiltinRef(BuiltinId),
     RuntimeRef(RuntimeId),
     ExternRef(u32),
     ClassRef(u32),
-    EnumCaseRef { enum_id: u32, case_id: u32 },
-    MethodRef { class: u32, method: u32 },
-    PropertyRef { class: u32, property: u32 },
-    FieldRef { layout: u32, field: u32 },
-    FunctionVariantRef { group: u32, variant: u32 },
+    EnumCaseRef {
+        enum_id: u32,
+        case_id: u32,
+    },
+    MethodRef {
+        class: u32,
+        method: u32,
+    },
+    PropertyRef {
+        class: u32,
+        property: u32,
+    },
+    FieldRef {
+        layout: u32,
+        field: u32,
+    },
+    FunctionVariantRef {
+        group: u32,
+        variant: u32,
+    },
     HeapKind(IrHeapKind),
     MixedTag(u8),
     MixedNumericOp(MixedNumericOp),
@@ -364,6 +382,8 @@ pub enum Op {
     FunctionVariantCall,
     BuiltinCall,
     EvalLiteralCall,
+    EvalScopeGet,
+    EvalScopeSet,
     EvalFunctionCall,
     EvalFunctionCallArray,
     EvalFunctionExists,
@@ -435,12 +455,49 @@ impl Op {
         use Effects as E;
         use Op::*;
         match self {
-            ConstI64 | ConstF64 | ConstStr | ConstNull | ConstBool | ConstClassName
-            | DataAddr | IAdd | ISub | IMul | IPow | INeg | IBitAnd | IBitOr | IBitXor
-            | IBitNot | IShl | IShrA | FAdd | FSub | FMul | FDiv | FPow | FNeg | ICmp
-            | FCmp | StrLen | IToF | FToI | BoolToStr | StrToI | StrToF | StrToNumber
-            | MixedTagOf | IsNull | IsTruthy | IsEmpty | FunctionVariantDispatch | PtrCast
-            | PtrOffset | Move | Borrow | Nop => E::PURE,
+            ConstI64
+            | ConstF64
+            | ConstStr
+            | ConstNull
+            | ConstBool
+            | ConstClassName
+            | DataAddr
+            | IAdd
+            | ISub
+            | IMul
+            | IPow
+            | INeg
+            | IBitAnd
+            | IBitOr
+            | IBitXor
+            | IBitNot
+            | IShl
+            | IShrA
+            | FAdd
+            | FSub
+            | FMul
+            | FDiv
+            | FPow
+            | FNeg
+            | ICmp
+            | FCmp
+            | StrLen
+            | IToF
+            | FToI
+            | BoolToStr
+            | StrToI
+            | StrToF
+            | StrToNumber
+            | MixedTagOf
+            | IsNull
+            | IsTruthy
+            | IsEmpty
+            | FunctionVariantDispatch
+            | PtrCast
+            | PtrOffset
+            | Move
+            | Borrow
+            | Nop => E::PURE,
             IDiv | ISDiv | ISMod | PtrCheckNonnull => E::MAY_FATAL,
             ICheckedAdd | ICheckedSub | ICheckedMul => E::ALLOC_HEAP | E::READS_HEAP,
             ConstEnumCase => E::ALLOC_HEAP,
@@ -450,14 +507,28 @@ impl Op {
             | FinallyExit => E::WRITES_LOCAL,
             PromoteLocalRefCell => {
                 E::READS_LOCAL | E::WRITES_LOCAL | E::ALLOC_HEAP | E::WRITES_HEAP | E::REFCOUNT_OP
-            },
+            }
             AliasLocalRefCell => E::READS_LOCAL | E::WRITES_LOCAL,
-            ReleaseLocalRefCell => E::READS_LOCAL | E::WRITES_LOCAL | E::WRITES_HEAP | E::REFCOUNT_OP,
-            LoadGlobal | LoadStaticProperty | LoadReflectionStaticProperty
-            | ReflectionStaticPropertyInitialized | ScopedConstantGet | ClassAttrNames
-            | ClassAttrArgs | ClassGetAttributes | CatchCurrent => E::READS_GLOBAL,
-            StoreGlobal | StoreStaticLocal | StoreStaticProperty | StoreReflectionStaticProperty
-            | InitStaticLocal | IncludeOnceMark | FunctionVariantMark | TryPushHandler
+            ReleaseLocalRefCell => {
+                E::READS_LOCAL | E::WRITES_LOCAL | E::WRITES_HEAP | E::REFCOUNT_OP
+            }
+            LoadGlobal
+            | LoadStaticProperty
+            | LoadReflectionStaticProperty
+            | ReflectionStaticPropertyInitialized
+            | ScopedConstantGet
+            | ClassAttrNames
+            | ClassAttrArgs
+            | ClassGetAttributes
+            | CatchCurrent => E::READS_GLOBAL,
+            StoreGlobal
+            | StoreStaticLocal
+            | StoreStaticProperty
+            | StoreReflectionStaticProperty
+            | InitStaticLocal
+            | IncludeOnceMark
+            | FunctionVariantMark
+            | TryPushHandler
             | TryPopHandler => E::WRITES_GLOBAL,
             IncludeOnceGuard => E::READS_GLOBAL | E::WRITES_GLOBAL,
             IToStr | FToStr | ResourceToStr | StrConcat | StrCharAt | StrInterpolate
@@ -511,14 +582,25 @@ impl Op {
                 E::READS_HEAP | E::ALLOC_HEAP | E::MAY_THROW
             }
             EvalFunctionExists | EvalClassExists | EvalConstantExists => E::READS_GLOBAL,
+            EvalScopeGet => E::READS_HEAP | E::MAY_FATAL,
+            EvalScopeSet => E::READS_HEAP | E::WRITES_HEAP | E::REFCOUNT_OP | E::MAY_FATAL,
             EvalConstantFetch => {
                 E::READS_GLOBAL | E::READS_HEAP | E::WRITES_HEAP | E::REFCOUNT_OP | E::MAY_FATAL
             }
-            Call | FunctionVariantCall | BuiltinCall | EvalLiteralCall | EvalFunctionCall
-            | EvalFunctionCallArray | EvalObjectNew | EvalStaticMethodCall | RuntimeCall
-            | ClosureCall | ExprCall | CallableDescriptorInvoke | PipeCall | FiberRuntimeCall => {
-                E::all().difference(E::REFCOUNT_OP)
-            }
+            Call
+            | FunctionVariantCall
+            | BuiltinCall
+            | EvalLiteralCall
+            | EvalFunctionCall
+            | EvalFunctionCallArray
+            | EvalObjectNew
+            | EvalStaticMethodCall
+            | RuntimeCall
+            | ClosureCall
+            | ExprCall
+            | CallableDescriptorInvoke
+            | PipeCall
+            | FiberRuntimeCall => E::all().difference(E::REFCOUNT_OP),
             ExternCall | ExternGlobalLoad | ExternGlobalStore => {
                 E::READS_HEAP | E::WRITES_HEAP | E::READS_PROCESS | E::WRITES_PROCESS | E::MAY_THROW
             }
@@ -729,6 +811,8 @@ impl Op {
             FunctionVariantCall => "function_variant_call",
             BuiltinCall => "builtin_call",
             EvalLiteralCall => "eval_literal_call",
+            EvalScopeGet => "eval_scope_get",
+            EvalScopeSet => "eval_scope_set",
             EvalFunctionCall => "eval_function_call",
             EvalFunctionCallArray => "eval_function_call_array",
             EvalFunctionExists => "eval_function_exists",

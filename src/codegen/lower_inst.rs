@@ -216,6 +216,8 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::ExternCall => externs::lower_extern_call(ctx, &inst),
         Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
         Op::EvalLiteralCall => builtins::lower_eval_literal_call(ctx, &inst),
+        Op::EvalScopeGet => builtins::lower_eval_scope_get(ctx, &inst),
+        Op::EvalScopeSet => builtins::lower_eval_scope_set(ctx, &inst),
         Op::EvalFunctionCall => builtins::lower_eval_function_call(ctx, &inst),
         Op::EvalFunctionCallArray => builtins::lower_eval_function_call_array(ctx, &inst),
         Op::EvalObjectNew => builtins::lower_eval_object_new(ctx, &inst),
@@ -4690,7 +4692,7 @@ fn lower_static_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     } else {
         None
     };
-    let eval_done_label = if late_bound_static && ctx.module.required_runtime_features.eval {
+    let eval_done_label = if late_bound_static && ctx.module.required_runtime_features.eval_bridge {
         let no_override_label = ctx.next_label("eval_late_static_no_override");
         let done_label = ctx.next_label("eval_late_static_done");
         builtins::lower_eval_native_frame_static_method_call(
@@ -5613,7 +5615,7 @@ fn emit_loaded_assoc_array_to_mixed(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {}
         Arch::X86_64 => {
-            ctx.emitter.instruction("mov rdi, rax");                            // pass the loaded associative-array argument to the Mixed conversion helper
+            ctx.emitter.instruction("mov rdi, rax"); // pass the loaded associative-array argument to the Mixed conversion helper
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_hash_to_mixed");
@@ -6735,9 +6737,9 @@ fn lower_load_global(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resul
     let data = expect_global_name(inst)?;
     let name = ctx.global_name_data(data)?;
     let symbol = ir_global_symbol(name);
-    let result = inst.result.ok_or_else(|| {
-        CodegenIrError::invalid_module("load_global missing result value")
-    })?;
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("load_global missing result value"))?;
     let ty = ctx.value_php_type(result)?;
     ctx.data
         .add_comm(symbol.clone(), ty.codegen_repr().stack_size().max(8));

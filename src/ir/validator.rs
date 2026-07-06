@@ -26,7 +26,10 @@ pub enum ValidationError {
     NoBlocks,
     NoEntryBlock,
     EntryBlockHasParams(BlockId),
-    BlockIdMismatch { expected: BlockId, actual: BlockId },
+    BlockIdMismatch {
+        expected: BlockId,
+        actual: BlockId,
+    },
     BlockMissingTerminator(BlockId),
     UnknownBlock(BlockId),
     UnknownInstruction(InstId),
@@ -126,7 +129,10 @@ fn validate_function_shape(function: &Function) -> Result<(), ValidationError> {
     if function.block(function.entry).is_none() {
         return Err(ValidationError::NoEntryBlock);
     }
-    if !function.blocks[function.entry.as_raw() as usize].params.is_empty() {
+    if !function.blocks[function.entry.as_raw() as usize]
+        .params
+        .is_empty()
+    {
         return Err(ValidationError::EntryBlockHasParams(function.entry));
     }
     for (index, block) in function.blocks.iter().enumerate() {
@@ -211,7 +217,14 @@ fn validate_instructions(
             validate_instruction_result(function, block.id, index as u32, *inst_id, inst)?;
             validate_instruction_effects(*inst_id, inst)?;
             validate_instruction_immediate(*inst_id, inst)?;
-            validate_instruction_operands(function, block.id, index as u32, *inst_id, inst, dominators)?;
+            validate_instruction_operands(
+                function,
+                block.id,
+                index as u32,
+                *inst_id,
+                inst,
+                dominators,
+            )?;
             validate_opcode_rules(function, *inst_id, inst)?;
         }
     }
@@ -243,7 +256,13 @@ fn validate_instruction_result(
             if value.ownership != inst.result_ownership {
                 return Err(ValidationError::OwnershipTypeMismatch(value_id));
             }
-            if value.def != (ValueDef::Instruction { block, index, inst: inst_id }) {
+            if value.def
+                != (ValueDef::Instruction {
+                    block,
+                    index,
+                    inst: inst_id,
+                })
+            {
                 return Err(ValidationError::ValueDefMismatch(value_id));
             }
             Ok(())
@@ -252,7 +271,10 @@ fn validate_instruction_result(
 }
 
 /// Validates that non-refinable opcodes carry their canonical effect set.
-fn validate_instruction_effects(inst_id: InstId, inst: &Instruction) -> Result<(), ValidationError> {
+fn validate_instruction_effects(
+    inst_id: InstId,
+    inst: &Instruction,
+) -> Result<(), ValidationError> {
     let expected = inst.op.default_effects();
     if !inst.op.allows_effect_refinement() && inst.effects != expected {
         return Err(ValidationError::EffectMismatch {
@@ -265,7 +287,10 @@ fn validate_instruction_effects(inst_id: InstId, inst: &Instruction) -> Result<(
 }
 
 /// Validates immediate shape for opcodes whose immediate is structurally required.
-fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result<(), ValidationError> {
+fn validate_instruction_immediate(
+    inst_id: InstId,
+    inst: &Instruction,
+) -> Result<(), ValidationError> {
     use Immediate as Imm;
     use Op::*;
     match inst.op {
@@ -290,6 +315,9 @@ fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result
         }),
         PromoteLocalRefCell | AliasLocalRefCell => require_immediate(inst_id, inst, "local slot pair", |imm| {
             matches!(imm, Imm::LocalSlotPair { .. })
+        }),
+        EvalScopeGet | EvalScopeSet => require_immediate(inst_id, inst, "global name", |imm| {
+            matches!(imm, Imm::GlobalName(_))
         }),
         ICmp | FCmp => require_immediate(inst_id, inst, "comparison predicate", |imm| {
             matches!(imm, Imm::CmpPredicate(_))
@@ -326,12 +354,18 @@ fn require_immediate(
     matches_expected: impl FnOnce(&Immediate) -> bool,
 ) -> Result<(), ValidationError> {
     let Some(imm) = inst.immediate.as_ref() else {
-        return Err(ValidationError::MissingImmediate { inst: inst_id, expected });
+        return Err(ValidationError::MissingImmediate {
+            inst: inst_id,
+            expected,
+        });
     };
     if matches_expected(imm) {
         Ok(())
     } else {
-        Err(ValidationError::MissingImmediate { inst: inst_id, expected })
+        Err(ValidationError::MissingImmediate {
+            inst: inst_id,
+            expected,
+        })
     }
 }
 
@@ -351,7 +385,11 @@ fn validate_instruction_operands(
 }
 
 /// Validates core opcode operand/result type rules.
-fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instruction) -> Result<(), ValidationError> {
+fn validate_opcode_rules(
+    function: &Function,
+    inst_id: InstId,
+    inst: &Instruction,
+) -> Result<(), ValidationError> {
     use Op::*;
     match inst.op {
         ConstI64 | ConstBool | ConstNull => check_count(inst_id, inst, 0, "0"),
@@ -363,7 +401,10 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         | EvalClassExists | EvalConstantExists | EvalConstantFetch | ConcatReset | GcCollect | Nop => {
             check_count(inst_id, inst, 0, "0")
         }
-        EvalLiteralCall | EvalFunctionCallArray => check_count(inst_id, inst, 1, "1"),
+        EvalLiteralCall | EvalFunctionCallArray | EvalScopeGet => {
+            check_count(inst_id, inst, 1, "1")
+        }
+        EvalScopeSet => check_count(inst_id, inst, 2, "2"),
         ClosureNew => Ok(()),
         FirstClassCallableNew => check_count_at_most(inst_id, inst, 1, "0 or 1"),
         ObjectNew => Ok(()),
@@ -393,17 +434,23 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         StrToI | StrToF | StrToNumber | StrLen | StrPersist => {
             check_unary(function, inst_id, inst, IrType::Str, "Str")
         }
-        StrConcat | StrEq | StrCmp | StrLooseEq => check_binary(function, inst_id, inst, IrType::Str, "Str"),
+        StrConcat | StrEq | StrCmp | StrLooseEq => {
+            check_binary(function, inst_id, inst, IrType::Str, "Str")
+        }
         StrCharAt => {
             check_count(inst_id, inst, 2, "2")?;
             check_operand_type(function, inst_id, inst, 0, IrType::Str, "Str")?;
             check_operand_type(function, inst_id, inst, 1, IrType::I64, "I64")
         }
         BufferNew => check_unary(function, inst_id, inst, IrType::I64, "I64"),
-        LoadLocal | LoadRefCell | LoadGlobal | LoadStaticLocal | LoadStaticProperty
-        | LoadReflectionStaticProperty | ReflectionStaticPropertyInitialized | ExternGlobalLoad => {
-            check_count(inst_id, inst, 0, "0")
-        }
+        LoadLocal
+        | LoadRefCell
+        | LoadGlobal
+        | LoadStaticLocal
+        | LoadStaticProperty
+        | LoadReflectionStaticProperty
+        | ReflectionStaticPropertyInitialized
+        | ExternGlobalLoad => check_count(inst_id, inst, 0, "0"),
         UnsetLocal | PromoteLocalRefCell | AliasLocalRefCell | ReleaseLocalRefCell => {
             check_count(inst_id, inst, 0, "0")
         }
@@ -415,9 +462,23 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
             check_count(inst_id, inst, 1, "1")
         }
         MixedTagOf | MixedUnbox | MixedCastBool | MixedCastInt | MixedCastFloat
-        | MixedCastString => check_heap_unary(function, inst_id, inst, IrHeapKind::Mixed, "Heap(Mixed)"),
-        ArrayUnion => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Array), "Heap(Array)"),
-        HashUnion => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)"),
+        | MixedCastString => {
+            check_heap_unary(function, inst_id, inst, IrHeapKind::Mixed, "Heap(Mixed)")
+        }
+        ArrayUnion => check_binary(
+            function,
+            inst_id,
+            inst,
+            IrType::Heap(IrHeapKind::Array),
+            "Heap(Array)",
+        ),
+        HashUnion => check_binary(
+            function,
+            inst_id,
+            inst,
+            IrType::Heap(IrHeapKind::Hash),
+            "Heap(Hash)",
+        ),
         ArrayHashUnion => check_array_hash_union(function, inst_id, inst),
         HashArrayUnion => check_hash_array_union(function, inst_id, inst),
         HashSpread => check_binary(function, inst_id, inst, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)"),
@@ -433,9 +494,17 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         }
         MixedArrayAppend => {
             check_count(inst_id, inst, 2, "2")?;
-            check_operand_type(function, inst_id, inst, 0, IrType::Heap(IrHeapKind::Mixed), "Heap(Mixed)")
+            check_operand_type(
+                function,
+                inst_id,
+                inst,
+                0,
+                IrType::Heap(IrHeapKind::Mixed),
+                "Heap(Mixed)",
+            )
         }
-        HashLen | HashGet | HashIsset | HashSet | HashAppend | HashEnsureUnique | HashCloneShallow => {
+        HashLen | HashGet | HashIsset | HashSet | HashAppend | HashEnsureUnique
+        | HashCloneShallow => {
             check_first_heap(function, inst_id, inst, IrHeapKind::Hash, "Heap(Hash)")
         }
         IterCurrentValueRef => check_count(inst_id, inst, 1, "1"),
@@ -469,8 +538,22 @@ fn check_array_hash_union(
     inst: &Instruction,
 ) -> Result<(), ValidationError> {
     check_count(inst_id, inst, 2, "2")?;
-    check_operand_type(function, inst_id, inst, 0, IrType::Heap(IrHeapKind::Array), "Heap(Array)")?;
-    check_operand_type(function, inst_id, inst, 1, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)")
+    check_operand_type(
+        function,
+        inst_id,
+        inst,
+        0,
+        IrType::Heap(IrHeapKind::Array),
+        "Heap(Array)",
+    )?;
+    check_operand_type(
+        function,
+        inst_id,
+        inst,
+        1,
+        IrType::Heap(IrHeapKind::Hash),
+        "Heap(Hash)",
+    )
 }
 
 /// Validates the operand shape for associative+indexed array union.
@@ -480,12 +563,31 @@ fn check_hash_array_union(
     inst: &Instruction,
 ) -> Result<(), ValidationError> {
     check_count(inst_id, inst, 2, "2")?;
-    check_operand_type(function, inst_id, inst, 0, IrType::Heap(IrHeapKind::Hash), "Heap(Hash)")?;
-    check_operand_type(function, inst_id, inst, 1, IrType::Heap(IrHeapKind::Array), "Heap(Array)")
+    check_operand_type(
+        function,
+        inst_id,
+        inst,
+        0,
+        IrType::Heap(IrHeapKind::Hash),
+        "Heap(Hash)",
+    )?;
+    check_operand_type(
+        function,
+        inst_id,
+        inst,
+        1,
+        IrType::Heap(IrHeapKind::Array),
+        "Heap(Array)",
+    )
 }
 
 /// Validates one exact operand count.
-fn check_count(inst_id: InstId, inst: &Instruction, expected: usize, expected_label: &'static str) -> Result<(), ValidationError> {
+fn check_count(
+    inst_id: InstId,
+    inst: &Instruction,
+    expected: usize,
+    expected_label: &'static str,
+) -> Result<(), ValidationError> {
     if inst.operands.len() == expected {
         Ok(())
     } else {
@@ -498,7 +600,12 @@ fn check_count(inst_id: InstId, inst: &Instruction, expected: usize, expected_la
 }
 
 /// Validates a minimum operand count.
-fn check_count_at_least(inst_id: InstId, inst: &Instruction, min: usize, expected_label: &'static str) -> Result<(), ValidationError> {
+fn check_count_at_least(
+    inst_id: InstId,
+    inst: &Instruction,
+    min: usize,
+    expected_label: &'static str,
+) -> Result<(), ValidationError> {
     if inst.operands.len() >= min {
         Ok(())
     } else {
@@ -511,7 +618,12 @@ fn check_count_at_least(inst_id: InstId, inst: &Instruction, min: usize, expecte
 }
 
 /// Validates a maximum operand count.
-fn check_count_at_most(inst_id: InstId, inst: &Instruction, max: usize, expected_label: &'static str) -> Result<(), ValidationError> {
+fn check_count_at_most(
+    inst_id: InstId,
+    inst: &Instruction,
+    max: usize,
+    expected_label: &'static str,
+) -> Result<(), ValidationError> {
     if inst.operands.len() <= max {
         Ok(())
     } else {
@@ -685,7 +797,9 @@ fn validate_terminators(
                 validate_branch_args(function, *default, default_args)?;
                 validate_terminator_uses(function, block.id, default_args, dominators)?;
             }
-            Terminator::Return { value } => validate_return(function, block.id, *value, dominators)?,
+            Terminator::Return { value } => {
+                validate_return(function, block.id, *value, dominators)?
+            }
             Terminator::Throw { value } => {
                 validate_use(function, *value, block.id, None, dominators)?;
             }
@@ -774,7 +888,11 @@ fn validate_terminator_uses(
 }
 
 /// Validates destination block argument count and type compatibility.
-fn validate_branch_args(function: &Function, target: BlockId, args: &[ValueId]) -> Result<(), ValidationError> {
+fn validate_branch_args(
+    function: &Function,
+    target: BlockId,
+    args: &[ValueId],
+) -> Result<(), ValidationError> {
     let Some(target_block) = function.block(target) else {
         return Err(ValidationError::UnknownBlock(target));
     };
@@ -871,9 +989,9 @@ fn definition_dominates_use(
                     .map(|set| set.contains(&block))
                     .unwrap_or(false)
         }
-        ValueDef::Instruction { block, index, .. } if block == use_block => {
-            use_inst_index.map(|use_index| index < use_index).unwrap_or(true)
-        }
+        ValueDef::Instruction { block, index, .. } if block == use_block => use_inst_index
+            .map(|use_index| index < use_index)
+            .unwrap_or(true),
         ValueDef::Instruction { block, .. } => dominators
             .get(&use_block)
             .map(|set| set.contains(&block))
@@ -1107,8 +1225,8 @@ fn php_type_compatible(ir_type: IrType, php_type: &PhpType) -> bool {
 /// Returns true when ownership is coherent with storage and PHP type metadata.
 fn ownership_compatible(ir_type: IrType, php_type: &PhpType, ownership: Ownership) -> bool {
     let php_type = php_type.codegen_repr();
-    let tracks_lifetime = ir_type.is_refcounted_storage()
-        || Ownership::php_type_needs_lifetime_tracking(&php_type);
+    let tracks_lifetime =
+        ir_type.is_refcounted_storage() || Ownership::php_type_needs_lifetime_tracking(&php_type);
     if tracks_lifetime {
         !matches!(ownership, Ownership::NonHeap)
     } else {

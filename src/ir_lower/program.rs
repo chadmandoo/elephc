@@ -9,19 +9,21 @@
 //!   statements themselves are no-ops inside `main`.
 //! - The module is validated before it is returned to CLI/test callers.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 
 use crate::codegen::platform::Target;
 use crate::codegen::RuntimeFeatures;
 use crate::intrinsics::IntrinsicCall;
 use crate::ir::{
-    validate_module, ExternDecl, ExternParamDecl, Function, Immediate, IrType, Module, Op,
-    TraitMethodInfo,
+    validate_module, ExternDecl, ExternParamDecl, Function, Immediate, IrType, LocalKind, Module,
+    Op, TraitMethodInfo,
 };
 use crate::ir_lower::{builtin_datetime, function, LoweringError};
 use crate::names::php_symbol_key;
-use crate::parser::ast::{ClassMethod, Expr, ExprKind, Program, Stmt, StmtKind, Visibility};
+use crate::parser::ast::{
+    ClassMethod, Expr, ExprKind, Program, StaticReceiver, Stmt, StmtKind, Visibility,
+};
 use crate::types::{CheckResult, ClassInfo, FunctionSig, InterfaceInfo, PhpType};
 
 /// Lowers an optimized typed AST program into a validated EIR module.
@@ -37,11 +39,29 @@ pub(crate) fn lower(
     module.global_constants = constants.clone();
     let fiber_return_sigs = crate::ir_lower::fibers::collect_fiber_return_sigs(program);
     populate_metadata(&mut module, program, check_result);
-    lower_function_declarations(program, &mut module, check_result, &constants, &fiber_return_sigs);
-    lower_class_like_methods(program, &mut module, check_result, &constants, &fiber_return_sigs);
+    lower_function_declarations(
+        program,
+        &mut module,
+        check_result,
+        &constants,
+        &fiber_return_sigs,
+    );
+    lower_class_like_methods(
+        program,
+        &mut module,
+        check_result,
+        &constants,
+        &fiber_return_sigs,
+    );
     lower_property_init_thunks(&mut module, check_result, &constants, &fiber_return_sigs);
     lower_builtin_reflection_methods(&mut module, check_result, &constants, &fiber_return_sigs);
-    function::lower_main(program, &mut module, check_result, &constants, &fiber_return_sigs);
+    function::lower_main(
+        program,
+        &mut module,
+        check_result,
+        &constants,
+        &fiber_return_sigs,
+    );
     lower_referenced_builtin_spl_methods(&mut module, check_result, &constants, &fiber_return_sigs);
     builtin_datetime::lower_referenced_builtin_datetime_methods(
         &mut module,
@@ -49,6 +69,7 @@ pub(crate) fn lower(
         &constants,
         &fiber_return_sigs,
     );
+    lower_literal_eval_aot_functions(&mut module, check_result, &constants, &fiber_return_sigs);
     include_lowered_runtime_features(&mut module);
     validate_module(&module)?;
     Ok(module)
@@ -195,7 +216,11 @@ fn dynamic_untyped_param_names(
 ) -> HashSet<String> {
     let mut names = HashSet::new();
     for (index, (name, php_type)) in signature.params.iter().enumerate() {
-        let declared = signature.declared_params.get(index).copied().unwrap_or(false);
+        let declared = signature
+            .declared_params
+            .get(index)
+            .copied()
+            .unwrap_or(false);
         let by_ref = signature.ref_params.get(index).copied().unwrap_or(false);
         let variadic = signature.variadic.as_deref() == Some(name.as_str());
         let preserved = matches!(php_type.codegen_repr(), PhpType::Callable)
@@ -249,10 +274,7 @@ fn stmt_returns_dynamic_param(stmt: &Stmt, dynamic_params: &HashSet<String>) -> 
         | StmtKind::IncludeOnceGuard { body, .. }
         | StmtKind::Synthetic(body) => body_returns_dynamic_param(body, dynamic_params),
         StmtKind::For {
-            init,
-            update,
-            body,
-            ..
+            init, update, body, ..
         } => {
             init.as_ref()
                 .is_some_and(|stmt| stmt_returns_dynamic_param(stmt.as_ref(), dynamic_params))
@@ -290,8 +312,7 @@ fn stmt_returns_dynamic_param(stmt: &Stmt, dynamic_params: &HashSet<String>) -> 
 fn expr_exposes_dynamic_param(expr: &Expr, dynamic_params: &HashSet<String>) -> bool {
     match &expr.kind {
         ExprKind::Variable(name) => dynamic_params.contains(name),
-        ExprKind::NullCoalesce { value, default }
-        | ExprKind::ShortTernary { value, default } => {
+        ExprKind::NullCoalesce { value, default } | ExprKind::ShortTernary { value, default } => {
             expr_exposes_dynamic_param(value, dynamic_params)
                 || expr_exposes_dynamic_param(default, dynamic_params)
         }
@@ -321,14 +342,18 @@ fn include_lowered_runtime_features(module: &mut Module) {
     module.required_runtime_features.regex |= features.regex;
     module.required_runtime_features.phar_archive |= features.phar_archive;
     module.required_runtime_features.descriptor_invoker |= features.descriptor_invoker;
-    module.required_runtime_features.eval |= features.eval;
+    module.required_runtime_features.eval_bridge |= features.eval_bridge;
+    module.required_runtime_features.eval_scope |= features.eval_scope;
 }
 
 /// Derives optional runtime features from the actual EIR instruction stream.
 fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
     let mut features = RuntimeFeatures::none();
     for function in all_lowered_functions(module) {
-        for inst in &function.instructions {
+        if function_contains_eval_state(function) {
+            features.eval_scope = true;
+        }
+        for (inst_index, inst) in function.instructions.iter().enumerate() {
             match inst.op {
                 Op::BuiltinCall => {
                     if builtin_call_requires_regex(module, inst) {
@@ -341,18 +366,25 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
                         features.descriptor_invoker = true;
                     }
                     if builtin_call_requires_eval(module, inst) {
-                        features.eval = true;
+                        features.eval_bridge = true;
                     }
                 }
-                Op::EvalLiteralCall
-                | Op::EvalFunctionCall
+                Op::EvalLiteralCall => {
+                    if eval_literal_call_requires_bridge(module, function, inst_index, inst) {
+                        features.eval_bridge = true;
+                    }
+                }
+                Op::EvalScopeGet | Op::EvalScopeSet => {
+                    features.eval_scope = true;
+                }
+                Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
                 | Op::EvalFunctionExists
                 | Op::EvalClassExists
                 | Op::EvalConstantExists
                 | Op::EvalConstantFetch
                 | Op::EvalStaticMethodCall => {
-                    features.eval = true;
+                    features.eval_bridge = true;
                 }
                 Op::ExprCall | Op::CallableDescriptorInvoke => {
                     features.descriptor_invoker = true;
@@ -362,6 +394,527 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
         }
     }
     features
+}
+
+/// Returns true when a lowered function owns hidden eval scope/context state.
+fn function_contains_eval_state(function: &Function) -> bool {
+    function.locals.iter().any(|local| {
+        matches!(
+            local.kind,
+            LocalKind::EvalContext | LocalKind::EvalScope | LocalKind::EvalGlobalScope
+        )
+    })
+}
+
+/// Returns true when a literal eval call still needs the magician bridge runtime.
+fn eval_literal_call_requires_bridge(
+    module: &Module,
+    function: &Function,
+    inst_index: usize,
+    inst: &crate::ir::Instruction,
+) -> bool {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return true;
+    };
+    let Some(fragment) = module.data.strings.get(data.as_raw() as usize) else {
+        return true;
+    };
+    if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
+        return false;
+    }
+    if eval_literal_call_can_use_direct_read_write(function, inst_index, fragment) {
+        return false;
+    }
+    if eval_literal_call_can_use_local_scalar_direct_sync(module, function, fragment) {
+        return false;
+    }
+    let plan = crate::eval_aot::plan_literal_fragment_with_source_path_and_static_and_method_calls(
+        fragment,
+        module.source_path.as_deref(),
+        |name, args| eval_literal_static_function_supported_by_module(module, name, args),
+        |receiver, method, args| {
+            eval_literal_static_method_supported_by_module(module, receiver, method, args)
+        },
+    );
+    if plan.uses_scope_read_params() {
+        return !eval_literal_call_can_use_scope_read_params(module, function, inst_index, &plan);
+    }
+    if plan.requires_runtime_eval_scope()
+        && !eval_literal_call_scope_constraints_supported(module, function, inst_index, &plan)
+    {
+        return true;
+    }
+    plan.requires_runtime_eval_bridge()
+}
+
+/// Returns true when a boxed read/write eval can read and update caller locals directly.
+fn eval_literal_call_can_use_direct_read_write(
+    function: &Function,
+    inst_index: usize,
+    fragment: &str,
+) -> bool {
+    let Some(writes) = crate::eval_aot::literal_fragment_direct_local_read_write_writes(fragment)
+    else {
+        return false;
+    };
+    writes.iter().all(|(name, kind)| {
+        let Some(slot) = eval_local_scalar_direct_sync_slot(function, name) else {
+            return false;
+        };
+        eval_direct_read_write_slot_initialized(function, slot.id, inst_index)
+            && eval_direct_read_write_kind_supported(function, slot, inst_index, *kind)
+    })
+}
+
+/// Returns true when a local slot is initialized before the eval instruction.
+fn eval_direct_read_write_slot_initialized(
+    function: &Function,
+    slot: crate::ir::LocalSlotId,
+    inst_index: usize,
+) -> bool {
+    if function
+        .params
+        .get(slot.as_raw() as usize)
+        .is_some_and(|param| !param.by_ref)
+    {
+        return true;
+    }
+    function
+        .instructions
+        .iter()
+        .take(inst_index)
+        .any(|inst| inst.op == Op::StoreLocal && inst.immediate == Some(Immediate::LocalSlot(slot)))
+}
+
+/// Returns true when a direct read/write value kind fits the caller slot type.
+fn eval_direct_read_write_kind_supported(
+    function: &Function,
+    slot: &crate::ir::LocalSlot,
+    inst_index: usize,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    match slot.php_type.codegen_repr() {
+        PhpType::Int => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        PhpType::Float => kind == crate::eval_aot::DirectLocalStoreScalarKind::Float,
+        PhpType::Mixed | PhpType::Union(_) => {
+            kind == crate::eval_aot::DirectLocalStoreScalarKind::Float
+                && eval_direct_read_write_previous_store_type(function, slot.id, inst_index)
+                    .is_some_and(|ty| matches!(ty.codegen_repr(), PhpType::Int | PhpType::Float))
+        }
+        _ => false,
+    }
+}
+
+/// Returns the source type of the latest direct local store before an eval instruction.
+fn eval_direct_read_write_previous_store_type(
+    function: &Function,
+    slot: crate::ir::LocalSlotId,
+    inst_index: usize,
+) -> Option<PhpType> {
+    function
+        .instructions
+        .iter()
+        .take(inst_index)
+        .rev()
+        .find(|inst| {
+            inst.op == Op::StoreLocal && inst.immediate == Some(Immediate::LocalSlot(slot))
+        })
+        .and_then(|inst| inst.operands.first().copied())
+        .and_then(|value| function.value(value))
+        .map(|value| value.php_type.codegen_repr())
+}
+
+/// Returns true when a read-only eval call can pass direct Mixed params safely.
+fn eval_literal_call_can_use_scope_read_params(
+    module: &Module,
+    function: &Function,
+    inst_index: usize,
+    plan: &crate::eval_aot::EvalAotPlan,
+) -> bool {
+    plan.reads().iter().all(|name| {
+        eval_literal_call_scope_read_param_supported(module, function, inst_index, name)
+    }) && plan.array_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_array_param_supported(module, function, inst_index, name)
+    }) && plan.assoc_array_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_assoc_array_param_supported(module, function, inst_index, name)
+    }) && plan.float_predicate_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_float_predicate_param_supported(
+            module, function, inst_index, name,
+        )
+    })
+}
+
+/// Returns true when scope-based eval AOT satisfies caller-side type constraints.
+fn eval_literal_call_scope_constraints_supported(
+    module: &Module,
+    function: &Function,
+    inst_index: usize,
+    plan: &crate::eval_aot::EvalAotPlan,
+) -> bool {
+    plan.array_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_array_param_supported(module, function, inst_index, name)
+    }) && plan.assoc_array_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_assoc_array_param_supported(module, function, inst_index, name)
+    }) && plan.float_predicate_read_constraints().iter().all(|name| {
+        eval_literal_call_scope_read_float_predicate_param_supported(
+            module, function, inst_index, name,
+        )
+    })
+}
+
+/// Returns true when one caller read can be boxed or represented as undefined null.
+fn eval_literal_call_scope_read_param_supported(
+    _module: &Module,
+    function: &Function,
+    inst_index: usize,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name) {
+        return false;
+    }
+    let Some(slot) = eval_local_scalar_direct_sync_slot(function, name) else {
+        return true;
+    };
+    eval_scope_read_param_type_supported(&slot.php_type)
+        && eval_direct_read_write_slot_initialized(function, slot.id, inst_index)
+}
+
+/// Returns true when one caller read is initialized with an array-compatible type.
+fn eval_literal_call_scope_read_array_param_supported(
+    _module: &Module,
+    function: &Function,
+    inst_index: usize,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name) {
+        return false;
+    }
+    let Some(slot) = eval_local_scalar_direct_sync_slot(function, name) else {
+        return false;
+    };
+    eval_scope_read_array_param_type_supported(&slot.php_type)
+        && eval_direct_read_write_slot_initialized(function, slot.id, inst_index)
+}
+
+/// Returns true when one caller read is initialized with an associative-array type.
+fn eval_literal_call_scope_read_assoc_array_param_supported(
+    _module: &Module,
+    function: &Function,
+    inst_index: usize,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name) {
+        return false;
+    }
+    let Some(slot) = eval_local_scalar_direct_sync_slot(function, name) else {
+        return false;
+    };
+    eval_scope_read_assoc_array_param_type_supported(&slot.php_type)
+        && eval_direct_read_write_slot_initialized(function, slot.id, inst_index)
+}
+
+/// Returns true when one caller read can feed IEEE float predicates safely.
+fn eval_literal_call_scope_read_float_predicate_param_supported(
+    _module: &Module,
+    function: &Function,
+    inst_index: usize,
+    name: &str,
+) -> bool {
+    if crate::superglobals::is_superglobal(name) {
+        return false;
+    }
+    let Some(slot) = eval_local_scalar_direct_sync_slot(function, name) else {
+        return false;
+    };
+    eval_scope_read_float_predicate_param_type_supported(&slot.php_type)
+        && eval_direct_read_write_slot_initialized(function, slot.id, inst_index)
+}
+
+/// Returns true when a caller local can be boxed into a direct eval read param.
+fn eval_scope_read_param_type_supported(ty: &PhpType) -> bool {
+    matches!(
+        ty.codegen_repr(),
+        PhpType::Int
+            | PhpType::Bool
+            | PhpType::Float
+            | PhpType::Str
+            | PhpType::Void
+            | PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Object(_)
+            | PhpType::Mixed
+            | PhpType::Union(_)
+    )
+}
+
+/// Returns true when a caller local satisfies array-only read-param semantics.
+fn eval_scope_read_array_param_type_supported(ty: &PhpType) -> bool {
+    matches!(
+        ty.codegen_repr(),
+        PhpType::Array(_) | PhpType::AssocArray { .. }
+    )
+}
+
+/// Returns true when a caller local satisfies associative-array-only semantics.
+fn eval_scope_read_assoc_array_param_type_supported(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::AssocArray { .. })
+}
+
+/// Returns true when a caller local can feed IEEE float predicates without TypeError.
+fn eval_scope_read_float_predicate_param_type_supported(ty: &PhpType) -> bool {
+    matches!(ty.codegen_repr(), PhpType::Int | PhpType::Float)
+}
+
+/// Returns true when the legacy local-scalar AOT path can avoid eval scope runtime.
+fn eval_literal_call_can_use_local_scalar_direct_sync(
+    module: &Module,
+    function: &Function,
+    fragment: &str,
+) -> bool {
+    let Some(writes) = crate::eval_aot::literal_fragment_local_scalar_writes_with_static_calls(
+        fragment,
+        |name, args| eval_literal_static_function_supported_by_module(module, name, args),
+    ) else {
+        return false;
+    };
+    writes.iter().all(|(name, kind)| {
+        eval_local_scalar_direct_sync_slot(function, name)
+            .is_none_or(|slot| eval_local_scalar_direct_sync_kind_supported(&slot.php_type, *kind))
+    })
+}
+
+/// Returns the caller local slot that would receive a direct local-scalar eval write.
+fn eval_local_scalar_direct_sync_slot<'a>(
+    function: &'a Function,
+    name: &str,
+) -> Option<&'a crate::ir::LocalSlot> {
+    function
+        .locals
+        .iter()
+        .find(|local| local.name.as_deref() == Some(name) && local.kind == LocalKind::PhpLocal)
+}
+
+/// Returns true when a local-scalar value can be stored in the caller slot type.
+fn eval_local_scalar_direct_sync_kind_supported(
+    target_ty: &PhpType,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    match target_ty.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => true,
+        PhpType::Int => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        PhpType::Float => kind == crate::eval_aot::DirectLocalStoreScalarKind::Float,
+        PhpType::Bool => kind == crate::eval_aot::DirectLocalStoreScalarKind::Bool,
+        PhpType::TaggedScalar => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        _ => false,
+    }
+}
+
+/// Returns true when a static function call matches the codegen-supported subset.
+fn eval_literal_static_function_supported_by_module(
+    module: &Module,
+    name: &str,
+    args: &[Expr],
+) -> bool {
+    if args.len() > 6 {
+        return false;
+    }
+    let key = php_symbol_key(name.trim_start_matches('\\'));
+    let Some(function) = module
+        .functions
+        .iter()
+        .find(|function| php_symbol_key(function.name.trim_start_matches('\\')) == key)
+    else {
+        return false;
+    };
+    let Some(signature) = &function.signature else {
+        return false;
+    };
+    crate::eval_aot::static_function_signature_supported(signature, args)
+}
+
+/// Returns true when a static method call matches the codegen-supported subset.
+fn eval_literal_static_method_supported_by_module(
+    module: &Module,
+    receiver: &StaticReceiver,
+    method: &str,
+    args: &[Expr],
+) -> bool {
+    if args.len() > 6 {
+        return false;
+    }
+    let StaticReceiver::Named(class_name) = receiver else {
+        return false;
+    };
+    let class_name = class_name.as_str().trim_start_matches('\\');
+    let method_key = php_symbol_key(method);
+    let Some(receiver_info) = module.class_infos.get(class_name) else {
+        return false;
+    };
+    if receiver_info
+        .static_method_visibilities
+        .get(&method_key)
+        .unwrap_or(&Visibility::Public)
+        != &Visibility::Public
+    {
+        return false;
+    }
+    let impl_class = receiver_info
+        .static_method_impl_classes
+        .get(&method_key)
+        .map(String::as_str)
+        .unwrap_or(class_name);
+    let Some(signature) = module
+        .class_infos
+        .get(impl_class)
+        .and_then(|class_info| class_info.static_methods.get(&method_key))
+    else {
+        return false;
+    };
+    crate::eval_aot::static_function_signature_supported(signature, args)
+}
+
+/// Adds internal EIR functions for literal eval fragments accepted by the EIR AOT subset.
+fn lower_literal_eval_aot_functions(
+    module: &mut Module,
+    check_result: &CheckResult,
+    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
+    fiber_return_sigs: &std::collections::HashMap<String, crate::types::FunctionSig>,
+) {
+    let candidates = collect_literal_eval_aot_function_candidates(module);
+    let mut lowered_names = all_lowered_functions(module)
+        .map(|function| function.name.clone())
+        .collect::<HashSet<_>>();
+    for (name, body) in candidates {
+        match body {
+            EvalAotFunctionCandidate::NoScope { body } => {
+                if !lowered_names.insert(name.clone()) {
+                    continue;
+                }
+                function::lower_eval_aot_function(
+                    &name,
+                    &body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
+            }
+            EvalAotFunctionCandidate::ScopeRead {
+                body,
+                reads,
+                direct_writes,
+                flush_writes,
+            } => {
+                if !lowered_names.insert(name.clone()) {
+                    continue;
+                }
+                function::lower_eval_aot_scope_read_function(
+                    &name,
+                    &body,
+                    &reads,
+                    &direct_writes,
+                    &flush_writes,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
+            }
+        }
+    }
+}
+
+/// Candidate shape for an internal eval AOT EIR function.
+enum EvalAotFunctionCandidate {
+    NoScope {
+        body: Program,
+    },
+    ScopeRead {
+        body: Program,
+        reads: BTreeSet<String>,
+        direct_writes: BTreeSet<String>,
+        flush_writes: BTreeSet<String>,
+    },
+}
+
+/// Collects unique literal eval fragments that can be emitted as no-scope EIR functions.
+fn collect_literal_eval_aot_function_candidates(
+    module: &Module,
+) -> Vec<(String, EvalAotFunctionCandidate)> {
+    let mut candidates = Vec::new();
+    let mut seen = HashSet::new();
+    for function in all_lowered_functions(module) {
+        for (inst_index, inst) in function.instructions.iter().enumerate() {
+            let Some(fragment) = eval_literal_fragment_from_inst(module, inst) else {
+                continue;
+            };
+            let mut plan =
+                crate::eval_aot::plan_literal_fragment_with_source_path_and_static_and_method_calls(
+                    &fragment,
+                    module.source_path.as_deref(),
+                    |name, args| {
+                        eval_literal_static_function_supported_by_module(module, name, args)
+                    },
+                    |receiver, method, args| {
+                        eval_literal_static_method_supported_by_module(
+                            module, receiver, method, args,
+                        )
+                    },
+                );
+            if let Some(name) = plan.take_function_name() {
+                if !seen.insert(name.clone()) {
+                    continue;
+                }
+                let Some(program) = plan.take_eir_program() else {
+                    continue;
+                };
+                candidates.push((name, EvalAotFunctionCandidate::NoScope { body: program }));
+                continue;
+            }
+            if crate::eval_aot::literal_fragment_direct_local_store_writes(&fragment).is_some()
+                || eval_literal_call_can_use_direct_read_write(function, inst_index, &fragment)
+                || eval_literal_call_can_use_local_scalar_direct_sync(module, function, &fragment)
+            {
+                continue;
+            }
+            let Some(name) = plan.take_scope_read_function_name() else {
+                continue;
+            };
+            if !seen.insert(name.clone()) {
+                continue;
+            };
+            let reads = plan.reads().clone();
+            let direct_writes = plan.direct_writes().clone();
+            let flush_writes = plan.flush_writes().clone();
+            let Some(program) = plan.take_scope_read_eir_program() else {
+                continue;
+            };
+            candidates.push((
+                name,
+                EvalAotFunctionCandidate::ScopeRead {
+                    body: program,
+                    reads,
+                    direct_writes,
+                    flush_writes,
+                },
+            ));
+        }
+    }
+    candidates
+}
+
+/// Returns the string payload from an `EvalLiteralCall` instruction.
+fn eval_literal_fragment_from_inst(
+    module: &Module,
+    inst: &crate::ir::Instruction,
+) -> Option<String> {
+    if inst.op != Op::EvalLiteralCall {
+        return None;
+    }
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return None;
+    };
+    module.data.strings.get(data.as_raw() as usize).cloned()
 }
 
 /// Iterates every function-like body already materialized into the EIR module.
@@ -932,7 +1485,13 @@ fn lower_function_declarations(
             StmtKind::NamespaceBlock { body, .. }
             | StmtKind::Synthetic(body)
             | StmtKind::IncludeOnceGuard { body, .. } => {
-                lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                lower_function_declarations(
+                    body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
             }
             StmtKind::If {
                 then_body,
@@ -940,12 +1499,30 @@ fn lower_function_declarations(
                 else_body,
                 ..
             } => {
-                lower_function_declarations(then_body, module, check_result, constants, fiber_return_sigs);
+                lower_function_declarations(
+                    then_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 for (_, body) in elseif_clauses {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = else_body {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::IfDef {
@@ -953,23 +1530,53 @@ fn lower_function_declarations(
                 else_body,
                 ..
             } => {
-                lower_function_declarations(then_body, module, check_result, constants, fiber_return_sigs);
+                lower_function_declarations(
+                    then_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 if let Some(body) = else_body {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::While { body, .. }
             | StmtKind::DoWhile { body, .. }
             | StmtKind::For { body, .. }
             | StmtKind::Foreach { body, .. } => {
-                lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                lower_function_declarations(
+                    body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
             }
             StmtKind::Switch { cases, default, .. } => {
                 for (_, body) in cases {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = default {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::Try {
@@ -977,12 +1584,30 @@ fn lower_function_declarations(
                 catches,
                 finally_body,
             } => {
-                lower_function_declarations(try_body, module, check_result, constants, fiber_return_sigs);
+                lower_function_declarations(
+                    try_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 for catch in catches {
-                    lower_function_declarations(&catch.body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        &catch.body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = finally_body {
-                    lower_function_declarations(body, module, check_result, constants, fiber_return_sigs);
+                    lower_function_declarations(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             _ => {}
@@ -1006,11 +1631,25 @@ fn lower_class_like_methods(
                     .get(name)
                     .map(|class_info| class_info.method_decls.as_slice())
                     .unwrap_or(methods.as_slice());
-                lower_methods_for_class_like(name, methods, module, check_result, constants, fiber_return_sigs);
+                lower_methods_for_class_like(
+                    name,
+                    methods,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
             }
             StmtKind::TraitDecl { .. } => {}
             StmtKind::InterfaceDecl { name, methods, .. } => {
-                lower_methods_for_class_like(name, methods, module, check_result, constants, fiber_return_sigs);
+                lower_methods_for_class_like(
+                    name,
+                    methods,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
             }
             StmtKind::EnumDecl { name, methods, .. } => {
                 // Enum methods are lowered like class methods on the case singleton; prefer the
@@ -1020,7 +1659,14 @@ fn lower_class_like_methods(
                     .get(name)
                     .map(|class_info| class_info.method_decls.as_slice())
                     .unwrap_or(methods.as_slice());
-                lower_methods_for_class_like(name, methods, module, check_result, constants, fiber_return_sigs);
+                lower_methods_for_class_like(
+                    name,
+                    methods,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
             }
             StmtKind::NamespaceBlock { body, .. }
             | StmtKind::Synthetic(body)
@@ -1033,12 +1679,30 @@ fn lower_class_like_methods(
                 else_body,
                 ..
             } => {
-                lower_class_like_methods(then_body, module, check_result, constants, fiber_return_sigs);
+                lower_class_like_methods(
+                    then_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 for (_, body) in elseif_clauses {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = else_body {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::IfDef {
@@ -1046,9 +1710,21 @@ fn lower_class_like_methods(
                 else_body,
                 ..
             } => {
-                lower_class_like_methods(then_body, module, check_result, constants, fiber_return_sigs);
+                lower_class_like_methods(
+                    then_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 if let Some(body) = else_body {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::While { body, .. }
@@ -1059,10 +1735,22 @@ fn lower_class_like_methods(
             }
             StmtKind::Switch { cases, default, .. } => {
                 for (_, body) in cases {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = default {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             StmtKind::Try {
@@ -1070,12 +1758,30 @@ fn lower_class_like_methods(
                 catches,
                 finally_body,
             } => {
-                lower_class_like_methods(try_body, module, check_result, constants, fiber_return_sigs);
+                lower_class_like_methods(
+                    try_body,
+                    module,
+                    check_result,
+                    constants,
+                    fiber_return_sigs,
+                );
                 for catch in catches {
-                    lower_class_like_methods(&catch.body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        &catch.body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
                 if let Some(body) = finally_body {
-                    lower_class_like_methods(body, module, check_result, constants, fiber_return_sigs);
+                    lower_class_like_methods(
+                        body,
+                        module,
+                        check_result,
+                        constants,
+                        fiber_return_sigs,
+                    );
                 }
             }
             _ => {}
@@ -1138,7 +1844,13 @@ fn lower_builtin_reflection_methods(
         "ReflectionUnionType",
         "ReflectionIntersectionType",
     ] {
-        lower_builtin_reflection_class_methods(class_name, module, check_result, constants, fiber_return_sigs);
+        lower_builtin_reflection_class_methods(
+            class_name,
+            module,
+            check_result,
+            constants,
+            fiber_return_sigs,
+        );
     }
 }
 
@@ -1162,10 +1874,11 @@ fn lower_builtin_reflection_class_methods(
         let method_key = crate::names::php_symbol_key(&method.name);
         let body = if class_name == "ReflectionAttribute" && method_key == "newinstance" {
             let function_attrs = function_attribute_sources(module);
-            generated_body = crate::codegen::reflection::build_attribute_new_instance_body_with_extra(
-                &check_result.classes,
-                &function_attrs,
-            );
+            generated_body =
+                crate::codegen::reflection::build_attribute_new_instance_body_with_extra(
+                    &check_result.classes,
+                    &function_attrs,
+                );
             generated_body.as_slice()
         } else if class_name == "ReflectionAttribute" && method_key == "getarguments" {
             // Materialize captured attribute arguments through the normal array
@@ -1236,7 +1949,14 @@ fn lower_referenced_builtin_spl_methods(
 
         let before = module.class_methods.len();
         for (class_name, method_key) in methods {
-            lower_builtin_spl_method(&class_name, &method_key, module, check_result, constants, fiber_return_sigs);
+            lower_builtin_spl_method(
+                &class_name,
+                &method_key,
+                module,
+                check_result,
+                constants,
+                fiber_return_sigs,
+            );
         }
         for method in module.class_methods.iter_mut().skip(before) {
             method.flags.is_synthetic = true;
@@ -1575,7 +2295,11 @@ fn push_builtin_spl_interface_metadata_methods(
         return;
     };
     let mut seen = HashSet::new();
-    let mut stack = class_info.interfaces.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut stack = class_info
+        .interfaces
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     while let Some(interface_name) = stack.pop() {
         if !seen.insert(interface_name.to_string()) {
             continue;
@@ -1590,12 +2314,7 @@ fn push_builtin_spl_interface_metadata_methods(
                     continue;
                 }
             }
-            push_supported_builtin_spl_method_for_receiver(
-                methods,
-                module,
-                class_name,
-                method_key,
-            );
+            push_supported_builtin_spl_method_for_receiver(methods, module, class_name, method_key);
         }
         stack.extend(interface_info.parents.iter().map(String::as_str));
     }
@@ -1874,18 +2593,14 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
             "__construct" | "current" | "key" | "getflags" | "setflags"
         ),
         "GlobIterator" => matches!(method_key, "__construct" | "count" | "setflags"),
-        "RecursiveDirectoryIterator" => matches!(
-            method_key,
-            "__construct" | "haschildren" | "getchildren"
-        ),
+        "RecursiveDirectoryIterator" => {
+            matches!(method_key, "__construct" | "haschildren" | "getchildren")
+        }
         "RecursiveCachingIterator" => matches!(
             method_key,
             "__construct" | "haschildren" | "getchildren" | "__elephcassumerecursiveiterator"
         ),
-        "EmptyIterator" => matches!(
-            method_key,
-            "current" | "key" | "next" | "rewind" | "valid"
-        ),
+        "EmptyIterator" => matches!(method_key, "current" | "key" | "next" | "rewind" | "valid"),
         "ArrayIterator" => matches!(
             method_key,
             "__construct"
@@ -2109,12 +2824,7 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
         ),
         "IteratorIterator" => matches!(
             method_key,
-            "current"
-                | "key"
-                | "next"
-                | "rewind"
-                | "valid"
-                | "getinneriterator"
+            "current" | "key" | "next" | "rewind" | "valid" | "getinneriterator"
         ),
         "LimitIterator" => matches!(
             method_key,
@@ -2256,7 +2966,11 @@ fn is_supported_builtin_spl_method(class_name: &str, method_key: &str) -> bool {
 }
 
 /// Returns true when this SPL method is implemented by an intrinsic runtime wrapper.
-fn runtime_intrinsic_method_has_wrapper(class_name: &str, method_key: &str, is_static: bool) -> bool {
+fn runtime_intrinsic_method_has_wrapper(
+    class_name: &str,
+    method_key: &str,
+    is_static: bool,
+) -> bool {
     let intrinsic = if is_static {
         IntrinsicCall::static_method(class_name, method_key)
     } else {

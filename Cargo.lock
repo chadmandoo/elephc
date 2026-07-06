@@ -617,6 +617,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "elephc-image"
+version = "0.1.0"
+dependencies = [
+ "font8x8",
+ "image",
+ "kamadak-exif",
+ "tiny-skia",
+]
+
+[[package]]
 name = "elephc-magician"
 version = "0.1.0"
 dependencies = [
@@ -625,16 +635,6 @@ dependencies = [
  "flate2",
  "libc",
  "unicode-segmentation",
-]
-
-[[package]]
-name = "elephc-image"
-version = "0.1.0"
-dependencies = [
- "font8x8",
- "image",
- "kamadak-exif",
- "tiny-skia",
 ]
 
 [[package]]
