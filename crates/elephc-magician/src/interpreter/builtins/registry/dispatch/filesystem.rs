@@ -55,24 +55,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_binary_path_bool_result(name, *from, *to, context, values)?
         }
-        "file" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_file_result(*filename, context, values)?
-        }
-        "file_get_contents" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_file_get_contents_result(*filename, context, values)?
-        }
-        "file_put_contents" => {
-            let [filename, data] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_file_put_contents_result(*filename, *data, context, values)?
-        }
         "fclose"
         | "fgetc"
         | "fgets"
@@ -184,12 +166,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
                 return Err(EvalStatus::RuntimeFatal);
             };
             eval_fwrite_result(*stream, *data, context, values)?
-        }
-        "readfile" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_readfile_result(*filename, context, values)?
         }
         "readline" => {
             if evaluated_args.len() > 1 {

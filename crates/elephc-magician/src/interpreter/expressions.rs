@@ -1592,9 +1592,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "eval" => eval_nested_eval(args, context, scope, values),
         "explode" => eval_builtin_explode(args, context, scope, values),
-        "file" => eval_builtin_file(args, context, scope, values),
-        "file_get_contents" => eval_builtin_file_get_contents(args, context, scope, values),
-        "file_put_contents" => eval_builtin_file_put_contents(args, context, scope, values),
         "fclose"
         | "fgetc"
         | "fgets"
@@ -1675,7 +1672,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "putenv" => eval_builtin_putenv(args, context, scope, values),
         "rand" | "mt_rand" => eval_builtin_rand(args, context, scope, values),
         "random_int" => eval_builtin_random_int(args, context, scope, values),
-        "readfile" => eval_builtin_readfile(args, context, scope, values),
         "readline" => eval_builtin_readline(args, context, scope, values),
         "scandir" => eval_builtin_scandir(args, context, scope, values),
         "isset" => eval_builtin_isset(args, context, scope, values),

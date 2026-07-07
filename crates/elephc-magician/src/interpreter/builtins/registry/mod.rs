@@ -208,7 +208,10 @@ mod tests {
             "dirname",
             "disk_free_space",
             "disk_total_space",
+            "file",
             "file_exists",
+            "file_get_contents",
+            "file_put_contents",
             "fileatime",
             "filectime",
             "filegroup",
@@ -279,6 +282,7 @@ mod tests {
             "preg_split",
             "range",
             "rawurlencode",
+            "readfile",
             "readlink",
             "realpath",
             "realpath_cache_get",
@@ -506,6 +510,22 @@ mod tests {
         );
         assert_eq!(
             eval_declared_builtin_param_names("file_exists"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("file"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("file_get_contents"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("file_put_contents"),
+            Some(["filename", "data"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("readfile"),
             Some(["filename"].as_slice())
         );
         assert_eq!(

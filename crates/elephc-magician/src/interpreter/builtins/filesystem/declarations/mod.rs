@@ -16,7 +16,10 @@ mod basename;
 mod dirname;
 mod disk_free_space;
 mod disk_total_space;
+mod file;
 mod file_exists;
+mod file_get_contents;
+mod file_put_contents;
 mod fileatime;
 mod filectime;
 mod filegroup;
@@ -39,6 +42,7 @@ mod is_writeable;
 mod linkinfo;
 mod lstat;
 mod pathinfo;
+mod readfile;
 mod readlink;
 mod realpath;
 mod realpath_cache_get;
@@ -67,6 +71,9 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         }
         "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
         | "fileperms" => eval_builtin_file_stat_scalar(name, args, context, scope, values),
+        "file" => eval_builtin_file(args, context, scope, values),
+        "file_get_contents" => eval_builtin_file_get_contents(args, context, scope, values),
+        "file_put_contents" => eval_builtin_file_put_contents(args, context, scope, values),
         "filesize" => eval_builtin_filesize(args, context, scope, values),
         "filetype" => eval_builtin_filetype(args, context, scope, values),
         "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
@@ -74,6 +81,7 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "glob" => eval_builtin_glob(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
         "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
+        "readfile" => eval_builtin_readfile(args, context, scope, values),
         "readlink" => eval_builtin_readlink(args, context, scope, values),
         "realpath" => eval_builtin_realpath(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
@@ -119,6 +127,18 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
             [filename] => eval_file_stat_scalar_result(name, *filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
+        "file" => match evaluated_args {
+            [filename] => eval_file_result(*filename, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "file_get_contents" => match evaluated_args {
+            [filename] => eval_file_get_contents_result(*filename, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "file_put_contents" => match evaluated_args {
+            [filename, data] => eval_file_put_contents_result(*filename, *data, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
         "filesize" => match evaluated_args {
             [filename] => eval_filesize_result(*filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
@@ -149,6 +169,10 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
         "pathinfo" => match evaluated_args {
             [path] => eval_pathinfo_result(*path, None, values),
             [path, flags] => eval_pathinfo_result(*path, Some(*flags), values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "readfile" => match evaluated_args {
+            [filename] => eval_readfile_result(*filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
         "readlink" => match evaluated_args {

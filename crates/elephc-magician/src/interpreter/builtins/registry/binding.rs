@@ -191,8 +191,7 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         | "fstat"
         | "stream_get_meta_data" => Some(&["stream"]),
         "fgetcsv" => Some(&["stream", "length", "separator"]),
-        "file" | "file_get_contents" | "readfile" | "unlink" => Some(&["filename"]),
-        "file_put_contents" => Some(&["filename", "data"]),
+        "unlink" => Some(&["filename"]),
         "fopen" => Some(&["filename", "mode", "use_include_path", "context"]),
         "fputcsv" => Some(&["stream", "fields", "separator", "enclosure"]),
         "fprintf" => Some(&["stream", "format", "values"]),
