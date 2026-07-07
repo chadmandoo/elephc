@@ -76,14 +76,10 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "get_class" | "get_parent_class" => optional(params, 0),
         "is_a" | "is_subclass_of" => optional(params, 2),
 
-        "getdate" | "hrtime" => optional(params, 0),
         "header" => optional(params, 1),
         "http_response_code" => optional(params, 0),
         "is_callable" => optional_by_ref(params, 1, &["callable_name"]),
-        "localtime" => optional(params, 0),
-        "microtime" | "php_uname" | "readline" | "umask" | "exit" | "die" => {
-            optional(params, 0)
-        }
+        "php_uname" | "readline" | "umask" | "exit" | "die" => optional(params, 0),
 
         "explode" => optional(params, 2),
         "implode" => optional(params, 1),
@@ -109,8 +105,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "array_reduce" => optional(params, 2),
         "array_walk" | "usort" | "uksort" | "uasort" => fixed_by_ref(params, &["array"]),
         "call_user_func" => variadic(params, &[]),
-
-        "date" | "gmdate" | "strtotime" => optional(params, 1),
 
         "preg_match" | "preg_match_all" => optional_by_ref(params, 2, &["matches"]),
         "preg_split" => optional(params, 2),
@@ -170,16 +164,11 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("is_a", 2) => Bool(false),
         ("is_subclass_of", 2) => Bool(true),
 
-        ("getdate", 0) => Null,
         ("header", 1) => Bool(true),
         ("header", 2) => Int(0),
-        ("hrtime", 0) => Bool(false),
         ("http_response_code", 0) => Int(0),
         ("is_callable", 1) => Bool(false),
         ("is_callable", 2) => Null,
-        ("localtime", 0) => Null,
-        ("localtime", 1) => Bool(false),
-        ("microtime", 0) => Bool(false),
         ("php_uname", 0) => String("a"),
         ("readline" | "umask", 0) => Null,
         ("exit" | "die", 0) => Int(0),
@@ -198,8 +187,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("array_filter", 2) => Int(0),
         ("array_reduce", 2) => Null,
 
-        ("date" | "gmdate", 1) => Null,
-        ("strtotime", 1) => Null,
         ("preg_match" | "preg_match_all", 2) => EmptyArray,
         ("preg_match" | "preg_match_all", 3) => Int(0),
         ("preg_split", 2) => Int(-1),

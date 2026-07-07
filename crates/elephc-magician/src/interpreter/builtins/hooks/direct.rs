@@ -30,7 +30,7 @@ use super::super::{
     eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_string_case,
     eval_builtin_string_compare, eval_builtin_string_position, eval_builtin_string_search,
     eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace,
-    eval_builtin_trim_like, eval_builtin_ucwords, eval_builtin_wordwrap,
+    eval_builtin_time_call, eval_builtin_trim_like, eval_builtin_ucwords, eval_builtin_wordwrap,
 };
 
 /// Direct expression-level dispatch hooks for migrated builtins.
@@ -146,6 +146,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Substr,
     /// Dispatches `substr_replace(...)`.
     SubstrReplace,
+    /// Dispatches date, time, and sleep builtins.
+    Time,
     /// Dispatches trim-family builtins.
     TrimLike,
     /// Dispatches scalar and container type predicates.
@@ -230,6 +232,7 @@ impl EvalDirectHook {
             Self::Strstr => eval_builtin_strstr(args, context, scope, values),
             Self::Substr => eval_builtin_substr(args, context, scope, values),
             Self::SubstrReplace => eval_builtin_substr_replace(args, context, scope, values),
+            Self::Time => eval_builtin_time_call(name, args, context, scope, values),
             Self::TrimLike => eval_builtin_trim_like(name, args, context, scope, values),
             Self::TypePredicate => eval_builtin_type_predicate(name, args, context, scope, values),
             Self::Ucwords => eval_builtin_ucwords(args, context, scope, values),

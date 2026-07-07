@@ -28,6 +28,8 @@ pub(in crate::interpreter) enum EvalArea {
     Math,
     /// String-processing builtins.
     String,
+    /// Date, time, and sleep builtins.
+    Time,
     /// Scalar conversion and type-related builtins.
     Types,
 }

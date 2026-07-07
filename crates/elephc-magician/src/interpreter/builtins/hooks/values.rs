@@ -27,9 +27,9 @@ use super::super::{
     eval_range_result, eval_slashes_result, eval_str_pad_result, eval_str_replace_result,
     eval_str_repeat_result, eval_str_split_result, eval_string_case_result,
     eval_string_compare_result, eval_string_position_result, eval_string_search_result,
-    eval_strstr_result, eval_substr_replace_result, eval_substr_result, eval_trim_like_result,
-    eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result, eval_url_encode_result,
-    eval_wordwrap_result,
+    eval_strstr_result, eval_substr_replace_result, eval_substr_result, eval_time_values_result,
+    eval_trim_like_result, eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result,
+    eval_url_encode_result, eval_wordwrap_result,
 };
 
 /// Evaluated-argument dispatch hooks for migrated builtins.
@@ -145,6 +145,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Substr,
     /// Dispatches `substr_replace(...)`.
     SubstrReplace,
+    /// Dispatches date, time, and sleep builtins.
+    Time,
     /// Dispatches trim-family builtins.
     TrimLike,
     /// Dispatches scalar and container type predicates.
@@ -353,6 +355,7 @@ impl EvalValuesHook {
                 }
                 _ => Err(EvalStatus::RuntimeFatal),
             },
+            Self::Time => eval_time_values_result(name, evaluated_args, context, values),
             Self::TrimLike => match evaluated_args {
                 [value] => eval_trim_like_result(name, *value, None, values),
                 [value, mask] => eval_trim_like_result(name, *value, Some(*mask), values),

@@ -188,14 +188,22 @@ mod tests {
             "boolval",
             "base64_encode",
             "bin2hex",
+            "checkdate",
             "count",
             "ctype_alpha",
+            "date",
+            "date_default_timezone_get",
+            "date_default_timezone_set",
             "floatval",
+            "getdate",
             "gettype",
+            "gmdate",
+            "gmmktime",
             "grapheme_strrev",
             "hash_equals",
             "hex2bin",
             "htmlspecialchars",
+            "hrtime",
             "intval",
             "is_array",
             "is_bool",
@@ -220,21 +228,28 @@ mod tests {
             "json_last_error",
             "json_last_error_msg",
             "json_validate",
+            "localtime",
             "log",
+            "microtime",
             "min",
+            "mktime",
             "nl2br",
             "number_format",
             "range",
             "rawurlencode",
+            "sleep",
             "str_contains",
             "str_pad",
             "str_replace",
             "strlen",
             "str_repeat",
             "strrev",
+            "strtotime",
             "substr",
+            "time",
             "trim",
             "strval",
+            "usleep",
             "wordwrap",
         ] {
             assert!(
@@ -323,5 +338,46 @@ mod tests {
             eval_declared_builtin_param_names("json_last_error"),
             Some([].as_slice())
         );
+        assert_eq!(
+            eval_declared_builtin_param_names("date"),
+            Some(["format", "timestamp"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("date", 1),
+            Some(EvalBuiltinDefaultValue::Null)
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("date_default_timezone_get"),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("getdate"),
+            Some(["timestamp"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("hrtime"),
+            Some(["as_number"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("hrtime", 0),
+            Some(EvalBuiltinDefaultValue::Bool(false))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("localtime", 0),
+            Some(EvalBuiltinDefaultValue::Null)
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("localtime", 1),
+            Some(EvalBuiltinDefaultValue::Bool(false))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("microtime"),
+            Some(["as_float"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("strtotime"),
+            Some(["datetime", "baseTimestamp"].as_slice())
+        );
+        assert_eq!(eval_declared_builtin_param_names("time"), Some([].as_slice()));
     }
 }

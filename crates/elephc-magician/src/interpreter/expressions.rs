@@ -1584,14 +1584,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "copy" | "link" | "rename" | "symlink" => {
             eval_builtin_binary_path_bool(name, args, context, scope, values)
         }
-        "checkdate" => eval_builtin_checkdate(args, context, scope, values),
-        "date" | "gmdate" => eval_builtin_date_like(name, args, context, scope, values),
-        "date_default_timezone_get" => {
-            eval_builtin_date_default_timezone_get(args, context, values)
-        }
-        "date_default_timezone_set" => {
-            eval_builtin_date_default_timezone_set(args, context, scope, values)
-        }
         "define" => eval_builtin_define(args, context, scope, values),
         "defined" => eval_builtin_defined(args, context, scope, values),
         "dirname" => eval_builtin_dirname(args, context, scope, values),
@@ -1640,7 +1632,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "function_exists" | "is_callable" => {
             eval_builtin_function_probe(name, args, context, scope, values)
         }
-        "getdate" => eval_builtin_getdate(args, context, scope, values),
         "gethostbyaddr" => eval_builtin_gethostbyaddr(args, context, scope, values),
         "gethostbyname" => eval_builtin_gethostbyname(args, context, scope, values),
         "gethostname" => eval_builtin_gethostname(args, values),
@@ -1683,13 +1674,9 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "iterator_to_array" => eval_builtin_iterator_to_array(args, context, scope, values),
         "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable" | "is_writable"
         | "is_writeable" => eval_builtin_file_probe(name, args, context, scope, values),
-        "hrtime" => eval_builtin_hrtime(args, context, scope, values),
         "http_response_code" => eval_builtin_http_response_code(args, context, scope, values),
         "ip2long" => eval_builtin_ip2long(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
-        "localtime" => eval_builtin_localtime(args, context, scope, values),
-        "microtime" => eval_builtin_microtime(args, context, scope, values),
-        "mktime" | "gmmktime" => eval_builtin_mktime_like(name, args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),
         "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
         "php_uname" => eval_builtin_php_uname(args, context, scope, values),
@@ -1719,7 +1706,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
         "scandir" => eval_builtin_scandir(args, context, scope, values),
         "isset" => eval_builtin_isset(args, context, scope, values),
-        "sleep" => eval_builtin_sleep(args, context, scope, values),
         "spl_autoload_register" | "spl_autoload_unregister" => {
             eval_builtin_spl_autoload_bool(name, args, context, scope, values)
         }
@@ -1740,7 +1726,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "sprintf" | "printf" => eval_builtin_sprintf_like(name, args, context, scope, values),
         "sys_get_temp_dir" => eval_builtin_sys_get_temp_dir(args, values),
         "tempnam" => eval_builtin_tempnam(args, context, scope, values),
-        "time" => eval_builtin_time(args, values),
         "touch" => eval_builtin_touch(args, context, scope, values),
         "tmpfile" => eval_builtin_tmpfile(args, context, values),
         "stream_is_local" | "stream_supports_lock" => {
@@ -1815,12 +1800,10 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
             eval_builtin_stream_set_buffer_like(name, args, context, scope, values)
         }
         "stream_set_timeout" => eval_builtin_stream_set_timeout(args, context, scope, values),
-        "strtotime" => eval_builtin_strtotime(args, context, scope, values),
         "unlink" => eval_builtin_unlink(args, context, scope, values),
         "long2ip" => eval_builtin_long2ip(args, context, scope, values),
         "unset" => eval_builtin_unset(args, context, scope, values),
         "umask" => eval_builtin_umask(args, context, scope, values),
-        "usleep" => eval_builtin_usleep(args, context, scope, values),
         "var_dump" => eval_builtin_var_dump(args, context, scope, values),
         "vfprintf" => eval_builtin_vfprintf(args, context, scope, values),
         "vsprintf" | "vprintf" => eval_builtin_vsprintf_like(name, args, context, scope, values),
