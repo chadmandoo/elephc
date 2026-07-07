@@ -2377,13 +2377,9 @@ fn array_map_callback_array_element_type(ty: PhpType) -> Result<PhpType> {
     match ty.codegen_repr() {
         PhpType::Array(elem) => {
             let elem = elem.codegen_repr();
-            if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never | PhpType::Mixed) {
+            if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Str | PhpType::Void | PhpType::Never | PhpType::Mixed | PhpType::Object(_)) {
                 return Ok(elem);
             }
-            // Object-element array_map result-collection is not yet correct in the
-            // EIR backend (the mapped callback receives the wrong element); walled
-            // here so the checker reports it early rather than miscompiling (EC-28
-            // follow-up).
             Err(CodegenIrError::unsupported(format!(
                 "array_map indexed-array element PHP type {:?}",
                 elem

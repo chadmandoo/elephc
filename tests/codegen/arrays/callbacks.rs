@@ -1265,3 +1265,21 @@ main();
     );
     assert_eq!(out, "yy1:2:2,4,6,8");
 }
+
+/// EC-28b (#519): array_map over an OBJECT-element source array — the callback receives each
+/// object and the result array collects the callback's return values. Covers a string-returning
+/// and an int-returning callback. Byte-identical to PHP 8.5. (The prior "0,0" miscompile was
+/// resolved by the upstream-sync array-element handling; the EIR wall is now lifted.)
+#[test]
+fn test_array_map_over_object_elements() {
+    let out = compile_and_run(
+        r#"<?php
+final class Box { public function __construct(public string $v, public int $n) {} }
+$boxes = [new Box("a", 1), new Box("b", 2), new Box("c", 3)];
+echo implode(",", array_map(fn(Box $b): string => $b->v, $boxes));
+echo "|";
+echo implode(",", array_map(fn(Box $b): int => $b->n * 10, $boxes));
+"#,
+    );
+    assert_eq!(out, "a,b,c|10,20,30");
+}
