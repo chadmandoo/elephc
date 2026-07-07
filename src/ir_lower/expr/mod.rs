@@ -1568,7 +1568,11 @@ fn lower_conditional_non_local_null_coalesce_assignment(
     else {
         return None;
     };
-    let current = lower_expr(ctx, current);
+    // Probe the current value with the same missing-tolerant lowering `??`
+    // uses (silent array/hash reads that yield a null-detectable value) — a
+    // plain read's miss result is typed as the element type and `is_null`
+    // would never take the assign branch.
+    let current = lower_null_coalesce_value(ctx, current);
     let is_null = ctx.emit_value(
         Op::IsNull,
         vec![current.value],
@@ -7399,7 +7403,19 @@ fn lower_array_access_with_missing_warning(
     expr: &Expr,
     warn_on_missing: bool,
 ) -> LoweredValue {
-    let array_value = lower_expr(ctx, array);
+    // A missing-tolerant probe silences the WHOLE receiver chain: PHP's
+    // `$a["x"]["y"] ?? $d` neither warns nor errors when "x" is absent — the
+    // inner read yields null and the nullable path below short-circuits the
+    // outer read to null for the coalesce to catch.
+    let array_value = match &array.kind {
+        ExprKind::ArrayAccess {
+            array: inner_array,
+            index: inner_index,
+        } if !warn_on_missing => {
+            lower_array_access_with_missing_warning(ctx, inner_array, inner_index, array, false)
+        }
+        _ => lower_expr(ctx, array),
+    };
     if value_is_nullable(ctx, array_value.value) {
         return lower_nullable_array_access(ctx, array_value, index, expr, warn_on_missing);
     }
@@ -7420,6 +7436,14 @@ fn lower_array_access_from_value(
             let index_ty = index_expr_key_type(ctx, index);
             if index_ty == PhpType::Int {
                 index_value = coerce_to_int_at_span(ctx, index_value, Some(index.span));
+                if !warn_on_missing && packed_silent_miss_needs_isset_guard(ctx, array_value.value)
+                {
+                    // ArrayGetSilent's miss result for a string element is an
+                    // empty Str `is_null` can never flag (unlike the tagged
+                    // scalar sentinels) — `$argv[1] ?? "d"` kept "" instead of
+                    // the default. Guard with ArrayIsset like the hash path.
+                    return lower_packed_access_silent(ctx, array_value, index_value, expr);
+                }
                 if warn_on_missing {
                     Op::ArrayGet
                 } else {
@@ -7435,7 +7459,17 @@ fn lower_array_access_from_value(
                 }
             }
         }
-        IrType::Heap(IrHeapKind::Hash) => Op::HashGet,
+        IrType::Heap(IrHeapKind::Hash) => {
+            if !warn_on_missing {
+                // Missing-tolerant probe (`??`, `??=`): plain HashGet's miss
+                // result is typed as the hash value type (e.g. an empty Str),
+                // which `is_null` can never flag — the coalesce would keep the
+                // junk and skip the default. Route through an isset-guarded
+                // read that yields a null-detectable boxed value instead.
+                return lower_hash_access_silent(ctx, array_value, index_value, expr);
+            }
+            Op::HashGet
+        }
         IrType::Heap(IrHeapKind::Buffer) => Op::BufferGet,
         IrType::Str => {
             index_value = coerce_to_int_at_span(ctx, index_value, Some(index.span));
@@ -7452,6 +7486,128 @@ fn lower_array_access_from_value(
         op.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Returns true when a packed array's silent int-key miss result cannot be
+/// null-detected by `is_null` and needs the isset-guarded read instead:
+/// string elements miss as an empty Str with no sentinel encoding.
+fn packed_silent_miss_needs_isset_guard(
+    ctx: &LoweringContext<'_, '_>,
+    array: crate::ir::ValueId,
+) -> bool {
+    match ctx.builder.value_php_type(array).codegen_repr() {
+        PhpType::Array(elem_ty) => matches!(elem_ty.codegen_repr(), PhpType::Str),
+        _ => false,
+    }
+}
+
+/// Lowers a missing-tolerant int-key read of a packed array whose element
+/// type has no null-detectable miss encoding (see
+/// `packed_silent_miss_needs_isset_guard`): `ArrayIsset` guards an `ArrayGet`
+/// so a miss yields a boxed null and a hit boxes the element into the Mixed
+/// merge temp — the packed mirror of `lower_hash_access_silent`.
+fn lower_packed_access_silent(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    index_value: LoweredValue,
+    expr: &Expr,
+) -> LoweredValue {
+    let exists = ctx.emit_value(
+        Op::ArrayIsset,
+        vec![array_value.value, index_value.value],
+        None,
+        PhpType::Bool,
+        Op::ArrayIsset.default_effects(),
+        Some(expr.span),
+    );
+    let result_type = PhpType::Mixed;
+    let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
+    let missing_block = ctx.builder.create_named_block("array.silent.missing", Vec::new());
+    let read_block = ctx.builder.create_named_block("array.silent.read", Vec::new());
+    let merge = ctx.builder.create_named_block("array.silent.merge", Vec::new());
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: exists.value,
+        then_target: read_block,
+        then_args: Vec::new(),
+        else_target: missing_block,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(missing_block);
+    let null_value = lower_boxed_null(ctx, expr);
+    store_value_into_temp(ctx, &temp_name, result_type.clone(), null_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(read_block);
+    let read_result_type = array_access_result_type(ctx, array_value.value, Op::ArrayGet, expr);
+    let read_value = ctx.emit_value(
+        Op::ArrayGet,
+        vec![array_value.value, index_value.value],
+        None,
+        read_result_type,
+        Op::ArrayGet.default_effects(),
+        Some(expr.span),
+    );
+    store_value_into_temp(ctx, &temp_name, result_type, read_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(merge);
+    take_owned_temp(ctx, &temp_name, expr.span)
+}
+
+/// Lowers a missing-tolerant hash read for `??`/`??=` probes: `HashIsset`
+/// guards a `HashGet` so a missing (or null-valued) key yields a boxed null
+/// the coalesce's `is_null` can detect, instead of plain `HashGet`'s
+/// value-typed miss result. Present keys box the read value into the Mixed
+/// merge temp (isset semantics: a null value also takes the default,
+/// matching PHP's `??`).
+fn lower_hash_access_silent(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_value: LoweredValue,
+    index_value: LoweredValue,
+    expr: &Expr,
+) -> LoweredValue {
+    let exists = ctx.emit_value(
+        Op::HashIsset,
+        vec![array_value.value, index_value.value],
+        None,
+        PhpType::Bool,
+        Op::HashIsset.default_effects(),
+        Some(expr.span),
+    );
+    let result_type = PhpType::Mixed;
+    let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
+    let missing_block = ctx.builder.create_named_block("hash.silent.missing", Vec::new());
+    let read_block = ctx.builder.create_named_block("hash.silent.read", Vec::new());
+    let merge = ctx.builder.create_named_block("hash.silent.merge", Vec::new());
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: exists.value,
+        then_target: read_block,
+        then_args: Vec::new(),
+        else_target: missing_block,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(missing_block);
+    let null_value = lower_boxed_null(ctx, expr);
+    store_value_into_temp(ctx, &temp_name, result_type.clone(), null_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(read_block);
+    let read_result_type = array_access_result_type(ctx, array_value.value, Op::HashGet, expr);
+    let read_value = ctx.emit_value(
+        Op::HashGet,
+        vec![array_value.value, index_value.value],
+        None,
+        read_result_type,
+        Op::HashGet.default_effects(),
+        Some(expr.span),
+    );
+    store_value_into_temp(ctx, &temp_name, result_type, read_value, expr.span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(merge);
+    take_owned_temp(ctx, &temp_name, expr.span)
 }
 
 /// Lowers nullable receiver indexing without evaluating the index on a null receiver.

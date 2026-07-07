@@ -495,3 +495,65 @@ fn test_undefined_var_star_equals() {
     let out = compile_and_run(r#"<?php $w *= 5; echo $w;"#);
     assert_eq!(out, "0");
 }
+
+/// `??=` on a missing string key of a hash-typed local assigns the default,
+/// returns it as the expression result, and keeps the stored value on a second
+/// application (the probe must be missing-tolerant: a plain hash read's miss
+/// result is element-typed and `is_null` never took the assign branch).
+#[test]
+fn test_hash_key_null_coalesce_assign() {
+    let out = compile_and_run(
+        r#"<?php
+$a = [];
+echo $a["k"] ??= "first";
+echo "|", $a["k"] ??= "second";
+echo "|", $a["k"];
+"#,
+    );
+    assert_eq!(out, "first|first|first");
+}
+
+/// Plain `??` on a hash-typed receiver with a missing key takes the default —
+/// the same missing-tolerant probe as the `??=` form (regression: the hash arm
+/// ignored the silent-read request and emitted a plain warning read).
+#[test]
+fn test_hash_key_null_coalesce_read() {
+    let out = compile_and_run(
+        r#"<?php
+$h = ["a" => "x"];
+echo $h["missing"] ?? "dflt";
+echo "|", $h["a"] ?? "wrong";
+"#,
+    );
+    assert_eq!(out, "dflt|x");
+}
+
+/// `??=` autovivifies through two levels of a local array, an int-keyed local,
+/// an object array property, and a single-level static property — each assigns
+/// once, keeps the stored value on re-application, and reads back correctly.
+#[test]
+fn test_null_coalesce_assign_nested_and_receivers() {
+    let out = compile_and_run(
+        r#"<?php
+final class Bag { /** @var array<string, int> */ public array $m = []; }
+final class S {
+    /** @var array<string, string> */
+    public static array $m = [];
+}
+$loc = [];
+$loc["k"]["n"] ??= "deep";
+$loc["k"]["n"] ??= "other";
+echo $loc["k"]["n"];
+$ints = [];
+echo "|", $ints[7] ??= "seven";
+echo "|", $ints[7] ??= "nope";
+$b = new Bag();
+echo "|", $b->m["c"] ??= 42;
+echo "|", $b->m["c"] ??= 99;
+echo "|", S::$m["k"] ??= "sv";
+echo "|", S::$m["k"] ??= "no";
+echo "|", S::$m["k"];
+"#,
+    );
+    assert_eq!(out, "deep|seven|seven|42|42|sv|sv|sv");
+}
