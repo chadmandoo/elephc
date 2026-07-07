@@ -22,7 +22,8 @@ use super::super::super::{
 };
 use super::super::{
     eval_builtin_abs, eval_builtin_cast, eval_builtin_nl2br, eval_builtin_str_pad,
-    eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_string_case,
+    eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_grapheme_strrev,
+    eval_builtin_hash_equals, eval_builtin_html_entity, eval_builtin_string_case,
     eval_builtin_string_compare, eval_builtin_string_position, eval_builtin_string_search,
     eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace,
     eval_builtin_trim_like, eval_builtin_ucwords, eval_builtin_wordwrap,
@@ -63,8 +64,14 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Floor,
     /// Dispatches `gettype(...)`.
     Gettype,
+    /// Dispatches `grapheme_strrev(...)`.
+    GraphemeStrrev,
+    /// Dispatches `hash_equals(...)`.
+    HashEquals,
     /// Dispatches `hex2bin(...)`.
     Hex2Bin,
+    /// Dispatches HTML entity encode/decode builtins.
+    HtmlEntity,
     /// Dispatches `intdiv(...)`.
     Intdiv,
     /// Dispatches `log(...)`.
@@ -154,7 +161,10 @@ impl EvalDirectHook {
             Self::FloatUnary => eval_builtin_float_unary(name, args, context, scope, values),
             Self::Floor => eval_builtin_floor(args, context, scope, values),
             Self::Gettype => eval_builtin_gettype(args, context, scope, values),
+            Self::GraphemeStrrev => eval_builtin_grapheme_strrev(args, context, scope, values),
+            Self::HashEquals => eval_builtin_hash_equals(args, context, scope, values),
             Self::Hex2Bin => eval_builtin_hex2bin(args, context, scope, values),
+            Self::HtmlEntity => eval_builtin_html_entity(name, args, context, scope, values),
             Self::Intdiv => eval_builtin_intdiv(args, context, scope, values),
             Self::Log => eval_builtin_log(args, context, scope, values),
             Self::MinMax => eval_builtin_min_max(name, args, context, scope, values),

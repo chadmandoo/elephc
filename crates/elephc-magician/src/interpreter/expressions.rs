@@ -1677,7 +1677,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "getcwd" => eval_builtin_getcwd(args, values),
         "getenv" => eval_builtin_getenv(args, context, scope, values),
         "glob" => eval_builtin_glob(args, context, scope, values),
-        "grapheme_strrev" => eval_builtin_grapheme_strrev(args, context, scope, values),
         "gzcompress" | "gzdeflate" | "gzinflate" | "gzuncompress" => {
             eval_builtin_gzip(name, args, context, scope, values)
         }
@@ -1690,13 +1689,9 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "hash_algos" => eval_builtin_hash_algos(args, values),
         "hash_copy" => eval_builtin_hash_copy(args, context, scope, values),
-        "hash_equals" => eval_builtin_hash_equals(args, context, scope, values),
         "hash_final" => eval_builtin_hash_final(args, context, scope, values),
         "hash_init" => eval_builtin_hash_init(args, context, scope, values),
         "hash_update" => eval_builtin_hash_update(args, context, scope, values),
-        "html_entity_decode" | "htmlentities" | "htmlspecialchars" => {
-            eval_builtin_html_entity(name, args, context, scope, values)
-        }
         "implode" => eval_builtin_implode(args, context, scope, values),
         "inet_ntop" => eval_builtin_inet_ntop(args, context, scope, values),
         "inet_pton" => eval_builtin_inet_pton(args, context, scope, values),

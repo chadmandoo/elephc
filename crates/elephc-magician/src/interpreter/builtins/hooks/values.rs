@@ -18,13 +18,14 @@ use super::super::{
     eval_base64_decode_result, eval_base64_encode_result, eval_bin2hex_result, eval_cast_result,
     eval_chr_result, eval_clamp_result, eval_crc32_result, eval_ctype_result,
     eval_float_binary_result, eval_float_pair_result, eval_float_unary_result,
-    eval_gettype_result, eval_hex2bin_result, eval_intdiv_result, eval_log_result,
+    eval_gettype_result, eval_grapheme_strrev_result, eval_hash_equals_result,
+    eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result, eval_log_result,
     eval_min_max_result, eval_nl2br_result, eval_number_format_result, eval_slashes_result,
     eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result, eval_str_split_result,
     eval_string_case_result, eval_string_compare_result, eval_string_position_result,
-    eval_string_search_result, eval_strstr_result, eval_substr_replace_result,
-    eval_substr_result, eval_trim_like_result, eval_type_predicate_result, eval_ucwords_result,
-    eval_url_decode_result, eval_url_encode_result, eval_wordwrap_result,
+    eval_string_search_result, eval_strstr_result, eval_substr_replace_result, eval_substr_result,
+    eval_trim_like_result, eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result,
+    eval_url_encode_result, eval_wordwrap_result,
 };
 
 /// Evaluated-argument dispatch hooks for migrated builtins.
@@ -62,8 +63,14 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Floor,
     /// Dispatches `gettype(...)`.
     Gettype,
+    /// Dispatches `grapheme_strrev(...)`.
+    GraphemeStrrev,
+    /// Dispatches `hash_equals(...)`.
+    HashEquals,
     /// Dispatches `hex2bin(...)`.
     Hex2Bin,
+    /// Dispatches HTML entity encode/decode builtins.
+    HtmlEntity,
     /// Dispatches `intdiv(...)`.
     Intdiv,
     /// Dispatches `log(...)`.
@@ -231,11 +238,29 @@ impl EvalValuesHook {
                 };
                 eval_gettype_result(*value, values)
             }
+            Self::GraphemeStrrev => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_grapheme_strrev_result(*value, values)
+            }
+            Self::HashEquals => {
+                let [known, user] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_hash_equals_result(*known, *user, values)
+            }
             Self::Hex2Bin => {
                 let [value] = evaluated_args else {
                     return Err(EvalStatus::RuntimeFatal);
                 };
                 eval_hex2bin_result(*value, values)
+            }
+            Self::HtmlEntity => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_html_entity_result(name, *value, values)
             }
             Self::Intdiv => {
                 let [left, right] = evaluated_args else {

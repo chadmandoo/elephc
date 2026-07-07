@@ -19,12 +19,6 @@ pub(in crate::interpreter) fn eval_strings_builtin_with_values(
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
     let result = match name {
-        "grapheme_strrev" => {
-            let [value] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_grapheme_strrev_result(*value, values)?
-        }
         "gzcompress" | "gzdeflate" | "gzinflate" | "gzuncompress" => {
             eval_gzip_result(name, evaluated_args, values)?
         }
@@ -80,18 +74,6 @@ pub(in crate::interpreter) fn eval_strings_builtin_with_values(
                 return Err(EvalStatus::RuntimeFatal);
             };
             eval_stream_bool_predicate_result(name, *stream, values)?
-        }
-        "hash_equals" => {
-            let [known, user] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_hash_equals_result(*known, *user, values)?
-        }
-        "html_entity_decode" | "htmlentities" | "htmlspecialchars" => {
-            let [value] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_html_entity_result(name, *value, values)?
         }
         _ => return Ok(None),
     };
