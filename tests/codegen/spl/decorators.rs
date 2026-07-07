@@ -798,7 +798,7 @@ foreach ($append as $key => $value) {
 
 /// Verifies that multiple iterator need any numeric outputs null for exhausted sources.
 #[test]
-#[ignore = "deferred: EC-fix-arc interaction breaks MultipleIterator assoc current()/key() (generated-AST SPL; passes on pure upstream; general assoc/property patterns verified OK; not AIC-used) — tracked as a follow-up"]
+#[ignore = "deferred: MultipleIterator::valid() returns false (current()/key() verified byte-parity) — the generated-AST body's $i counter is stored as a boxed Mixed by ichecked_add in one branch but read as raw I64/compared with raw icmp in the NEED_ANY loop cond (block-divergent slot typing; plain-PHP equivalent widens $i function-wide and passes). Fix site: local-type widening for synthesized SPL method bodies. Tracked on #523"]
 fn test_multiple_iterator_need_any_numeric_outputs_null_for_exhausted_sources() {
     let out = compile_and_run(
         r#"<?php
@@ -828,7 +828,7 @@ foreach ($multi as $keys => $values) {
 
 /// Verifies that multiple iterator assoc flags and need all mode.
 #[test]
-#[ignore = "deferred: EC-fix-arc interaction breaks MultipleIterator assoc current()/key() (generated-AST SPL; passes on pure upstream; general assoc/property patterns verified OK; not AIC-used) — tracked as a follow-up"]
+#[ignore = "deferred: MultipleIterator::valid() returns false (current()/key() verified byte-parity) — the generated-AST body's $i counter is stored as a boxed Mixed by ichecked_add in one branch but read as raw I64/compared with raw icmp in the NEED_ANY loop cond (block-divergent slot typing; plain-PHP equivalent widens $i function-wide and passes). Fix site: local-type widening for synthesized SPL method bodies. Tracked on #523"]
 fn test_multiple_iterator_assoc_flags_and_need_all_mode() {
     let out = compile_and_run(
         r#"<?php
@@ -865,7 +865,7 @@ foreach ($multi as $keys => $values) {
 
 /// Verifies that multiple iterator updates duplicate attach info.
 #[test]
-#[ignore = "deferred: EC-fix-arc interaction breaks MultipleIterator assoc current()/key() (generated-AST SPL; passes on pure upstream; general assoc/property patterns verified OK; not AIC-used) — tracked as a follow-up"]
+#[ignore = "deferred: MultipleIterator::valid() returns false (current()/key() verified byte-parity) — the generated-AST body's $i counter is stored as a boxed Mixed by ichecked_add in one branch but read as raw I64/compared with raw icmp in the NEED_ANY loop cond (block-divergent slot typing; plain-PHP equivalent widens $i function-wide and passes). Fix site: local-type widening for synthesized SPL method bodies. Tracked on #523"]
 fn test_multiple_iterator_updates_duplicate_attach_info() {
     let out = compile_and_run(
         r#"<?php
@@ -947,7 +947,7 @@ echo is_null($key[0]) ? "kn" : "kv";
 
 /// Verifies that multiple iterator contains detach and assoc null info error.
 #[test]
-#[ignore = "deferred: EC-fix-arc interaction breaks MultipleIterator assoc current()/key() (generated-AST SPL; passes on pure upstream; general assoc/property patterns verified OK; not AIC-used) — tracked as a follow-up"]
+#[ignore = "deferred: MultipleIterator::valid() returns false (current()/key() verified byte-parity) — the generated-AST body's $i counter is stored as a boxed Mixed by ichecked_add in one branch but read as raw I64/compared with raw icmp in the NEED_ANY loop cond (block-divergent slot typing; plain-PHP equivalent widens $i function-wide and passes). Fix site: local-type widening for synthesized SPL method bodies. Tracked on #523"]
 fn test_multiple_iterator_contains_detach_and_assoc_null_info_error() {
     let out = compile_and_run(
         r#"<?php
