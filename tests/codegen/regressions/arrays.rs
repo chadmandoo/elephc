@@ -1091,3 +1091,35 @@ echo $a[0], ":", $b[0];
     );
     assert_eq!(out, "5:6");
 }
+
+/// A local rebound to a same-shape array with a DIFFERENT element type widens
+/// to Mixed-valued storage instead of rejecting ("cannot reassign") — runtime
+/// arrays are self-describing (packed value_type stamps, per-entry hash tags)
+/// so the adaptive readers serve both branches' values correctly. Covers the
+/// taken branch, the untaken branch (original value must survive), packed
+/// lists, and loop rebinding.
+#[test]
+fn test_array_reassignment_widens_element_types() {
+    let out = compile_and_run(
+        r#"<?php
+$node = ["a" => "x"];
+if (true) { $node = ["a" => 1]; }
+echo $node["a"], "|";
+$m = ["k" => "s"];
+$flag = false;
+if ($flag) { $m = ["k" => 42]; }
+echo $m["k"], "|";
+$list = ["p", "q"];
+if (true) { $list = [7, 8]; }
+echo $list[0], $list[1], "|";
+$acc = ["z" => "start"];
+$i = 0;
+while ($i < 2) {
+    $acc = ["z" => $i];
+    $i = $i + 1;
+}
+echo $acc["z"];
+"#,
+    );
+    assert_eq!(out, "1|s|78|1");
+}

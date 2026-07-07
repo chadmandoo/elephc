@@ -689,3 +689,18 @@ echo $row["id"];
     );
     assert_eq!(out, "7");
 }
+
+/// The PDO attribute/fetch/case constants used by connection-configuration
+/// code resolve without `--with-pdo` (the prelude injects on detection; the
+/// constants are pure integers with no runtime dependency).
+#[test]
+fn test_pdo_attribute_constants_resolve() {
+    let out = compile_and_run(
+        r#"<?php
+echo PDO::ATTR_DEFAULT_FETCH_MODE, "|", PDO::ATTR_EMULATE_PREPARES, "|",
+    PDO::ATTR_STRINGIFY_FETCHES, "|", PDO::FETCH_DEFAULT, "|", PDO::ATTR_CASE, "|",
+    PDO::CASE_LOWER, "|", PDO::ATTR_TIMEOUT;
+"#,
+    );
+    assert_eq!(out, "19|20|17|0|8|2|2");
+}

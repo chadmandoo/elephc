@@ -872,3 +872,22 @@ fn test_backed_int_enum_tryfrom_mixed() {
     );
     assert_eq!(out, "HighnullLow");
 }
+
+/// `->value` / `->name` on receivers typed as the raw `BackedEnum`/`UnitEnum`
+/// interfaces resolve through the Mixed property path (the interfaces are not
+/// registered classes and enum member offsets are not uniform across enums —
+/// a pure enum's `name` occupies the backed enum's `value` slot).
+#[test]
+fn test_enum_interface_member_access() {
+    let out = compile_and_run(
+        r#"<?php
+enum S: string { case H = "h"; case W = "w"; }
+enum N: int { case One = 1; }
+enum P { case Q; }
+function v(\BackedEnum $e): string { return (string) $e->value; }
+function n(\UnitEnum $e): string { return $e->name; }
+echo v(S::H), "|", v(N::One), "|", n(S::W), "|", n(P::Q);
+"#,
+    );
+    assert_eq!(out, "h|1|W|Q");
+}

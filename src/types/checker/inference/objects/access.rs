@@ -275,10 +275,32 @@ impl Checker {
                 &format!("Undefined property: {}::{}", class_name, property),
             ));
         }
+        if let Some(ty) = Self::enum_interface_member_type(class_name, property) {
+            return Ok(ty);
+        }
         Err(CompileError::new(
             expr.span,
             &format!("Undefined class: {}", class_name),
         ))
+    }
+
+    /// Returns the member type for `->name`/`->value` reads on a receiver
+    /// typed as the raw `BackedEnum`/`UnitEnum` interface. The interfaces are
+    /// not registered classes (enums implement them implicitly, #514), so the
+    /// class-map lookup above misses; every enum case object carries `name`
+    /// (and, when backed, `value: int|string`) uniformly, making the member
+    /// types well-defined without a concrete enum class.
+    fn enum_interface_member_type(class_name: &str, property: &str) -> Option<PhpType> {
+        let key = crate::names::php_symbol_key(class_name.trim_start_matches('\\'));
+        let is_backed = key == "backedenum";
+        if !is_backed && key != "unitenum" {
+            return None;
+        }
+        match property {
+            "name" => Some(PhpType::Str),
+            "value" if is_backed => Some(PhpType::Union(vec![PhpType::Int, PhpType::Str])),
+            _ => None,
+        }
     }
 
     /// Returns precise SPL runtime storage metadata for callback-filter internals.

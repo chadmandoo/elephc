@@ -178,6 +178,40 @@ impl Checker {
         if matches!(existing, PhpType::Mixed) || matches!(new_ty, PhpType::Mixed) {
             return Some(PhpType::Mixed);
         }
+        // Same-shape arrays whose element types diverge widen to Mixed-valued
+        // storage. Runtime arrays are self-describing (packed headers stamp
+        // the value_type; hash entries carry per-entry tags) and the adaptive
+        // read paths dispatch on them, so a Mixed-typed local reads the value
+        // written by either branch correctly — no representation is baked into
+        // the slot (the EC-20/22 adaptive-reader arc).
+        if let (PhpType::Array(left), PhpType::Array(right)) = (existing, new_ty) {
+            if left != right {
+                return Some(PhpType::Array(Box::new(PhpType::Mixed)));
+            }
+        }
+        if let (
+            PhpType::AssocArray {
+                key: left_key,
+                value: left_value,
+            },
+            PhpType::AssocArray {
+                key: right_key,
+                value: right_value,
+            },
+        ) = (existing, new_ty)
+        {
+            if left_key != right_key || left_value != right_value {
+                let key = if left_key == right_key {
+                    left_key.clone()
+                } else {
+                    Box::new(PhpType::Mixed)
+                };
+                return Some(PhpType::AssocArray {
+                    key,
+                    value: Box::new(PhpType::Mixed),
+                });
+            }
+        }
         if *new_ty == PhpType::Void {
             return Some(existing.clone());
         }

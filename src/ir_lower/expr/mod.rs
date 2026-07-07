@@ -8807,6 +8807,21 @@ fn constructor_signature<'a>(
 }
 
 /// Lowers an object property read.
+/// Returns true when a property receiver is statically typed as the raw
+/// `BackedEnum`/`UnitEnum` interface (see `lower_property_get_from_value`).
+fn property_receiver_is_enum_interface(
+    ctx: &LoweringContext<'_, '_>,
+    value: crate::ir::ValueId,
+) -> bool {
+    match ctx.builder.value_php_type(value).codegen_repr() {
+        PhpType::Object(name) => matches!(
+            php_symbol_key(name.trim_start_matches('\\')).as_str(),
+            "backedenum" | "unitenum"
+        ),
+        _ => false,
+    }
+}
+
 fn lower_property_get(
     ctx: &mut LoweringContext<'_, '_>,
     object: &Expr,
@@ -8885,6 +8900,26 @@ fn lower_property_get_from_value(
         };
         return lower_method_call_with_receiver(ctx, object, &accessor, &[], call_op, expr);
     }
+    // A receiver typed as the raw BackedEnum/UnitEnum interface has no class
+    // entry (enums implement the interfaces implicitly, #514) and enum member
+    // offsets are NOT uniform across enums (a pure enum's `name` sits at the
+    // backed enum's `value` slot). Box the receiver so the codegen Mixed
+    // property path does its runtime class dispatch — the same machinery a
+    // `mixed`-typed receiver uses (verified byte-parity on backed value/name
+    // and pure name).
+    let object = if property_receiver_is_enum_interface(ctx, object.value) {
+        let boxed = ctx.emit_value(
+            Op::MixedBox,
+            vec![object.value],
+            None,
+            PhpType::Mixed,
+            Op::MixedBox.default_effects(),
+            Some(expr.span),
+        );
+        boxed
+    } else {
+        object
+    };
     let data = ctx.intern_string(property);
     let result_type = property_get_result_type(ctx, object.value, property, op, expr);
     ctx.emit_value(
