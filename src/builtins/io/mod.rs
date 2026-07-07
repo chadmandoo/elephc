@@ -189,4 +189,5 @@ pub mod touch;
 pub mod umask;
 pub mod unlink;
 pub mod var_dump;
+pub mod __elephc_var_dump_raw;
 pub mod vfprintf;

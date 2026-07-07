@@ -66,10 +66,13 @@ fn test_var_dump_hash_heterogeneous_values() {
 /// emitting garbage. The surrounding scalar entries still format correctly.
 #[test]
 fn test_var_dump_hash_nested_value_falls_back_to_null() {
+    // Historical name: this test originally codified the walker limitation
+    // where a nested container hash entry printed NULL. The prelude renderer
+    // (EC-42) now recurses with depth-aware indentation, matching PHP.
     let out = compile_and_run(r#"<?php var_dump(["x" => 5, "inner" => [1, 2], "y" => 7]);"#);
     assert_eq!(
         out,
-        "array(3) {\n  [\"x\"]=>\n  int(5)\n  [\"inner\"]=>\n  NULL\n  [\"y\"]=>\n  int(7)\n}\n"
+        "array(3) {\n  [\"x\"]=>\n  int(5)\n  [\"inner\"]=>\n  array(2) {\n    [0]=>\n    int(1)\n    [1]=>\n    int(2)\n  }\n  [\"y\"]=>\n  int(7)\n}\n"
     );
 }
 
@@ -368,4 +371,46 @@ echo date_diff(1, 2), "|", timezone_name_get(5);
 "#,
     );
     assert_eq!(out, "user:3|tz:5");
+}
+
+/// `implode` over hash-shaped values: a runtime hash reached through a Mixed
+/// value (json_decode assoc results) previously SEGFAULTED (`__rt_implode`
+/// walks packed slots only); statically-AssocArray arguments errored cleanly.
+/// Both now route to the prelude values-implode (foreach + cast, adaptive),
+/// and packed arrays keep the fast runtime path.
+#[test]
+fn test_implode_over_hash_and_mixed_values() {
+    let out = compile_and_run(
+        r#"<?php
+$m = json_decode('{"a":"x","b":"y"}', true);
+echo implode(",", $m);
+$h = ["k1" => 1, "k2" => 2];
+echo "|", implode("-", $h);
+$p = [7, 8, 9];
+echo "|", implode("+", $p);
+$f = array_filter(["x" => 1, "y" => 0], fn(int $v): bool => $v > 0);
+echo "|", implode(";", $f);
+"#,
+    );
+    assert_eq!(out, "x,y|1-2|7+8+9|1");
+}
+
+/// Nested containers inside var_dump render recursively with depth-aware
+/// indentation (previously NULL per the walker limitation): hash-in-hash,
+/// deep mixed nesting, json_decode trees, and empty arrays all match PHP;
+/// scalar arguments keep the raw walker (exact float formatting).
+#[test]
+fn test_var_dump_nested_containers_recursive() {
+    let out = compile_and_run(
+        r#"<?php
+var_dump([1, ["deep" => [true, null]], 2.5]);
+$m = json_decode('{"a":{"b":[1,2]}}', true);
+var_dump($m);
+var_dump([]);
+"#,
+    );
+    assert_eq!(
+        out,
+        "array(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  array(1) {\n    [\"deep\"]=>\n    array(2) {\n      [0]=>\n      bool(true)\n      [1]=>\n      NULL\n    }\n  }\n  [2]=>\n  float(2.5)\n}\narray(1) {\n  [\"a\"]=>\n  array(1) {\n    [\"b\"]=>\n    array(2) {\n      [0]=>\n      int(1)\n      [1]=>\n      int(2)\n    }\n  }\n}\narray(0) {\n}\n"
+    );
 }

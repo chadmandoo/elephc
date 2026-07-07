@@ -1816,6 +1816,12 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_base64_decode_strict(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_implode_hash(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_var_dump_container(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_explode_limit(ctx, canonical, args, expr) {
         return value;
     }
@@ -4216,6 +4222,101 @@ fn is_zero_arity_signature(sig: &FunctionSig) -> bool {
 ///
 /// Returns `None` (deferring to the builtin path and its arity/shape errors) for the
 /// 2-argument count-only form, named/spread arguments, or a non-variable `$matches`.
+/// Routes `var_dump($v)` calls whose argument is statically container- or
+/// Mixed-typed to the prelude `__elephc_var_dump_value` impl: the builtin
+/// walkers render nested containers inside hash/Mixed entries as NULL (a
+/// documented limitation), while the impl recurses with depth-aware
+/// indentation and delegates every non-array leaf to the raw walker alias
+/// (exact scalar/float/object formatting). Scalar-typed arguments keep the
+/// builtin path untouched.
+fn lower_static_var_dump_container(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "var_dump" {
+        return None;
+    }
+    if args.len() != 1 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    // Direct user-function call arguments type via their declared return
+    // (materialized_expr_type_for_merge has no FunctionCall arm).
+    let arg_ty = match &args[0].kind {
+        ExprKind::FunctionCall { name: fn_name, .. } => ctx
+            .functions
+            .get(fn_name.as_str().trim_start_matches('\\'))
+            .map(|sig| sig.return_type.codegen_repr()),
+        _ => None,
+    }
+    .unwrap_or_else(|| materialized_expr_type_for_merge(ctx, &args[0]).codegen_repr());
+    if !matches!(
+        arg_ty,
+        PhpType::Array(_)
+            | PhpType::AssocArray { .. }
+            | PhpType::Iterable
+            | PhpType::Mixed
+            | PhpType::Union(_)
+    ) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_var_dump_value"),
+            args: vec![
+                args[0].clone(),
+                Expr {
+                    kind: ExprKind::StringLiteral(String::new()),
+                    span: expr.span,
+                },
+            ],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+/// Routes `implode($glue, $arr)` calls whose array argument is statically
+/// AssocArray- or Mixed-typed to the prelude `__elephc_implode_values` impl:
+/// the packed `__rt_implode` runtime walks indexed slots only, so a runtime
+/// HASH reached through a Mixed value (json_decode assoc results, promoted
+/// arrays, filtered results) walked garbage and segfaulted. Statically-Array
+/// arguments keep the fast packed runtime path.
+fn lower_static_implode_hash(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "implode" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    if !matches!(
+        materialized_expr_type_for_merge(ctx, &args[1]).codegen_repr(),
+        PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
+    ) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_implode_values"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
 /// Routes 2-argument `strtr($s, $pairs)` calls to the prelude
 /// `__elephc_strtr_pairs` impl (longest-match, non-overlapping, single-pass —
 /// semantically unlike str_replace's sequential passes). The 3-argument

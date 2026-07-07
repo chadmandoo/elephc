@@ -33,7 +33,7 @@ impl Checker {
     pub(super) fn type_check_methods_until_stable(
         &mut self,
         flattened_classes: &[FlattenedClass],
-        global_env: &TypeEnv,
+        _global_env: &TypeEnv,
         errors: &mut Vec<CompileError>,
     ) -> Result<(), CompileError> {
         let mut method_passes_remaining = (flattened_classes.len().max(1) * 2) + 1;
@@ -47,7 +47,20 @@ impl Checker {
                         continue;
                     }
                     let method_key = php_symbol_key(&method.name);
-                    let mut method_env: TypeEnv = global_env.clone();
+                    // Fresh env per method: PHP method scopes do not see
+                    // top-level variables (free-function bodies already get
+                    // fresh envs). Seeding from global_env leaked main-scope
+                    // bindings into method bodies — a top-level `$out = [...]`
+                    // made any method-local `$out = ""` a reassign error (the
+                    // Randomizer prelude class surfaced this). Superglobals
+                    // ARE visible in every scope, so seed those explicitly
+                    // (mirrors the free-function seeding in
+                    // `functions::resolution::signature`).
+                    let mut method_env = TypeEnv::new();
+                    for name in crate::superglobals::SUPERGLOBALS {
+                        method_env
+                            .insert((*name).to_string(), crate::superglobals::superglobal_type());
+                    }
                     if !method.is_static {
                         method_env.insert("this".to_string(), PhpType::Object(class.name.clone()));
                     }

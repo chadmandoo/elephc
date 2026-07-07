@@ -588,6 +588,9 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // __elephc_base64_decode_raw is the prelude-internal alias of the
             // raw base64 decoder (EIR-only, never dynamically invoked).
             | "__elephc_base64_decode_raw"
+            // __elephc_var_dump_raw is the prelude-internal alias of the raw
+            // var_dump walker (EIR-only, never dynamically invoked).
+            | "__elephc_var_dump_raw"
             // get_debug_type is EIR-only (static fold + __rt_get_debug_type dispatch);
             // the legacy wrapper body would emit an unresolved _fn_get_debug_type.
             | "get_debug_type"

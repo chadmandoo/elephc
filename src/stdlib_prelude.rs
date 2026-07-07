@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// `__elephc_array_filter_hash` impls and the EIR lowering desugars the
 /// matching call shapes into calls of those impls (associative `array_filter`
 /// receivers route to the hash impl; unused impls are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 18] = [
+const STDLIB_PRELUDE_NAMES: [&str; 20] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -85,6 +85,8 @@ const STDLIB_PRELUDE_NAMES: [&str; 18] = [
     "strtr",
     "base64_decode",
     "Randomizer",
+    "implode",
+    "var_dump",
 ];
 
 /// The elephc-PHP stdlib prelude source. `__elephc_mb_byte_index` is the shared
@@ -611,6 +613,47 @@ namespace Random {
             }
             return $out;
         }
+    }
+}
+
+function __elephc_implode_values(string $glue, mixed $h): string {
+    // implode over associative/runtime-hash values (PHP implodes VALUES for
+    // hashes). The EIR lowering routes AssocArray- and Mixed-typed array
+    // arguments here; foreach and the string cast are representation-adaptive
+    // so packed arrays reached through Mixed keep byte-parity too.
+    $out = "";
+    $first = true;
+    foreach ($h as $v) {
+        if ($first) {
+            $first = false;
+        } else {
+            $out = $out . $glue;
+        }
+        $out = $out . (string) $v;
+    }
+    return $out;
+}
+
+function __elephc_var_dump_value(mixed $v, string $pad): void {
+    // Recursive var_dump renderer for container values (the EIR lowering
+    // routes container/Mixed-typed var_dump arguments here). Only the ARRAY
+    // structure is rendered locally; every non-array leaf delegates to the
+    // raw builtin walker so scalar/float/object formatting stays exact.
+    if (is_array($v)) {
+        echo "array(", count($v), ") {\n";
+        foreach ($v as $k => $val) {
+            echo $pad, "  [";
+            if (is_string($k)) {
+                echo "\"", $k, "\"";
+            } else {
+                echo $k;
+            }
+            echo "]=>\n", $pad, "  ";
+            __elephc_var_dump_value($val, $pad . "  ");
+        }
+        echo $pad, "}\n";
+    } else {
+        __elephc_var_dump_raw($v);
     }
 }
 "#;

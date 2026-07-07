@@ -138,18 +138,6 @@ impl Checker {
         }
     }
 
-    /// Returns true if `ty` is or contains a `PhpType::Callable` anywhere in its structure.
-    fn type_contains_callable(ty: &PhpType) -> bool {
-        match ty {
-            PhpType::Callable => true,
-            PhpType::Union(members) => members.iter().any(Self::type_contains_callable),
-            PhpType::Array(inner) | PhpType::Buffer(inner) => Self::type_contains_callable(inner),
-            PhpType::AssocArray { key, value } => {
-                Self::type_contains_callable(key) || Self::type_contains_callable(value)
-            }
-            _ => false,
-        }
-    }
 
     /// Returns true if `ty` is or contains a `PhpType::Never` anywhere in its structure.
     fn type_contains_never(ty: &PhpType) -> bool {
