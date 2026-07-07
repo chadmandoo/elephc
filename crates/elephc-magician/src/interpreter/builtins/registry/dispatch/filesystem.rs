@@ -61,20 +61,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_file_result(*filename, context, values)?
         }
-        "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
-        | "is_writable" | "is_writeable" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_file_probe_result(name, *filename, context, values)?
-        }
-        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
-        | "fileperms" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_file_stat_scalar_result(name, *filename, context, values)?
-        }
         "file_get_contents" => {
             let [filename] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);
@@ -103,18 +89,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
                 return Err(EvalStatus::RuntimeFatal);
             };
             eval_unary_stream_result(name, *stream, context, values)?
-        }
-        "filesize" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_filesize_result(*filename, context, values)?
-        }
-        "filetype" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_filetype_result(*filename, context, values)?
         }
         "fgetcsv" => match evaluated_args {
             [stream] => eval_fgetcsv_result(*stream, None, None, context, values)?,
@@ -210,12 +184,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
                 return Err(EvalStatus::RuntimeFatal);
             };
             eval_fwrite_result(*stream, *data, context, values)?
-        }
-        "stat" | "lstat" => {
-            let [filename] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stat_array_result(name, *filename, context, values)?
         }
         "readfile" => {
             let [filename] = evaluated_args else {

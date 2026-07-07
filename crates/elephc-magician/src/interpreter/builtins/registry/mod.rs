@@ -208,6 +208,16 @@ mod tests {
             "dirname",
             "disk_free_space",
             "disk_total_space",
+            "file_exists",
+            "fileatime",
+            "filectime",
+            "filegroup",
+            "fileinode",
+            "filemtime",
+            "fileowner",
+            "fileperms",
+            "filesize",
+            "filetype",
             "floatval",
             "fnmatch",
             "getdate",
@@ -224,22 +234,29 @@ mod tests {
             "intval",
             "is_array",
             "is_bool",
+            "is_dir",
             "is_double",
+            "is_executable",
+            "is_file",
             "is_finite",
             "is_float",
             "is_infinite",
             "is_int",
             "is_integer",
             "is_iterable",
+            "is_link",
             "is_long",
             "is_nan",
             "is_null",
             "is_numeric",
             "is_object",
+            "is_readable",
             "is_real",
             "is_resource",
             "is_scalar",
             "is_string",
+            "is_writable",
+            "is_writeable",
             "json_decode",
             "json_encode",
             "json_last_error",
@@ -248,6 +265,7 @@ mod tests {
             "linkinfo",
             "localtime",
             "log",
+            "lstat",
             "microtime",
             "min",
             "mktime",
@@ -266,6 +284,7 @@ mod tests {
             "realpath_cache_get",
             "realpath_cache_size",
             "sleep",
+            "stat",
             "stream_resolve_include_path",
             "str_contains",
             "str_pad",
@@ -484,6 +503,26 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("sys_get_temp_dir"),
             Some([].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("file_exists"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("filemtime"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("filesize"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("is_writable"),
+            Some(["filename"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("stat"),
+            Some(["filename"].as_slice())
         );
     }
 }

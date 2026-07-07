@@ -228,7 +228,7 @@ impl EvalValuesHook {
             Self::Ctype => one_arg(evaluated_args, values, |value, values| {
                 eval_ctype_result(name, value, values)
             }),
-            Self::Filesystem => eval_filesystem_values_result(name, evaluated_args, values),
+            Self::Filesystem => eval_filesystem_values_result(name, evaluated_args, context, values),
             Self::FloatBinary => two_args(evaluated_args, values, |left, right, values| {
                 eval_float_binary_result(name, left, right, values)
             }),

@@ -16,15 +16,34 @@ mod basename;
 mod dirname;
 mod disk_free_space;
 mod disk_total_space;
+mod file_exists;
+mod fileatime;
+mod filectime;
+mod filegroup;
+mod fileinode;
+mod filemtime;
+mod fileowner;
+mod fileperms;
+mod filesize;
+mod filetype;
 mod fnmatch;
 mod getcwd;
 mod glob;
+mod is_dir;
+mod is_executable;
+mod is_file;
+mod is_link;
+mod is_readable;
+mod is_writable;
+mod is_writeable;
 mod linkinfo;
+mod lstat;
 mod pathinfo;
 mod readlink;
 mod realpath;
 mod realpath_cache_get;
 mod realpath_cache_size;
+mod stat;
 mod stream_resolve_include_path;
 mod sys_get_temp_dir;
 
@@ -42,6 +61,14 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "disk_free_space" | "disk_total_space" => {
             eval_builtin_disk_space(name, args, context, scope, values)
         }
+        "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
+        | "is_writable" | "is_writeable" => {
+            eval_builtin_file_probe(name, args, context, scope, values)
+        }
+        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
+        | "fileperms" => eval_builtin_file_stat_scalar(name, args, context, scope, values),
+        "filesize" => eval_builtin_filesize(args, context, scope, values),
+        "filetype" => eval_builtin_filetype(args, context, scope, values),
         "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
         "getcwd" => eval_builtin_getcwd(args, values),
         "glob" => eval_builtin_glob(args, context, scope, values),
@@ -51,6 +78,7 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "realpath" => eval_builtin_realpath(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
+        "stat" | "lstat" => eval_builtin_stat_array(name, args, context, scope, values),
         "stream_resolve_include_path" => {
             eval_builtin_stream_resolve_include_path(args, context, scope, values)
         }
@@ -63,6 +91,7 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
 pub(in crate::interpreter) fn eval_filesystem_values_result(
     name: &str,
     evaluated_args: &[RuntimeCellHandle],
+    context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     match name {
@@ -78,6 +107,24 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
         },
         "disk_free_space" | "disk_total_space" => match evaluated_args {
             [directory] => eval_disk_space_result(name, *directory, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
+        | "is_writable" | "is_writeable" => match evaluated_args {
+            [filename] => eval_file_probe_result(name, *filename, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
+        | "fileperms" => match evaluated_args {
+            [filename] => eval_file_stat_scalar_result(name, *filename, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "filesize" => match evaluated_args {
+            [filename] => eval_filesize_result(*filename, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "filetype" => match evaluated_args {
+            [filename] => eval_filetype_result(*filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
         "fnmatch" => match evaluated_args {
@@ -118,6 +165,10 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
         },
         "realpath_cache_size" => match evaluated_args {
             [] => eval_realpath_cache_size_result(values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "stat" | "lstat" => match evaluated_args {
+            [filename] => eval_stat_array_result(name, *filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
         "stream_resolve_include_path" => match evaluated_args {

@@ -1593,9 +1593,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "eval" => eval_nested_eval(args, context, scope, values),
         "explode" => eval_builtin_explode(args, context, scope, values),
         "file" => eval_builtin_file(args, context, scope, values),
-        "file_exists" => eval_builtin_file_probe(name, args, context, scope, values),
-        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
-        | "fileperms" => eval_builtin_file_stat_scalar(name, args, context, scope, values),
         "file_get_contents" => eval_builtin_file_get_contents(args, context, scope, values),
         "file_put_contents" => eval_builtin_file_put_contents(args, context, scope, values),
         "fclose"
@@ -1610,8 +1607,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         | "rewind"
         | "fstat"
         | "stream_get_meta_data" => eval_builtin_unary_stream(name, args, context, scope, values),
-        "filesize" => eval_builtin_filesize(args, context, scope, values),
-        "filetype" => eval_builtin_filetype(args, context, scope, values),
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),
         "fopen" => eval_builtin_fopen(args, context, scope, values),
         "fputcsv" => eval_builtin_fputcsv(args, context, scope, values),
@@ -1622,7 +1617,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "fseek" => eval_builtin_fseek(args, context, scope, values),
         "ftruncate" => eval_builtin_ftruncate(args, context, scope, values),
         "fwrite" => eval_builtin_fwrite(args, context, scope, values),
-        "stat" | "lstat" => eval_builtin_stat_array(name, args, context, scope, values),
         "function_exists" | "is_callable" => {
             eval_builtin_function_probe(name, args, context, scope, values)
         }
@@ -1664,8 +1658,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "iterator_apply" => eval_builtin_iterator_apply(args, context, scope, values),
         "iterator_count" => eval_builtin_iterator_count(args, context, scope, values),
         "iterator_to_array" => eval_builtin_iterator_to_array(args, context, scope, values),
-        "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable" | "is_writable"
-        | "is_writeable" => eval_builtin_file_probe(name, args, context, scope, values),
         "http_response_code" => eval_builtin_http_response_code(args, context, scope, values),
         "ip2long" => eval_builtin_ip2long(args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),

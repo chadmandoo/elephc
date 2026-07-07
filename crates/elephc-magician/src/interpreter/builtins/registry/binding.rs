@@ -191,10 +191,7 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         | "fstat"
         | "stream_get_meta_data" => Some(&["stream"]),
         "fgetcsv" => Some(&["stream", "length", "separator"]),
-        "file" | "file_get_contents" | "file_exists" | "fileatime" | "filectime" | "filegroup"
-        | "fileinode" | "filemtime" | "fileowner" | "fileperms" | "filesize" | "filetype"
-        | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable" | "is_writable"
-        | "is_writeable" | "lstat" | "readfile" | "stat" | "unlink" => Some(&["filename"]),
+        "file" | "file_get_contents" | "readfile" | "unlink" => Some(&["filename"]),
         "file_put_contents" => Some(&["filename", "data"]),
         "fopen" => Some(&["filename", "mode", "use_include_path", "context"]),
         "fputcsv" => Some(&["stream", "fields", "separator", "enclosure"]),
