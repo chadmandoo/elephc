@@ -168,3 +168,27 @@ fn test_number_format_space_thousands() {
 }
 
 // --- Constants ---
+
+/// `Random\Randomizer` (prelude class over the CSPRNG builtins): getBytes
+/// length, getInt with a pinned range, getBytesFromString length + alphabet
+/// membership, and nextInt non-negativity.
+#[test]
+fn test_random_randomizer_prelude_class() {
+    let out = compile_and_run(
+        r#"<?php
+$r = new Random\Randomizer();
+echo strlen($r->getBytes(8));
+echo "|", $r->getInt(7, 7);
+$s = $r->getBytesFromString("ab", 5);
+$ok = strlen($s) === 5;
+$i = 0;
+while ($i < strlen($s)) {
+    if ($s[$i] !== "a" && $s[$i] !== "b") { $ok = false; }
+    $i = $i + 1;
+}
+echo "|", $ok ? "alpha-ok" : "alpha-bad";
+echo "|", $r->nextInt() >= 0 ? "nonneg" : "neg";
+"#,
+    );
+    assert_eq!(out, "8|7|alpha-ok|nonneg");
+}

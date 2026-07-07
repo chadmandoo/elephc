@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// `__elephc_array_filter_hash` impls and the EIR lowering desugars the
 /// matching call shapes into calls of those impls (associative `array_filter`
 /// receivers route to the hash impl; unused impls are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 15] = [
+const STDLIB_PRELUDE_NAMES: [&str; 18] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -82,6 +82,9 @@ const STDLIB_PRELUDE_NAMES: [&str; 15] = [
     "preg_quote",
     "explode",
     "array_filter",
+    "strtr",
+    "base64_decode",
+    "Randomizer",
 ];
 
 /// The elephc-PHP stdlib prelude source. `__elephc_mb_byte_index` is the shared
@@ -502,6 +505,113 @@ function __elephc_array_filter_hash(array $h, callable $cb, int $mode): array {
         }
     }
     return $out;
+}
+
+function __elephc_strtr_pairs(string $s, array $pairs): string {
+    // 2-arg strtr: longest-match, non-overlapping, single pass (unlike
+    // str_replace's sequential passes). Empty 'from' keys never match; equal
+    // lengths keep the first array-order winner. The EIR lowering routes
+    // 2-argument strtr() calls here.
+    $out = "";
+    $i = 0;
+    $len = strlen($s);
+    while ($i < $len) {
+        $bestLen = 0;
+        $bestRepl = "";
+        foreach ($pairs as $from => $to) {
+            $f = (string) $from;
+            $fl = strlen($f);
+            if ($fl > $bestLen && $fl <= $len - $i && substr($s, $i, $fl) === $f) {
+                $bestLen = $fl;
+                $bestRepl = (string) $to;
+            }
+        }
+        if ($bestLen > 0) {
+            $out = $out . $bestRepl;
+            $i = $i + $bestLen;
+        } else {
+            $out = $out . $s[$i];
+            $i = $i + 1;
+        }
+    }
+    return $out;
+}
+function __elephc_base64_decode_ex(string $s, bool $strict): mixed {
+    // 2-arg base64_decode: whitespace is skipped in both modes (php-src
+    // behavior); strict returns false on any other non-alphabet byte, a
+    // lone-character tail, or inconsistent '=' padding. Cleaning also fixes
+    // the lenient divergences of the raw builtin (embedded whitespace,
+    // unpadded tails). Exotic mid-stream '=' placements are documented-
+    // approximate. Delegates the actual decode to the 1-arg builtin.
+    $clean = "";
+    $len = strlen($s);
+    $i = 0;
+    $padCount = 0;
+    $fail = false;
+    while ($i < $len) {
+        $c = $s[$i];
+        $o = ord($c);
+        $isAlpha = ($o >= 65 && $o <= 90) || ($o >= 97 && $o <= 122) || ($o >= 48 && $o <= 57) || $c === "+" || $c === "/";
+        $isWs = $c === " " || $c === "\t" || $c === "\n" || $c === "\r" || $c === "\v" || $c === "\f";
+        if ($c === "=") {
+            $padCount = $padCount + 1;
+            if ($padCount > 2) {
+                $fail = true;
+            }
+        } elseif ($isAlpha) {
+            if ($padCount > 0) {
+                $fail = true;
+            }
+            $clean = $clean . $c;
+        } elseif (!$isWs) {
+            $fail = true;
+        }
+        $i = $i + 1;
+    }
+    $rem = strlen($clean) % 4;
+    if ($strict) {
+        if ($fail || $rem === 1) {
+            return false;
+        }
+        if ($padCount > 0 && ($rem + $padCount) % 4 !== 0) {
+            return false;
+        }
+    }
+    if ($rem === 1) {
+        $clean = substr($clean, 0, strlen($clean) - 1);
+        $rem = 0;
+    }
+    if ($rem === 2) {
+        $clean = $clean . "==";
+    } elseif ($rem === 3) {
+        $clean = $clean . "=";
+    }
+    return __elephc_base64_decode_raw($clean);
+}
+namespace Random {
+    class Randomizer {
+        public function __construct() {
+        }
+        public function getBytes(int $length): string {
+            return \random_bytes($length);
+        }
+        public function getInt(int $min, int $max): int {
+            return \random_int($min, $max);
+        }
+        public function nextInt(): int {
+            return \random_int(0, 9223372036854775807);
+        }
+        public function getBytesFromString(string $string, int $length): string {
+            $out = "";
+            $max = (int) (\strlen($string) - 1);
+            $i = 0;
+            while ($i < $length) {
+                $out = $out . $string[\random_int(0, $max)];
+                $i = $i + 1;
+            }
+            return $out;
+        }
+    }
 }
 "#;
 

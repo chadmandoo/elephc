@@ -107,7 +107,12 @@ pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
         | "grapheme_strrev" | "addslashes" | "stripslashes" | "nl2br" | "bin2hex"
         | "hex2bin" | "html_entity_decode"
         | "urlencode" | "urldecode" | "rawurlencode" | "rawurldecode"
-        | "base64_encode" | "base64_decode" => Some(fixed(&["string"])),
+        | "base64_encode" => Some(fixed(&["string"])),
+        "base64_decode" => Some(optional(
+            &["string", "strict"],
+            1,
+            vec![bool_lit(false)],
+        )),
         // Migrated to src/builtins/string/ — kept as the parity-gate golden. Defaults mirror the
         // registry: flags = ENT_QUOTES|ENT_SUBSTITUTE|ENT_HTML401 (11), encoding = "UTF-8".
         "htmlspecialchars" | "htmlentities" => Some(optional(

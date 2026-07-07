@@ -249,3 +249,45 @@ echo strtr("aaa", "a", "b");
     );
     assert_eq!(out, "Hippo|2es2|xyc|1324|bbb");
 }
+
+/// The 2-argument `strtr($s, $pairs)` form: longest-match, non-overlapping,
+/// single-pass replacement routed through the prelude `__elephc_strtr_pairs`
+/// impl. Ties keep the first array-order winner; the 3-argument char-map form
+/// stays on the builtin path; an empty pair array is the identity.
+#[test]
+fn test_strtr_two_arg_pair_array() {
+    let out = compile_and_run(
+        r#"<?php
+echo strtr("The quick fox", ["quick" => "slow", "fox" => "dog"]);
+echo "|", strtr("ababab", ["ab" => "X", "aba" => "Y"]);
+echo "|", strtr("hi", []);
+echo "|", strtr("abc", "ab", "xy");
+"#,
+    );
+    assert_eq!(out, "The slow dog|YbX|hi|xyc");
+}
+
+/// `base64_decode` byte-parity through the prelude cleaning impl: embedded
+/// whitespace decodes (both modes), unpadded tails decode, strict mode
+/// returns false on non-alphabet bytes, mid-stream padding, and lone-char
+/// tails; every 1-argument call routes through the same cleaning (fixing the
+/// raw decoder's whitespace/tail divergences).
+#[test]
+fn test_base64_decode_strict_and_lenient_cleaning() {
+    let out = compile_and_run(
+        r#"<?php
+var_dump(base64_decode("aGVsbG8=", true));
+var_dump(base64_decode("aG\nVsbG8=", true));
+var_dump(base64_decode("@@@", true));
+var_dump(base64_decode("aGk", true));
+var_dump(base64_decode("aG=k", true));
+var_dump(base64_decode("aG\nVsbG8="));
+var_dump(base64_decode("aGk"));
+var_dump(base64_decode("a"));
+"#,
+    );
+    assert_eq!(
+        out,
+        "string(5) \"hello\"\nstring(5) \"hello\"\nbool(false)\nstring(2) \"hi\"\nbool(false)\nstring(5) \"hello\"\nstring(2) \"hi\"\nstring(0) \"\"\n"
+    );
+}

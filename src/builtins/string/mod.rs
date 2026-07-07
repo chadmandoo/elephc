@@ -13,6 +13,7 @@
 
 pub mod addslashes;
 pub mod base64_decode;
+pub mod __elephc_base64_decode_raw;
 pub mod base64_encode;
 pub mod bin2hex;
 pub mod chop;

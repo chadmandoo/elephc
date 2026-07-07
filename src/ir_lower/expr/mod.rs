@@ -1810,6 +1810,12 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_filter_assoc(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_strtr_pairs(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_base64_decode_strict(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_explode_limit(ctx, canonical, args, expr) {
         return value;
     }
@@ -4210,6 +4216,73 @@ fn is_zero_arity_signature(sig: &FunctionSig) -> bool {
 ///
 /// Returns `None` (deferring to the builtin path and its arity/shape errors) for the
 /// 2-argument count-only form, named/spread arguments, or a non-variable `$matches`.
+/// Routes 2-argument `strtr($s, $pairs)` calls to the prelude
+/// `__elephc_strtr_pairs` impl (longest-match, non-overlapping, single-pass —
+/// semantically unlike str_replace's sequential passes). The 3-argument
+/// char-map form keeps its builtin path; the impl's `array $pairs` parameter
+/// lets the checker reject non-array second arguments.
+fn lower_static_strtr_pairs(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "strtr" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_strtr_pairs"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+/// Routes 2-argument `base64_decode($s, $strict)` calls to the prelude
+/// `__elephc_base64_decode_ex` impl: whitespace-tolerant cleaning, strict-mode
+/// validation returning false, unpadded-tail handling, then delegation to the
+/// 1-argument builtin decoder. The 1-argument form keeps its builtin path.
+fn lower_static_base64_decode_strict(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "base64_decode" {
+        return None;
+    }
+    if args.is_empty() || args.len() > 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    // The 1-argument form routes through the impl too (strict = false): the
+    // raw decoder table-decodes embedded whitespace and drops unpadded tails;
+    // the impl's cleaning fixes both. The impl itself calls the
+    // `__elephc_base64_decode_raw` alias, which this desugar never rewrites.
+    let strict_arg = args.get(1).cloned().unwrap_or_else(|| Expr {
+        kind: ExprKind::BoolLiteral(false),
+        span: expr.span,
+    });
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_base64_decode_ex"),
+            args: vec![args[0].clone(), strict_arg],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
 /// Routes `array_filter($assoc, $cb[, $mode])` calls whose receiver is an
 /// associative array to the prelude `__elephc_array_filter_hash` impl (a
 /// foreach + keyed-insert body, so key preservation and value ownership ride
