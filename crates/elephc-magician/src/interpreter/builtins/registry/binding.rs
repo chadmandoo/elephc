@@ -124,7 +124,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
     }
 
     match name {
-        "abs" | "ceil" | "floor" | "sqrt" => Some(&["num"]),
         "array_chunk" => Some(&["array", "length"]),
         "array_column" => Some(&["array", "column_key"]),
         "array_combine" => Some(&["keys", "values"]),
@@ -151,9 +150,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "array_search" | "in_array" => Some(&["needle", "haystack", "strict"]),
         "array_slice" => Some(&["array", "offset", "length"]),
         "array_splice" => Some(&["array", "offset", "length", "replacement"]),
-        "acos" | "asin" | "atan" | "cos" | "cosh" | "deg2rad" | "exp" | "log2" | "log10"
-        | "rad2deg" | "sin" | "sinh" | "tan" | "tanh" => Some(&["num"]),
-        "atan2" => Some(&["y", "x"]),
         "basename" => Some(&["path", "suffix"]),
         "addslashes" | "base64_decode" | "base64_encode" | "bin2hex" | "grapheme_strrev"
         | "hex2bin" | "rawurldecode" | "rawurlencode" | "stripslashes" | "urldecode"
@@ -188,7 +184,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "chmod" => Some(&["filename", "permissions"]),
         "chr" => Some(&["codepoint"]),
         "closedir" | "readdir" | "rewinddir" => Some(&["dir_handle"]),
-        "clamp" => Some(&["value", "min", "max"]),
         "clearstatcache" => Some(&["clear_realpath_cache", "filename"]),
         "chop" | "ltrim" | "rtrim" | "trim" => Some(&["string", "characters"]),
         "count" => Some(&["value", "mode"]),
@@ -206,7 +201,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "disk_free_space" | "disk_total_space" => Some(&["directory"]),
         "exec" | "shell_exec" | "system" | "passthru" => Some(&["command"]),
         "explode" => Some(&["separator", "string", "limit"]),
-        "fdiv" | "fmod" => Some(&["num1", "num2"]),
         "fclose"
         | "fgetc"
         | "fgets"
@@ -266,12 +260,10 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "http_response_code" => Some(&["response_code"]),
         "gzcompress" | "gzdeflate" => Some(&["data", "level"]),
         "gzinflate" | "gzuncompress" => Some(&["data", "max_length"]),
-        "hypot" => Some(&["x", "y"]),
         "html_entity_decode" | "htmlentities" | "htmlspecialchars" => Some(&["string"]),
         "implode" => Some(&["separator", "array"]),
         "inet_ntop" => Some(&["ip"]),
         "inet_pton" => Some(&["ip"]),
-        "intdiv" => Some(&["num1", "num2"]),
         "iterator_apply" => Some(&["iterator", "callback", "args"]),
         "iterator_count" => Some(&["iterator"]),
         "iterator_to_array" => Some(&["iterator", "preserve_keys"]),
@@ -283,8 +275,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "json_validate" => Some(&["json", "depth", "flags"]),
         "link" | "symlink" => Some(&["target", "link"]),
         "linkinfo" | "readlink" => Some(&["path"]),
-        "log" => Some(&["num", "base"]),
-        "max" | "min" => Some(&["value", "values"]),
         "md5" | "sha1" => Some(&["string", "binary"]),
         "localtime" => Some(&["timestamp", "associative"]),
         "microtime" => Some(&["as_float"]),
@@ -292,20 +282,12 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
             Some(&["hour", "minute", "second", "month", "day", "year"])
         }
         "nl2br" => Some(&["string", "use_xhtml"]),
-        "number_format" => Some(&[
-            "num",
-            "decimals",
-            "decimal_separator",
-            "thousands_separator",
-        ]),
         "ord" => Some(&["character"]),
         "pathinfo" => Some(&["path", "flags"]),
-        "pi" => Some(&[]),
         "php_uname" => Some(&["mode"]),
         "phpversion" => Some(&[]),
         "pclose" => Some(&["handle"]),
         "popen" => Some(&["command", "mode"]),
-        "pow" => Some(&["num", "exponent"]),
         "ptr" => Some(&["value"]),
         "ptr_null" => Some(&[]),
         "ptr_is_null" | "ptr_get" | "ptr_read8" | "ptr_read16" | "ptr_read32" => {
@@ -331,7 +313,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "realpath" => Some(&["path"]),
         "stream_resolve_include_path" => Some(&["filename"]),
         "realpath_cache_get" | "realpath_cache_size" => Some(&[]),
-        "round" => Some(&["num", "precision"]),
         "sleep" => Some(&["seconds"]),
         "spl_autoload_register" => Some(&["callback", "throw", "prepend"]),
         "spl_autoload_unregister" => Some(&["callback"]),

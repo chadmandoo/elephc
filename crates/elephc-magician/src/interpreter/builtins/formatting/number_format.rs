@@ -11,6 +11,20 @@
 use super::super::super::*;
 use super::super::*;
 use super::*;
+use super::super::spec::EvalBuiltinDefaultValue;
+
+eval_builtin! {
+    name: "number_format",
+    area: Formatting,
+    params: [
+        num,
+        decimals = EvalBuiltinDefaultValue::Int(0),
+        decimal_separator = EvalBuiltinDefaultValue::String("."),
+        thousands_separator = EvalBuiltinDefaultValue::String(","),
+    ],
+    direct: NumberFormat,
+    values: NumberFormat,
+}
 
 /// Evaluates PHP `number_format(...)` over one number and optional separators.
 pub(in crate::interpreter) fn eval_builtin_number_format(

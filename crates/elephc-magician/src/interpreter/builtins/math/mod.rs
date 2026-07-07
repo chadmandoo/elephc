@@ -9,3 +9,32 @@
 //! - Leaf files register metadata through `eval_builtin!`.
 
 mod abs;
+mod acos;
+mod asin;
+mod atan;
+mod atan2;
+mod ceil;
+mod clamp;
+mod cos;
+mod cosh;
+mod deg2rad;
+mod exp;
+mod fdiv;
+mod floor;
+mod fmod;
+mod hypot;
+mod intdiv;
+mod log;
+mod log10;
+mod log2;
+mod max;
+mod min;
+mod pi;
+mod pow;
+mod rad2deg;
+mod round;
+mod sin;
+mod sinh;
+mod sqrt;
+mod tan;
+mod tanh;

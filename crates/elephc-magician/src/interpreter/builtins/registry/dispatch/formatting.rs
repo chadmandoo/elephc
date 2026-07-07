@@ -19,35 +19,6 @@ pub(in crate::interpreter) fn eval_formatting_builtin_with_values(
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
     let result = match name {
-        "ceil" => {
-            let [value] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            values.ceil(*value)?
-        }
-        "floor" => {
-            let [value] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            values.floor(*value)?
-        }
-        "pi" => {
-            if !evaluated_args.is_empty() {
-                return Err(EvalStatus::RuntimeFatal);
-            }
-            values.float(std::f64::consts::PI)?
-        }
-        "pow" => {
-            let [left, right] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            values.pow(*left, *right)?
-        }
-        "round" => match evaluated_args {
-            [value] => values.round(*value, None)?,
-            [value, precision] => values.round(*value, Some(*precision))?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "sscanf" => {
             let [input, format, ..] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);
@@ -55,27 +26,6 @@ pub(in crate::interpreter) fn eval_formatting_builtin_with_values(
             eval_sscanf_result(*input, *format, values)?
         }
         "sprintf" | "printf" => eval_sprintf_like_result(name, evaluated_args, values)?,
-        "number_format" => match evaluated_args {
-            [value] => eval_number_format_result(*value, None, None, None, values)?,
-            [value, decimals] => {
-                eval_number_format_result(*value, Some(*decimals), None, None, values)?
-            }
-            [value, decimals, decimal_separator] => eval_number_format_result(
-                *value,
-                Some(*decimals),
-                Some(*decimal_separator),
-                None,
-                values,
-            )?,
-            [value, decimals, decimal_separator, thousands_separator] => eval_number_format_result(
-                *value,
-                Some(*decimals),
-                Some(*decimal_separator),
-                Some(*thousands_separator),
-                values,
-            )?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "vsprintf" | "vprintf" => eval_vsprintf_like_result(name, evaluated_args, values)?,
         _ => return Ok(None),
     };

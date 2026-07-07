@@ -65,8 +65,9 @@ fn build_declared_builtin_registry() -> DeclaredBuiltinRegistry {
 
 /// Validates static spec invariants before the registry is exposed.
 fn validate_declared_builtin_spec(spec: &EvalBuiltinSpec) {
+    let expected_param_names = spec.params.len() + usize::from(spec.variadic.is_some());
     assert_eq!(
-        spec.params.len(),
+        expected_param_names,
         spec.param_names.len(),
         "eval builtin {} has mismatched params and param_names",
         spec.name
@@ -85,6 +86,14 @@ fn validate_declared_builtin_spec(spec: &EvalBuiltinSpec) {
                 param.name
             );
         }
+    }
+    if let Some(variadic) = spec.variadic {
+        assert_eq!(
+            spec.param_names.last().copied(),
+            Some(variadic),
+            "eval builtin {} has a variadic name out of sync",
+            spec.name
+        );
     }
     let _ = spec.area();
 }
@@ -165,11 +174,12 @@ pub(in crate::interpreter) fn eval_declared_builtin_values_call(
 mod tests {
     use super::*;
 
-    /// Verifies migrated builtins are present in the declarative registry.
+    /// Verifies representative migrated builtins are present in the declarative registry.
     #[test]
-    fn declared_builtin_registry_exposes_migrated_builtins() {
+    fn declared_builtin_registry_exposes_representative_migrated_builtins() {
         for name in [
             "abs",
+            "acos",
             "boolval",
             "count",
             "floatval",
@@ -193,6 +203,9 @@ mod tests {
             "is_resource",
             "is_scalar",
             "is_string",
+            "log",
+            "min",
+            "number_format",
             "strlen",
             "strrev",
             "strval",
@@ -226,6 +239,30 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("is_object"),
             Some(["value"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("log"),
+            Some(["num", "base"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("log", 1),
+            Some(EvalBuiltinDefaultValue::Float(std::f64::consts::E))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("max"),
+            Some(["value", "values"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("number_format"),
+            Some(
+                [
+                    "num",
+                    "decimals",
+                    "decimal_separator",
+                    "thousands_separator",
+                ]
+                .as_slice()
+            )
         );
     }
 }

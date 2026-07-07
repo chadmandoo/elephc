@@ -102,7 +102,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "hash_hmac" => optional(params, 3),
         "hash_init" => optional(params, 1),
         "hash_final" | "md5" | "sha1" => optional(params, 1),
-        "number_format" => optional(params, 1),
 
         "array_pop" | "array_shift" => fixed_by_ref(params, &["array"]),
         "array_reverse" => optional(params, 1),
@@ -122,8 +121,7 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "array_walk" | "usort" | "uksort" | "uasort" => fixed_by_ref(params, &["array"]),
         "call_user_func" => variadic(params, &[]),
 
-        "log" | "round" | "date" | "gmdate" | "nl2br" | "strtotime" => optional(params, 1),
-        "min" | "max" => variadic(params, &[]),
+        "date" | "gmdate" | "nl2br" | "strtotime" => optional(params, 1),
         "json_encode" | "json_decode" | "json_validate" => optional(params, 1),
 
         "preg_match" | "preg_match_all" => optional_by_ref(params, 2, &["matches"]),
@@ -220,10 +218,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("hash_init", 1) => Int(0),
         ("hash_init", 2) => String(""),
         ("hash_final" | "md5" | "sha1", 1) => Bool(false),
-        ("number_format", 1) => Int(0),
-        ("number_format", 2) => String("."),
-        ("number_format", 3) => String(","),
-
         ("array_reverse", 1) => Bool(false),
         ("in_array" | "array_search", 2) => Bool(false),
         ("array_slice" | "array_splice", 2) => Null,
@@ -232,8 +226,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("array_filter", 2) => Int(0),
         ("array_reduce", 2) => Null,
 
-        ("log", 1) => Float(std::f64::consts::E),
-        ("round", 1) => Int(0),
         ("date" | "gmdate", 1) => Null,
         ("strtotime", 1) => Null,
         ("nl2br", 1) => Bool(true),

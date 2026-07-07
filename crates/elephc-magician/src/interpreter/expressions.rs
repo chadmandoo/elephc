@@ -1532,7 +1532,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
     }
 
     match name {
-        "abs" => eval_builtin_abs(args, context, scope, values),
         "addslashes" | "stripslashes" => eval_builtin_slashes(name, args, context, scope, values),
         "array_combine" => eval_builtin_array_combine(args, context, scope, values),
         "array_chunk" => eval_builtin_array_chunk(args, context, scope, values),
@@ -1566,22 +1565,15 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "array_slice" => eval_builtin_array_slice(args, context, scope, values),
         "array_unique" => eval_builtin_array_unique(args, context, scope, values),
-        "acos" | "asin" | "atan" | "cos" | "cosh" | "deg2rad" | "exp" | "log2" | "log10"
-        | "rad2deg" | "sin" | "sinh" | "tan" | "tanh" => {
-            eval_builtin_float_unary(name, args, context, scope, values)
-        }
-        "atan2" | "hypot" => eval_builtin_float_pair(name, args, context, scope, values),
         "base64_encode" => eval_builtin_base64_encode(args, context, scope, values),
         "base64_decode" => eval_builtin_base64_decode(args, context, scope, values),
         "basename" => eval_builtin_basename(args, context, scope, values),
         "bin2hex" => eval_builtin_bin2hex(args, context, scope, values),
-        "ceil" => eval_builtin_ceil(args, context, scope, values),
         "chdir" | "mkdir" | "rmdir" => {
             eval_builtin_unary_path_bool(name, args, context, scope, values)
         }
         "chmod" => eval_builtin_chmod(args, context, scope, values),
         "chr" => eval_builtin_chr(args, context, scope, values),
-        "clamp" => eval_builtin_clamp(args, context, scope, values),
         "clearstatcache" => eval_builtin_clearstatcache(args, context, scope, values),
         "call_user_func" => eval_builtin_call_user_func(args, context, scope, values),
         "call_user_func_array" => eval_builtin_call_user_func_array(args, context, scope, values),
@@ -1640,7 +1632,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "eval" => eval_nested_eval(args, context, scope, values),
         "explode" => eval_builtin_explode(args, context, scope, values),
-        "fdiv" | "fmod" => eval_builtin_float_binary(name, args, context, scope, values),
         "file" => eval_builtin_file(args, context, scope, values),
         "file_exists" => eval_builtin_file_probe(name, args, context, scope, values),
         "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
@@ -1673,7 +1664,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "ftruncate" => eval_builtin_ftruncate(args, context, scope, values),
         "fwrite" => eval_builtin_fwrite(args, context, scope, values),
         "stat" | "lstat" => eval_builtin_stat_array(name, args, context, scope, values),
-        "floor" => eval_builtin_floor(args, context, scope, values),
         "function_exists" | "is_callable" => {
             eval_builtin_function_probe(name, args, context, scope, values)
         }
@@ -1721,7 +1711,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "implode" => eval_builtin_implode(args, context, scope, values),
         "inet_ntop" => eval_builtin_inet_ntop(args, context, scope, values),
         "inet_pton" => eval_builtin_inet_pton(args, context, scope, values),
-        "intdiv" => eval_builtin_intdiv(args, context, scope, values),
         "iterator_apply" => eval_builtin_iterator_apply(args, context, scope, values),
         "iterator_count" => eval_builtin_iterator_count(args, context, scope, values),
         "iterator_to_array" => eval_builtin_iterator_to_array(args, context, scope, values),
@@ -1737,22 +1726,17 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "json_validate" => eval_builtin_json_validate(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
         "ltrim" | "rtrim" => eval_builtin_trim_like(name, args, context, scope, values),
-        "log" => eval_builtin_log(args, context, scope, values),
-        "max" | "min" => eval_builtin_min_max(name, args, context, scope, values),
         "localtime" => eval_builtin_localtime(args, context, scope, values),
         "microtime" => eval_builtin_microtime(args, context, scope, values),
         "mktime" | "gmmktime" => eval_builtin_mktime_like(name, args, context, scope, values),
         "nl2br" => eval_builtin_nl2br(args, context, scope, values),
-        "number_format" => eval_builtin_number_format(args, context, scope, values),
         "ord" => eval_builtin_ord(args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),
         "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
-        "pi" => eval_builtin_pi(args, values),
         "php_uname" => eval_builtin_php_uname(args, context, scope, values),
         "phpversion" => eval_builtin_phpversion(args, values),
         "pclose" => eval_builtin_pclose(args, context, scope, values),
         "popen" => eval_builtin_popen(args, context, scope, values),
-        "pow" => eval_builtin_pow(args, context, scope, values),
         "preg_match" => eval_builtin_preg_match(args, context, scope, values),
         "preg_match_all" => eval_builtin_preg_match_all(args, context, scope, values),
         "preg_replace" => eval_builtin_preg_replace(args, context, scope, values),
@@ -1777,11 +1761,9 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "realpath" => eval_builtin_realpath(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
-        "round" => eval_builtin_round(args, context, scope, values),
         "scandir" => eval_builtin_scandir(args, context, scope, values),
         "isset" => eval_builtin_isset(args, context, scope, values),
         "sleep" => eval_builtin_sleep(args, context, scope, values),
-        "sqrt" => eval_builtin_sqrt(args, context, scope, values),
         "spl_autoload_register" | "spl_autoload_unregister" => {
             eval_builtin_spl_autoload_bool(name, args, context, scope, values)
         }

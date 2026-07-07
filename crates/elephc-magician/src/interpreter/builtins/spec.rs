@@ -13,13 +13,18 @@
 //! - Hook enums keep calls monomorphized over `RuntimeValueOps`.
 
 use super::super::{
-    eval_builtin_count, eval_builtin_gettype, eval_builtin_strlen, eval_builtin_type_predicate,
-    eval_count_result, ElephcEvalContext, ElephcEvalScope, EvalExpr, EvalStatus,
-    RuntimeCellHandle, RuntimeValueOps,
+    eval_builtin_ceil, eval_builtin_clamp, eval_builtin_count, eval_builtin_float_binary,
+    eval_builtin_float_pair, eval_builtin_float_unary, eval_builtin_floor, eval_builtin_gettype,
+    eval_builtin_intdiv, eval_builtin_log, eval_builtin_min_max, eval_builtin_number_format,
+    eval_builtin_pi, eval_builtin_pow, eval_builtin_round, eval_builtin_sqrt, eval_builtin_strlen,
+    eval_builtin_type_predicate, eval_count_result, ElephcEvalContext, ElephcEvalScope, EvalExpr,
+    EvalStatus, RuntimeCellHandle, RuntimeValueOps,
 };
 use super::{
     eval_builtin_abs, eval_builtin_cast, eval_builtin_strrev, eval_cast_result,
-    eval_gettype_result, eval_type_predicate_result,
+    eval_clamp_result, eval_float_binary_result, eval_float_pair_result, eval_float_unary_result,
+    eval_gettype_result, eval_intdiv_result, eval_log_result, eval_min_max_result,
+    eval_number_format_result, eval_type_predicate_result,
 };
 pub(in crate::interpreter) use super::registry::EvalBuiltinDefaultValue;
 
@@ -28,6 +33,8 @@ pub(in crate::interpreter) use super::registry::EvalBuiltinDefaultValue;
 pub(in crate::interpreter) enum EvalArea {
     /// Array and collection builtins.
     Array,
+    /// Formatting and display-oriented numeric builtins.
+    Formatting,
     /// Numeric and mathematical builtins.
     Math,
     /// String-processing builtins.
@@ -54,10 +61,38 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Abs,
     /// Dispatches scalar cast builtins.
     Cast,
+    /// Dispatches `ceil(...)`.
+    Ceil,
+    /// Dispatches `clamp(...)`.
+    Clamp,
     /// Dispatches `count(...)`.
     Count,
+    /// Dispatches binary floating-point builtins.
+    FloatBinary,
+    /// Dispatches paired floating-point builtins.
+    FloatPair,
+    /// Dispatches unary floating-point builtins.
+    FloatUnary,
+    /// Dispatches `floor(...)`.
+    Floor,
     /// Dispatches `gettype(...)`.
     Gettype,
+    /// Dispatches `intdiv(...)`.
+    Intdiv,
+    /// Dispatches `log(...)`.
+    Log,
+    /// Dispatches `min(...)` and `max(...)`.
+    MinMax,
+    /// Dispatches `number_format(...)`.
+    NumberFormat,
+    /// Dispatches `pi()`.
+    Pi,
+    /// Dispatches `pow(...)`.
+    Pow,
+    /// Dispatches `round(...)`.
+    Round,
+    /// Dispatches `sqrt(...)`.
+    Sqrt,
     /// Dispatches `strlen(...)`.
     Strlen,
     /// Dispatches `strrev(...)`.
@@ -73,10 +108,38 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Abs,
     /// Dispatches scalar cast builtins.
     Cast,
+    /// Dispatches `ceil(...)`.
+    Ceil,
+    /// Dispatches `clamp(...)`.
+    Clamp,
     /// Dispatches `count(...)`.
     Count,
+    /// Dispatches binary floating-point builtins.
+    FloatBinary,
+    /// Dispatches paired floating-point builtins.
+    FloatPair,
+    /// Dispatches unary floating-point builtins.
+    FloatUnary,
+    /// Dispatches `floor(...)`.
+    Floor,
     /// Dispatches `gettype(...)`.
     Gettype,
+    /// Dispatches `intdiv(...)`.
+    Intdiv,
+    /// Dispatches `log(...)`.
+    Log,
+    /// Dispatches `min(...)` and `max(...)`.
+    MinMax,
+    /// Dispatches `number_format(...)`.
+    NumberFormat,
+    /// Dispatches `pi()`.
+    Pi,
+    /// Dispatches `pow(...)`.
+    Pow,
+    /// Dispatches `round(...)`.
+    Round,
+    /// Dispatches `sqrt(...)`.
+    Sqrt,
     /// Dispatches `strlen(...)`.
     Strlen,
     /// Dispatches `strrev(...)`.
@@ -121,10 +184,12 @@ impl EvalBuiltinSpec {
 
     /// Returns the number of parameters that define defaults.
     pub(in crate::interpreter) fn default_param_count(&self) -> usize {
-        self.params
+        let fixed_defaults = self
+            .params
             .iter()
             .filter(|param| param.default.is_some())
-            .count()
+            .count();
+        fixed_defaults + usize::from(self.variadic.is_some())
     }
 
     /// Returns by-reference parameter names, checking they agree with param flags in debug builds.
@@ -159,8 +224,22 @@ impl EvalDirectHook {
         match self {
             Self::Abs => eval_builtin_abs(args, context, scope, values),
             Self::Cast => eval_builtin_cast(name, args, context, scope, values),
+            Self::Ceil => eval_builtin_ceil(args, context, scope, values),
+            Self::Clamp => eval_builtin_clamp(args, context, scope, values),
             Self::Count => eval_builtin_count(args, context, scope, values),
+            Self::FloatBinary => eval_builtin_float_binary(name, args, context, scope, values),
+            Self::FloatPair => eval_builtin_float_pair(name, args, context, scope, values),
+            Self::FloatUnary => eval_builtin_float_unary(name, args, context, scope, values),
+            Self::Floor => eval_builtin_floor(args, context, scope, values),
             Self::Gettype => eval_builtin_gettype(args, context, scope, values),
+            Self::Intdiv => eval_builtin_intdiv(args, context, scope, values),
+            Self::Log => eval_builtin_log(args, context, scope, values),
+            Self::MinMax => eval_builtin_min_max(name, args, context, scope, values),
+            Self::NumberFormat => eval_builtin_number_format(args, context, scope, values),
+            Self::Pi => eval_builtin_pi(args, values),
+            Self::Pow => eval_builtin_pow(args, context, scope, values),
+            Self::Round => eval_builtin_round(args, context, scope, values),
+            Self::Sqrt => eval_builtin_sqrt(args, context, scope, values),
             Self::Strlen => eval_builtin_strlen(args, context, scope, values),
             Self::Strrev => eval_builtin_strrev(args, context, scope, values),
             Self::TypePredicate => eval_builtin_type_predicate(name, args, context, scope, values),
@@ -190,16 +269,110 @@ impl EvalValuesHook {
                 };
                 eval_cast_result(name, *value, context, values)
             }
+            Self::Ceil => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                values.ceil(*value)
+            }
+            Self::Clamp => {
+                let [value, min, max] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_clamp_result(*value, *min, *max, values)
+            }
             Self::Count => match evaluated_args {
                 [value] => eval_count_result(*value, None, context, values),
                 [value, mode] => eval_count_result(*value, Some(*mode), context, values),
                 _ => Err(EvalStatus::RuntimeFatal),
             },
+            Self::FloatBinary => {
+                let [left, right] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_float_binary_result(name, *left, *right, values)
+            }
+            Self::FloatPair => {
+                let [left, right] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_float_pair_result(name, *left, *right, values)
+            }
+            Self::FloatUnary => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_float_unary_result(name, *value, values)
+            }
+            Self::Floor => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                values.floor(*value)
+            }
             Self::Gettype => {
                 let [value] = evaluated_args else {
                     return Err(EvalStatus::RuntimeFatal);
                 };
                 eval_gettype_result(*value, values)
+            }
+            Self::Intdiv => {
+                let [left, right] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                eval_intdiv_result(*left, *right, values)
+            }
+            Self::Log => match evaluated_args {
+                [num] => eval_log_result(*num, None, values),
+                [num, base] => eval_log_result(*num, Some(*base), values),
+                _ => Err(EvalStatus::RuntimeFatal),
+            },
+            Self::MinMax => eval_min_max_result(name, evaluated_args, values),
+            Self::NumberFormat => match evaluated_args {
+                [value] => eval_number_format_result(*value, None, None, None, values),
+                [value, decimals] => {
+                    eval_number_format_result(*value, Some(*decimals), None, None, values)
+                }
+                [value, decimals, decimal_separator] => eval_number_format_result(
+                    *value,
+                    Some(*decimals),
+                    Some(*decimal_separator),
+                    None,
+                    values,
+                ),
+                [value, decimals, decimal_separator, thousands_separator] => {
+                    eval_number_format_result(
+                        *value,
+                        Some(*decimals),
+                        Some(*decimal_separator),
+                        Some(*thousands_separator),
+                        values,
+                    )
+                }
+                _ => Err(EvalStatus::RuntimeFatal),
+            },
+            Self::Pi => {
+                if !evaluated_args.is_empty() {
+                    return Err(EvalStatus::RuntimeFatal);
+                }
+                values.float(std::f64::consts::PI)
+            }
+            Self::Pow => {
+                let [left, right] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                values.pow(*left, *right)
+            }
+            Self::Round => match evaluated_args {
+                [value] => values.round(*value, None),
+                [value, precision] => values.round(*value, Some(*precision)),
+                _ => Err(EvalStatus::RuntimeFatal),
+            },
+            Self::Sqrt => {
+                let [value] = evaluated_args else {
+                    return Err(EvalStatus::RuntimeFatal);
+                };
+                values.sqrt(*value)
             }
             Self::Strlen => {
                 let [value] = evaluated_args else {
