@@ -110,9 +110,10 @@ function __elephc_mb_byte_index(string $s, int $cpIndex, int $byteLen): int {
 function mb_substr(string $string, int $start, int $length = PHP_INT_MAX): string {
     $byteLen = strlen($string);
     $cpCount = mb_strlen($string);
-    // Compute in fresh locals and NEVER rebind the $start/$length parameters: the current
-    // backend miscompiles a conditionally-reassigned parameter (it corrupts an adjacent
-    // parameter's slot — passing $length was read back as 0). $startIdx/$len dodge it.
+    // Compute in fresh locals rather than rebinding the $start/$length parameters. This
+    // originally dodged a backend miscompile where a conditionally-reassigned parameter
+    // corrupted an adjacent parameter's slot ($length read back as 0); that bug is now
+    // fixed (two-pass parameter spill in codegen_ir/frame.rs). Kept as-is for clarity.
     $startIdx = $start;
     if ($startIdx < 0) {
         $startIdx = $cpCount + $startIdx;
@@ -139,8 +140,8 @@ function mb_substr(string $string, int $start, int $length = PHP_INT_MAX): strin
     return substr($string, $startByte, $endByte - $startByte);
 }
 function mb_ltrim(string $string, string $characters = " \f\n\r\t\v\0"): string {
-    // Trim in a fresh local, never rebinding the $string parameter (see mb_substr:
-    // rebinding a parameter corrupts the sibling $characters parameter's slot).
+    // Trim in a fresh local (a loop accumulator here regardless); see mb_substr for the
+    // now-fixed sibling-parameter-slot miscompile that first motivated avoiding rebinds.
     $s = $string;
     while ($s !== '') {
         $first = mb_substr($s, 0, 1);

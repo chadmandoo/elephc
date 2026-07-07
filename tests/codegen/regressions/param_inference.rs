@@ -87,3 +87,43 @@ echo f(90.5, 2), "|", f(2, 90.5);
     );
     assert_eq!(out, "90.5,2|2,90.5");
 }
+
+/// A parameter that is conditionally reassigned in the body widens to `Mixed`, so
+/// the prologue boxes it via `__rt_mixed_from_value`. That call clobbers the ABI
+/// argument registers; if a later parameter is still living in a register when the
+/// earlier one is boxed, its value is lost. The prologue must spill every incoming
+/// parameter register to its slot BEFORE boxing any of them. Repro: `$length` (5)
+/// read back as 0 (the value of `$start`) because boxing `$start` zeroed `rsi`
+/// before `$length` was spilled. The reassign branch need not even be taken — its
+/// mere presence widens `$start` to Mixed and triggers the boxing.
+#[test]
+fn test_conditional_param_reassign_preserves_sibling_param() {
+    let out = compile_and_run(
+        r#"<?php
+function h(int $start, int $length = 777): string {
+    if ($start < 0) { $start = 1 + $start; }
+    return "got:$length";
+}
+echo h(0, 5), "|", h(-2, 9);
+"#,
+    );
+    assert_eq!(out, "got:5|got:9");
+}
+
+/// The same corruption with three parameters and a string sibling: boxing the
+/// reassigned first parameter must not disturb the later int/string parameters
+/// still in argument registers. Exercises both the taken and untaken reassign
+/// branch and a string-typed sibling (two-register ABI slot).
+#[test]
+fn test_conditional_param_reassign_preserves_multiple_siblings() {
+    let out = compile_and_run(
+        r#"<?php
+function a(int $x, int $y, string $z): string {
+    if ($x < 0) { $x = -$x; }
+    return "$x|$y|$z";
+}
+echo a(-3, 7, "k"), "/", a(4, 8, "m");
+"#,
+    );
+    assert_eq!(out, "3|7|k/4|8|m");
+}

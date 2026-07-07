@@ -182,6 +182,14 @@ pub(super) fn emit_function_prologue_with_label(
     abi::emit_frame_prologue(ctx.emitter, ctx.frame_size);
     capture_concat_base(ctx);
     emit_callee_saved_saves(ctx);
+    // Pass 1: spill every incoming parameter register to its frame slot BEFORE
+    // any Mixed-promotion. The boxing in pass 2 calls `__rt_mixed_from_value`,
+    // which clobbers the ABI argument registers; a later parameter still living
+    // in a register would be lost if we boxed an earlier one mid-loop. Storing
+    // all parameters first makes the boxing calls safe. Without this split, a
+    // function that widens an early param to Mixed (e.g. it is reassigned in a
+    // branch) corrupts the sibling parameter that shares a not-yet-spilled
+    // argument register.
     let mut incoming_args = abi::IncomingArgCursor::for_target(ctx.emitter.target, 0);
     for (index, param) in ctx.function.params.iter().enumerate() {
         let slot = LocalSlotId::from_raw(index as u32);
@@ -194,6 +202,12 @@ pub(super) fn emit_function_prologue_with_label(
             param.by_ref,
             &mut incoming_args,
         );
+    }
+    // Pass 2: box any parameter whose local type widened to Mixed. Safe now
+    // that every argument register has been spilled to a slot.
+    for (index, param) in ctx.function.params.iter().enumerate() {
+        let slot = LocalSlotId::from_raw(index as u32);
+        let offset = ctx.local_offset(slot)?;
         let local_ty = ctx.local_php_type(slot)?;
         if !param.by_ref
             && local_ty.codegen_repr() == PhpType::Mixed
