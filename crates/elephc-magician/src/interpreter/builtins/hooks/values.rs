@@ -22,14 +22,14 @@ use super::super::{
     eval_chr_result, eval_clamp_result, eval_crc32_result, eval_ctype_result,
     eval_float_binary_result, eval_float_pair_result, eval_float_unary_result,
     eval_gettype_result, eval_grapheme_strrev_result, eval_hash_equals_result,
-    eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result, eval_log_result,
-    eval_min_max_result, eval_nl2br_result, eval_number_format_result, eval_range_result,
-    eval_slashes_result, eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result,
-    eval_str_split_result, eval_string_case_result, eval_string_compare_result,
-    eval_string_position_result, eval_string_search_result, eval_strstr_result,
-    eval_substr_replace_result, eval_substr_result, eval_trim_like_result,
-    eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result,
-    eval_url_encode_result, eval_wordwrap_result,
+    eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result, eval_json_values_result,
+    eval_log_result, eval_min_max_result, eval_nl2br_result, eval_number_format_result,
+    eval_range_result, eval_slashes_result, eval_str_pad_result, eval_str_replace_result,
+    eval_str_repeat_result, eval_str_split_result, eval_string_case_result,
+    eval_string_compare_result, eval_string_position_result, eval_string_search_result,
+    eval_strstr_result, eval_substr_replace_result, eval_substr_result, eval_trim_like_result,
+    eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result, eval_url_encode_result,
+    eval_wordwrap_result,
 };
 
 /// Evaluated-argument dispatch hooks for migrated builtins.
@@ -97,6 +97,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     HtmlEntity,
     /// Dispatches `intdiv(...)`.
     Intdiv,
+    /// Dispatches JSON builtins.
+    Json,
     /// Dispatches `log(...)`.
     Log,
     /// Dispatches `min(...)` and `max(...)`.
@@ -237,6 +239,7 @@ impl EvalValuesHook {
                 eval_html_entity_result(name, value, values)
             }),
             Self::Intdiv => two_args(evaluated_args, values, eval_intdiv_result),
+            Self::Json => eval_json_values_result(name, evaluated_args, context, values),
             Self::Log => match evaluated_args {
                 [num] => eval_log_result(*num, None, values),
                 [num, base] => eval_log_result(*num, Some(*base), values),

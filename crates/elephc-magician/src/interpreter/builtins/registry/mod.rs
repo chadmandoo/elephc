@@ -215,6 +215,11 @@ mod tests {
             "is_resource",
             "is_scalar",
             "is_string",
+            "json_decode",
+            "json_encode",
+            "json_last_error",
+            "json_last_error_msg",
+            "json_validate",
             "log",
             "min",
             "nl2br",
@@ -301,6 +306,22 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_default_value("wordwrap", 2),
             Some(EvalBuiltinDefaultValue::String("\n"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("json_decode"),
+            Some(["json", "associative", "depth", "flags"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("json_decode", 1),
+            Some(EvalBuiltinDefaultValue::Null)
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("json_encode", 2),
+            Some(EvalBuiltinDefaultValue::Int(512))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("json_last_error"),
+            Some([].as_slice())
         );
     }
 }

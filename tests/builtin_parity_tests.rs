@@ -30,9 +30,6 @@ const EVAL_DYNAMIC_DISPATCH_SOURCES: &[&str] = &[
         "../crates/elephc-magician/src/interpreter/builtins/registry/dispatch/formatting.rs"
     ),
     include_str!(
-        "../crates/elephc-magician/src/interpreter/builtins/registry/dispatch/json.rs"
-    ),
-    include_str!(
         "../crates/elephc-magician/src/interpreter/builtins/registry/dispatch/network_env.rs"
     ),
     include_str!(
@@ -167,6 +164,11 @@ const EVAL_DECLARATIVE_REGISTRY_BUILTINS: &[&str] = &[
     "is_scalar",
     "is_string",
     "in_array",
+    "json_decode",
+    "json_encode",
+    "json_last_error",
+    "json_last_error_msg",
+    "json_validate",
     "lcfirst",
     "log",
     "log10",

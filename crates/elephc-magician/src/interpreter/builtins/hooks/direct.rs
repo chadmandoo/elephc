@@ -26,11 +26,11 @@ use super::super::{
     eval_builtin_array_rand, eval_builtin_array_reverse, eval_builtin_array_search,
     eval_builtin_array_slice, eval_builtin_array_unique, eval_builtin_cast,
     eval_builtin_grapheme_strrev, eval_builtin_hash_equals, eval_builtin_html_entity,
-    eval_builtin_nl2br, eval_builtin_range, eval_builtin_str_pad, eval_builtin_str_replace,
-    eval_builtin_str_split, eval_builtin_string_case, eval_builtin_string_compare,
-    eval_builtin_string_position, eval_builtin_string_search, eval_builtin_strrev,
-    eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace, eval_builtin_trim_like,
-    eval_builtin_ucwords, eval_builtin_wordwrap,
+    eval_builtin_json_call, eval_builtin_nl2br, eval_builtin_range, eval_builtin_str_pad,
+    eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_string_case,
+    eval_builtin_string_compare, eval_builtin_string_position, eval_builtin_string_search,
+    eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace,
+    eval_builtin_trim_like, eval_builtin_ucwords, eval_builtin_wordwrap,
 };
 
 /// Direct expression-level dispatch hooks for migrated builtins.
@@ -98,6 +98,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     HtmlEntity,
     /// Dispatches `intdiv(...)`.
     Intdiv,
+    /// Dispatches JSON builtins.
+    Json,
     /// Dispatches `log(...)`.
     Log,
     /// Dispatches `min(...)` and `max(...)`.
@@ -202,6 +204,7 @@ impl EvalDirectHook {
             Self::Hex2Bin => eval_builtin_hex2bin(args, context, scope, values),
             Self::HtmlEntity => eval_builtin_html_entity(name, args, context, scope, values),
             Self::Intdiv => eval_builtin_intdiv(args, context, scope, values),
+            Self::Json => eval_builtin_json_call(name, args, context, scope, values),
             Self::Log => eval_builtin_log(args, context, scope, values),
             Self::MinMax => eval_builtin_min_max(name, args, context, scope, values),
             Self::NumberFormat => eval_builtin_number_format(args, context, scope, values),

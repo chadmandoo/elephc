@@ -111,7 +111,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "call_user_func" => variadic(params, &[]),
 
         "date" | "gmdate" | "strtotime" => optional(params, 1),
-        "json_encode" | "json_decode" | "json_validate" => optional(params, 1),
 
         "preg_match" | "preg_match_all" => optional_by_ref(params, 2, &["matches"]),
         "preg_split" => optional(params, 2),
@@ -201,14 +200,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
 
         ("date" | "gmdate", 1) => Null,
         ("strtotime", 1) => Null,
-        ("json_encode", 1) => Int(0),
-        ("json_encode", 2) => Int(512),
-        ("json_decode", 1) => Null,
-        ("json_decode", 2) => Int(512),
-        ("json_decode", 3) => Int(0),
-        ("json_validate", 1) => Int(512),
-        ("json_validate", 2) => Int(0),
-
         ("preg_match" | "preg_match_all", 2) => EmptyArray,
         ("preg_match" | "preg_match_all", 3) => Int(0),
         ("preg_split", 2) => Int(-1),

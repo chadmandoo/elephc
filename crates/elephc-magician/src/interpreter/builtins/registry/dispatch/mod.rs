@@ -12,7 +12,6 @@ mod arrays;
 mod core;
 mod filesystem;
 mod formatting;
-mod json;
 mod network_env;
 mod regex;
 mod scalars;
@@ -27,7 +26,6 @@ use arrays::*;
 use core::*;
 use filesystem::*;
 use formatting::*;
-use json::*;
 use network_env::*;
 use regex::*;
 use scalars::*;
@@ -90,9 +88,6 @@ pub(in crate::interpreter) fn eval_builtin_with_values(
         return Ok(Some(result));
     }
     if let Some(result) = eval_core_builtin_with_values(name, evaluated_args, context, values)? {
-        return Ok(Some(result));
-    }
-    if let Some(result) = eval_json_builtin_with_values(name, evaluated_args, context, values)? {
         return Ok(Some(result));
     }
     Ok(None)

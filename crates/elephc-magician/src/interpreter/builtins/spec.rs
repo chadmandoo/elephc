@@ -22,6 +22,8 @@ pub(in crate::interpreter) enum EvalArea {
     Array,
     /// Formatting and display-oriented numeric builtins.
     Formatting,
+    /// JSON encoding, decoding, validation, and error-state builtins.
+    Json,
     /// Numeric and mathematical builtins.
     Math,
     /// String-processing builtins.
