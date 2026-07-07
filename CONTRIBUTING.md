@@ -90,9 +90,8 @@ Consistency is generally more important than personal preference.
 ## Adding a new operator
 
 elephc parses expressions with a Pratt parser, so a new binary operator flows
-through the whole pipeline — lexer, parser, type checker, optimizer, and EIR
-codegen. Implement it end-to-end (the legacy direct AST emitter is frozen; do not
-extend it):
+through the whole pipeline — lexer, parser, type checker, optimizer, EIR
+lowering, and target-aware codegen. Implement it end-to-end:
 
 1. Add the token to `src/lexer/token.rs`.
 2. Add scanning logic to `src/lexer/scan.rs`.
@@ -105,8 +104,8 @@ extend it):
    pruned, or has side effects (`src/optimize/`). Keep folds PHP-equivalent —
    cross-check edge cases with `php -r`.
 7. Add EIR lowering in the relevant `src/ir_lower/expr/` path and target-aware EIR
-   codegen under `src/codegen_ir/lower_inst/` when the operator needs a new IR
-   instruction or lowering path. Do not extend the frozen legacy direct AST emitter.
+   codegen under `src/codegen/lower_inst/` when the operator needs a new IR
+   instruction or lowering path.
 8. Add tests in all four test files (lexer, parser, codegen, error), including a
    Pratt binding-power test that asserts precedence relative to adjacent operators.
 
@@ -125,8 +124,8 @@ AST-walking pass (see "Adding or changing an AST node" in `CLAUDE.md`):
 5. Add optimizer/effects/warnings handling if the statement can be folded, pruned,
    read variables, write variables, or alter control flow (`src/optimize/`).
 6. Add EIR lowering in `src/ir_lower/stmt/` and target-aware EIR codegen under
-   `src/codegen_ir/` when the statement needs new instruction or terminator
-   support. Do not extend the frozen legacy direct AST emitter.
+   `src/codegen/` when the statement needs new instruction or terminator
+   support.
 7. If it introduces variables or hidden temporaries, update EIR local/temp
    declaration in `src/ir_lower/context.rs` and any frame-layout allocation needed
    before frame sizing.
@@ -279,15 +278,15 @@ wrapper that dispatches to the actual emitter:
 
 ```rust
 fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen_ir::lower_inst::builtins::lower_strlen(ctx, inst)
+    crate::codegen::lower_inst::builtins::lower_strlen(ctx, inst)
 }
 ```
 
-Write the emitter itself under `src/codegen_ir/lower_inst/builtins/<area>/`, following
+Write the emitter itself under `src/codegen/lower_inst/builtins/<area>/`, following
 the target-aware codegen conventions in `CLAUDE.md` (support every target through
 `emitter.target`, one emitter per leaf file, an inline `//` comment on every
 `emitter.instruction(...)`). If the builtin needs a runtime routine, add it under
-`src/codegen/runtime/<category>/`. The registry dispatches `spec.lower` first, so no
+`src/codegen_support/runtime/<category>/`. The registry dispatches `spec.lower` first, so no
 match arm needs editing.
 
 ### 5. What derives automatically
@@ -320,8 +319,7 @@ when relevant:
   feature.
 - Document the PHP surface (signature, parameters, return type, a short example) on the
   relevant `docs/php/` page.
-- The signature/arity parity gates (`derived_signatures_match_legacy`,
-  `arity_messages_match_legacy` in `src/builtins/parity_tests.rs`) must stay green.
+- The signature/arity parity gates in `src/builtins/parity_tests.rs` must stay green.
 
 ### 8. Not every "builtin" is a function
 

@@ -10,13 +10,13 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/system/system.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/system/system.rs)
-- **Lowering**: [`src/codegen_ir/lower_inst/builtins/system.rs`:706](https://github.com/illegalstudio/elephc/blob/main/src/codegen_ir/lower_inst/builtins/system.rs#L706) (`lower_system`)
+- **Lowering**: [`src/codegen/lower_inst/builtins/system.rs`:706](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins/system.rs#L706) (`lower_system`)
 - **Function symbol**: `lower_system()`
 
 
 ### Lowering notes
 
-- Lowers `system(command)` through libc `system()` and returns the legacy empty string result.
+- Lowers `system(command)` through libc `system()` and returns the compiler's empty string result.
 
 ## Runtime helpers
 
