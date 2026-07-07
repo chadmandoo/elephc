@@ -8280,6 +8280,29 @@ echo function_exists("touch");
     );
 }
 
+/// Verifies eval process-pipe and temporary stream builtins dispatch dynamically.
+#[test]
+fn test_eval_dispatches_process_pipe_and_tmpfile_builtin_calls() {
+    let out = compile_and_run(
+        r#"<?php
+eval('$tmp = tmpfile();
+echo gettype($tmp) === "resource" ? "tmpfile" : "bad"; echo ":";
+echo fwrite($tmp, "abc") . ":";
+rewind($tmp);
+echo fread($tmp, 3) . ":";
+$pipe = popen("printf xyz", "r");
+echo fread($pipe, 3) . ":";
+echo pclose($pipe) . ":";
+echo call_user_func("tmpfile") !== false ? "calltmp" : "bad"; echo ":";
+$callPipe = call_user_func_array("popen", ["command" => "printf q", "mode" => "r"]);
+echo fread($callPipe, 1) . ":";
+echo call_user_func("pclose", $callPipe) . ":";
+echo function_exists("tmpfile"); echo function_exists("popen"); echo function_exists("pclose");');
+"#,
+    );
+    assert_eq!(out, "tmpfile:3:abc:xyz:0:calltmp:q:0:111");
+}
+
 /// Verifies eval `bin2hex()` converts byte strings directly and by callable dispatch.
 #[test]
 fn test_eval_dispatches_bin2hex_builtin_call() {

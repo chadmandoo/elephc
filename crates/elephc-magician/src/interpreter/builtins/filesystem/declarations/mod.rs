@@ -52,6 +52,8 @@ mod linkinfo;
 mod lstat;
 mod mkdir;
 mod pathinfo;
+mod pclose;
+mod popen;
 mod readfile;
 mod readlink;
 mod realpath;
@@ -65,6 +67,7 @@ mod stream_resolve_include_path;
 mod symlink;
 mod sys_get_temp_dir;
 mod tempnam;
+mod tmpfile;
 mod touch;
 mod umask;
 mod unlink;
@@ -110,6 +113,8 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "glob" => eval_builtin_glob(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
         "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
+        "pclose" => eval_builtin_pclose(args, context, scope, values),
+        "popen" => eval_builtin_popen(args, context, scope, values),
         "readfile" => eval_builtin_readfile(args, context, scope, values),
         "readlink" => eval_builtin_readlink(args, context, scope, values),
         "realpath" => eval_builtin_realpath(args, context, scope, values),
@@ -122,6 +127,7 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         }
         "sys_get_temp_dir" => eval_builtin_sys_get_temp_dir(args, values),
         "tempnam" => eval_builtin_tempnam(args, context, scope, values),
+        "tmpfile" => eval_builtin_tmpfile(args, context, values),
         "touch" => eval_builtin_touch(args, context, scope, values),
         "umask" => eval_builtin_umask(args, context, scope, values),
         "unlink" => eval_builtin_unlink(args, context, scope, values),
@@ -230,6 +236,14 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
             [path, flags] => eval_pathinfo_result(*path, Some(*flags), values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
+        "pclose" => match evaluated_args {
+            [handle] => eval_pclose_result(*handle, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "popen" => match evaluated_args {
+            [command, mode] => eval_popen_result(*command, *mode, context, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
         "readfile" => match evaluated_args {
             [filename] => eval_readfile_result(*filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
@@ -268,6 +282,10 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
         },
         "tempnam" => match evaluated_args {
             [directory, prefix] => eval_tempnam_result(*directory, *prefix, values),
+            _ => Err(EvalStatus::RuntimeFatal),
+        },
+        "tmpfile" => match evaluated_args {
+            [] => eval_tmpfile_result(context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
         "touch" => match evaluated_args {

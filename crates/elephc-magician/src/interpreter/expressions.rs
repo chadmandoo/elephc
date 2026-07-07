@@ -1649,8 +1649,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "opendir" => eval_builtin_opendir(args, context, scope, values),
         "php_uname" => eval_builtin_php_uname(args, context, scope, values),
         "phpversion" => eval_builtin_phpversion(args, values),
-        "pclose" => eval_builtin_pclose(args, context, scope, values),
-        "popen" => eval_builtin_popen(args, context, scope, values),
         "buffer_free" | "buffer_len" | "buffer_new" | "ptr" | "ptr_get" | "ptr_is_null"
         | "ptr_null" | "ptr_offset" | "ptr_read8" | "ptr_read16" | "ptr_read32"
         | "ptr_read_string" | "ptr_set" | "ptr_sizeof" | "ptr_write8" | "ptr_write16"
@@ -1681,7 +1679,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "sscanf" => eval_builtin_sscanf(args, context, scope, values),
         "sprintf" | "printf" => eval_builtin_sprintf_like(name, args, context, scope, values),
-        "tmpfile" => eval_builtin_tmpfile(args, context, values),
         "stream_is_local" | "stream_supports_lock" => {
             eval_builtin_stream_bool_predicate(name, args, context, scope, values)
         }

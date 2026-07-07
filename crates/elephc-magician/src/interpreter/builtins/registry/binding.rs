@@ -234,8 +234,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "md5" | "sha1" => Some(&["string", "binary"]),
         "php_uname" => Some(&["mode"]),
         "phpversion" => Some(&[]),
-        "pclose" => Some(&["handle"]),
-        "popen" => Some(&["command", "mode"]),
         "ptr" => Some(&["value"]),
         "ptr_null" => Some(&[]),
         "ptr_is_null" | "ptr_get" | "ptr_read8" | "ptr_read16" | "ptr_read32" => {
@@ -301,7 +299,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "stream_socket_shutdown" => Some(&["stream", "mode"]),
         "stream_wrapper_register" => Some(&["protocol", "class", "flags"]),
         "stream_wrapper_unregister" | "stream_wrapper_restore" => Some(&["protocol"]),
-        "tmpfile" => Some(&[]),
         "long2ip" => Some(&["ip"]),
         "vfprintf" => Some(&["stream", "format", "values"]),
         "vsprintf" | "vprintf" => Some(&["format", "values"]),

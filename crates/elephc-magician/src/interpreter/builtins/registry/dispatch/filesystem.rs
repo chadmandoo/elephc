@@ -150,18 +150,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_opendir_result(*directory, context, values)?
         }
-        "pclose" => {
-            let [handle] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_pclose_result(*handle, context, values)?
-        }
-        "popen" => {
-            let [command, mode] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_popen_result(*command, *mode, context, values)?
-        }
         "stream_copy_to_stream" => match evaluated_args {
             [from, to] => {
                 eval_stream_copy_to_stream_result(*from, *to, None, None, context, values)?
@@ -414,12 +402,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             )?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
-        "tmpfile" => {
-            if !evaluated_args.is_empty() {
-                return Err(EvalStatus::RuntimeFatal);
-            }
-            eval_tmpfile_result(context, values)?
-        }
         "vfprintf" => {
             let [stream, format, array] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);

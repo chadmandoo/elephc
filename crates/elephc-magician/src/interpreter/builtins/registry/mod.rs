@@ -285,6 +285,8 @@ mod tests {
             "nl2br",
             "number_format",
             "pathinfo",
+            "pclose",
+            "popen",
             "preg_match",
             "preg_match_all",
             "preg_replace",
@@ -315,6 +317,7 @@ mod tests {
             "sys_get_temp_dir",
             "tempnam",
             "time",
+            "tmpfile",
             "touch",
             "trim",
             "strval",
@@ -601,6 +604,18 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("tempnam"),
             Some(["directory", "prefix"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("popen"),
+            Some(["command", "mode"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("pclose"),
+            Some(["handle"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("tmpfile"),
+            Some([].as_slice())
         );
         assert_eq!(
             eval_declared_builtin_default_value("touch", 1),
