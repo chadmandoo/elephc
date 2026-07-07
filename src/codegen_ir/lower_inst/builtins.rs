@@ -303,6 +303,9 @@ pub(crate) fn lower_assert(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
 }
 
 /// Lowers AOT class/interface/enum existence checks for literal names.
+/// A non-literal `class_exists()` argument routes to the runtime table scan;
+/// the other `*_exists` builtins stay literal-only (their check hook rejects
+/// dynamic names before lowering).
 pub(crate) fn lower_class_like_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -310,7 +313,15 @@ pub(crate) fn lower_class_like_exists(
 ) -> Result<()> {
     ensure_arg_count_between(inst, name, 1, 2)?;
     let value = expect_operand(inst, 0)?;
-    let symbol_name = const_string_operand(ctx, value)?;
+    let Ok(symbol_name) = const_string_operand(ctx, value) else {
+        if name != "class_exists" {
+            return Err(CodegenIrError::unsupported(format!(
+                "{} with a non-literal class name",
+                name
+            )));
+        }
+        return lower_class_exists_dynamic(ctx, inst);
+    };
     let exists = match name {
         "class_exists" => contains_folded(
             ctx.module
@@ -325,6 +336,23 @@ pub(crate) fn lower_class_like_exists(
         _ => false,
     };
     emit_static_bool(ctx, exists);
+    store_if_result(ctx, inst)
+}
+
+/// Lowers a dynamic (runtime string) `class_exists()` through the
+/// `__rt_class_exists` scan over the `_classes_by_name` table. Codegen retains
+/// every declared class when a module contains a dynamic call
+/// (`module_uses_dynamic_class_exists`), so the scan answers exactly like the
+/// compile-time fold does for literal names. The optional autoload flag
+/// (operand 1) is validated by the check hook and ignored — AOT has no
+/// autoloader.
+fn lower_class_exists_dynamic(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let (ptr_reg, len_reg) = match ctx.emitter.target.arch {
+        Arch::AArch64 => ("x1", "x2"),
+        Arch::X86_64 => ("rax", "rdx"),
+    };
+    strings::load_string_arg_to_regs(ctx, inst, 0, "class_exists", ptr_reg, len_reg)?;
+    abi::emit_call_label(ctx.emitter, "__rt_class_exists");
     store_if_result(ctx, inst)
 }
 

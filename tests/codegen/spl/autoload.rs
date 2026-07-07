@@ -931,6 +931,27 @@ fn test_class_exists_dynamic_autoload_arg_does_not_trigger_aot_autoload() {
     assert!(result.is_err());
 }
 
+/// Verifies `class_exists` with a DYNAMIC (runtime string) class name scans the
+/// runtime `_classes_by_name` table: declared classes report true even when
+/// never instantiated (an abstract reflected-only class), unknown names report
+/// false, lookup is case-insensitive, and registered builtin classes report
+/// true. The literal-name fold keeps working alongside.
+#[test]
+fn test_class_exists_dynamic_name_scans_runtime_table() {
+    let out = compile_and_run(
+        r#"<?php
+abstract class NeverTouched { }
+class AlsoDeclared { public int $v = 1; }
+function probe(string $n): string { return class_exists($n) ? "Y" : "N"; }
+$dyn = "NeverTouched";
+echo probe($dyn), probe("AlsoDeclared"), probe("Missing"), probe("nevertouched"), probe("Exception");
+echo "|", class_exists("AlsoDeclared") ? "y" : "n";
+echo "|", class_exists($dyn, false) ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "YYNYY|y|y");
+}
+
 /// Verifies interface exists literal triggers autoload.
 #[test]
 fn test_interface_exists_literal_triggers_autoload() {

@@ -24,6 +24,7 @@
 //! - Add `pub mod <name>;` here for every new system builtin home.
 
 pub mod __elephc_class_file;
+pub mod __elephc_class_is_abstract;
 pub mod assert;
 pub mod get_debug_type;
 pub mod restore_error_handler;

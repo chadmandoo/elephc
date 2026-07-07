@@ -10,6 +10,7 @@
 
 mod class_attribute_args;
 mod class_file;
+mod class_is_abstract;
 mod class_attribute_names;
 mod class_get_attributes;
 mod checkdate;
@@ -84,6 +85,7 @@ pub fn emit(
         "class_attribute_args" => class_attribute_args::emit(name, args, emitter, ctx, data),
         "class_attribute_names" => class_attribute_names::emit(name, args, emitter, ctx, data),
         "__elephc_class_file" => class_file::emit(name, args, emitter, ctx, data),
+        "__elephc_class_is_abstract" => class_is_abstract::emit(name, args, emitter, ctx, data),
         "class_get_attributes" => class_get_attributes::emit(name, args, emitter, ctx, data),
         "exec" => exec_fn::emit(name, args, emitter, ctx, data),
         "shell_exec" => shell_exec::emit(name, args, emitter, ctx, data),

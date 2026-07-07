@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
 use crate::parser::ast::{
-    ClassMethod, ClassProperty, Expr, ExprKind, Stmt, StmtKind, TypeExpr, Visibility,
+    BinOp, ClassMethod, ClassProperty, Expr, ExprKind, Stmt, StmtKind, TypeExpr, Visibility,
 };
 use crate::types::traits::FlattenedClass;
 use crate::types::PhpType;
@@ -504,6 +504,7 @@ fn builtin_reflection_class() -> FlattenedClass {
             )]),
             builtin_reflection_class_get_name_method(),
             builtin_reflection_class_get_file_name_method(),
+            builtin_reflection_class_is_abstract_method(),
             builtin_reflection_owner_get_attributes_method(),
         ],
         attributes: Vec::new(),
@@ -543,6 +544,53 @@ fn builtin_reflection_class_get_file_name_method() -> ClassMethod {
                         },
                         dummy_span,
                     )],
+                },
+                dummy_span,
+            ))),
+            dummy_span,
+        )],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::isAbstract()` method whose body checks
+/// the reflected class's abstract flag through the `__elephc_class_is_abstract`
+/// intrinsic (a `_classes_by_name` scan indexing the parallel
+/// `_class_is_abstract` flag table). An unknown class name yields `false`,
+/// matching the intrinsic's 0-on-miss contract.
+fn builtin_reflection_class_is_abstract_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "isAbstract".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Bool),
+        by_ref_return: false,
+        body: vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::BinaryOp {
+                    left: Box::new(Expr::new(
+                        ExprKind::FunctionCall {
+                            name: crate::names::Name::from("__elephc_class_is_abstract"),
+                            args: vec![Expr::new(
+                                ExprKind::PropertyAccess {
+                                    object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                                    property: "__name".to_string(),
+                                },
+                                dummy_span,
+                            )],
+                        },
+                        dummy_span,
+                    )),
+                    op: BinOp::StrictEq,
+                    right: Box::new(Expr::new(ExprKind::IntLiteral(1), dummy_span)),
                 },
                 dummy_span,
             ))),

@@ -21,15 +21,28 @@ use crate::types::PhpType;
 
 /// Validates `class_exists` / `interface_exists` / `trait_exists` / `enum_exists` arguments.
 ///
-/// Requires that the first argument is a string literal and, if present, the second argument
-/// is a literal bool or int (the autoload flag). Returns `Bool` on success.
-/// Arguments are pre-inferred by the registry common path before this hook runs.
+/// Requires that the first argument is a string literal — except `class_exists`,
+/// which also accepts a string-typed dynamic expression (the EIR lowering scans
+/// the runtime `_classes_by_name` table, and codegen retains every declared
+/// class when a dynamic call is present). If present, the second argument must
+/// be a literal bool or int (the autoload flag). Returns `Bool` on success.
+/// Arguments are pre-inferred by the registry common path before this hook runs;
+/// the dynamic `class_exists` arm re-infers the first argument to type-gate it.
 pub(crate) fn check_class_like_exists(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     if !matches!(cx.args[0].kind, ExprKind::StringLiteral(_)) {
-        return Err(CompileError::new(
-            cx.span,
-            &format!("{}() first argument must be a string literal in AOT mode", cx.name),
-        ));
+        if cx.name != "class_exists" {
+            return Err(CompileError::new(
+                cx.span,
+                &format!("{}() first argument must be a string literal in AOT mode", cx.name),
+            ));
+        }
+        let first_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
+        if !matches!(first_ty, PhpType::Str) {
+            return Err(CompileError::new(
+                cx.span,
+                "class_exists() first argument must be a string literal or a string-typed expression in AOT mode",
+            ));
+        }
     }
     if let Some(autoload_arg) = cx.args.get(1) {
         if !matches!(

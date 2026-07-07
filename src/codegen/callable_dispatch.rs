@@ -575,6 +575,10 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // __elephc_class_file is the internal ReflectionClass::getFileName intrinsic —
             // EIR-only (inline __rt_class_file_by_name call), never dynamically invoked.
             | "__elephc_class_file"
+            // __elephc_class_is_abstract is the internal ReflectionClass::isAbstract
+            // intrinsic — EIR-only (inline __rt_class_is_abstract call), never
+            // dynamically invoked.
+            | "__elephc_class_is_abstract"
             // get_debug_type is EIR-only (static fold + __rt_get_debug_type dispatch);
             // the legacy wrapper body would emit an unresolved _fn_get_debug_type.
             | "get_debug_type"

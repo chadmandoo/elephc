@@ -161,6 +161,13 @@ fn finalize_user_asm(
     if module_uses_dynamic_callable_lookup(module) {
         allowed_class_names.extend(module.class_infos.keys().cloned());
     }
+    // A dynamic class_exists() consults the runtime _classes_by_name table;
+    // retain every declared class so the scan answers exactly like the
+    // compile-time fold does for literal names (no false negatives for
+    // classes nothing else references).
+    if module_uses_dynamic_class_exists(module) {
+        allowed_class_names.extend(module.class_infos.keys().cloned());
+    }
     let runtime_interfaces = runtime_referenced_interfaces(module, &allowed_class_names);
     let runtime_classes = runtime_class_infos(module);
     crate::codegen::interface_wrappers::emit_interface_return_wrappers(
@@ -284,6 +291,40 @@ fn module_uses_dynamic_callable_lookup(module: &Module) -> bool {
         .chain(module.extern_callback_trampolines.iter())
         .chain(module.runtime_callable_invokers.iter())
         .any(|function| function_uses_dynamic_callable_lookup(module, function))
+}
+
+/// Returns true when any function calls `class_exists()` with a non-literal name.
+fn module_uses_dynamic_class_exists(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+        .any(|function| {
+            function.instructions.iter().any(|inst| {
+                is_class_exists_builtin(module, inst)
+                    && !inst.operands.is_empty()
+                    && const_string_value(module, function, inst.operands[0]).is_none()
+            })
+        })
+}
+
+/// Returns true when an instruction is a `class_exists` builtin call.
+fn is_class_exists_builtin(module: &Module, inst: &crate::ir::Instruction) -> bool {
+    if inst.op != Op::BuiltinCall {
+        return false;
+    }
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return false;
+    };
+    let Some(name) = module.data.function_names.get(data.as_raw() as usize) else {
+        return false;
+    };
+    crate::names::php_symbol_key(name.trim_start_matches('\\')) == "class_exists"
 }
 
 /// Returns true when one function calls `is_callable()` on a runtime-shaped value.
@@ -460,6 +501,11 @@ fn runtime_referenced_class_names(module: &Module) -> HashSet<String> {
         }
     }
     for class_name in referenced_stream_registration_class_names(module) {
+        if let Some(canonical) = canonical_module_class_name(module, &class_name) {
+            names.insert(canonical);
+        }
+    }
+    for class_name in referenced_reflection_target_class_names(module) {
         if let Some(canonical) = canonical_module_class_name(module, &class_name) {
             names.insert(canonical);
         }
@@ -906,6 +952,58 @@ fn referenced_class_data_names(module: &Module) -> HashSet<String> {
         }
     }
     names
+}
+
+/// Returns class names passed as string literals to Reflection constructors.
+///
+/// `new ReflectionClass("A")` names a class without instantiating it or typing
+/// any value as `Object(A)`, so none of the other collectors see it. Without
+/// this, a class that is ONLY reflected (never `new`'d — e.g. an abstract
+/// class) is retained out of `class_infos` and the `_classes_by_name` table,
+/// and the runtime name scan behind `getFileName()`/`newInstance()` misses it.
+fn referenced_reflection_target_class_names(module: &Module) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for function in module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+    {
+        for inst in &function.instructions {
+            if !matches!(inst.op, Op::ObjectNew)
+                || !is_class_name_reflection_constructor(module, inst)
+                || inst.operands.is_empty()
+            {
+                continue;
+            }
+            let Some(target) = const_string_value(module, function, inst.operands[0]) else {
+                continue;
+            };
+            // ReflectionMethod accepts the single-string "Class::method" form.
+            let class_part = target.split_once("::").map_or(target, |(class, _)| class);
+            names.insert(class_part.trim_start_matches('\\').to_string());
+        }
+    }
+    names
+}
+
+/// Returns true for `Op::ObjectNew` of a Reflection class whose first
+/// constructor argument names the reflected class as a string.
+fn is_class_name_reflection_constructor(module: &Module, inst: &crate::ir::Instruction) -> bool {
+    let Some(Immediate::Data(data)) = inst.immediate else {
+        return false;
+    };
+    let Some(name) = module.data.class_names.get(data.as_raw() as usize) else {
+        return false;
+    };
+    matches!(
+        php_symbol_key(name.trim_start_matches('\\')).as_str(),
+        "reflectionclass" | "reflectionenum" | "reflectionmethod" | "reflectionproperty"
+    )
 }
 
 /// Returns class metadata needed by dynamic object factories.

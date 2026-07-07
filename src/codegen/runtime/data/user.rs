@@ -994,6 +994,19 @@ fn emit_classes_by_name_table(
             }
         }
     }
+    // Parallel position-indexed abstract-flag table: entry i holds 1 when the
+    // class in `_classes_by_name` entry i is declared abstract. Kept out of the
+    // 48-byte entries so the existing `__rt_new_by_name` /
+    // `__rt_class_file_by_name` scans keep their stride;
+    // `__rt_class_is_abstract` reuses the same scan and indexes this table with
+    // the matched entry position (ReflectionClass::isAbstract()).
+    out.push_str(".globl _class_is_abstract\n_class_is_abstract:\n");
+    for (_, class_info) in sorted_classes {
+        out.push_str(&format!(
+            "    .quad {}\n",
+            u64::from(class_info.is_abstract)
+        ));
+    }
 }
 
 /// Returns the canonical declaring-file path recorded in a class's stamped

@@ -1628,3 +1628,46 @@ echo $l->nameOf() . "|" . $viaVar->getName() . "|" . strlen((new ReflectionClass
     );
     assert_eq!(out, "Leaf|Leaf|0");
 }
+
+/// Verifies `ReflectionClass::isAbstract()` matches PHP for an abstract class
+/// that is never instantiated (reflected-only), a concrete class, an abstract
+/// parent with a concrete child, and a case-insensitive name; an unknown class
+/// reports `false` (the intrinsic's 0-on-miss contract).
+#[test]
+fn test_reflection_class_is_abstract() {
+    let out = compile_and_run(
+        r#"<?php
+abstract class AbsOnly { public function foo(): int { return 1; } }
+class Conc { public int $v = 3; }
+abstract class AbsParent {}
+final class ConcChild extends AbsParent {}
+$c = new Conc();
+$k = new ConcChild();
+echo ((new ReflectionClass("AbsOnly"))->isAbstract() ? "T" : "F");
+echo ((new ReflectionClass("Conc"))->isAbstract() ? "T" : "F");
+echo ((new ReflectionClass("AbsParent"))->isAbstract() ? "T" : "F");
+echo ((new ReflectionClass("ConcChild"))->isAbstract() ? "T" : "F");
+echo ((new ReflectionClass("absonly"))->isAbstract() ? "T" : "F");
+$unknown = "NoSuchClass";
+echo ((new ReflectionClass($unknown))->isAbstract() ? "T" : "F");
+echo "|", $c->v + ($k instanceof AbsParent ? 1 : 0);
+"#,
+    );
+    assert_eq!(out, "TFTFTF|4");
+}
+
+/// Verifies a class referenced ONLY through a `new ReflectionClass("...")`
+/// string literal (never instantiated, never typed) is still registered in the
+/// runtime class table: `getFileName()` resolves its declaring file instead of
+/// missing the `_classes_by_name` scan.
+#[test]
+fn test_reflection_class_reflected_only_class_is_registered() {
+    let out = compile_and_run(
+        r#"<?php
+abstract class ReflectedOnly { public function foo(): int { return 1; } }
+$r = new ReflectionClass("ReflectedOnly");
+echo ($r->getFileName() === __FILE__ ? "file-same" : "file-diff"), "|", $r->getName();
+"#,
+    );
+    assert_eq!(out, "file-same|ReflectedOnly");
+}
