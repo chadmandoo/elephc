@@ -2,7 +2,7 @@
 title: "boolval() — internals"
 description: "Compiler internals for boolval(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 410
+  order: 409
 ---
 
 ## `boolval()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/types/boolval.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/boolval.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:587](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L587) (`lower_boolval`)
+- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1175](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1175) (`lower_boolval`)
 - **Function symbol**: `lower_boolval()`
 
 
@@ -20,7 +20,8 @@ sidebar:
 
 ## Runtime helpers
 
-_No direct `__rt_*` helpers captured — the lowering is inlined or routes through another builtin._
+The following runtime helpers are referenced:
+- `__rt_mixed_cast_bool`
 
 ## Signature summary
 

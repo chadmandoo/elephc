@@ -2,7 +2,7 @@
 title: "is_int() — internals"
 description: "Compiler internals for is_int(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 424
+  order: 423
 ---
 
 ## `is_int()` — internals
@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/types/is_int.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/is_int.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:737](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L737) (`lower_static_type_predicate`)
+- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1335](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1335) (`lower_static_type_predicate`)
 - **Function symbol**: `lower_static_type_predicate()`
 
 

@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/types/is_callable.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/is_callable.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:319](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L319) (`lower_is_callable`)
+- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:712](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L712) (`lower_is_callable`)
 - **Function symbol**: `lower_is_callable()`
 
 
@@ -23,7 +23,6 @@ sidebar:
 The following runtime helpers are referenced:
 - `__rt_is_callable_array`
 - `__rt_is_callable_assoc`
-- `__rt_is_callable_object`
 
 ## Signature summary
 
