@@ -1548,7 +1548,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
             eval_builtin_array_key_set(name, args, context, scope, values)
         }
         "array_merge" => eval_builtin_array_merge(args, context, scope, values),
-        "basename" => eval_builtin_basename(args, context, scope, values),
         "chdir" | "mkdir" | "rmdir" => {
             eval_builtin_unary_path_bool(name, args, context, scope, values)
         }
@@ -1586,7 +1585,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "define" => eval_builtin_define(args, context, scope, values),
         "defined" => eval_builtin_defined(args, context, scope, values),
-        "dirname" => eval_builtin_dirname(args, context, scope, values),
         "die" | "exit" => eval_builtin_exit(args, context, scope, values),
         "disk_free_space" | "disk_total_space" => {
             eval_builtin_disk_space(name, args, context, scope, values)
@@ -1617,7 +1615,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         | "stream_get_meta_data" => eval_builtin_unary_stream(name, args, context, scope, values),
         "filesize" => eval_builtin_filesize(args, context, scope, values),
         "filetype" => eval_builtin_filetype(args, context, scope, values),
-        "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),
         "fopen" => eval_builtin_fopen(args, context, scope, values),
         "fputcsv" => eval_builtin_fputcsv(args, context, scope, values),
@@ -1678,7 +1675,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "ip2long" => eval_builtin_ip2long(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),
-        "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
         "php_uname" => eval_builtin_php_uname(args, context, scope, values),
         "phpversion" => eval_builtin_phpversion(args, values),
         "pclose" => eval_builtin_pclose(args, context, scope, values),

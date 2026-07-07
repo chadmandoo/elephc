@@ -109,8 +109,8 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "print_r" => optional(params, 1),
         "var_dump" => variadic(params, &[]),
 
-        "touch" | "basename" | "dirname" | "pathinfo" => optional(params, 1),
-        "fnmatch" | "fopen" | "fseek" | "fputcsv" => optional(params, 2),
+        "touch" => optional(params, 1),
+        "fopen" | "fseek" | "fputcsv" => optional(params, 2),
         "flock" => optional_by_ref(params, 2, &["would_block"]),
         "fgetcsv" => optional(params, 1),
         "clearstatcache" => optional(params, 0),
@@ -188,10 +188,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("print_r", 1) => Bool(false),
 
         ("touch", 1 | 2) => Null,
-        ("basename", 1) => String(""),
-        ("dirname", 1) => Int(1),
-        ("fnmatch", 2) => Int(0),
-        ("pathinfo", 1) => Int(15),
         ("fopen", 2) => Bool(false),
         ("fopen", 3) => Null,
         ("flock", 2) => Null,

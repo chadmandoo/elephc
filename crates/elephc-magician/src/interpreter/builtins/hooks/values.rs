@@ -20,12 +20,12 @@ use super::super::{
     eval_array_search_result, eval_array_slice_result, eval_array_unique_result,
     eval_base64_decode_result, eval_base64_encode_result, eval_bin2hex_result, eval_cast_result,
     eval_chr_result, eval_clamp_result, eval_crc32_result, eval_ctype_result,
-    eval_float_binary_result, eval_float_pair_result, eval_float_unary_result,
-    eval_gettype_result, eval_grapheme_strrev_result, eval_hash_equals_result,
-    eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result, eval_json_values_result,
-    eval_log_result, eval_min_max_result, eval_nl2br_result, eval_number_format_result,
-    eval_range_result, eval_regex_values_result, eval_slashes_result, eval_str_pad_result,
-    eval_str_replace_result, eval_str_repeat_result, eval_str_split_result,
+    eval_filesystem_values_result, eval_float_binary_result, eval_float_pair_result,
+    eval_float_unary_result, eval_gettype_result, eval_grapheme_strrev_result,
+    eval_hash_equals_result, eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result,
+    eval_json_values_result, eval_log_result, eval_min_max_result, eval_nl2br_result,
+    eval_number_format_result, eval_range_result, eval_regex_values_result, eval_slashes_result,
+    eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result, eval_str_split_result,
     eval_string_case_result, eval_string_compare_result, eval_string_position_result,
     eval_string_search_result, eval_strstr_result, eval_substr_replace_result,
     eval_substr_result, eval_time_values_result, eval_trim_like_result,
@@ -78,6 +78,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Crc32,
     /// Dispatches `ctype_*` predicates.
     Ctype,
+    /// Dispatches filesystem and path builtins.
+    Filesystem,
     /// Dispatches binary floating-point builtins.
     FloatBinary,
     /// Dispatches paired floating-point builtins.
@@ -226,6 +228,7 @@ impl EvalValuesHook {
             Self::Ctype => one_arg(evaluated_args, values, |value, values| {
                 eval_ctype_result(name, value, values)
             }),
+            Self::Filesystem => eval_filesystem_values_result(name, evaluated_args, values),
             Self::FloatBinary => two_args(evaluated_args, values, |left, right, values| {
                 eval_float_binary_result(name, left, right, values)
             }),

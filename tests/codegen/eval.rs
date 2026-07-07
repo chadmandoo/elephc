@@ -7812,6 +7812,21 @@ echo function_exists("fnmatch"); echo defined("FNM_CASEFOLD");');
     );
 }
 
+/// Verifies eval `basename()` and `dirname()` support defaults, named call arrays, and function probes.
+#[test]
+fn test_eval_dispatches_basename_dirname_builtin_calls() {
+    let out = compile_and_run(
+        r#"<?php
+eval('echo basename("/var/log/syslog.log", ".log") . ":";
+echo dirname("/usr/local/bin/tool", 2) . ":";
+echo call_user_func("basename", "/tmp/file.txt") . ":";
+echo call_user_func_array("dirname", ["path" => "/a/b/c", "levels" => 2]) . ":";
+echo function_exists("basename") && function_exists("dirname");');
+"#,
+    );
+    assert_eq!(out, "syslog:/usr/local:file.txt:/a:1");
+}
+
 /// Verifies eval `pathinfo()` supports arrays, component flags, constants, and callables.
 #[test]
 fn test_eval_dispatches_pathinfo_builtin_call() {

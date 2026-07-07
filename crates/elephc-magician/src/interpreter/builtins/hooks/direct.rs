@@ -25,9 +25,9 @@ use super::super::{
     eval_builtin_array_key_exists, eval_builtin_array_pad, eval_builtin_array_projection,
     eval_builtin_array_rand, eval_builtin_array_reverse, eval_builtin_array_search,
     eval_builtin_array_slice, eval_builtin_array_unique, eval_builtin_cast,
-    eval_builtin_grapheme_strrev, eval_builtin_hash_equals, eval_builtin_html_entity,
-    eval_builtin_json_call, eval_builtin_nl2br, eval_builtin_range, eval_builtin_str_pad,
-    eval_builtin_regex_call, eval_builtin_str_replace, eval_builtin_str_split,
+    eval_builtin_filesystem_call, eval_builtin_grapheme_strrev, eval_builtin_hash_equals,
+    eval_builtin_html_entity, eval_builtin_json_call, eval_builtin_nl2br, eval_builtin_range,
+    eval_builtin_regex_call, eval_builtin_str_pad, eval_builtin_str_replace, eval_builtin_str_split,
     eval_builtin_string_case, eval_builtin_string_compare, eval_builtin_string_position,
     eval_builtin_string_search, eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr,
     eval_builtin_substr_replace, eval_builtin_time_call, eval_builtin_trim_like,
@@ -79,6 +79,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Crc32,
     /// Dispatches `ctype_*` predicates.
     Ctype,
+    /// Dispatches filesystem and path builtins.
+    Filesystem,
     /// Dispatches binary floating-point builtins.
     FloatBinary,
     /// Dispatches paired floating-point builtins.
@@ -199,6 +201,7 @@ impl EvalDirectHook {
             Self::Count => eval_builtin_count(args, context, scope, values),
             Self::Crc32 => eval_builtin_crc32(args, context, scope, values),
             Self::Ctype => eval_builtin_ctype(name, args, context, scope, values),
+            Self::Filesystem => eval_builtin_filesystem_call(name, args, context, scope, values),
             Self::FloatBinary => eval_builtin_float_binary(name, args, context, scope, values),
             Self::FloatPair => eval_builtin_float_pair(name, args, context, scope, values),
             Self::FloatUnary => eval_builtin_float_unary(name, args, context, scope, values),

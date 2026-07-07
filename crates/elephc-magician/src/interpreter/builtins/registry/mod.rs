@@ -195,6 +195,7 @@ mod tests {
             "array_keys",
             "array_reverse",
             "array_sum",
+            "basename",
             "boolval",
             "base64_encode",
             "bin2hex",
@@ -204,7 +205,9 @@ mod tests {
             "date",
             "date_default_timezone_get",
             "date_default_timezone_set",
+            "dirname",
             "floatval",
+            "fnmatch",
             "getdate",
             "gettype",
             "gmdate",
@@ -245,6 +248,7 @@ mod tests {
             "mktime",
             "nl2br",
             "number_format",
+            "pathinfo",
             "preg_match",
             "preg_match_all",
             "preg_replace",
@@ -417,6 +421,26 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_default_value("preg_split", 2),
             Some(EvalBuiltinDefaultValue::Int(-1))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("basename"),
+            Some(["path", "suffix"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("basename", 1),
+            Some(EvalBuiltinDefaultValue::String(""))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("dirname", 1),
+            Some(EvalBuiltinDefaultValue::Int(1))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("fnmatch", 2),
+            Some(EvalBuiltinDefaultValue::Int(0))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("pathinfo", 1),
+            Some(EvalBuiltinDefaultValue::Int(15))
         );
     }
 }

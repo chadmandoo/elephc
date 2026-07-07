@@ -9,6 +9,7 @@
 //!   host filesystem.
 
 mod directories;
+mod declarations;
 mod file_contents;
 mod file_io;
 mod fnmatch;
@@ -33,6 +34,7 @@ mod user_wrapper_stat;
 mod user_wrapper_streams;
 
 pub(in crate::interpreter) use directories::*;
+pub(in crate::interpreter) use declarations::*;
 pub(in crate::interpreter) use file_contents::*;
 pub(in crate::interpreter) use file_io::*;
 pub(in crate::interpreter) use fnmatch::*;

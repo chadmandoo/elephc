@@ -142,7 +142,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         }
         "array_push" | "array_unshift" => Some(&["array", "values"]),
         "array_splice" => Some(&["array", "offset", "length", "replacement"]),
-        "basename" => Some(&["path", "suffix"]),
         "empty" => Some(&["value"]),
         "is_callable" => Some(&["value", "syntax_only", "callable_name"]),
         "buffer_new" => Some(&["length"]),
@@ -177,7 +176,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "define" => Some(&["constant_name", "value"]),
         "defined" => Some(&["constant_name"]),
         "die" | "exit" => Some(&["status"]),
-        "dirname" => Some(&["path", "levels"]),
         "disk_free_space" | "disk_total_space" => Some(&["directory"]),
         "exec" | "shell_exec" | "system" | "passthru" => Some(&["command"]),
         "explode" => Some(&["separator", "string", "limit"]),
@@ -193,7 +191,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         | "rewind"
         | "fstat"
         | "stream_get_meta_data" => Some(&["stream"]),
-        "fnmatch" => Some(&["pattern", "filename", "flags"]),
         "fgetcsv" => Some(&["stream", "length", "separator"]),
         "file" | "file_get_contents" | "file_exists" | "fileatime" | "filectime" | "filegroup"
         | "fileinode" | "filemtime" | "fileowner" | "fileperms" | "filesize" | "filetype"
@@ -248,7 +245,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "link" | "symlink" => Some(&["target", "link"]),
         "linkinfo" | "readlink" => Some(&["path"]),
         "md5" | "sha1" => Some(&["string", "binary"]),
-        "pathinfo" => Some(&["path", "flags"]),
         "php_uname" => Some(&["mode"]),
         "phpversion" => Some(&[]),
         "pclose" => Some(&["handle"]),

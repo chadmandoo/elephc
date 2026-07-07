@@ -116,13 +116,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_filetype_result(*filename, context, values)?
         }
-        "fnmatch" => match evaluated_args {
-            [pattern, filename] => eval_fnmatch_result(*pattern, *filename, None, values)?,
-            [pattern, filename, flags] => {
-                eval_fnmatch_result(*pattern, *filename, Some(*flags), values)?
-            }
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "fgetcsv" => match evaluated_args {
             [stream] => eval_fgetcsv_result(*stream, None, None, context, values)?,
             [stream, length] => {
@@ -249,16 +242,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_scandir_result(*directory, values)?
         }
-        "basename" => match evaluated_args {
-            [path] => eval_basename_result(*path, None, values)?,
-            [path, suffix] => eval_basename_result(*path, Some(*suffix), values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "dirname" => match evaluated_args {
-            [path] => eval_dirname_result(*path, None, values)?,
-            [path, levels] => eval_dirname_result(*path, Some(*levels), values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "disk_free_space" | "disk_total_space" => {
             let [directory] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);
@@ -283,11 +266,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
             };
             eval_opendir_result(*directory, context, values)?
         }
-        "pathinfo" => match evaluated_args {
-            [path] => eval_pathinfo_result(*path, None, values)?,
-            [path, flags] => eval_pathinfo_result(*path, Some(*flags), values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "pclose" => {
             let [handle] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);
