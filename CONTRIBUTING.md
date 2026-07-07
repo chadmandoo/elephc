@@ -16,7 +16,7 @@ Contributions created with the help of AI tools are welcome. What matters to us 
 
 ## Planning Larger Work
 
-If you're working toward something bigger than a single, self-contained change, we recommend writing a plan before you dive into the code. Plans live in the `.plans` directory of the repository.
+If you're working toward something bigger than a single, self-contained change, we recommend writing a plan before you dive into the code. Plans live in the `.plans` directory of the repository, and every plan in `.plans` must be written in English.
 
 Start each plan with a checklist of the tasks it involves, then follow it with the detailed implementation notes for each of them. Keeping the task list up front makes the plan's progress easy to verify at a glance — whether it's complete is simply a matter of checking which tasks are marked done.
 

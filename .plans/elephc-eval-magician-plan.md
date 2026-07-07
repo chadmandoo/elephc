@@ -1,88 +1,86 @@
-# Piano: eval, elephc-magician e literal eval AOT
+# Plan: eval, elephc-magician, and Literal Eval AOT
 
 ## Task
 
-- [x] Definire la semantica target di `eval`: scope caller visibile, scritture
-  persistenti, variabili create visibili dopo eval, `unset`, output, parse
-  error, `return` locale al frammento, dichiarazioni dinamiche e `$this`.
-- [x] Aggiungere `crates/elephc-magician` come bridge opzionale e linkarlo solo
-  quando il programma richiede il fallback eval runtime.
-- [x] Aggiungere ABI, `RuntimeFeatures`, linker bridge e runtime helper per
-  chiamare `__elephc_eval_execute` dal backend EIR corrente.
-- [x] Implementare `ElephcEvalContext` e `ElephcEvalScope` condivisi tra codice
-  nativo e interpreter, inclusi flush/reload dei locals osservabili.
-- [x] Implementare parser runtime, EvalIR/interpreter e value bridge per il
-  subset eval supportato da magician.
-- [x] Supportare nel fallback magician variabili, assegnamenti, output, return,
-  control flow, arrays, include/require, chiamate dinamiche, dichiarazioni,
-  classi/oggetti, reflection, callable, references/by-ref e cleanup errori per
-  il subset coperto dai test.
-- [x] Modellare `eval` come barriera di effetti per optimizer/type checker:
-  niente DCE, niente propagazione costanti attraverso locals osservabili e
-  fallback dinamico dove necessario.
-- [x] Aggiungere benchmark magician ripetibili con varianti Elephc native,
-  Elephc eval, PHP native e PHP eval.
-- [x] Aggiungere parse cache, parse-error cache e include parse/file cache senza
-  congelare context, scope, magic constants o include_once state.
-- [x] Aggiungere cache per lookup simboli eval, direct builtin dispatch,
-  callable resolution cache e ottimizzazioni conservative su `RuntimeValueOps`.
-- [x] Aggiungere fast path unboxed scalar, linear EvalIR/stack VM opzionale e
-  ottimizzazioni mirate per array/reference/COW nel bridge.
-- [x] Implementare literal `eval` AOT conservativo per scalari, output, return,
-  store/scope read-write e marker assembly di AOT/fallback.
-- [x] Estendere literal eval AOT a locals interni, `while`, `if`, `break`,
-  `continue`, confronti/truthiness, modulo e benchmark prime-sum fino a
+- [x] Define the target semantics of `eval`: visible caller scope, persistent
+  writes, variables created inside eval visible after eval, `unset`, output,
+  parse errors, fragment-local `return`, dynamic declarations, and `$this`.
+- [x] Add `crates/elephc-magician` as an optional bridge and link it only when a
+  program requires the runtime eval fallback.
+- [x] Add the ABI, `RuntimeFeatures`, linker bridge, and runtime helpers needed
+  to call `__elephc_eval_execute` from the current EIR backend.
+- [x] Implement `ElephcEvalContext` and `ElephcEvalScope` shared by native code
+  and the interpreter, including flush/reload of observable locals.
+- [x] Implement runtime parsing, EvalIR/interpreter, and the value bridge for the
+  eval subset supported by magician.
+- [x] Support variables, assignments, output, return, control flow, arrays,
+  include/require, dynamic calls, declarations, classes/objects, reflection,
+  callables, references/by-ref, and error cleanup in the magician fallback for
+  the subset covered by tests.
+- [x] Model `eval` as an effect barrier for the optimizer/type checker: no DCE,
+  no constant propagation through observable locals, and dynamic fallback where
+  needed.
+- [x] Add repeatable magician benchmarks with Elephc native, Elephc eval, PHP
+  native, and PHP eval variants.
+- [x] Add parse cache, parse-error cache, and include parse/file cache without
+  freezing context, scope, magic constants, or include_once state.
+- [x] Add caches for eval symbol lookup, direct builtin dispatch, callable
+  resolution, and conservative `RuntimeValueOps` optimizations.
+- [x] Add an unboxed scalar fast path, optional linear EvalIR/stack VM, and
+  targeted array/reference/COW optimizations in the bridge.
+- [x] Implement conservative literal `eval` AOT for scalars, output, return,
+  store/scope read-write, and AOT/fallback assembly markers.
+- [x] Extend literal eval AOT to internal locals, `while`, `if`, `break`,
+  `continue`, comparisons/truthiness, modulo, and the prime-sum benchmark up to
   `100000`.
-- [x] Estendere literal eval AOT a builtins statici comuni, funzioni statiche
-  note, metodi statici pubblici tipizzati e callback statici via
-  `call_user_func*()`.
-- [x] Evitare il link a `elephc_magician` per programmi con soli eval literal
+- [x] Extend literal eval AOT to common static builtins, known static functions,
+  typed public static methods, and static callbacks through `call_user_func*()`.
+- [x] Avoid linking `elephc_magician` for programs whose literal eval calls are
   fully AOT.
-- [x] Aggiornare i test parity per distinguere builtin condivisi,
-  builtin eval-only documentati e builtin static-only non ancora presenti in
-  magician.
-- [ ] Ridurre il mini-codegen AOT manuale residuo e convergere verso funzioni
-  EIR interne per i frammenti literal supportati.
-- [ ] Espandere AOT solo dove semanticamente coperto: arrays/iterables completi,
+- [x] Update parity tests to distinguish shared builtins, documented eval-only
+  builtins, and static-only builtins not yet present in magician.
+- [ ] Reduce the remaining manual AOT mini-codegen and converge on internal EIR
+  functions for supported literal fragments.
+- [ ] Expand AOT only where semantics are covered. Full arrays/iterables,
   object/member access, references/by-ref, `global`, `static`, variable
-  variables, `try`/`throw`, include/require e dichiarazioni restano fallback
-  finche' non hanno modello e test dedicati.
-- [ ] Chiudere o mantenere esplicitamente il gap dei builtin static-only:
-  implementarli in magician oppure tenerli in allowlist testata finche' eval non
-  li espone.
-- [ ] Promuovere i benchmark di accettazione AOT piu' utili nella suite
-  benchmark permanente, senza includere compile/link time nei runtime numbers.
-- [ ] Aggiornare docs utente/internals dopo ogni estensione semantica del
-  subset eval o AOT.
-- [ ] Eseguire verifiche focused sui tre target supportati per ogni modifica che
-  tocca ABI, runtime ownership, codegen eval o fallback/AOT selection.
+  variables, `try`/`throw`, include/require, and declarations stay fallback
+  until they have a dedicated model and tests.
+- [ ] Close or explicitly maintain the static-only builtin gap: implement them
+  in magician or keep them in a tested allowlist until eval exposes them.
+- [ ] Promote the most useful AOT acceptance benchmarks into the permanent
+  benchmark suite without including compile/link time in runtime numbers.
+- [ ] Update user/internal docs after every semantic extension of the eval or AOT
+  subset.
+- [ ] Run focused checks on all three supported targets for every change that
+  touches ABI, runtime ownership, eval codegen, or fallback/AOT selection.
 
-## Scope del piano
+## Plan Scope
 
-Questo piano sostituisce e fonde:
+This plan replaces and merges:
 
 - `.plans/elephc-eval-complete-plan.md`
 - `.plans/elephc-eval-aot-complete-plan.md`
 - `.plans/elephc-magician-performance-plan.md`
 
-Il piano resta in `.plans` per tracciare solo il lavoro eval/magician ancora
-aperto. Le sezioni completate documentano lo stato raggiunto e servono come
-guardrail per non reintrodurre vecchi approcci o regressioni.
+This plan remains in `.plans` to track only the remaining eval/magician work.
+All plans in `.plans` must be written in English. Completed sections document
+the state already reached and act as guardrails against reintroducing old
+approaches or regressions.
 
-## Stato corrente
+## Current State
 
-Il supporto eval esiste su due percorsi:
+Eval support has two paths:
 
-1. Fallback runtime tramite `libelephc-magician`, chiamato da
+1. Runtime fallback through `libelephc-magician`, called by
    `__elephc_eval_execute`.
-2. Literal eval AOT, quando il frammento e' una stringa nota a compile time e il
-   classificatore lo considera semanticamente sicuro.
+2. Literal eval AOT, when the fragment is a compile-time-known string and the
+   classifier considers it semantically safe.
 
-Il backend attivo dopo il rebase su `main` e' il percorso EIR sotto
-`src/ir_lower/`, `src/ir_passes/` e `src/codegen/lower_inst/`. I riferimenti
-storici a `src/codegen_ir/` nei vecchi piani sono obsoleti.
+After the rebase onto `main`, the active backend is the EIR path under
+`src/ir_lower/`, `src/ir_passes/`, and `src/codegen/lower_inst/`. Historical
+references to `src/codegen_ir/` in older plans are obsolete.
 
-I file centrali attuali sono:
+Current central files:
 
 - `crates/elephc-magician/src/`
 - `src/eval_aot.rs`
@@ -99,224 +97,224 @@ I file centrali attuali sono:
 - `tests/codegen/eval_reflection_invocation.rs`
 - `tests/builtin_parity_tests.rs`
 
-## Architettura consolidata
+## Consolidated Architecture
 
-### Fallback magician
+### Magician Fallback
 
-`elephc-magician` e' una staticlib bridge opzionale. I programmi senza eval
-runtime non devono linkarla. Il fallback resta obbligatorio per:
+`elephc-magician` is an optional bridge staticlib. Programs without runtime eval
+must not link it. The fallback remains mandatory for:
 
-- eval dinamico;
-- literal eval non parseabile o non supportato dal classificatore AOT;
-- costrutti con semantica runtime non ancora modellata in AOT;
-- dichiarazioni dinamiche, include/require, references/by-ref, global/static,
-  variable variables, oggetti/members dinamici e throwable finche' non coperti.
+- dynamic eval;
+- literal eval that cannot be parsed or is not supported by the AOT classifier;
+- constructs whose runtime semantics are not yet modeled in AOT;
+- dynamic declarations, include/require, references/by-ref, global/static,
+  variable variables, dynamic objects/members, and throwables until covered.
 
-Il fallback riceve:
+The fallback receives:
 
-- context globale eval;
-- scope locale eval;
-- scope globale quando serve;
-- puntatore/lunghezza del codice;
-- buffer risultato.
+- global eval context;
+- local eval scope;
+- global scope when needed;
+- code pointer/length;
+- result buffer.
 
-Il value model non deve divergere da quello nativo: boxing, refcount, COW,
-references e cleanup devono rimanere coerenti con il runtime elephc.
+The value model must not diverge from native runtime behavior. Boxing, refcount,
+COW, references, and cleanup must stay consistent with the elephc runtime.
 
-### Scope sync
+### Scope Sync
 
-Il codice nativo deve sincronizzare con lo scope eval solo cio' che e'
-osservabile dal frammento:
+Native code must synchronize with eval scope only for values observable by the
+fragment:
 
-- prima della chiamata: flush delle variabili lette/scritte quando serve;
-- durante eval: magician opera sullo scope condiviso;
-- dopo eval: reload delle variabili che possono essere state scritte, create o
-  unsettate.
+- before the call: flush variables read or written when needed;
+- during eval: magician operates on the shared scope;
+- after eval: reload variables that may have been written, created, or unset.
 
-Quando l'analisi non e' precisa, la semantica vince sulla performance: usare il
-fallback o trattare il frammento come barriera piu' forte.
+When analysis is imprecise, semantics wins over performance: use the fallback or
+treat the fragment as a stronger barrier.
 
-### Literal eval AOT
+### Literal Eval AOT
 
-Il compilatore analizza il frammento literal a compile time:
+The compiler analyzes literal fragments at compile time:
 
 ```text
 literal string
-  -> parse come PHP fragment
-  -> normalizzazione/nameresolution compatibile col contesto
-  -> classificazione eligibility AOT
-  -> piano read/write/call/fallback
-  -> lowering nativo o fallback magician
+  -> parse as PHP fragment
+  -> normalize/name-resolve compatibly with the context
+  -> classify AOT eligibility
+  -> plan reads/writes/calls/fallback
+  -> native lowering or magician fallback
 ```
 
-Il piano AOT deve preservare:
+The AOT plan must preserve:
 
-- `return expr;` ritorna da eval, non dal caller;
-- fallthrough senza `return` produce `null`;
-- output resta side effect visibile;
-- variabili caller note a compile time sono leggibili/scrivibili;
-- variabili create dal frammento sono visibili dopo eval se il path AOT lo
-  dichiara supportato;
-- ogni costrutto non coperto rimane fallback esplicito.
+- `return expr;` returns from eval, not from the caller;
+- fallthrough without `return` produces `null`;
+- output remains a visible side effect;
+- caller variables known at compile time can be read and written;
+- variables created by the fragment are visible after eval if that AOT path
+  declares creation support;
+- every uncovered construct remains an explicit fallback.
 
-I path AOT emettono marker assembly tipo `eval literal AOT compiled...`; i
-fallback emettono marker con ragione leggibile quando possibile.
+AOT paths emit assembly markers such as `eval literal AOT compiled...`.
+Fallback paths emit markers with a readable reason where possible.
 
-## Lavoro completato
+## Completed Work
 
-### Eval runtime e bridge
+### Eval Runtime and Bridge
 
-Completato:
+Completed:
 
-- crate `elephc-magician`;
-- ABI C/Rust verso `__elephc_eval_execute`;
-- bridge linker `elephc_magician`;
-- detection runtime features;
-- eval language construct nel checking/lowering;
-- materialized scope, context e value bridge;
-- flush/reload dei locals osservabili;
-- error/status mapping e cleanup.
+- `elephc-magician` crate;
+- C/Rust ABI for `__elephc_eval_execute`;
+- `elephc_magician` linker bridge;
+- runtime feature detection;
+- eval language construct in checking/lowering;
+- materialized scope, context, and value bridge;
+- observable-local flush/reload;
+- error/status mapping and cleanup.
 
-La copertura codegen e interpreter include eval in top-level, funzioni, metodi,
-scope condiviso, nested eval, return/output, variabili create, mutation di
-locals, callables, constructors, closures e reflection.
+Codegen and interpreter coverage includes eval at top level, in functions, and
+in methods, shared scope, nested eval, return/output, created variables, local
+mutation, callables, constructors, closures, and reflection.
 
-### Interpreter magician
+### Magician Interpreter
 
-Completato per il subset corrente:
+Completed for the current subset:
 
-- lexer/parser runtime per fragment eval senza tag `<?php`;
+- runtime lexer/parser for eval fragments without `<?php` tags;
 - EvalIR/interpreter;
-- expressions/statements di base;
+- basic expressions/statements;
 - control flow;
-- arrays e COW nel path supportato;
+- arrays and COW on supported paths;
 - include/require;
-- dynamic functions/classes e metadata runtime;
-- builtin registry/dispatch lato interpreter;
-- callable forms e `Closure::fromCallable`;
-- classi, interfacce, trait, enum, static members e reflection nel subset
-  coperto;
-- throw/fatal/status handling dove supportato.
+- dynamic functions/classes and runtime metadata;
+- interpreter-side builtin registry/dispatch;
+- callable forms and `Closure::fromCallable`;
+- classes, interfaces, traits, enums, static members, and reflection in the
+  covered subset;
+- throw/fatal/status handling where supported.
 
-### Performance magician
+### Magician Performance
 
-Completato:
+Completed:
 
-- benchmark suite `scripts/benchmark_magician.py` con fixtures in
+- `scripts/benchmark_magician.py` benchmark suite with fixtures under
   `benchmarks/magician/cases/`;
-- parse cache e parse-error cache;
-- include cache con metadata validation;
-- lookup cache per simboli eval/native;
-- direct builtin dispatch per hot path;
-- callable resolution cache conservativa;
-- riduzione di chiamate `RuntimeValueOps` su output/scalari semplici;
-- evaluator temporaneo int/bool per assignment/return/condition;
-- linear EvalIR opzionale per straight-line fragments;
-- fast path stretti per indexed-array writes.
+- parse cache and parse-error cache;
+- include cache with metadata validation;
+- lookup cache for eval/native symbols;
+- direct builtin dispatch for hot paths;
+- conservative callable resolution cache;
+- fewer `RuntimeValueOps` calls for output/simple scalars;
+- temporary int/bool evaluator for assignment/return/condition;
+- optional linear EvalIR for straight-line fragments;
+- narrow fast paths for indexed-array writes.
 
-### Literal eval AOT
+### Literal Eval AOT
 
-Completato:
+Completed:
 
-- `EvalLiteralCall` conserva il payload literal in EIR;
-- `src/eval_aot.rs` classifica eligibility e fallback reason;
-- `src/codegen/lower_inst/builtins/eval.rs` prova AOT prima del bridge;
-- supporto per scalari, arithmetic, concat/output, print, return, stores,
-  read/write scope e boxed Mixed scope paths;
-- supporto per locals interni, assignment/compound, while/if/break/continue,
-  modulo, confronti e truthiness sufficienti per il prime benchmark;
-- supporto per builtins statici comuni;
-- supporto per funzioni statiche note;
-- supporto per metodi statici pubblici tipizzati;
-- supporto per callback statici in `call_user_func()` e
-  `call_user_func_array()`, incluse forme string, array, `Class::class` e
-  first-class statici immediati;
-- test che verificano assenza di `__elephc_eval_execute` e assenza del link a
-  `elephc_magician` per frammenti fully AOT;
-- benchmark prime-sum fino a `100000` senza bridge, output `454396537`.
+- `EvalLiteralCall` preserves the literal payload in EIR;
+- `src/eval_aot.rs` classifies eligibility and fallback reasons;
+- `src/codegen/lower_inst/builtins/eval.rs` tries AOT before the bridge;
+- support for scalars, arithmetic, concat/output, print, return, stores,
+  read/write scope, and boxed Mixed scope paths;
+- support for internal locals, assignments/compound assignments,
+  while/if/break/continue, modulo, comparisons, and truthiness sufficient for
+  the prime benchmark;
+- support for common static builtins;
+- support for known static functions;
+- support for typed public static methods;
+- support for static callbacks in `call_user_func()` and
+  `call_user_func_array()`, including string, array, `Class::class`, and
+  immediate first-class static forms;
+- tests proving no `__elephc_eval_execute` call and no `elephc_magician` link
+  for fully AOT fragments;
+- prime-sum benchmark up to `100000` without the bridge, output `454396537`.
 
-## Lavoro aperto
+## Open Work
 
-### 1. Convergenza AOT verso funzioni EIR interne
+### 1. Converge AOT on Internal EIR Functions
 
-Il debito principale e' ridurre il mini-codegen manuale in
+The main debt is reducing the manual mini-codegen in
 `src/codegen/lower_inst/builtins/eval.rs`.
 
-Direzione:
+Direction:
 
-- rappresentare ogni frammento AOT come funzione EIR interna con ABI speciale;
-- dichiarare locals del frammento separati dai locals caller;
-- introdurre primitive EIR o helper builtin per:
+- represent each AOT fragment as an internal EIR function with a special ABI;
+- declare fragment locals separately from caller locals;
+- introduce EIR primitives or helper builtins for:
   - `eval_scope_get`;
   - `eval_scope_set`;
   - return/fallthrough `null`;
   - status/fatal propagation;
-- far passare la funzione AOT da validator, optimizer, regalloc e backend
-  target-aware;
-- mantenere fallback magician come compat path.
+- send the AOT function through validation, optimization, register allocation,
+  and the target-aware backend;
+- keep magician fallback as the compatibility path.
 
 Done criteria:
 
-- nessuna crescita ulteriore del mini-backend manuale per nuovi costrutti;
-- test AOT esistenti continuano a passare;
-- assembly marker resta esplicito;
-- nessuna regressione su macOS ARM64, Linux ARM64, Linux x86_64.
+- no further growth of the manual mini-backend for new constructs;
+- existing AOT tests continue to pass;
+- the assembly marker remains explicit;
+- no regression on macOS ARM64, Linux ARM64, or Linux x86_64.
 
-### 2. Estensione AOT oltre il subset statico attuale
+### 2. Extend AOT Beyond the Current Static Subset
 
-Ogni nuovo costrutto deve essere introdotto solo con modello semantico e test.
-Priorita' ragionevole:
+Every new construct must be introduced only with a semantic model and tests.
+Reasonable priority:
 
-1. arrays/iterables in AOT quando COW e ownership sono chiari;
-2. object/member access staticamente risolvibile;
-3. references/by-ref solo se il modello ref-cell e' identico al runtime;
-4. `global`, `static`, variable variables;
+1. arrays/iterables in AOT once COW and ownership are clear;
+2. statically resolvable object/member access;
+3. references/by-ref only if the ref-cell model is identical to runtime;
+4. `global`, `static`, and variable variables;
 5. `try`/`throw`;
 6. include/require;
-7. declarations dentro eval.
+7. declarations inside eval.
 
-Tutto cio' che non e' modellato resta fallback.
+Everything not modeled stays fallback.
 
-### 3. Builtin parity compiler/eval
+### 3. Compiler/Eval Builtin Parity
 
-`tests/builtin_parity_tests.rs` distingue:
+`tests/builtin_parity_tests.rs` distinguishes:
 
-- builtin condivisi compiler/eval;
-- builtin eval-only documentati;
-- builtin static-only registrati nel compiler ma non ancora esposti da
+- shared compiler/eval builtins;
+- documented eval-only builtins;
+- static-only builtins registered in the compiler but not yet exposed by
   magician.
 
-Quando un builtin static-only viene implementato in magician:
+When a static-only builtin is implemented in magician:
 
-- rimuoverlo dall'allowlist static-only;
-- aggiungere metadata signature eval;
-- aggiungere dispatch interpreter;
-- aggiungere test named/positional se rilevante;
-- aggiornare benchmark solo se il builtin entra in hot path eval.
+- remove it from the static-only allowlist;
+- add eval signature metadata;
+- add interpreter dispatch;
+- add named/positional tests when relevant;
+- update benchmarks only if the builtin enters an eval hot path.
 
-### 4. Benchmark e misurazione
+### 4. Benchmarks and Measurement
 
-La suite benchmark esiste. Il lavoro aperto e':
+The benchmark suite exists. Remaining work:
 
-- decidere quali benchmark AOT devono essere permanenti;
-- evitare sempre compile/assemble/link time nei runtime numbers;
-- mantenere almeno un caso prime-loop e un caso algebra-heavy come regressione
-  manuale o CI artifact;
-- conservare output correctness contro PHP dove pratico.
+- decide which AOT benchmarks should become permanent;
+- always exclude compile/assemble/link time from runtime numbers;
+- keep at least one prime-loop case and one algebra-heavy case as a manual
+  regression or CI artifact;
+- preserve output correctness against PHP where practical.
 
-### 5. Documentazione
+### 5. Documentation
 
-Aggiornare docs quando cambia il subset:
+Update docs when the subset changes:
 
-- eval abilita runtime dinamico opzionale;
-- literal eval AOT non embedda parser/compiler nel binario;
-- fallback magician resta semantica di compatibilita';
-- programmi fully AOT non linkano `elephc_magician`;
-- costrutti ancora fallback devono essere documentati se user-visible.
+- eval enables an optional dynamic runtime;
+- literal eval AOT does not embed the parser/compiler in the binary;
+- magician fallback remains compatibility semantics;
+- fully AOT programs do not link `elephc_magician`;
+- constructs that still fall back should be documented when user-visible.
 
-## Test e verifiche
+## Tests and Checks
 
-Per modifiche strette al planner/lowering AOT:
+For narrow AOT planner/lowering changes:
 
 ```bash
 cargo check
@@ -325,7 +323,7 @@ cargo test --test codegen_tests test_literal_eval_prime_loop_uses_aot_without_ex
 git diff --check
 ```
 
-Per modifiche a bridge runtime o interpreter:
+For runtime bridge or interpreter changes:
 
 ```bash
 cargo check
@@ -334,7 +332,7 @@ cargo test --test codegen_tests eval_<filter>
 git diff --check
 ```
 
-Per modifiche a ABI/codegen/runtime ownership:
+For ABI/codegen/runtime ownership changes:
 
 ```bash
 cargo check
@@ -344,35 +342,37 @@ cargo test --test codegen_tests <focused_eval_filter>
 git diff --check
 ```
 
-Per benchmark manuali:
+For manual benchmarks:
 
 ```bash
 python3 scripts/benchmark_magician.py --case algebra_heavy --iterations 5 --warmup 1
 python3 scripts/benchmark_magician.py --case literal_scalar_aot --iterations 5 --warmup 1
 ```
 
-## Rischi
+## Risks
 
-- Scope sync incompleta puo' creare variabili stale o mancare creazioni/unset.
-- Duplicare codegen AOT manuale crea un secondo backend difficile da mantenere.
+- Incomplete scope sync can create stale variables or miss creations/unsets.
+- Duplicating manual AOT codegen creates a second backend that is hard to
+  maintain.
 - Treating eval as ordinary static code can break PHP eval semantics.
-- References, COW, arrays and object properties can introduce double-free,
-  leaks or missed mutations if bypassano helper runtime.
-- `eval('$x + 1;')` ritorna `null`, non l'ultima espressione.
-- Fallback selection troppo aggressiva puo' miscompilare codice dinamico.
-- Ottimizzazioni magician non devono congelare context/scope/magic constants.
-- Ogni path nuovo deve restare target-aware su macOS ARM64, Linux ARM64 e
-  Linux x86_64.
+- References, COW, arrays, and object properties can introduce double-free,
+  leaks, or missed mutations if they bypass runtime helpers.
+- `eval('$x + 1;')` returns `null`, not the last expression.
+- Over-aggressive fallback selection can miscompile dynamic code.
+- Magician optimizations must not freeze context/scope/magic constants.
+- Every new path must stay target-aware on macOS ARM64, Linux ARM64, and Linux
+  x86_64.
 
-## Criteri di completamento finale
+## Final Completion Criteria
 
-Il lavoro eval/magician puo' considerarsi chiuso quando:
+The eval/magician work can be considered closed when:
 
-1. il fallback magician copre in modo testato il subset PHP dichiarato;
-2. ogni literal eval supportato usa AOT o fallback esplicito con reason;
-3. il subset AOT non dipende da un mini-backend manuale non manutenibile;
-4. programmi fully AOT non linkano `elephc_magician`;
-5. static/eval builtin parity non ha allowlist stale;
-6. benchmark prime-loop e algebra-heavy restano corretti e misurabili;
-7. i tre target supportati hanno copertura focused per ogni cambio ABI/codegen;
-8. docs e test riflettono esattamente il subset supportato e i fallback.
+1. magician fallback covers the declared PHP subset with tests;
+2. every supported literal eval uses AOT or an explicit fallback reason;
+3. the AOT subset does not depend on an unmaintainable manual mini-backend;
+4. fully AOT programs do not link `elephc_magician`;
+5. static/eval builtin parity has no stale allowlist entries;
+6. prime-loop and algebra-heavy benchmarks remain correct and measurable;
+7. all three supported targets have focused coverage for every ABI/codegen
+   change;
+8. docs and tests exactly reflect the supported subset and fallbacks.

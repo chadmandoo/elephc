@@ -10,8 +10,6 @@ The diagnostic `--emit-ir` path lowers the checked and optimized AST into
 validated textual EIR, and normal executable/cdylib builds lower that same EIR
 into assembly.
 
-**Implementation phases:** `.plans/eir-*.md`
-
 **Authoritative source audit for this spec:**
 
 - `src/types/model.rs`
