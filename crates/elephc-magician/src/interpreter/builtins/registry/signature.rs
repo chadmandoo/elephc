@@ -86,15 +86,8 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
             optional(params, 0)
         }
 
-        "trim" | "ltrim" | "rtrim" | "chop" | "ucwords" | "str_split" | "wordwrap" => {
-            optional(params, 1)
-        }
-        "substr" | "strpos" | "strrpos" | "strstr" | "explode" | "str_pad" => {
-            optional(params, 2)
-        }
-        "str_replace" | "str_ireplace" => optional(params, 3),
+        "explode" => optional(params, 2),
         "implode" => optional(params, 1),
-        "substr_replace" => optional(params, 3),
         "sprintf" | "printf" | "sscanf" => variadic(params, &[]),
         "fprintf" | "fscanf" => variadic(params, &[]),
 
@@ -121,7 +114,7 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "array_walk" | "usort" | "uksort" | "uasort" => fixed_by_ref(params, &["array"]),
         "call_user_func" => variadic(params, &[]),
 
-        "date" | "gmdate" | "nl2br" | "strtotime" => optional(params, 1),
+        "date" | "gmdate" | "strtotime" => optional(params, 1),
         "json_encode" | "json_decode" | "json_validate" => optional(params, 1),
 
         "preg_match" | "preg_match_all" => optional_by_ref(params, 2, &["matches"]),
@@ -197,21 +190,8 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("readline" | "umask", 0) => Null,
         ("exit" | "die", 0) => Int(0),
 
-        ("trim" | "ltrim" | "rtrim" | "chop", 1) => Bytes(b" \n\r\t\x0b\x0c\0"),
-        ("ucwords", 1) => Bytes(b" \t\r\n\x0c\x0b"),
-        ("substr", 2) => Null,
-        ("strpos" | "strrpos", 2) => Int(0),
-        ("strstr", 2) => Bool(false),
-        ("str_replace" | "str_ireplace", 3) => Null,
         ("explode", 2) => Int(i64::MAX),
         ("implode", 0) => Null,
-        ("substr_replace", 3) => Null,
-        ("str_pad", 2) => String(" "),
-        ("str_pad", 3) => Int(1),
-        ("str_split", 1) => Int(1),
-        ("wordwrap", 1) => Int(75),
-        ("wordwrap", 2) => String("\n"),
-        ("wordwrap", 3) => Bool(false),
 
         ("hash" | "hash_file", 2) => Bool(false),
         ("hash_hmac", 3) => Bool(false),
@@ -228,7 +208,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
 
         ("date" | "gmdate", 1) => Null,
         ("strtotime", 1) => Null,
-        ("nl2br", 1) => Bool(true),
         ("json_encode", 1) => Int(0),
         ("json_encode", 2) => Int(512),
         ("json_decode", 1) => Null,

@@ -24,17 +24,17 @@ macro_rules! eval_builtin {
             $crate::interpreter::builtins::spec::EvalBuiltinSpec {
                 name: $name,
                 area: $crate::interpreter::builtins::spec::EvalArea::$area,
-                param_names: &[$(stringify!($param),)* stringify!($variadic)],
+                param_names: &[$(eval_builtin!(@name_str $param),)* eval_builtin!(@name_str $variadic)],
                 params: &[
                     $(
                         $crate::interpreter::builtins::spec::EvalParamSpec {
-                            name: stringify!($param),
+                            name: eval_builtin!(@name_str $param),
                             default: eval_builtin!(@default $($default)?),
                             by_ref: false,
                         },
                     )*
                 ],
-                variadic: Some(stringify!($variadic)),
+                variadic: Some(eval_builtin!(@name_str $variadic)),
                 by_ref_params: &[],
                 direct: Some($crate::interpreter::builtins::spec::EvalDirectHook::$direct),
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
@@ -53,11 +53,11 @@ macro_rules! eval_builtin {
             $crate::interpreter::builtins::spec::EvalBuiltinSpec {
                 name: $name,
                 area: $crate::interpreter::builtins::spec::EvalArea::$area,
-                param_names: &[$(stringify!($param)),*],
+                param_names: &[$(eval_builtin!(@name_str $param)),*],
                 params: &[
                     $(
                         $crate::interpreter::builtins::spec::EvalParamSpec {
-                            name: stringify!($param),
+                            name: eval_builtin!(@name_str $param),
                             default: eval_builtin!(@default $($default)?),
                             by_ref: false,
                         },
@@ -77,5 +77,13 @@ macro_rules! eval_builtin {
 
     (@default $default:expr) => {
         Some($default)
+    };
+
+    (@name_str r#break) => {
+        "break"
+    };
+
+    (@name_str $name:ident) => {
+        stringify!($name)
     };
 }

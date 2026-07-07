@@ -182,7 +182,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "chmod" => Some(&["filename", "permissions"]),
         "closedir" | "readdir" | "rewinddir" => Some(&["dir_handle"]),
         "clearstatcache" => Some(&["clear_realpath_cache", "filename"]),
-        "chop" | "ltrim" | "rtrim" | "trim" => Some(&["string", "characters"]),
         "count" => Some(&["value", "mode"]),
         "copy" | "rename" => Some(&["from", "to"]),
         "checkdate" => Some(&["month", "day", "year"]),
@@ -276,7 +275,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "mktime" | "gmmktime" => {
             Some(&["hour", "minute", "second", "month", "day", "year"])
         }
-        "nl2br" => Some(&["string", "use_xhtml"]),
         "pathinfo" => Some(&["path", "flags"]),
         "php_uname" => Some(&["mode"]),
         "phpversion" => Some(&[]),
@@ -356,31 +354,17 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "stream_socket_shutdown" => Some(&["stream", "mode"]),
         "stream_wrapper_register" => Some(&["protocol", "class", "flags"]),
         "stream_wrapper_unregister" | "stream_wrapper_restore" => Some(&["protocol"]),
-        "strcasecmp" | "strcmp" => Some(&["string1", "string2"]),
-        "str_contains" | "str_ends_with" | "str_starts_with" => Some(&["haystack", "needle"]),
         "strtotime" => Some(&["datetime", "baseTimestamp"]),
-        "strstr" => Some(&["haystack", "needle", "before_needle"]),
-        "str_pad" => Some(&["string", "length", "pad_string", "pad_type"]),
-        "str_replace" | "str_ireplace" => Some(&["search", "replace", "subject", "count"]),
-        "strpos" | "strrpos" => Some(&["haystack", "needle", "offset"]),
-        "str_split" => Some(&["string", "length"]),
-        "substr" => Some(&["string", "offset", "length"]),
-        "substr_replace" => Some(&["string", "replace", "offset", "length"]),
         "sys_get_temp_dir" | "time" | "tmpfile" => Some(&[]),
         "tempnam" => Some(&["directory", "prefix"]),
         "touch" => Some(&["filename", "mtime", "atime"]),
         "chown" | "lchown" => Some(&["filename", "user"]),
         "chgrp" | "lchgrp" => Some(&["filename", "group"]),
-        "lcfirst" | "strlen" | "strrev" | "strtolower" | "strtoupper" | "ucfirst" => {
-            Some(&["string"])
-        }
         "long2ip" => Some(&["ip"]),
-        "ucwords" => Some(&["string", "separators"]),
         "umask" => Some(&["mask"]),
         "usleep" => Some(&["microseconds"]),
         "vfprintf" => Some(&["stream", "format", "values"]),
         "vsprintf" | "vprintf" => Some(&["format", "values"]),
-        "wordwrap" => Some(&["string", "width", "break", "cut_long_words"]),
         _ => None,
     }
 }

@@ -210,12 +210,19 @@ mod tests {
             "is_string",
             "log",
             "min",
+            "nl2br",
             "number_format",
             "rawurlencode",
+            "str_contains",
+            "str_pad",
+            "str_replace",
             "strlen",
             "str_repeat",
             "strrev",
+            "substr",
+            "trim",
             "strval",
+            "wordwrap",
         ] {
             assert!(
                 eval_declared_builtin_exists(name),
@@ -278,6 +285,14 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("str_repeat"),
             Some(["string", "times"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("wordwrap"),
+            Some(["string", "width", "break", "cut_long_words"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("wordwrap", 2),
+            Some(EvalBuiltinDefaultValue::String("\n"))
         );
     }
 }

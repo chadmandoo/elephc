@@ -1,0 +1,192 @@
+//! Purpose:
+//! Direct expression-level dispatch hooks for eval builtins migrated into the
+//! declarative registry.
+//!
+//! Called from:
+//! - `crate::interpreter::builtins::registry::eval_declared_builtin_direct_call`.
+//!
+//! Key details:
+//! - Direct hooks preserve source-order evaluation in existing builtin helpers.
+//! - Hook variants remain static metadata referenced from per-builtin files.
+
+use super::super::super::{
+    eval_builtin_base64_decode, eval_builtin_base64_encode, eval_builtin_bin2hex,
+    eval_builtin_ceil, eval_builtin_chr, eval_builtin_clamp, eval_builtin_count,
+    eval_builtin_crc32, eval_builtin_ctype, eval_builtin_float_binary, eval_builtin_float_pair,
+    eval_builtin_float_unary, eval_builtin_floor, eval_builtin_gettype, eval_builtin_hex2bin,
+    eval_builtin_intdiv, eval_builtin_log, eval_builtin_min_max, eval_builtin_number_format,
+    eval_builtin_ord, eval_builtin_pi, eval_builtin_pow, eval_builtin_round, eval_builtin_slashes,
+    eval_builtin_sqrt, eval_builtin_str_repeat, eval_builtin_strlen, eval_builtin_type_predicate,
+    eval_builtin_url_decode, eval_builtin_url_encode, ElephcEvalContext, ElephcEvalScope,
+    EvalExpr, EvalStatus, RuntimeCellHandle, RuntimeValueOps,
+};
+use super::super::{
+    eval_builtin_abs, eval_builtin_cast, eval_builtin_nl2br, eval_builtin_str_pad,
+    eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_string_case,
+    eval_builtin_string_compare, eval_builtin_string_position, eval_builtin_string_search,
+    eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace,
+    eval_builtin_trim_like, eval_builtin_ucwords, eval_builtin_wordwrap,
+};
+
+/// Direct expression-level dispatch hooks for migrated builtins.
+#[derive(Clone, Copy)]
+pub(in crate::interpreter) enum EvalDirectHook {
+    /// Dispatches `abs(...)`.
+    Abs,
+    /// Dispatches `base64_decode(...)`.
+    Base64Decode,
+    /// Dispatches `base64_encode(...)`.
+    Base64Encode,
+    /// Dispatches `bin2hex(...)`.
+    Bin2Hex,
+    /// Dispatches scalar cast builtins.
+    Cast,
+    /// Dispatches `ceil(...)`.
+    Ceil,
+    /// Dispatches `chr(...)`.
+    Chr,
+    /// Dispatches `clamp(...)`.
+    Clamp,
+    /// Dispatches `count(...)`.
+    Count,
+    /// Dispatches `crc32(...)`.
+    Crc32,
+    /// Dispatches `ctype_*` predicates.
+    Ctype,
+    /// Dispatches binary floating-point builtins.
+    FloatBinary,
+    /// Dispatches paired floating-point builtins.
+    FloatPair,
+    /// Dispatches unary floating-point builtins.
+    FloatUnary,
+    /// Dispatches `floor(...)`.
+    Floor,
+    /// Dispatches `gettype(...)`.
+    Gettype,
+    /// Dispatches `hex2bin(...)`.
+    Hex2Bin,
+    /// Dispatches `intdiv(...)`.
+    Intdiv,
+    /// Dispatches `log(...)`.
+    Log,
+    /// Dispatches `min(...)` and `max(...)`.
+    MinMax,
+    /// Dispatches `number_format(...)`.
+    NumberFormat,
+    /// Dispatches `ord(...)`.
+    Ord,
+    /// Dispatches `pi()`.
+    Pi,
+    /// Dispatches `pow(...)`.
+    Pow,
+    /// Dispatches `round(...)`.
+    Round,
+    /// Dispatches `addslashes(...)` and `stripslashes(...)`.
+    Slashes,
+    /// Dispatches `sqrt(...)`.
+    Sqrt,
+    /// Dispatches string ASCII case-conversion builtins.
+    StringCase,
+    /// Dispatches string comparison builtins.
+    StringCompare,
+    /// Dispatches string position builtins.
+    StringPosition,
+    /// Dispatches string search predicate builtins.
+    StringSearch,
+    /// Dispatches `str_pad(...)`.
+    StrPad,
+    /// Dispatches `str_replace(...)` and `str_ireplace(...)`.
+    StrReplace,
+    /// Dispatches `str_split(...)`.
+    StrSplit,
+    /// Dispatches `strlen(...)`.
+    Strlen,
+    /// Dispatches `str_repeat(...)`.
+    StrRepeat,
+    /// Dispatches `strrev(...)`.
+    Strrev,
+    /// Dispatches `strstr(...)`.
+    Strstr,
+    /// Dispatches `substr(...)`.
+    Substr,
+    /// Dispatches `substr_replace(...)`.
+    SubstrReplace,
+    /// Dispatches trim-family builtins.
+    TrimLike,
+    /// Dispatches scalar and container type predicates.
+    TypePredicate,
+    /// Dispatches `ucwords(...)`.
+    Ucwords,
+    /// Dispatches `nl2br(...)`.
+    Nl2br,
+    /// Dispatches `wordwrap(...)`.
+    Wordwrap,
+    /// Dispatches URL decode builtins.
+    UrlDecode,
+    /// Dispatches URL encode builtins.
+    UrlEncode,
+}
+
+impl EvalDirectHook {
+    /// Runs a direct expression-level builtin call through the migrated hook.
+    pub(in crate::interpreter) fn call(
+        self,
+        name: &str,
+        args: &[EvalExpr],
+        context: &mut ElephcEvalContext,
+        scope: &mut ElephcEvalScope,
+        values: &mut impl RuntimeValueOps,
+    ) -> Result<RuntimeCellHandle, EvalStatus> {
+        match self {
+            Self::Abs => eval_builtin_abs(args, context, scope, values),
+            Self::Base64Decode => eval_builtin_base64_decode(args, context, scope, values),
+            Self::Base64Encode => eval_builtin_base64_encode(args, context, scope, values),
+            Self::Bin2Hex => eval_builtin_bin2hex(args, context, scope, values),
+            Self::Cast => eval_builtin_cast(name, args, context, scope, values),
+            Self::Ceil => eval_builtin_ceil(args, context, scope, values),
+            Self::Chr => eval_builtin_chr(args, context, scope, values),
+            Self::Clamp => eval_builtin_clamp(args, context, scope, values),
+            Self::Count => eval_builtin_count(args, context, scope, values),
+            Self::Crc32 => eval_builtin_crc32(args, context, scope, values),
+            Self::Ctype => eval_builtin_ctype(name, args, context, scope, values),
+            Self::FloatBinary => eval_builtin_float_binary(name, args, context, scope, values),
+            Self::FloatPair => eval_builtin_float_pair(name, args, context, scope, values),
+            Self::FloatUnary => eval_builtin_float_unary(name, args, context, scope, values),
+            Self::Floor => eval_builtin_floor(args, context, scope, values),
+            Self::Gettype => eval_builtin_gettype(args, context, scope, values),
+            Self::Hex2Bin => eval_builtin_hex2bin(args, context, scope, values),
+            Self::Intdiv => eval_builtin_intdiv(args, context, scope, values),
+            Self::Log => eval_builtin_log(args, context, scope, values),
+            Self::MinMax => eval_builtin_min_max(name, args, context, scope, values),
+            Self::NumberFormat => eval_builtin_number_format(args, context, scope, values),
+            Self::Ord => eval_builtin_ord(args, context, scope, values),
+            Self::Pi => eval_builtin_pi(args, values),
+            Self::Pow => eval_builtin_pow(args, context, scope, values),
+            Self::Round => eval_builtin_round(args, context, scope, values),
+            Self::Slashes => eval_builtin_slashes(name, args, context, scope, values),
+            Self::Sqrt => eval_builtin_sqrt(args, context, scope, values),
+            Self::StringCase => eval_builtin_string_case(name, args, context, scope, values),
+            Self::StringCompare => eval_builtin_string_compare(name, args, context, scope, values),
+            Self::StringPosition => {
+                eval_builtin_string_position(name, args, context, scope, values)
+            }
+            Self::StringSearch => eval_builtin_string_search(name, args, context, scope, values),
+            Self::StrPad => eval_builtin_str_pad(args, context, scope, values),
+            Self::StrReplace => eval_builtin_str_replace(name, args, context, scope, values),
+            Self::StrSplit => eval_builtin_str_split(args, context, scope, values),
+            Self::Strlen => eval_builtin_strlen(args, context, scope, values),
+            Self::StrRepeat => eval_builtin_str_repeat(args, context, scope, values),
+            Self::Strrev => eval_builtin_strrev(args, context, scope, values),
+            Self::Strstr => eval_builtin_strstr(args, context, scope, values),
+            Self::Substr => eval_builtin_substr(args, context, scope, values),
+            Self::SubstrReplace => eval_builtin_substr_replace(args, context, scope, values),
+            Self::TrimLike => eval_builtin_trim_like(name, args, context, scope, values),
+            Self::TypePredicate => eval_builtin_type_predicate(name, args, context, scope, values),
+            Self::Ucwords => eval_builtin_ucwords(args, context, scope, values),
+            Self::Nl2br => eval_builtin_nl2br(args, context, scope, values),
+            Self::Wordwrap => eval_builtin_wordwrap(args, context, scope, values),
+            Self::UrlDecode => eval_builtin_url_decode(name, args, context, scope, values),
+            Self::UrlEncode => eval_builtin_url_encode(name, args, context, scope, values),
+        }
+    }
+}

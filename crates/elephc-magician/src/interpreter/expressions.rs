@@ -1597,7 +1597,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "closedir" | "readdir" | "rewinddir" => {
             eval_builtin_unary_directory(name, args, context, scope, values)
         }
-        "chop" => eval_builtin_trim_like(name, args, context, scope, values),
         "count" => eval_builtin_count(args, context, scope, values),
         "copy" | "link" | "rename" | "symlink" => {
             eval_builtin_binary_path_bool(name, args, context, scope, values)
@@ -1715,11 +1714,9 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "json_last_error_msg" => eval_builtin_json_last_error_msg(args, context, values),
         "json_validate" => eval_builtin_json_validate(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
-        "ltrim" | "rtrim" => eval_builtin_trim_like(name, args, context, scope, values),
         "localtime" => eval_builtin_localtime(args, context, scope, values),
         "microtime" => eval_builtin_microtime(args, context, scope, values),
         "mktime" | "gmmktime" => eval_builtin_mktime_like(name, args, context, scope, values),
-        "nl2br" => eval_builtin_nl2br(args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),
         "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
         "php_uname" => eval_builtin_php_uname(args, context, scope, values),
@@ -1848,34 +1845,13 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "stream_set_timeout" => eval_builtin_stream_set_timeout(args, context, scope, values),
         "strtotime" => eval_builtin_strtotime(args, context, scope, values),
         "unlink" => eval_builtin_unlink(args, context, scope, values),
-        "strrev" => eval_builtin_strrev(args, context, scope, values),
-        "str_replace" | "str_ireplace" => {
-            eval_builtin_str_replace(name, args, context, scope, values)
-        }
-        "str_pad" => eval_builtin_str_pad(args, context, scope, values),
-        "str_split" => eval_builtin_str_split(args, context, scope, values),
-        "strstr" => eval_builtin_strstr(args, context, scope, values),
-        "substr" => eval_builtin_substr(args, context, scope, values),
-        "substr_replace" => eval_builtin_substr_replace(args, context, scope, values),
-        "str_contains" | "str_starts_with" | "str_ends_with" => {
-            eval_builtin_string_search(name, args, context, scope, values)
-        }
-        "strcmp" | "strcasecmp" => eval_builtin_string_compare(name, args, context, scope, values),
-        "strlen" => eval_builtin_strlen(args, context, scope, values),
-        "strpos" | "strrpos" => eval_builtin_string_position(name, args, context, scope, values),
-        "lcfirst" | "strtolower" | "strtoupper" | "ucfirst" => {
-            eval_builtin_string_case(name, args, context, scope, values)
-        }
         "long2ip" => eval_builtin_long2ip(args, context, scope, values),
-        "trim" => eval_builtin_trim_like(name, args, context, scope, values),
-        "ucwords" => eval_builtin_ucwords(args, context, scope, values),
         "unset" => eval_builtin_unset(args, context, scope, values),
         "umask" => eval_builtin_umask(args, context, scope, values),
         "usleep" => eval_builtin_usleep(args, context, scope, values),
         "var_dump" => eval_builtin_var_dump(args, context, scope, values),
         "vfprintf" => eval_builtin_vfprintf(args, context, scope, values),
         "vsprintf" | "vprintf" => eval_builtin_vsprintf_like(name, args, context, scope, values),
-        "wordwrap" => eval_builtin_wordwrap(args, context, scope, values),
         _ => Err(EvalStatus::UnsupportedConstruct),
     }
 }
