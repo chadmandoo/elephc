@@ -78,6 +78,64 @@ pub fn emit_fs(emitter: &mut Emitter) {
     emitter.instruction("ret");                                                 // return to caller
 
     // ================================================================
+    // __rt_mkdir_ex: create a directory with mode + optional parents
+    // Input:  x1/x2=path, x3=mode, x4=recursive (0/1)
+    // Output: x0=1 on success, 0 on failure
+    // When recursive, walks the C-string copy in _cstr_buf (writable
+    // scratch), temporarily NUL-terminating at each '/' to mkdir every
+    // prefix (EEXIST failures ignored), then creates the full path. The
+    // kernel applies the process umask to the mode, matching PHP.
+    // ================================================================
+    emitter.blank();
+    emitter.comment("--- runtime: mkdir_ex ---");
+    emitter.label_global("__rt_mkdir_ex");
+
+    // -- set up stack frame: [16) mode, [24) recursive --
+    emitter.instruction("sub sp, sp, #32");                                     // allocate 32 bytes on the stack
+    emitter.instruction("stp x29, x30, [sp]");                                  // save frame pointer and return address
+    emitter.instruction("mov x29, sp");                                         // establish new frame pointer
+    emitter.instruction("str x3, [sp, #16]");                                   // save the mode across the C-string conversion
+    emitter.instruction("str x4, [sp, #24]");                                   // save the recursive flag across the C-string conversion
+
+    emitter.instruction("bl __rt_cstr");                                        // convert path to C string in writable scratch, x0=cstr
+    emitter.instruction("mov x10, x0");                                         // x10 = C-string buffer cursor base
+    emitter.instruction("ldr x12, [sp, #16]");                                  // x12 = mode (survives syscalls; no further calls)
+    emitter.instruction("ldr x13, [sp, #24]");                                  // x13 = recursive flag
+    emitter.instruction("cbz x13, __rt_mkex_final");                            // non-recursive → single mkdir of the full path
+
+    // -- walk components: mkdir every '/'-terminated prefix --
+    emitter.instruction("mov x11, #1");                                         // byte index (skip a leading '/' for absolute paths)
+    emitter.label("__rt_mkex_walk");
+    emitter.instruction("ldrb w9, [x10, x11]");                                 // current path byte
+    emitter.instruction("cbz w9, __rt_mkex_final");                             // NUL → all prefixes made, create the full path
+    emitter.instruction("cmp w9, #47");                                         // '/' separator?
+    emitter.instruction("b.ne __rt_mkex_next");                                 // not a separator → advance
+    emitter.instruction("add x14, x11, #1");                                    // look ahead past the separator
+    emitter.instruction("ldrb w14, [x10, x14]");                                // byte after the separator
+    emitter.instruction("cbz w14, __rt_mkex_next");                             // trailing '/' → the final mkdir handles it
+    emitter.instruction("strb wzr, [x10, x11]");                                // truncate the buffer at the separator
+    emitter.instruction("mov x0, x10");                                         // prefix C string
+    emitter.instruction("mov x1, x12");                                         // mode
+    emitter.syscall(136);
+    emitter.instruction("mov w9, #47");                                         // restore byte value '/'
+    emitter.instruction("strb w9, [x10, x11]");                                 // undo the truncation
+    emitter.label("__rt_mkex_next");
+    emitter.instruction("add x11, x11, #1");                                    // advance to the next byte
+    emitter.instruction("b __rt_mkex_walk");                                    // continue the component walk
+
+    // -- create the full path and report success --
+    emitter.label("__rt_mkex_final");
+    emitter.instruction("mov x0, x10");                                         // full-path C string
+    emitter.instruction("mov x1, x12");                                         // mode
+    emitter.syscall(136);
+    emitter.instruction("cmp x0, #0");                                          // check syscall result
+    emitter.instruction("cset x0, eq");                                         // x0 = 1 if mkdir succeeded
+
+    emitter.instruction("ldp x29, x30, [sp]");                                  // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #32");                                     // deallocate stack frame
+    emitter.instruction("ret");                                                 // return to caller
+
+    // ================================================================
     // __rt_rmdir: remove a directory
     // Input:  x1/x2=path
     // Output: x0=1 on success, 0 on failure
@@ -220,6 +278,62 @@ fn emit_fs_linux_x86_64(emitter: &mut Emitter) {
     emitter.comment("--- runtime: mkdir ---");
     emitter.label_global("__rt_mkdir");
     emit_single_path_libc_bool_helper(emitter, "mkdir", Some("mov rsi, 0x1ED"));
+
+    // __rt_mkdir_ex: create a directory with mode + optional parents.
+    // Input:  rax/rdx = path, rdi = mode, rsi = recursive (0/1)
+    // Output: rax = 1 on success, 0 on failure
+    // When recursive, walks the C-string copy in _cstr_buf (writable scratch),
+    // temporarily NUL-terminating at each '/' to mkdir every prefix (EEXIST
+    // failures ignored), then creates the full path. Loop state lives in frame
+    // slots because libc mkdir() clobbers the caller-saved registers. The
+    // kernel applies the process umask to the mode, matching PHP.
+    emitter.blank();
+    emitter.comment("--- runtime: mkdir_ex ---");
+    emitter.label_global("__rt_mkdir_ex");
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish the helper frame pointer
+    emitter.instruction("sub rsp, 48");                                         // frame: [-8 mode][-16 recursive][-24 buf][-32 idx]
+    emitter.instruction("mov QWORD PTR [rbp - 8], rdi");                        // save the mode across the C-string conversion
+    emitter.instruction("mov QWORD PTR [rbp - 16], rsi");                       // save the recursive flag across the C-string conversion
+    emitter.instruction("call __rt_cstr");                                      // convert path to C string in writable scratch, rax=cstr
+    emitter.instruction("mov QWORD PTR [rbp - 24], rax");                       // save the C-string buffer base
+    emitter.instruction("cmp QWORD PTR [rbp - 16], 0");                         // recursive requested?
+    emitter.instruction("je __rt_mkex_final_x86");                              // non-recursive → single mkdir of the full path
+    emitter.instruction("mov QWORD PTR [rbp - 32], 1");                         // byte index (skip a leading '/' for absolute paths)
+
+    emitter.label("__rt_mkex_walk_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the buffer base (libc calls clobber scratch)
+    emitter.instruction("mov r11, QWORD PTR [rbp - 32]");                       // reload the byte index
+    emitter.instruction("movzx ecx, BYTE PTR [r10 + r11]");                     // current path byte
+    emitter.instruction("test cl, cl");                                         // NUL terminator?
+    emitter.instruction("jz __rt_mkex_final_x86");                              // all prefixes made, create the full path
+    emitter.instruction("cmp cl, 47");                                          // '/' separator?
+    emitter.instruction("jne __rt_mkex_next_x86");                              // not a separator → advance
+    emitter.instruction("movzx r9d, BYTE PTR [r10 + r11 + 1]");                 // look ahead past the separator
+    emitter.instruction("test r9b, r9b");                                       // trailing '/'?
+    emitter.instruction("jz __rt_mkex_next_x86");                               // trailing '/' → the final mkdir handles it
+    emitter.instruction("mov BYTE PTR [r10 + r11], 0");                         // truncate the buffer at the separator
+    emitter.instruction("mov rdi, r10");                                        // prefix C string
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 8]");                        // mode
+    emitter.instruction("call mkdir");                                          // create the prefix (EEXIST ignored)
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the buffer base after libc mkdir
+    emitter.instruction("mov r11, QWORD PTR [rbp - 32]");                       // reload the byte index after libc mkdir
+    emitter.instruction("mov BYTE PTR [r10 + r11], 47");                        // undo the truncation
+
+    emitter.label("__rt_mkex_next_x86");
+    emitter.instruction("add QWORD PTR [rbp - 32], 1");                         // advance to the next byte
+    emitter.instruction("jmp __rt_mkex_walk_x86");                              // continue the component walk
+
+    emitter.label("__rt_mkex_final_x86");
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 24]");                       // full-path C string
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 8]");                        // mode
+    emitter.instruction("call mkdir");                                          // create the full path
+    emitter.instruction("cmp eax, 0");                                          // a successful libc mkdir() returns zero
+    emitter.instruction("sete al");                                             // convert to a boolean byte
+    emitter.instruction("movzx rax, al");                                       // widen into the canonical integer result register
+    emitter.instruction("add rsp, 48");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the success predicate
 
     emitter.blank();
     emitter.comment("--- runtime: rmdir ---");

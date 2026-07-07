@@ -35,8 +35,10 @@ const MKDIR_SLOT: usize = 17;
 ///
 /// Runtime contract: a registered `scheme://` path dispatches to the wrapper's
 /// `mkdir()` (vtable slot 17) via `__rt_user_wrapper_path_op`; any other path
-/// calls the libc `__rt_mkdir`. (v1: `$mode`/`$recursive` are not threaded — the
-/// libc path uses mode `0755`; the wrapper receives zeroed extra arguments.)
+/// calls the libc `__rt_mkdir`. (Frozen legacy gap: `$mode`/`$recursive` are
+/// not threaded here — the libc path uses mode `0755`; the wrapper receives
+/// zeroed extra arguments. The EIR backend threads both through
+/// `__rt_mkdir_ex`; only deprecated `--ast-backend` runs hit this gap.)
 pub fn emit(
     _name: &str,
     args: &[Expr],

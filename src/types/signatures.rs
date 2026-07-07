@@ -468,7 +468,12 @@ pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "__elephc_phar_get_signature_type" => Some(fixed(&["path"])),
         "copy" | "rename" => Some(fixed(&["from", "to"])),
         "unlink" => Some(fixed(&["filename"])),
-        "mkdir" | "rmdir" | "chdir" | "scandir" => Some(fixed(&["directory"])),
+        "mkdir" => Some(optional(
+            &["directory", "permissions", "recursive"],
+            1,
+            vec![int_lit(0o777), bool_lit(false)],
+        )),
+        "rmdir" | "chdir" | "scandir" => Some(fixed(&["directory"])),
         "glob" => Some(fixed(&["pattern"])),
         "tempnam" => Some(fixed(&["directory", "prefix"])),
         "chmod" => Some(fixed(&["filename", "permissions"])),

@@ -52,6 +52,31 @@ if (!is_dir("testdir")) { echo "gone"; }
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// Verifies `mkdir` with the mode and recursive arguments: recursive creation
+/// of nested parents, re-creating an existing tree returns false, an explicit
+/// mode is applied (umask-masked like PHP), a trailing slash still creates the
+/// leaf, and a dynamic recursive flag routes correctly at runtime.
+#[test]
+fn test_mkdir_recursive_and_mode() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+umask(0);
+echo mkdir("a/b/c", 0777, true) ? "T" : "F";
+echo is_dir("a/b/c") ? "T" : "F";
+echo mkdir("a/b/c", 0777, true) ? "T" : "F";
+echo mkdir("moded", 0700) ? "T" : "F";
+echo substr(sprintf("%o", fileperms("moded")), -4), "|";
+echo mkdir("t1/t2/", 0777, true) ? "T" : "F";
+echo is_dir("t1/t2") ? "T" : "F";
+$flag = true;
+echo mkdir("d1/d2", 0777, $flag) ? "T" : "F";
+echo is_dir("d1/d2") ? "T" : "F";
+"#,
+    );
+    assert_eq!(out, "TTFT0700|TTTT");
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// Verifies copy, unlink, and file existence by creating a file, copying it,
 /// reading through the copy, deleting both files, and confirming removal.
 #[test]
