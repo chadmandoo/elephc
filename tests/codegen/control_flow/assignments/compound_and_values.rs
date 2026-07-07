@@ -557,3 +557,32 @@ echo "|", S::$m["k"];
     );
     assert_eq!(out, "deep|seven|seven|42|42|sv|sv|sv");
 }
+
+/// Expression-form `??=` on a nested static-property target inside a method:
+/// the merge must TRANSFER the hidden temp's ownership (load + clear) rather
+/// than load-and-release — the release took the slot's own reference and the
+/// epilogue cleanup then double-released, freeing the boxed value the written
+/// container entry still pointed at. The corruption only surfaced after the
+/// function returned (main's epilogue runs after top-level reads), so the
+/// read-back happens from OUTSIDE the writing method.
+#[test]
+fn test_nested_static_prop_null_coalesce_assign_expression_in_method() {
+    let out = compile_and_run(
+        r#"<?php
+final class Reg {
+    /** @var array<string, array<string, string>> */
+    public static array $i = [];
+    public static function put(string $k, string $n, string $v): string {
+        return self::$i[$k][$n] ??= $v;
+    }
+}
+echo Reg::put("a", "b", "one");
+echo "|", Reg::put("a", "b", "two");
+echo "|", Reg::$i["a"]["b"] ?? "MISS";
+echo "|", Reg::$i["x"]["y"] ?? "MISS";
+$outer = Reg::$i["a"] ?? [];
+foreach ($outer as $kk => $vv) { echo "|", $kk, "=", $vv; }
+"#,
+    );
+    assert_eq!(out, "one|one|one|MISS|b=one");
+}

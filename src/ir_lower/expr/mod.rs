@@ -1605,7 +1605,13 @@ fn lower_conditional_non_local_null_coalesce_assignment(
     branch_to(ctx, merge);
 
     ctx.builder.position_at_end(merge);
-    Some(ctx.load_local(temp_name, Some(expr.span)))
+    // Transfer ownership out of the hidden temp (load + clear) exactly like
+    // lower_null_coalesce's merge. A plain load would leave the slot SET while
+    // the consumer's store-then-release-source idiom releases the borrowed
+    // value — slot cleanup in the epilogue then double-releases, freeing a box
+    // a written-through container entry still points at (the value read back
+    // null/garbage once the function returned).
+    Some(take_owned_temp(ctx, temp_name, expr.span))
 }
 
 /// Emits the write side of an assignment expression whose target is not a local variable.
