@@ -640,3 +640,305 @@ fn emit_class_exists_by_name_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("pop rbp");                                             // restore the caller frame pointer
     emitter.instruction("ret");                                                 // return false
 }
+
+/// class_has_constructor: report whether a class declares/inherits __construct.
+/// Runs the `_classes_by_name` scan and returns the matched entry's flag from
+/// the parallel position-indexed `_class_has_ctor` table
+/// (ReflectionClass::getConstructor()'s null case).
+/// Input:  AArch64 x1 = name pointer, x2 = name length
+///         x86_64  rax = name pointer, rdx = name length
+/// Output: 1 when the class has a constructor, 0 when not or unknown
+pub fn emit_class_has_constructor_by_name(emitter: &mut Emitter) {
+    if emitter.target.arch == Arch::X86_64 {
+        emit_class_has_constructor_by_name_linux_x86_64(emitter);
+        return;
+    }
+
+    emitter.blank();
+    emitter.comment("--- runtime: class_has_constructor ---");
+    emitter.label_global("__rt_class_has_constructor");
+
+    // Frame (48 bytes): [0..16) saved x29/x30, [16) name_ptr, [24) name_len,
+    //   [32) entry cursor, [40) entry index saved across __rt_strcasecmp.
+    emitter.instruction("sub sp, sp, #48");                                     // helper frame
+    emitter.instruction("stp x29, x30, [sp, #0]");                              // save frame pointer and return address
+    emitter.instruction("mov x29, sp");                                         // establish the helper frame pointer
+    emitter.instruction("str x1, [sp, #16]");                                   // save the name pointer
+    emitter.instruction("str x2, [sp, #24]");                                   // save the name length
+
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // x9 = entry count
+    emitter.instruction("cbz x9, __rt_chc_miss");                               // empty registry → no constructor
+    abi::emit_symbol_address(emitter, "x10", "_classes_by_name");
+    emitter.instruction("str x10, [sp, #32]");                                  // initialise the entry cursor
+    emitter.instruction("mov x11, #0");                                         // entry index
+
+    emitter.label("__rt_chc_loop");
+    emitter.instruction("cmp x11, x9");                                         // scanned every registered class?
+    emitter.instruction("b.ge __rt_chc_miss");                                  // exhausted the table without a match
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("ldr x13, [x10, #8]");                                  // stored name length
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("cmp x13, x2");                                         // length mismatch → skip
+    emitter.instruction("b.ne __rt_chc_skip");                                  // skip this class when the name lengths differ
+    emitter.instruction("str x11, [sp, #40]");                                  // save the entry index across the string helper
+    emitter.instruction("ldr x1, [sp, #16]");                                   // reload the input name pointer
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("ldr x3, [x10]");                                       // stored class-name pointer
+    emitter.instruction("mov x4, x13");                                         // stored class-name length
+    emitter.instruction("bl __rt_strcasecmp");                                  // compare class names case-insensitively
+    emitter.instruction("ldr x11, [sp, #40]");                                  // restore the entry index after the string helper
+    emitter.instruction("cmp x0, #0");                                          // did the class names match case-insensitively?
+    emitter.instruction("b.eq __rt_chc_match");                                 // full match: return the constructor flag
+    emitter.instruction("b __rt_chc_skip");                                     // mismatch: try the next entry
+
+    emitter.label("__rt_chc_skip");
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("add x10, x10, #48");                                   // advance to the next 48-byte entry
+    emitter.instruction("str x10, [sp, #32]");                                  // persist the cursor
+    emitter.instruction("add x11, x11, #1");                                    // advance the entry index
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // reload the count (lost across the table walk)
+    emitter.instruction("b __rt_chc_loop");                                     // continue scanning
+
+    emitter.label("__rt_chc_match");
+    abi::emit_symbol_address(emitter, "x10", "_class_has_ctor");
+    emitter.instruction("ldr x0, [x10, x11, lsl #3]");                          // constructor flag at the matched entry index
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the flag
+
+    emitter.label("__rt_chc_miss");
+    emitter.instruction("mov x0, #0");                                          // unknown class → no constructor
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the zero flag
+}
+
+/// Emits the Linux x86_64 variant of `__rt_class_has_constructor`.
+fn emit_class_has_constructor_by_name_linux_x86_64(emitter: &mut Emitter) {
+    emitter.blank();
+    emitter.comment("--- runtime: class_has_constructor ---");
+    emitter.label_global("__rt_class_has_constructor");
+
+    // Frame (rbp-relative): [-8) name_ptr [-16) name_len [-24) entry cursor
+    //   [-32) entry index stash.
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish the helper frame pointer
+    emitter.instruction("sub rsp, 32");                                         // helper frame
+    emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save the name pointer (elephc string ABI: rax)
+    emitter.instruction("mov QWORD PTR [rbp - 16], rdx");                       // save the name length (elephc string ABI: rdx)
+
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // r9 = entry count
+    emitter.instruction("test r9, r9");                                         // empty registry?
+    emitter.instruction("jz __rt_chc_miss_x86");                                // no entries → no constructor
+    abi::emit_symbol_address(emitter, "r10", "_classes_by_name");               // r10 = table base
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // entry cursor
+    emitter.instruction("xor r11, r11");                                        // entry index
+
+    emitter.label("__rt_chc_loop_x86");
+    emitter.instruction("cmp r11, r9");                                         // scanned every registered class?
+    emitter.instruction("jge __rt_chc_miss_x86");                               // exhausted the table without a match
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("mov rcx, QWORD PTR [r10 + 8]");                        // stored name length
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("cmp rcx, rdx");                                        // length mismatch?
+    emitter.instruction("jne __rt_chc_skip_x86");                               // skip on length mismatch
+    emitter.instruction("mov QWORD PTR [rbp - 32], r11");                       // save the entry index across the string helper
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // reload the input name pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("mov rdx, QWORD PTR [r10]");                            // stored class-name pointer
+    emitter.instruction("call __rt_strcasecmp");                                // compare class names case-insensitively
+    emitter.instruction("mov r11, QWORD PTR [rbp - 32]");                       // restore the entry index after the string helper
+    emitter.instruction("test rax, rax");                                       // did the class names match case-insensitively?
+    emitter.instruction("je __rt_chc_match_x86");                               // full match: return the constructor flag
+    emitter.instruction("jmp __rt_chc_skip_x86");                               // mismatch: try the next entry
+
+    emitter.label("__rt_chc_skip_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("add r10, 48");                                         // advance to the next 48-byte entry
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // persist the cursor
+    emitter.instruction("add r11, 1");                                          // advance the entry index
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // reload the count (lost across the table walk)
+    emitter.instruction("jmp __rt_chc_loop_x86");                               // continue scanning
+
+    emitter.label("__rt_chc_match_x86");
+    abi::emit_symbol_address(emitter, "r10", "_class_has_ctor");                // r10 = flag-table base
+    emitter.instruction("mov rax, QWORD PTR [r10 + r11*8]");                    // constructor flag at the matched entry index
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the flag
+
+    emitter.label("__rt_chc_miss_x86");
+    emitter.instruction("xor eax, eax");                                        // unknown class → no constructor
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the zero flag
+}
+
+/// class_parent_name: look up a class's parent-class name by class name.
+/// Runs the `_classes_by_name` scan; a match reads the entry's class_id,
+/// maps it through the dense `_class_parent_ids` table, and resolves the
+/// parent id through the dense `_class_name_entries` name table
+/// (ReflectionClass::getParentClass()).
+/// Input:  AArch64 x1 = name pointer, x2 = name length
+///         x86_64  rax = name pointer, rdx = name length
+/// Output: AArch64 x0 = parent-name pointer, x1 = parent-name length (0/0
+///         when the class is unknown or has no parent); x86_64 rax/rdx.
+pub fn emit_class_parent_name_by_name(emitter: &mut Emitter) {
+    if emitter.target.arch == Arch::X86_64 {
+        emit_class_parent_name_by_name_linux_x86_64(emitter);
+        return;
+    }
+
+    emitter.blank();
+    emitter.comment("--- runtime: class_parent_name ---");
+    emitter.label_global("__rt_class_parent_name");
+
+    // Frame (48 bytes): [0..16) saved x29/x30, [16) name_ptr, [24) name_len,
+    //   [32) entry cursor, [40) entry index saved across __rt_strcasecmp.
+    emitter.instruction("sub sp, sp, #48");                                     // helper frame
+    emitter.instruction("stp x29, x30, [sp, #0]");                              // save frame pointer and return address
+    emitter.instruction("mov x29, sp");                                         // establish the helper frame pointer
+    emitter.instruction("str x1, [sp, #16]");                                   // save the name pointer
+    emitter.instruction("str x2, [sp, #24]");                                   // save the name length
+
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // x9 = entry count
+    emitter.instruction("cbz x9, __rt_cpn_miss");                               // empty registry → no parent
+    abi::emit_symbol_address(emitter, "x10", "_classes_by_name");
+    emitter.instruction("str x10, [sp, #32]");                                  // initialise the entry cursor
+    emitter.instruction("mov x11, #0");                                         // entry index
+
+    emitter.label("__rt_cpn_loop");
+    emitter.instruction("cmp x11, x9");                                         // scanned every registered class?
+    emitter.instruction("b.ge __rt_cpn_miss");                                  // exhausted the table without a match
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("ldr x13, [x10, #8]");                                  // stored name length
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("cmp x13, x2");                                         // length mismatch → skip
+    emitter.instruction("b.ne __rt_cpn_skip");                                  // skip this class when the name lengths differ
+    emitter.instruction("str x11, [sp, #40]");                                  // save the entry index across the string helper
+    emitter.instruction("ldr x1, [sp, #16]");                                   // reload the input name pointer
+    emitter.instruction("ldr x2, [sp, #24]");                                   // reload the input name length
+    emitter.instruction("ldr x3, [x10]");                                       // stored class-name pointer
+    emitter.instruction("mov x4, x13");                                         // stored class-name length
+    emitter.instruction("bl __rt_strcasecmp");                                  // compare class names case-insensitively
+    emitter.instruction("ldr x11, [sp, #40]");                                  // restore the entry index after the string helper
+    emitter.instruction("cmp x0, #0");                                          // did the class names match case-insensitively?
+    emitter.instruction("b.eq __rt_cpn_match");                                 // full match: resolve the parent name
+    emitter.instruction("b __rt_cpn_skip");                                     // mismatch: try the next entry
+
+    emitter.label("__rt_cpn_skip");
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the entry cursor
+    emitter.instruction("add x10, x10, #48");                                   // advance to the next 48-byte entry
+    emitter.instruction("str x10, [sp, #32]");                                  // persist the cursor
+    emitter.instruction("add x11, x11, #1");                                    // advance the entry index
+    abi::emit_symbol_address(emitter, "x9", "_classes_by_name_count");
+    emitter.instruction("ldr x9, [x9]");                                        // reload the count (lost across the table walk)
+    emitter.instruction("b __rt_cpn_loop");                                     // continue scanning
+
+    emitter.label("__rt_cpn_match");
+    emitter.instruction("ldr x10, [sp, #32]");                                  // reload the matched entry cursor
+    emitter.instruction("ldr x9, [x10, #16]");                                  // class_id column of the matched entry
+    abi::emit_symbol_address(emitter, "x10", "_class_name_count");
+    emitter.instruction("ldr x10, [x10]");                                      // x10 = dense class-name row count
+    emitter.instruction("cmp x9, x10");                                         // validate the class id before the parent lookup
+    emitter.instruction("b.hs __rt_cpn_miss");                                  // out-of-range ids have no reportable parent
+    abi::emit_symbol_address(emitter, "x12", "_class_parent_ids");
+    emitter.instruction("ldr x9, [x12, x9, lsl #3]");                           // parent class id (or -1)
+    emitter.instruction("cmn x9, #1");                                          // parentless sentinel?
+    emitter.instruction("b.eq __rt_cpn_miss");                                  // no parent → empty result
+    emitter.instruction("cmp x9, x10");                                         // validate the parent id before the name lookup
+    emitter.instruction("b.hs __rt_cpn_miss");                                  // out-of-range parent ids have no name row
+    abi::emit_symbol_address(emitter, "x12", "_class_name_entries");
+    emitter.instruction("add x12, x12, x9, lsl #4");                            // parent's 16-byte class-name metadata row
+    emitter.instruction("ldr x0, [x12]");                                       // parent-name string pointer
+    emitter.instruction("ldr x1, [x12, #8]");                                   // parent-name string length
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the parent name
+
+    emitter.label("__rt_cpn_miss");
+    emitter.instruction("mov x0, #0");                                          // unknown class or no parent → null pointer
+    emitter.instruction("mov x1, #0");                                          // zero length
+    emitter.instruction("ldp x29, x30, [sp, #0]");                              // restore frame pointer and return address
+    emitter.instruction("add sp, sp, #48");                                     // release the frame
+    emitter.instruction("ret");                                                 // return the empty result
+}
+
+/// Emits the Linux x86_64 variant of `__rt_class_parent_name`.
+fn emit_class_parent_name_by_name_linux_x86_64(emitter: &mut Emitter) {
+    emitter.blank();
+    emitter.comment("--- runtime: class_parent_name ---");
+    emitter.label_global("__rt_class_parent_name");
+
+    // Frame (rbp-relative): [-8) name_ptr [-16) name_len [-24) entry cursor
+    //   [-32) entry index stash.
+    emitter.instruction("push rbp");                                            // preserve the caller frame pointer
+    emitter.instruction("mov rbp, rsp");                                        // establish the helper frame pointer
+    emitter.instruction("sub rsp, 32");                                         // helper frame
+    emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save the name pointer (elephc string ABI: rax)
+    emitter.instruction("mov QWORD PTR [rbp - 16], rdx");                       // save the name length (elephc string ABI: rdx)
+
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // r9 = entry count
+    emitter.instruction("test r9, r9");                                         // empty registry?
+    emitter.instruction("jz __rt_cpn_miss_x86");                                // no entries → no parent
+    abi::emit_symbol_address(emitter, "r10", "_classes_by_name");               // r10 = table base
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // entry cursor
+    emitter.instruction("xor r11, r11");                                        // entry index
+
+    emitter.label("__rt_cpn_loop_x86");
+    emitter.instruction("cmp r11, r9");                                         // scanned every registered class?
+    emitter.instruction("jge __rt_cpn_miss_x86");                               // exhausted the table without a match
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("mov rcx, QWORD PTR [r10 + 8]");                        // stored name length
+    emitter.instruction("mov rdx, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("cmp rcx, rdx");                                        // length mismatch?
+    emitter.instruction("jne __rt_cpn_skip_x86");                               // skip on length mismatch
+    emitter.instruction("mov QWORD PTR [rbp - 32], r11");                       // save the entry index across the string helper
+    emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // reload the input name pointer
+    emitter.instruction("mov rsi, QWORD PTR [rbp - 16]");                       // reload the input name length
+    emitter.instruction("mov rdx, QWORD PTR [r10]");                            // stored class-name pointer
+    emitter.instruction("call __rt_strcasecmp");                                // compare class names case-insensitively
+    emitter.instruction("mov r11, QWORD PTR [rbp - 32]");                       // restore the entry index after the string helper
+    emitter.instruction("test rax, rax");                                       // did the class names match case-insensitively?
+    emitter.instruction("je __rt_cpn_match_x86");                               // full match: resolve the parent name
+    emitter.instruction("jmp __rt_cpn_skip_x86");                               // mismatch: try the next entry
+
+    emitter.label("__rt_cpn_skip_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the entry cursor
+    emitter.instruction("add r10, 48");                                         // advance to the next 48-byte entry
+    emitter.instruction("mov QWORD PTR [rbp - 24], r10");                       // persist the cursor
+    emitter.instruction("add r11, 1");                                          // advance the entry index
+    abi::emit_load_symbol_to_reg(emitter, "r9", "_classes_by_name_count", 0);   // reload the count (lost across the table walk)
+    emitter.instruction("jmp __rt_cpn_loop_x86");                               // continue scanning
+
+    emitter.label("__rt_cpn_match_x86");
+    emitter.instruction("mov r10, QWORD PTR [rbp - 24]");                       // reload the matched entry cursor
+    emitter.instruction("mov r9, QWORD PTR [r10 + 16]");                        // class_id column of the matched entry
+    abi::emit_load_symbol_to_reg(emitter, "r10", "_class_name_count", 0);       // r10 = dense class-name row count
+    emitter.instruction("cmp r9, r10");                                         // validate the class id before the parent lookup
+    emitter.instruction("jae __rt_cpn_miss_x86");                               // out-of-range ids have no reportable parent
+    abi::emit_symbol_address(emitter, "r11", "_class_parent_ids");
+    emitter.instruction("mov r9, QWORD PTR [r11 + r9*8]");                      // parent class id (or -1)
+    emitter.instruction("cmp r9, -1");                                          // parentless sentinel?
+    emitter.instruction("je __rt_cpn_miss_x86");                                // no parent → empty result
+    emitter.instruction("cmp r9, r10");                                         // validate the parent id before the name lookup
+    emitter.instruction("jae __rt_cpn_miss_x86");                               // out-of-range parent ids have no name row
+    abi::emit_symbol_address(emitter, "r11", "_class_name_entries");
+    emitter.instruction("shl r9, 4");                                           // scale the parent id by the 16-byte name row size
+    emitter.instruction("add r11, r9");                                         // parent's class-name metadata row
+    emitter.instruction("mov rax, QWORD PTR [r11]");                            // parent-name string pointer
+    emitter.instruction("mov rdx, QWORD PTR [r11 + 8]");                        // parent-name string length
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the parent name
+
+    emitter.label("__rt_cpn_miss_x86");
+    emitter.instruction("xor eax, eax");                                        // unknown class or no parent → null pointer
+    emitter.instruction("xor edx, edx");                                        // zero length
+    emitter.instruction("add rsp, 32");                                         // release the frame
+    emitter.instruction("pop rbp");                                             // restore the caller frame pointer
+    emitter.instruction("ret");                                                 // return the empty result
+}

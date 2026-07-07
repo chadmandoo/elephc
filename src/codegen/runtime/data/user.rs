@@ -1007,6 +1007,17 @@ fn emit_classes_by_name_table(
             u64::from(class_info.is_abstract)
         ));
     }
+    // Parallel position-indexed constructor-flag table: entry i holds 1 when
+    // the class in `_classes_by_name` entry i declares (or inherits) a
+    // `__construct` method. `__rt_class_has_constructor` indexes it with the
+    // matched entry position (ReflectionClass::getConstructor()'s null case).
+    out.push_str(".globl _class_has_ctor\n_class_has_ctor:\n");
+    for (_, class_info) in sorted_classes {
+        out.push_str(&format!(
+            "    .quad {}\n",
+            u64::from(class_info.methods.contains_key("__construct"))
+        ));
+    }
 }
 
 /// Returns the canonical declaring-file path recorded in a class's stamped

@@ -505,6 +505,9 @@ fn builtin_reflection_class() -> FlattenedClass {
             builtin_reflection_class_get_name_method(),
             builtin_reflection_class_get_file_name_method(),
             builtin_reflection_class_is_abstract_method(),
+            builtin_reflection_class_get_parent_class_method(),
+            builtin_reflection_class_get_constructor_method(),
+            builtin_reflection_class_new_instance_without_constructor_method(),
             builtin_reflection_owner_get_attributes_method(),
         ],
         attributes: Vec::new(),
@@ -591,6 +594,224 @@ fn builtin_reflection_class_is_abstract_method() -> ClassMethod {
                     )),
                     op: BinOp::StrictEq,
                     right: Box::new(Expr::new(ExprKind::IntLiteral(1), dummy_span)),
+                },
+                dummy_span,
+            ))),
+            dummy_span,
+        )],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::getParentClass()` method whose body
+/// resolves the parent-class name through the `__elephc_class_parent_name`
+/// intrinsic (a `_classes_by_name` scan mapped through `_class_parent_ids`
+/// and `_class_name_entries`) and constructs a `ReflectionClass` for it, or
+/// returns `false` when the class is unknown or has no parent — matching
+/// PHP's `ReflectionClass|false` contract.
+fn builtin_reflection_class_get_parent_class_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    let parent_name_call = Expr::new(
+        ExprKind::FunctionCall {
+            name: crate::names::Name::from("__elephc_class_parent_name"),
+            args: vec![Expr::new(
+                ExprKind::PropertyAccess {
+                    object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                    property: "__name".to_string(),
+                },
+                dummy_span,
+            )],
+        },
+        dummy_span,
+    );
+    ClassMethod {
+        name: "getParentClass".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Union(vec![
+            TypeExpr::Named(crate::names::Name::from("ReflectionClass")),
+            TypeExpr::Bool,
+        ])),
+        by_ref_return: false,
+        body: vec![
+            Stmt::new(
+                StmtKind::Assign {
+                    name: "parentName".to_string(),
+                    value: parent_name_call,
+                },
+                dummy_span,
+            ),
+            Stmt::new(
+                StmtKind::If {
+                    condition: Expr::new(
+                        ExprKind::BinaryOp {
+                            left: Box::new(Expr::new(
+                                ExprKind::Variable("parentName".to_string()),
+                                dummy_span,
+                            )),
+                            op: BinOp::StrictEq,
+                            right: Box::new(Expr::new(
+                                ExprKind::StringLiteral(String::new()),
+                                dummy_span,
+                            )),
+                        },
+                        dummy_span,
+                    ),
+                    then_body: vec![Stmt::new(
+                        StmtKind::Return(Some(Expr::new(
+                            ExprKind::BoolLiteral(false),
+                            dummy_span,
+                        ))),
+                        dummy_span,
+                    )],
+                    elseif_clauses: Vec::new(),
+                    else_body: None,
+                },
+                dummy_span,
+            ),
+            Stmt::new(
+                StmtKind::Return(Some(Expr::new(
+                    ExprKind::NewObject {
+                        class_name: crate::names::Name::from("ReflectionClass"),
+                        args: vec![Expr::new(
+                            ExprKind::Variable("parentName".to_string()),
+                            dummy_span,
+                        )],
+                    },
+                    dummy_span,
+                ))),
+                dummy_span,
+            ),
+        ],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::getConstructor()` method whose body
+/// checks constructor presence through the `__elephc_class_has_constructor`
+/// intrinsic (the `_classes_by_name` scan indexing the parallel
+/// `_class_has_ctor` flag table) and constructs a `ReflectionMethod` bound to
+/// `__construct`, or returns null when the class declares none — matching
+/// PHP's `?ReflectionMethod` contract.
+fn builtin_reflection_class_get_constructor_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    let has_ctor_call = Expr::new(
+        ExprKind::FunctionCall {
+            name: crate::names::Name::from("__elephc_class_has_constructor"),
+            args: vec![Expr::new(
+                ExprKind::PropertyAccess {
+                    object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                    property: "__name".to_string(),
+                },
+                dummy_span,
+            )],
+        },
+        dummy_span,
+    );
+    ClassMethod {
+        name: "getConstructor".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Nullable(Box::new(TypeExpr::Named(
+            crate::names::Name::from("ReflectionMethod"),
+        )))),
+        by_ref_return: false,
+        body: vec![
+            Stmt::new(
+                StmtKind::If {
+                    condition: Expr::new(
+                        ExprKind::BinaryOp {
+                            left: Box::new(has_ctor_call),
+                            op: BinOp::StrictEq,
+                            right: Box::new(Expr::new(ExprKind::IntLiteral(1), dummy_span)),
+                        },
+                        dummy_span,
+                    ),
+                    then_body: vec![Stmt::new(
+                        StmtKind::Return(Some(Expr::new(
+                            ExprKind::NewObject {
+                                class_name: crate::names::Name::from("ReflectionMethod"),
+                                args: vec![
+                                    Expr::new(
+                                        ExprKind::PropertyAccess {
+                                            object: Box::new(Expr::new(
+                                                ExprKind::This,
+                                                dummy_span,
+                                            )),
+                                            property: "__name".to_string(),
+                                        },
+                                        dummy_span,
+                                    ),
+                                    Expr::new(
+                                        ExprKind::StringLiteral("__construct".to_string()),
+                                        dummy_span,
+                                    ),
+                                ],
+                            },
+                            dummy_span,
+                        ))),
+                        dummy_span,
+                    )],
+                    elseif_clauses: Vec::new(),
+                    else_body: None,
+                },
+                dummy_span,
+            ),
+            Stmt::new(
+                StmtKind::Return(Some(Expr::new(ExprKind::Null, dummy_span))),
+                dummy_span,
+            ),
+        ],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::newInstanceWithoutConstructor()` method
+/// whose body allocates through the `__elephc_new_without_ctor` intrinsic:
+/// `__rt_new_by_name` zero-fills, stamps the class id, and runs the
+/// property-default thunk WITHOUT invoking a constructor — PHP's exact
+/// semantics for this method. Declared `mixed` (an unknown class yields null
+/// instead of PHP's ReflectionException).
+fn builtin_reflection_class_new_instance_without_constructor_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "newInstanceWithoutConstructor".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Named(crate::names::Name::from("mixed"))),
+        by_ref_return: false,
+        body: vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::FunctionCall {
+                    name: crate::names::Name::from("__elephc_new_without_ctor"),
+                    args: vec![Expr::new(
+                        ExprKind::PropertyAccess {
+                            object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                            property: "__name".to_string(),
+                        },
+                        dummy_span,
+                    )],
                 },
                 dummy_span,
             ))),

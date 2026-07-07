@@ -18,8 +18,8 @@ pub(crate) use call_destructor::emit_call_object_destructor;
 pub(crate) use mixed_array_get::emit_mixed_array_get;
 pub(crate) use mixed_array_set::emit_mixed_array_set;
 pub(crate) use new_by_name::{
-    emit_class_exists_by_name, emit_class_file_by_name, emit_class_is_abstract_by_name,
-    emit_new_by_name,
+    emit_class_exists_by_name, emit_class_file_by_name, emit_class_has_constructor_by_name,
+    emit_class_is_abstract_by_name, emit_class_parent_name_by_name, emit_new_by_name,
 };
 pub(crate) use stdclass::{
     emit_json_encode_stdclass, emit_mixed_property_get, emit_mixed_property_set,

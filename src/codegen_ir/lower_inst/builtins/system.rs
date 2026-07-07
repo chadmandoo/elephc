@@ -210,6 +210,64 @@ fn emit_box_hash_pointer_as_assoc_mixed(ctx: &mut FunctionContext<'_>) {
     }
 }
 
+/// Lowers `__elephc_new_without_ctor(class_name)` — the intrinsic behind
+/// `ReflectionClass::newInstanceWithoutConstructor()`. `__rt_new_by_name`
+/// allocates, zero-fills, stamps the class id, and runs the property-default
+/// thunk WITHOUT invoking a constructor — exactly PHP's semantics for this
+/// method. The raw object pointer (or 0 for an unknown class) is boxed into a
+/// Mixed cell: tag 6 (object) on success, tag 8 (null) on miss.
+pub(crate) fn lower_new_without_ctor(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    super::ensure_arg_count(inst, "__elephc_new_without_ctor", 1)?;
+    let (ptr_reg, len_reg) = match ctx.emitter.target.arch {
+        Arch::AArch64 => ("x1", "x2"),
+        Arch::X86_64 => ("rax", "rdx"),
+    };
+    super::strings::load_string_arg_to_regs(
+        ctx,
+        inst,
+        0,
+        "__elephc_new_without_ctor",
+        ptr_reg,
+        len_reg,
+    )?;
+    abi::emit_call_label(ctx.emitter, "__rt_new_by_name");
+    let null_label = ctx.next_label("niwc_null");
+    let box_label = ctx.next_label("niwc_box");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz x0, {}", null_label));        // unknown class names box as PHP null
+            ctx.emitter.instruction("mov x1, x0");                              // object pointer becomes the mixed payload
+            ctx.emitter.instruction("mov x2, xzr");                             // object payloads have no high word
+            ctx.emitter.instruction("mov x0, #6");                              // runtime tag 6 = object
+            ctx.emitter.instruction(&format!("b {}", box_label));               // box the allocated instance
+            ctx.emitter.label(&null_label);
+            ctx.emitter.instruction("mov x1, xzr");                             // null payload low word
+            ctx.emitter.instruction("mov x2, xzr");                             // null payload high word
+            ctx.emitter.instruction("mov x0, #8");                              // runtime tag 8 = null
+            ctx.emitter.label(&box_label);
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("test rax, rax");                           // did new_by_name find the class?
+            ctx.emitter.instruction(&format!("jz {}", null_label));             // unknown class names box as PHP null
+            ctx.emitter.instruction("mov rdi, rax");                            // object pointer becomes the mixed payload
+            ctx.emitter.instruction("xor esi, esi");                            // object payloads have no high word
+            ctx.emitter.instruction("mov eax, 6");                              // runtime tag 6 = object
+            ctx.emitter.instruction(&format!("jmp {}", box_label));             // jump to box the allocated instance
+            ctx.emitter.label(&null_label);
+            ctx.emitter.instruction("xor edi, edi");                            // null payload low word
+            ctx.emitter.instruction("xor esi, esi");                            // null payload high word
+            ctx.emitter.instruction("mov eax, 8");                              // runtime tag 8 = null
+            ctx.emitter.label(&box_label);
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+        }
+    }
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `localtime([$timestamp[, $associative]])` through the shared decomposition runtime helper.
 ///
 /// `__rt_localtime` reads the timestamp from the integer result register (`x0`/`rax`) and the

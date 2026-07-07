@@ -1656,6 +1656,40 @@ echo "|", $c->v + ($k instanceof AbsParent ? 1 : 0);
     assert_eq!(out, "TFTFTF|4");
 }
 
+/// Verifies the ReflectionClass object-synthesis trio: `getParentClass()`
+/// resolves the parent chain (and reports `false` at the root),
+/// `getConstructor()` returns a ReflectionMethod for classes with a
+/// constructor and null for those without, and
+/// `newInstanceWithoutConstructor()` allocates with property DEFAULTS applied
+/// but the constructor NOT run (x stays 7, not the ctor's 99).
+#[test]
+fn test_reflection_class_object_synthesis_trio() {
+    let out = compile_and_run(
+        r#"<?php
+class Base {
+    public int $x = 7;
+    public function __construct() { $this->x = 99; }
+}
+final class Child extends Base {}
+final class NoCtor { public string $tag = "dflt"; }
+$c = new Child();
+$rc = new ReflectionClass("Child");
+$p = $rc->getParentClass();
+echo ($p === false) ? "no-parent" : $p->getName();
+$rb = new ReflectionClass("Base");
+echo "|", ($rb->getParentClass() === false) ? "root" : "not-root";
+echo "|", ($rc->getConstructor() === null) ? "null-ctor" : "has-ctor";
+$rn = new ReflectionClass("NoCtor");
+echo "|", ($rn->getConstructor() === null) ? "null-ctor" : "has-ctor";
+$obj = $rn->newInstanceWithoutConstructor();
+echo "|", $obj->tag;
+$ob = $rb->newInstanceWithoutConstructor();
+echo "|", $ob->x;
+"#,
+    );
+    assert_eq!(out, "Base|root|has-ctor|null-ctor|dflt|7");
+}
+
 /// Verifies a class referenced ONLY through a `new ReflectionClass("...")`
 /// string literal (never instantiated, never typed) is still registered in the
 /// runtime class table: `getFileName()` resolves its declaring file instead of

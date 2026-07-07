@@ -579,6 +579,12 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // intrinsic — EIR-only (inline __rt_class_is_abstract call), never
             // dynamically invoked.
             | "__elephc_class_is_abstract"
+            // The remaining reflection object-synthesis intrinsics are EIR-only
+            // for the same reason (getParentClass / getConstructor /
+            // newInstanceWithoutConstructor synthetic bodies).
+            | "__elephc_class_parent_name"
+            | "__elephc_class_has_constructor"
+            | "__elephc_new_without_ctor"
             // get_debug_type is EIR-only (static fold + __rt_get_debug_type dispatch);
             // the legacy wrapper body would emit an unresolved _fn_get_debug_type.
             | "get_debug_type"

@@ -25,6 +25,9 @@
 
 pub mod __elephc_class_file;
 pub mod __elephc_class_is_abstract;
+pub mod __elephc_class_parent_name;
+pub mod __elephc_class_has_constructor;
+pub mod __elephc_new_without_ctor;
 pub mod assert;
 pub mod get_debug_type;
 pub mod restore_error_handler;

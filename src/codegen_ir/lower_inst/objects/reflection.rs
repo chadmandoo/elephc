@@ -492,6 +492,11 @@ fn reflection_class_metadata(
 }
 
 /// Resolves `ReflectionMethod(class, method)` metadata.
+///
+/// A non-constant class operand (a runtime string variable — e.g. the
+/// synthetic `ReflectionClass::getConstructor()` body passing `$this->__name`)
+/// yields empty metadata like the `ReflectionClass` path: method attributes
+/// cannot be resolved at compile time for a class only known at runtime.
 fn reflection_method_metadata(
     ctx: &FunctionContext<'_>,
     inst: &Instruction,
@@ -502,7 +507,10 @@ fn reflection_method_metadata(
     let Some(method_operand) = inst.operands.get(1).copied() else {
         return Ok(empty_reflection_metadata());
     };
-    let reflected_class = const_string_or_class_operand(ctx, class_operand, "ReflectionMethod")?;
+    let Ok(reflected_class) = const_string_or_class_operand(ctx, class_operand, "ReflectionMethod")
+    else {
+        return Ok(empty_reflection_metadata());
+    };
     let method_name = const_required_string_operand(ctx, method_operand, "ReflectionMethod")?;
     let method_key = php_symbol_key(&method_name);
     Ok(resolve_reflection_class(ctx, &reflected_class)
