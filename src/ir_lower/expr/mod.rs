@@ -7124,7 +7124,7 @@ fn lower_match(
     expr: &Expr,
 ) -> LoweredValue {
     let subject = lower_expr(ctx, subject);
-    let result_type = fallback_expr_type(expr);
+    let result_type = match_merge_result_type(ctx, arms, default, expr);
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
     let merge = ctx.builder.create_named_block("match.merge", Vec::new());
 
@@ -10213,6 +10213,33 @@ fn branch_merge_result_type(
     wider_type_for_merge(&fallback_ty, &branch_ty.codegen_repr())
 }
 
+/// Chooses a match hidden-temp type by merging every arm result type, so
+/// heterogeneous arms (e.g. object/array/string) materialize a Mixed temp
+/// boxed per arm instead of coercing all arms to one unified scalar type.
+fn match_merge_result_type(
+    ctx: &LoweringContext<'_, '_>,
+    arms: &[(Vec<Expr>, Expr)],
+    default: Option<&Expr>,
+    expr: &Expr,
+) -> PhpType {
+    let mut merged: Option<PhpType> = None;
+    for result in arms.iter().map(|(_, result)| result).chain(default) {
+        let arm_ty = materialized_expr_type_for_merge(ctx, result);
+        merged = Some(match merged {
+            Some(acc) => nullable_aware_branch_merge_type(&acc, &arm_ty),
+            None => arm_ty,
+        });
+    }
+    let Some(merged) = merged else {
+        return fallback_expr_type(expr);
+    };
+    if php_type_allows_null(&merged) {
+        return merged;
+    }
+    let fallback_ty = fallback_expr_type(expr).codegen_repr();
+    wider_type_for_merge(&fallback_ty, &merged.codegen_repr())
+}
+
 /// Chooses a ternary branch merge type without erasing PHP null branches.
 fn nullable_aware_branch_merge_type(left: &PhpType, right: &PhpType) -> PhpType {
     if php_type_allows_null(left) || php_type_allows_null(right) {
@@ -10256,6 +10283,9 @@ fn materialized_expr_type_for_merge(ctx: &LoweringContext<'_, '_>, expr: &Expr) 
             else_expr,
             ..
         } => branch_merge_result_type(ctx, then_expr, else_expr, expr),
+        ExprKind::Match { arms, default, .. } => {
+            match_merge_result_type(ctx, arms, default.as_deref(), expr)
+        }
         ExprKind::ShortTernary { value, default } => {
             let value_ty = materialized_expr_type_for_merge(ctx, value).codegen_repr();
             let default_ty = materialized_expr_type_for_merge(ctx, default).codegen_repr();

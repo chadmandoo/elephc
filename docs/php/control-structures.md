@@ -205,6 +205,12 @@ echo $result; // two
 
 If no arm matches and there is no `default`, elephc aborts with a fatal runtime error.
 
+Arms may produce values of different types (objects, arrays, strings, ints, `null`),
+and an arm may be a `throw` expression. When the arm types are heterogeneous, the
+result is stored as a boxed `mixed` value and each value-producing arm keeps its
+own runtime type, matching PHP. Arms whose types share one runtime representation
+(two array types, or `int` and `bool`) merge to that representation instead.
+
 ## try / catch / finally / throw
 
 ```php

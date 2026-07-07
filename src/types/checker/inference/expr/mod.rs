@@ -130,21 +130,23 @@ impl Checker {
                 default,
             } => {
                 self.infer_type(subject, env)?;
-                let mut result_ty = None;
+                let mut result_ty: Option<PhpType> = None;
                 for (conditions, result) in arms {
                     for c in conditions {
                         self.infer_type(c, env)?;
                     }
                     let ty = self.infer_type(result, env)?;
-                    if result_ty.is_none() {
-                        result_ty = Some(ty);
-                    }
+                    result_ty = Some(match result_ty {
+                        Some(acc) => merge_match_arm_result_type(acc, ty),
+                        None => ty,
+                    });
                 }
                 if let Some(d) = default {
                     let ty = self.infer_type(d, env)?;
-                    if result_ty.is_none() {
-                        result_ty = Some(ty);
-                    }
+                    result_ty = Some(match result_ty {
+                        Some(acc) => merge_match_arm_result_type(acc, ty),
+                        None => ty,
+                    });
                 }
                 Ok(result_ty.unwrap_or(PhpType::Void))
             }
@@ -711,4 +713,22 @@ fn is_valid_string_offset_index(index: &Expr, idx_ty: &PhpType) -> bool {
             ExprKind::StringLiteral(value)
                 if crate::types::parse_php_string_offset_literal(value).is_some()
         )
+}
+
+/// Merges two match arm result types: identical arms keep their type,
+/// `Never`-typed arms (`throw`) and `Void`-typed arms (checker `null`) defer
+/// to the other arm's type, and any other heterogeneous pair widens to
+/// `Mixed` so each arm's runtime value survives instead of being coerced to
+/// the first arm's type.
+fn merge_match_arm_result_type(acc: PhpType, next: PhpType) -> PhpType {
+    if acc == next {
+        return acc;
+    }
+    if matches!(acc, PhpType::Void | PhpType::Never) {
+        return next;
+    }
+    if matches!(next, PhpType::Void | PhpType::Never) {
+        return acc;
+    }
+    PhpType::Mixed
 }
