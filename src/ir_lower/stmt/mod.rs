@@ -1114,6 +1114,28 @@ fn lower_typed_assign(
         .as_ref()
         .map(|assignment| assignment.value)
         .unwrap_or_else(|| lower_expr(ctx, value));
+    // A Mixed value cannot be stored into a concrete heap-typed slot: Op::Cast
+    // has no object/array targets, so the raw box pointer would be stored and
+    // later consumers (method dispatch, key reads) would treat the BOX as the
+    // payload. Keep the local Mixed instead — every consumer then takes the
+    // adaptive/dynamic path, matching the equivalent untyped user code. This
+    // bit the generated SPL bodies (`Iterator $iterator = $this->iterators[$i]`
+    // with a Mixed index yields a Mixed) where MultipleIterator::valid()
+    // dispatched valid() on the box and always returned false.
+    let source_ty = ctx.builder.value_php_type(lowered.value).codegen_repr();
+    let php_type = if matches!(source_ty, PhpType::Mixed | PhpType::Union(_))
+        && matches!(
+            php_type.codegen_repr(),
+            PhpType::Object(_)
+                | PhpType::Array(_)
+                | PhpType::AssocArray { .. }
+                | PhpType::Iterable
+                | PhpType::Callable
+        ) {
+        PhpType::Mixed
+    } else {
+        php_type
+    };
     let lowered = coerce_typed_assign_value(ctx, lowered, &php_type, span);
     ctx.declare_local(name, php_type.clone());
     ctx.store_local(name, lowered, php_type, Some(span));
@@ -1156,6 +1178,26 @@ fn coerce_typed_assign_value(
             Op::MixedBox.default_effects(),
             Some(span),
         ),
+        // A Mixed value assigned to a scalar-declared local unboxes through
+        // the adaptive Cast (storing the raw box would corrupt the slot the
+        // same way the heap-typed case in `lower_typed_assign` describes).
+        PhpType::Int | PhpType::Bool | PhpType::Float | PhpType::Str
+            if matches!(source_ty, PhpType::Mixed | PhpType::Union(_)) =>
+        {
+            let cast_target = match target_ty {
+                PhpType::Float => IrType::F64,
+                PhpType::Str => IrType::Str,
+                _ => IrType::I64,
+            };
+            ctx.emit_value(
+                Op::Cast,
+                vec![value.value],
+                Some(Immediate::CastTarget(cast_target)),
+                target_ty,
+                Op::Cast.default_effects(),
+                Some(span),
+            )
+        }
         _ => value,
     }
 }
