@@ -110,48 +110,57 @@ function __elephc_mb_byte_index(string $s, int $cpIndex, int $byteLen): int {
 function mb_substr(string $string, int $start, int $length = PHP_INT_MAX): string {
     $byteLen = strlen($string);
     $cpCount = mb_strlen($string);
-    if ($start < 0) {
-        $start = $cpCount + $start;
-        if ($start < 0) {
-            $start = 0;
+    // Compute in fresh locals and NEVER rebind the $start/$length parameters: the current
+    // backend miscompiles a conditionally-reassigned parameter (it corrupts an adjacent
+    // parameter's slot — passing $length was read back as 0). $startIdx/$len dodge it.
+    $startIdx = $start;
+    if ($startIdx < 0) {
+        $startIdx = $cpCount + $startIdx;
+        if ($startIdx < 0) {
+            $startIdx = 0;
         }
     }
-    if ($length === PHP_INT_MAX) {
+    $len = $length;
+    if ($len === PHP_INT_MAX) {
         $end = $cpCount;
-    } elseif ($length < 0) {
-        $end = $cpCount + $length;
+    } elseif ($len < 0) {
+        $end = $cpCount + $len;
     } else {
-        $end = $start + $length;
+        $end = $startIdx + $len;
     }
     if ($end > $cpCount) {
         $end = $cpCount;
     }
-    if ($start >= $cpCount || $end <= $start) {
+    if ($startIdx >= $cpCount || $end <= $startIdx) {
         return '';
     }
-    $startByte = __elephc_mb_byte_index($string, $start, $byteLen);
+    $startByte = __elephc_mb_byte_index($string, $startIdx, $byteLen);
     $endByte = __elephc_mb_byte_index($string, $end, $byteLen);
     return substr($string, $startByte, $endByte - $startByte);
 }
 function mb_ltrim(string $string, string $characters = " \f\n\r\t\v\0"): string {
-    while ($string !== '') {
-        $first = mb_substr($string, 0, 1);
+    // Trim in a fresh local, never rebinding the $string parameter (see mb_substr:
+    // rebinding a parameter corrupts the sibling $characters parameter's slot).
+    $s = $string;
+    while ($s !== '') {
+        $first = mb_substr($s, 0, 1);
         if ($first === '' || !str_contains($characters, $first)) {
             break;
         }
-        $string = mb_substr($string, 1);
+        $s = mb_substr($s, 1);
     }
-    return $string;
+    return $s;
 }
 function mb_rtrim(string $string, string $characters = " \f\n\r\t\v\0"): string {
-    while ($string !== '') {
-        $last = mb_substr($string, -1);
+    $s = $string;
+    while ($s !== '') {
+        $last = mb_substr($s, -1);
         if ($last === '' || !str_contains($characters, $last)) {
             break;
         }
-        $string = mb_substr($string, 0, mb_strlen($string) - 1);
+        $s = mb_substr($s, 0, mb_strlen($s) - 1);
     }
-    return $string;
+    return $s;
 }
 function mb_trim(string $string, string $characters = " \f\n\r\t\v\0"): string {
     return mb_rtrim(mb_ltrim($string, $characters), $characters);
