@@ -102,13 +102,12 @@ impl Checker {
                 &format!("{} cannot use type never", context),
             ));
         }
-        // PHP permits the `Closure` class as a property type even though it forbids the bare
-        // `callable` pseudo-type. Closures resolve to Callable internally, so let the `Closure`
-        // spelling through the callable restriction (a `callable` property is still rejected).
-        if Self::type_expr_names_closure(type_expr) {
-            return Ok(ty);
-        }
-        if Self::type_contains_callable(&ty) {
+        // PHP forbids the literal `callable` pseudo-type in property declarations
+        // but permits the `Closure` class (bare, nullable `?Closure`, or in a
+        // union). Both resolve to Callable internally, so the restriction must
+        // test the declared SPELLING, not the resolved type — checking the
+        // resolved type rejected real `?Closure` promoted properties.
+        if Self::type_expr_spells_callable(type_expr) {
             return Err(CompileError::new(
                 span,
                 &format!("{} cannot use type callable", context),
@@ -117,14 +116,26 @@ impl Checker {
         Ok(ty)
     }
 
-    /// Returns true if `type_expr` is the built-in `Closure` class name — permitted as a property
-    /// type, unlike the bare `callable` pseudo-type that closures resolve to internally.
-    fn type_expr_names_closure(type_expr: &TypeExpr) -> bool {
-        matches!(
-            type_expr,
-            TypeExpr::Named(name)
-                if name.as_str().trim_start_matches('\\').eq_ignore_ascii_case("Closure")
-        )
+    /// Returns true when the declared type expression literally spells the
+    /// `callable` pseudo-type anywhere in its structure (nullable wrappers,
+    /// union/intersection members, array element positions). The `Closure`
+    /// class spelling is NOT callable for this purpose even though it resolves
+    /// to `PhpType::Callable` internally.
+    fn type_expr_spells_callable(type_expr: &TypeExpr) -> bool {
+        match type_expr {
+            TypeExpr::Named(name) => name
+                .as_str()
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("callable"),
+            TypeExpr::Nullable(inner) => Self::type_expr_spells_callable(inner),
+            TypeExpr::Union(members) | TypeExpr::Intersection(members) => {
+                members.iter().any(Self::type_expr_spells_callable)
+            }
+            TypeExpr::Array(inner) | TypeExpr::Buffer(inner) => {
+                Self::type_expr_spells_callable(inner)
+            }
+            _ => false,
+        }
     }
 
     /// Returns true if `ty` is or contains a `PhpType::Callable` anywhere in its structure.

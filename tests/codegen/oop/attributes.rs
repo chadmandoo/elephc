@@ -1705,3 +1705,29 @@ echo ($r->getFileName() === __FILE__ ? "file-same" : "file-diff"), "|", $r->getN
     );
     assert_eq!(out, "file-same|ReflectedOnly");
 }
+
+/// `#[\Override]` on a static method implementing an interface contract that
+/// reaches the class through an ANCESTOR's `implements` (final class extends
+/// an abstract base that implements the interface) validates — the override
+/// walk covers inherited interfaces, not just the class's own implements list.
+#[test]
+fn test_override_attribute_via_ancestor_interface_static() {
+    let out = compile_and_run(
+        r#"<?php
+interface Hydratable {
+    public static function fromRow(string $id): static;
+}
+abstract class Base implements Hydratable {
+}
+final class Conc extends Base {
+    #[\Override]
+    public static function fromRow(string $id): static {
+        return new self();
+    }
+}
+$c = Conc::fromRow("x");
+echo $c instanceof Conc ? "ok" : "bad";
+"#,
+    );
+    assert_eq!(out, "ok");
+}

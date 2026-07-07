@@ -706,6 +706,31 @@ impl Checker {
     ) -> Result<PhpType, CompileError> {
         let parent_call = matches!(receiver, StaticReceiver::Parent);
         let self_call = matches!(receiver, StaticReceiver::Self_);
+        // `Closure::fromCallable($x)` wraps a callable value as a Closure —
+        // in elephc's representation both are Callable, so the call types as
+        // its (callable-compatible) argument. The Closure builtin is not a
+        // registered class, so this must short-circuit the class lookup.
+        if let StaticReceiver::Named(class_name) = receiver {
+            if class_name
+                .as_str()
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case("Closure")
+                && crate::names::php_symbol_key(method) == "fromcallable"
+                && args.len() == 1
+            {
+                let arg_ty = self.infer_type(&args[0], env)?;
+                if !matches!(
+                    arg_ty.codegen_repr(),
+                    PhpType::Callable | PhpType::Str | PhpType::Mixed | PhpType::Union(_)
+                ) {
+                    return Err(CompileError::new(
+                        expr.span,
+                        "Closure::fromCallable() argument must be callable",
+                    ));
+                }
+                return Ok(PhpType::Callable);
+            }
+        }
         let resolved_class_name = match receiver {
             StaticReceiver::Named(class_name) => class_name.as_str().to_string(),
             StaticReceiver::Self_ => self.current_class.as_ref().cloned().ok_or_else(|| {

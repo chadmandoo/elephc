@@ -250,3 +250,28 @@ fn test_while_null_no_loop() {
 }
 
 // --- Ternary operator ---
+
+/// `match (true)` guard arms narrow their result expression like an `if`
+/// then-branch: `$r instanceof RouteRule => $r->pattern` sees $r as RouteRule
+/// even though the declared type is a marker interface. Interface-typed
+/// receivers that survive un-narrowed route through the boxed Mixed property
+/// path instead of a class-slot lookup.
+#[test]
+fn test_match_true_instanceof_arm_narrowing() {
+    let out = compile_and_run(
+        r#"<?php
+interface Rule {}
+final class RouteRule implements Rule { public function __construct(public string $pattern) {} }
+final class TypeRule implements Rule { public function __construct(public string $type) {} }
+function describe(Rule $r): string {
+    return match (true) {
+        $r instanceof RouteRule => "route:" . $r->pattern,
+        $r instanceof TypeRule => "type:" . $r->type,
+        default => "other",
+    };
+}
+echo describe(new RouteRule("/x")), "|", describe(new TypeRule("page"));
+"#,
+    );
+    assert_eq!(out, "route:/x|type:page");
+}

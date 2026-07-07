@@ -891,3 +891,32 @@ echo v(S::H), "|", v(N::One), "|", n(S::W), "|", n(P::Q);
     );
     assert_eq!(out, "h|1|W|Q");
 }
+
+/// A `use`-imported enum referenced as a bare name in a VARIADIC parameter
+/// type resolves (the name resolver rewrites variadic_type like regular
+/// params/returns — it previously cloned it unresolved).
+#[test]
+fn test_variadic_param_type_resolves_imported_enum() {
+    let out = compile_and_run(
+        r#"<?php
+namespace A {
+    enum Step: string { case F = "f"; case D = "d"; }
+}
+namespace B {
+    use A\Step;
+    final class C {
+        public function agg(Step ...$steps): int {
+            $n = 0;
+            foreach ($steps as $s) { if ($s === Step::F) { $n = $n + 1; } }
+            return $n;
+        }
+    }
+}
+namespace {
+    $c = new \B\C();
+    echo $c->agg(\A\Step::F, \A\Step::D, \A\Step::F);
+}
+"#,
+    );
+    assert_eq!(out, "2");
+}

@@ -167,11 +167,19 @@ impl Checker {
                 default,
             } => {
                 self.infer_type_with_assignment_effects(subject, env)?;
+                let guard_style = matches!(subject.kind, ExprKind::BoolLiteral(true));
                 let mut result_ty = None;
                 for (conditions, result) in arms {
                     let mut arm_env = env.clone();
                     for condition in conditions {
                         self.infer_type_with_assignment_effects(condition, &mut arm_env)?;
+                    }
+                    // `match (true)` guard arms narrow their result like an
+                    // `if` then-branch (mirrors the plain inference walker).
+                    if guard_style && conditions.len() == 1 {
+                        if let Some(guard) = self.guard_narrowing(&conditions[0], &arm_env)? {
+                            arm_env.insert(guard.var, guard.then_ty);
+                        }
                     }
                     let arm_ty = self.infer_type_with_assignment_effects(result, &mut arm_env)?;
                     result_ty = Some(match result_ty {

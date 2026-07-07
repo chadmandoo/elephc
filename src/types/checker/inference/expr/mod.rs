@@ -159,12 +159,30 @@ impl Checker {
                 default,
             } => {
                 self.infer_type(subject, env)?;
+                // `match (true)` guard arms narrow their result expression the
+                // way an `if` then-branch does: `$x instanceof Y => $x->prop`
+                // must see $x as Y (the AIC PlacementRule evaluate/describe
+                // idiom). Single-condition arms only; the complement is not
+                // threaded to later arms (conservative).
+                let guard_style = matches!(subject.kind, ExprKind::BoolLiteral(true));
                 let mut result_ty = None;
                 for (conditions, result) in arms {
                     for c in conditions {
                         self.infer_type(c, env)?;
                     }
-                    let ty = self.infer_type(result, env)?;
+                    let narrowed_env = if guard_style && conditions.len() == 1 {
+                        self.guard_narrowing(&conditions[0], env)?.map(|guard| {
+                            let mut arm_env = env.clone();
+                            arm_env.insert(guard.var, guard.then_ty);
+                            arm_env
+                        })
+                    } else {
+                        None
+                    };
+                    let ty = match &narrowed_env {
+                        Some(arm_env) => self.infer_type(result, arm_env)?,
+                        None => self.infer_type(result, env)?,
+                    };
                     if result_ty.is_none() {
                         result_ty = Some(ty);
                     }

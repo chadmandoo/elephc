@@ -1432,3 +1432,29 @@ echo $fib(10);
     );
     assert_eq!(out, "55");
 }
+
+/// `?Closure` promoted-property declarations are legal (PHP forbids only the
+/// literal `callable` pseudo-type spelling; nullable/union Closure spellings
+/// resolve to Callable internally and previously tripped the restriction),
+/// and `Closure::fromCallable($closure)` is the identity wrap.
+#[test]
+fn test_nullable_closure_property_and_from_callable() {
+    let out = compile_and_run(
+        r#"<?php
+final class Plan {
+    public function __construct(public ?Closure $compare) {}
+}
+$p = new Plan(fn(int $a, int $b): int => $a <=> $b);
+$q = new Plan(null);
+$cmp = $p->compare;
+if ($cmp !== null) {
+    echo $cmp(2, 1);
+}
+echo "|", $q->compare === null ? "null-ok" : "bad", "|";
+$double = fn(int $x): int => $x * 2;
+$c = Closure::fromCallable($double);
+echo $c(21);
+"#,
+    );
+    assert_eq!(out, "1|null-ok|42");
+}

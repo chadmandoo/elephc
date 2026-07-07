@@ -8880,17 +8880,27 @@ fn constructor_signature<'a>(
 }
 
 /// Lowers an object property read.
-/// Returns true when a property receiver is statically typed as the raw
-/// `BackedEnum`/`UnitEnum` interface (see `lower_property_get_from_value`).
+/// Returns true when a property receiver is statically typed as an INTERFACE
+/// (the raw `BackedEnum`/`UnitEnum` builtins, or any user interface such as a
+/// marker interface reaching a property read through a `match(true)` guard
+/// the lowering does not re-narrow). Interfaces are not registered classes,
+/// so the typed property-slot path cannot resolve them; boxing routes the
+/// read through the codegen Mixed property path's runtime class dispatch (see
+/// `lower_property_get_from_value`).
 fn property_receiver_is_enum_interface(
     ctx: &LoweringContext<'_, '_>,
     value: crate::ir::ValueId,
 ) -> bool {
     match ctx.builder.value_php_type(value).codegen_repr() {
-        PhpType::Object(name) => matches!(
-            php_symbol_key(name.trim_start_matches('\\')).as_str(),
-            "backedenum" | "unitenum"
-        ),
+        PhpType::Object(name) => {
+            let key = php_symbol_key(name.trim_start_matches('\\'));
+            if matches!(key.as_str(), "backedenum" | "unitenum") {
+                return true;
+            }
+            ctx.interfaces
+                .keys()
+                .any(|candidate| php_symbol_key(candidate.trim_start_matches('\\')) == key)
+        }
         _ => false,
     }
 }
@@ -9876,6 +9886,26 @@ fn lower_static_method_call(
     args: &[Expr],
     expr: &Expr,
 ) -> LoweredValue {
+    // `Closure::fromCallable($x)` wraps a callable as a Closure — identity in
+    // elephc's representation (both are Callable descriptors). String
+    // callables would need a runtime string→descriptor conversion at this
+    // point; reject them cleanly rather than hand out a string typed as
+    // Callable (a later invoke would misread the pointer).
+    if let StaticReceiver::Named(name) = receiver {
+        if name.trim_start_matches('\\') == "Closure"
+            && php_symbol_key(method) == "fromcallable"
+            && args.len() == 1
+        {
+            let value = lower_expr(ctx, &args[0]);
+            let value_ty = ctx.builder.value_php_type(value.value).codegen_repr();
+            assert!(
+                value_ty == PhpType::Callable,
+                "Closure::fromCallable with a non-Closure argument is not supported yet (got {:?})",
+                value_ty
+            );
+            return value;
+        }
+    }
     // `Closure::bind($closure, $newThis [, $scope])` — static form of bindTo.
     if let StaticReceiver::Named(name) = receiver {
         if name.trim_start_matches('\\') == "Closure"

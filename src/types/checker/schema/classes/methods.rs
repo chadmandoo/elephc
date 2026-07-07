@@ -324,6 +324,20 @@ fn interface_declares_method(
 ) -> bool {
     let mut visited = std::collections::HashSet::new();
     let mut queue: Vec<String> = class.implements.clone();
+    // Interfaces implemented by ANCESTOR classes are override targets too:
+    // `final class StandardUser extends User` where `User implements
+    // HydratableEntity` makes `#[\Override] fromStorageRow()` valid even
+    // though StandardUser's own implements list is empty. Ancestors are
+    // flattened before their subclasses, so their interface lists are
+    // available on `checker.classes`.
+    let mut ancestor = class.extends.clone();
+    while let Some(parent_name) = ancestor {
+        let Some(parent) = checker.classes.get(&parent_name) else {
+            break;
+        };
+        queue.extend(parent.interfaces.iter().cloned());
+        ancestor = parent.parent.clone();
+    }
     while let Some(name) = queue.pop() {
         if !visited.insert(name.clone()) {
             continue;
