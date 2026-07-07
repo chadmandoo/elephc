@@ -60,12 +60,13 @@ use crate::parser::ast::{Program, StmtKind};
 
 /// The names that trigger prelude injection, in injection order.
 ///
-/// Most entries name a function the prelude provides. `preg_match_all` is a
-/// trigger only: the builtin cannot be redeclared in PHP source, so the prelude
-/// ships `__elephc_preg_match_all_impl` (plus its group-count helper) and the
-/// EIR lowering desugars 3/4-argument `preg_match_all()` calls into an
-/// assignment of that impl's nested matches array.
-const STDLIB_PRELUDE_NAMES: [&str; 14] = [
+/// Most entries name a function the prelude provides. `preg_match_all` and
+/// `array_filter` are triggers only: those builtins cannot be redeclared in
+/// PHP source, so the prelude ships `__elephc_preg_match_all_*` /
+/// `__elephc_array_filter_hash` impls and the EIR lowering desugars the
+/// matching call shapes into calls of those impls (associative `array_filter`
+/// receivers route to the hash impl; unused impls are dead-stripped).
+const STDLIB_PRELUDE_NAMES: [&str; 15] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -80,6 +81,7 @@ const STDLIB_PRELUDE_NAMES: [&str; 14] = [
     "preg_match_all",
     "preg_quote",
     "explode",
+    "array_filter",
 ];
 
 /// The elephc-PHP stdlib prelude source. `__elephc_mb_byte_index` is the shared
@@ -479,6 +481,27 @@ function __elephc_preg_match_all_offsets(string $pattern, string $subject): arra
         $g = $g + 1;
     }
     return $result;
+}
+
+function __elephc_array_filter_hash(array $h, callable $cb, int $mode): array {
+    // Associative array_filter impl (ARRAY_FILTER_USE_VALUE/KEY/BOTH): the
+    // EIR lowering routes AssocArray receivers here. Keys survive verbatim;
+    // insertion order is preserved by the keyed writes.
+    $out = [];
+    foreach ($h as $k => $v) {
+        $keep = false;
+        if ($mode === 2) {
+            $keep = $cb($k);
+        } elseif ($mode === 1) {
+            $keep = $cb($v, $k);
+        } else {
+            $keep = $cb($v);
+        }
+        if ($keep) {
+            $out[$k] = $v;
+        }
+    }
+    return $out;
 }
 "#;
 

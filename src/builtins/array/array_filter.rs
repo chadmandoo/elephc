@@ -47,10 +47,12 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     if let Some(mode) = cx.args.get(2) {
         cx.checker.infer_type(mode, cx.env)?;
     }
-    // Indexed receiver only for now — the EIR backend does not yet lower an
-    // AssocArray array_filter receiver (that's a separate lowering follow-up).
+    // Indexed receivers keep the packed runtime path; associative receivers
+    // are desugared by the EIR frontend into the prelude
+    // `__elephc_array_filter_hash` impl (keys preserved). Both report the
+    // receiver's own type as the result.
     let result_ty = match &arr_ty {
-        PhpType::Array(_) => arr_ty.clone(),
+        PhpType::Array(_) | PhpType::AssocArray { .. } => arr_ty.clone(),
         _ => {
             return Err(CompileError::new(
                 cx.span,

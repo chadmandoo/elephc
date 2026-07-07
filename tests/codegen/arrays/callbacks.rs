@@ -1283,3 +1283,31 @@ echo implode(",", array_map(fn(Box $b): int => $b->n * 10, $boxes));
     );
     assert_eq!(out, "a,b,c|10,20,30");
 }
+
+/// `array_filter` over an ASSOCIATIVE receiver preserves keys and supports all
+/// three modes (USE_VALUE / USE_BOTH / USE_KEY) — routed by the EIR frontend
+/// to the prelude `__elephc_array_filter_hash` impl, whose foreach +
+/// keyed-insert body carries ownership through proven user-level codegen.
+/// Covers count/keys/iteration/element reads on the filtered result, a
+/// property-typed receiver, and the packed path staying on the runtime helper.
+#[test]
+fn test_array_filter_assoc_receiver_modes_and_reads() {
+    let out = compile_and_run(
+        r#"<?php
+$a = ["x" => 1, "y" => 0, "z" => 3];
+$f = array_filter($a, fn(int $v): bool => $v > 0);
+echo count($f), ":", implode(",", array_keys($f));
+foreach ($f as $k => $v) { echo "|", $k, "=", $v; }
+$g = array_filter($a, fn(int $v, string $k): bool => $k !== "y" && $v > 0, ARRAY_FILTER_USE_BOTH);
+echo "|", implode(",", array_keys($g));
+$h = array_filter($a, fn(string $k): bool => $k === "z", ARRAY_FILTER_USE_KEY);
+echo "|", implode(",", array_keys($h)), "=", $h["z"] ?? "miss";
+$b = [1, 0, 2, 0, 3];
+echo "|", implode(",", array_filter($b, fn(int $v): bool => $v > 0));
+final class Bag { /** @var array<string, int> */ public array $m = ["a" => 5, "b" => 0]; }
+$bag = new Bag();
+echo "|", implode(",", array_keys(array_filter($bag->m, fn(int $v): bool => $v > 0)));
+"#,
+    );
+    assert_eq!(out, "2:x,z|x=1|z=3|x,z|z=3|1,2,3|a");
+}

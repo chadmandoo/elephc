@@ -1213,17 +1213,22 @@ pub(crate) fn array_filter_callback_dummy_args(
 ) -> (Vec<Expr>, Option<(String, PhpType)>) {
     // The VALUE element uses the object-aware dummy (a synthetic binding for
     // object/Mixed elements) so an unannotated object-element predicate type-checks
-    // (EC-28); the KEY position is always int/string, so a scalar placeholder.
+    // (EC-28); the KEY dummy mirrors the receiver's key type — an associative
+    // receiver with string keys must type-check a `string $k` predicate param,
+    // while packed receivers keep the int placeholder.
     let elem_ty = array_element_type(arr_ty);
     let (value_arg, binding) = comparator_dummy_arg_for_elem(&elem_ty, span);
+    let key_arg = match arr_ty {
+        PhpType::AssocArray { key, .. } if matches!(key.as_ref(), PhpType::Str) => {
+            Expr::new(ExprKind::StringLiteral(String::new()), span)
+        }
+        _ => Expr::new(ExprKind::IntLiteral(0), span),
+    };
     match mode_arg.and_then(static_array_filter_mode_value) {
         // ARRAY_FILTER_USE_BOTH: ($value, $key)
-        Some(1) => (
-            vec![value_arg, Expr::new(ExprKind::IntLiteral(0), span)],
-            binding,
-        ),
+        Some(1) => (vec![value_arg, key_arg], binding),
         // ARRAY_FILTER_USE_KEY: ($key) — key only, no value binding needed
-        Some(2) => (vec![Expr::new(ExprKind::IntLiteral(0), span)], None),
+        Some(2) => (vec![key_arg], None),
         // default: ($value)
         _ => (vec![value_arg], binding),
     }

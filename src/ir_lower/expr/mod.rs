@@ -1807,6 +1807,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_preg_match_all_capture(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_filter_assoc(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_explode_limit(ctx, canonical, args, expr) {
         return value;
     }
@@ -4207,6 +4210,62 @@ fn is_zero_arity_signature(sig: &FunctionSig) -> bool {
 ///
 /// Returns `None` (deferring to the builtin path and its arity/shape errors) for the
 /// 2-argument count-only form, named/spread arguments, or a non-variable `$matches`.
+/// Routes `array_filter($assoc, $cb[, $mode])` calls whose receiver is an
+/// associative array to the prelude `__elephc_array_filter_hash` impl (a
+/// foreach + keyed-insert body, so key preservation and value ownership ride
+/// the proven user-level codegen instead of a bespoke hash runtime). Indexed
+/// receivers keep the packed `__rt_array_filter` path. The prelude impl is
+/// injected whenever "array_filter" appears in the program (trigger entry in
+/// STDLIB_PRELUDE_NAMES); unused impls are dead-stripped.
+fn lower_static_array_filter_assoc(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_filter" {
+        return None;
+    }
+    if args.len() < 2 || args.len() > 3 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = materialized_expr_type_for_merge(ctx, &args[0]);
+    let PhpType::AssocArray { key, .. } = receiver_ty.codegen_repr() else {
+        return None;
+    };
+    // The impl builds its result with mixed-key writes, so the runtime hash
+    // holds BOXED value cells regardless of the receiver's element type — the
+    // result's honest static value type is Mixed (typed element reads would
+    // otherwise read a box pointer as the payload). Keys survive verbatim.
+    let assoc_ty = PhpType::AssocArray {
+        key,
+        value: Box::new(PhpType::Mixed),
+    };
+    let mode_arg = args.get(2).cloned().unwrap_or_else(|| Expr {
+        kind: ExprKind::IntLiteral(0),
+        span: expr.span,
+    });
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_filter_hash"),
+            args: vec![args[0].clone(), args[1].clone(), mode_arg],
+        },
+        span: expr.span,
+    };
+    let result = lower_expr(ctx, &impl_call);
+    // Re-type the result as the receiver's associative type: the impl's
+    // declared `array` return under-types the runtime hash it builds, and a
+    // packed-typed consumer (implode's indexed walk) would crash on hash
+    // storage. A typed hidden temp re-anchors the static type.
+    let temp = ctx.declare_hidden_temp(assoc_ty.clone());
+    ctx.store_local(&temp, result, assoc_ty, Some(expr.span));
+    ctx.mark_local_initialized(&temp);
+    Some(ctx.load_local(&temp, Some(expr.span)))
+}
+
 fn lower_static_preg_match_all_capture(
     ctx: &mut LoweringContext<'_, '_>,
     name: &str,
