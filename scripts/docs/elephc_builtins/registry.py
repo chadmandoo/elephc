@@ -35,7 +35,7 @@ AREAS: list[str] = [
 ]
 
 
-# Sub-area mapping: file path under src/codegen_ir/lower_inst/builtins/ or
+# Sub-area mapping: file path under src/codegen/lower_inst/builtins/ or
 # src/types/checker/builtins/ → (area, sub_area). When multiple files match
 # the same key, the first one wins.
 AREA_BY_FILE: Dict[str, Optional[Tuple[str, str]]] = {
@@ -1213,8 +1213,6 @@ RETURN_TYPE_OVERRIDES: Dict[str, str] = {
     "next": "mixed",
     "prev": "mixed",
     "reset": "mixed",
-    # in_array returns the value if found, false otherwise → mixed.
-    "in_array": "mixed",
     # String functions with a concrete string return type.
     "addslashes": "string",
     "bin2hex": "string",
