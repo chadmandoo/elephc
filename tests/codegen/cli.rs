@@ -424,3 +424,45 @@ echo foo(1);
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// Verifies `--debug-info` injects DWARF line-table directives into the emitted
+/// assembly: one `.file 1` header and a `.loc 1 <line> <col>` per source marker.
+#[test]
+fn test_cli_debug_info_injects_dwarf_line_directives() {
+    let dir = make_cli_test_dir("elephc_cli_debug_info");
+    let php_path = dir.join("main.php");
+    fs::write(
+        &php_path,
+        r#"<?php
+echo 1 + 2;
+"#,
+    )
+    .unwrap();
+
+    let output = elephc_cli_command(&dir)
+        .arg("--emit-asm")
+        .arg("--debug-info")
+        .arg(&php_path)
+        .output()
+        .expect("failed to run elephc CLI with --debug-info");
+
+    assert!(
+        output.status.success(),
+        "elephc --debug-info failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let asm_path = dir.join("main.s");
+    let asm = fs::read_to_string(&asm_path).expect("failed to read assembly");
+    assert!(
+        asm.starts_with(".file 1 \""),
+        "expected .file header at top of assembly, got: {}",
+        &asm[..asm.len().min(120)]
+    );
+    assert!(
+        asm.contains(".loc 1 2 "),
+        "expected a .loc directive for PHP line 2: {asm}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
