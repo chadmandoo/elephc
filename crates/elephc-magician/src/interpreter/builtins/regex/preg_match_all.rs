@@ -1,16 +1,31 @@
 //! Purpose:
-//! Implements eval support for PHP `preg_match_all()` and capture-matrix assembly.
+//! Eval registry entry and implementation for `preg_match_all`.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::regex` re-exports.
+//! - `crate::interpreter::builtins::hooks` and special by-ref call handling.
 //!
 //! Key details:
-//! - Pattern-order and set-order arrays share the common capture-value helper so
-//!   offset and unmatched-null flags remain consistent.
-
+//! - This file owns registry metadata, direct dispatch, by-value dispatch, and
+//! - capture-matrix assembly for `preg_match_all()`.
 use super::super::super::*;
+use super::super::spec::EvalBuiltinDefaultValue;
 use super::super::*;
 use super::*;
+
+eval_builtin! {
+    name: "preg_match_all",
+    area: Regex,
+    params: [
+        pattern,
+        subject,
+        matches: by_ref = EvalBuiltinDefaultValue::EmptyArray,
+        flags = EvalBuiltinDefaultValue::Int(0),
+    ],
+    by_ref: [matches],
+    direct: PregMatchAll,
+    values: PregMatchAll,
+}
+
 
 /// Evaluates PHP `preg_match_all()` over eval expressions.
 pub(in crate::interpreter) fn eval_builtin_preg_match_all(
@@ -192,4 +207,33 @@ pub(in crate::interpreter) fn eval_preg_match_all_set_order_array(
         outer = values.array_set(outer, key, row)?;
     }
     Ok(outer)
+}
+
+/// Dispatches by-value `preg_match_all()` calls after argument binding.
+pub(in crate::interpreter) fn eval_preg_match_all_values_result(
+    evaluated_args: &[RuntimeCellHandle],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    match evaluated_args {
+        [pattern, subject] => eval_preg_match_all_result(*pattern, *subject, values),
+        [pattern, subject, _matches] => {
+            values.warning(
+                "preg_match_all(): Argument #3 ($matches) must be passed by reference, value given",
+            )?;
+            let (count, matches) =
+                eval_preg_match_all_capture_result(*pattern, *subject, None, values)?;
+            values.release(matches)?;
+            Ok(count)
+        }
+        [pattern, subject, _matches, flags] => {
+            values.warning(
+                "preg_match_all(): Argument #3 ($matches) must be passed by reference, value given",
+            )?;
+            let (count, matches) =
+                eval_preg_match_all_capture_result(*pattern, *subject, Some(*flags), values)?;
+            values.release(matches)?;
+            Ok(count)
+        }
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }

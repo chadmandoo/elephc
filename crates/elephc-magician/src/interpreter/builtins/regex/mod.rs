@@ -11,25 +11,25 @@
 //!   behavior through `RuntimeValueOps`.
 
 mod captures;
-mod declarations;
 mod engine;
-mod match_all;
-mod match_one;
+mod preg_match;
+mod preg_match_all;
 mod pattern;
-mod replace;
+mod preg_replace;
+mod preg_replace_callback;
 mod replacement;
-mod split;
+mod preg_split;
 mod split_helpers;
 mod targets;
 
 pub(in crate::interpreter) use captures::*;
-pub(in crate::interpreter) use declarations::*;
 pub(in crate::interpreter) use engine::*;
-pub(in crate::interpreter) use match_all::*;
-pub(in crate::interpreter) use match_one::*;
+pub(in crate::interpreter) use preg_match::*;
+pub(in crate::interpreter) use preg_match_all::*;
 pub(in crate::interpreter) use pattern::*;
-pub(in crate::interpreter) use replace::*;
+pub(in crate::interpreter) use preg_replace::*;
+pub(in crate::interpreter) use preg_replace_callback::*;
 pub(in crate::interpreter) use replacement::*;
-pub(in crate::interpreter) use split::*;
+pub(in crate::interpreter) use preg_split::*;
 pub(in crate::interpreter) use split_helpers::*;
 pub(in crate::interpreter) use targets::*;

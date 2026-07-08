@@ -44,8 +44,10 @@ use super::super::{
     eval_builtin_min, eval_builtin_mt_rand, eval_builtin_network_env_call, eval_builtin_nl2br,
     eval_builtin_pi, eval_builtin_pow, eval_builtin_rad2deg, eval_builtin_rand,
     eval_builtin_random_int, eval_builtin_range, eval_builtin_round,
-    eval_builtin_raw_memory_call, eval_builtin_regex_call, eval_builtin_sin, eval_builtin_sinh,
-    eval_builtin_str_pad, eval_builtin_str_replace, eval_builtin_str_split,
+    eval_builtin_preg_match, eval_builtin_preg_match_all, eval_builtin_preg_replace,
+    eval_builtin_preg_replace_callback, eval_builtin_preg_split, eval_builtin_raw_memory_call,
+    eval_builtin_sin, eval_builtin_sinh, eval_builtin_str_pad, eval_builtin_str_replace,
+    eval_builtin_str_split,
     eval_builtin_stream_bool_predicate, eval_builtin_stream_introspection,
     eval_builtin_string_case, eval_builtin_string_compare, eval_builtin_string_position,
     eval_builtin_string_search, eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr,
@@ -244,8 +246,16 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Round,
     /// Dispatches `range(...)`.
     Range,
-    /// Dispatches regex builtins.
-    Regex,
+    /// Dispatches `preg_match(...)`.
+    PregMatch,
+    /// Dispatches `preg_match_all(...)`.
+    PregMatchAll,
+    /// Dispatches `preg_replace(...)`.
+    PregReplace,
+    /// Dispatches `preg_replace_callback(...)`.
+    PregReplaceCallback,
+    /// Dispatches `preg_split(...)`.
+    PregSplit,
     /// Dispatches raw pointer and buffer extension builtins.
     RawMemory,
     /// Dispatches `addslashes(...)` and `stripslashes(...)`.
@@ -418,7 +428,13 @@ impl EvalDirectHook {
             Self::RandomInt => eval_builtin_random_int(args, context, scope, values),
             Self::Round => eval_builtin_round(args, context, scope, values),
             Self::Range => eval_builtin_range(args, context, scope, values),
-            Self::Regex => eval_builtin_regex_call(name, args, context, scope, values),
+            Self::PregMatch => eval_builtin_preg_match(args, context, scope, values),
+            Self::PregMatchAll => eval_builtin_preg_match_all(args, context, scope, values),
+            Self::PregReplace => eval_builtin_preg_replace(args, context, scope, values),
+            Self::PregReplaceCallback => {
+                eval_builtin_preg_replace_callback(args, context, scope, values)
+            }
+            Self::PregSplit => eval_builtin_preg_split(args, context, scope, values),
             Self::RawMemory => eval_builtin_raw_memory_call(name, args, context, scope, values),
             Self::Sin => eval_builtin_sin(args, context, scope, values),
             Self::Sinh => eval_builtin_sinh(args, context, scope, values),

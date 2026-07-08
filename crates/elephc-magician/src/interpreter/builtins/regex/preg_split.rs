@@ -1,15 +1,29 @@
 //! Purpose:
-//! Implements eval support for PHP `preg_split()` entrypoint and result assembly.
+//! Eval registry entry and implementation for `preg_split`.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::regex` re-exports.
+//! - `crate::interpreter::builtins::hooks`.
 //!
 //! Key details:
-//! - Split flags are decoded before collecting pieces so delimiter capture, empty
-//!   filtering, and offset capture share one result path.
-
+//! - This file owns registry metadata, direct dispatch, by-value dispatch, and
+//! - result assembly for `preg_split()`.
 use super::super::super::*;
+use super::super::spec::EvalBuiltinDefaultValue;
 use super::*;
+
+eval_builtin! {
+    name: "preg_split",
+    area: Regex,
+    params: [
+        pattern,
+        subject,
+        limit = EvalBuiltinDefaultValue::Int(-1),
+        flags = EvalBuiltinDefaultValue::Int(0),
+    ],
+    direct: PregSplit,
+    values: PregSplit,
+}
+
 
 /// Evaluates PHP `preg_split()` over eval expressions.
 pub(in crate::interpreter) fn eval_builtin_preg_split(
@@ -86,4 +100,21 @@ pub(in crate::interpreter) fn eval_preg_split_result(
         result = values.array_set(result, key, value)?;
     }
     Ok(result)
+}
+
+/// Dispatches by-value `preg_split()` calls after argument binding.
+pub(in crate::interpreter) fn eval_preg_split_values_result(
+    evaluated_args: &[RuntimeCellHandle],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    match evaluated_args {
+        [pattern, subject] => eval_preg_split_result(*pattern, *subject, None, None, values),
+        [pattern, subject, limit] => {
+            eval_preg_split_result(*pattern, *subject, Some(*limit), None, values)
+        }
+        [pattern, subject, limit, flags] => {
+            eval_preg_split_result(*pattern, *subject, Some(*limit), Some(*flags), values)
+        }
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }

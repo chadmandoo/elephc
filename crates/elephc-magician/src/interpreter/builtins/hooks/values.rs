@@ -41,10 +41,12 @@ use super::super::{
     eval_json_last_error_result, eval_json_validate_values_result, eval_log2_result,
     eval_log10_result, eval_log_result, eval_max_result, eval_min_result,
     eval_mt_rand_values_result, eval_network_env_values_result, eval_nl2br_result,
-    eval_pi_result, eval_pow_result, eval_printf_result, eval_rad2deg_result, eval_rand_values_result,
-    eval_random_int_values_result, eval_range_result, eval_regex_values_result, eval_round_result,
-    eval_settype_values_result, eval_sin_result, eval_sinh_result, eval_slashes_result,
-    eval_sprintf_result, eval_sqrt_result, eval_sscanf_values_result,
+    eval_pi_result, eval_pow_result, eval_preg_match_all_values_result, eval_preg_match_values_result,
+    eval_preg_replace_callback_values_result, eval_preg_replace_values_result,
+    eval_preg_split_values_result, eval_printf_result, eval_rad2deg_result, eval_rand_values_result,
+    eval_random_int_values_result, eval_range_result, eval_round_result, eval_settype_values_result,
+    eval_sin_result, eval_sinh_result, eval_slashes_result, eval_sprintf_result, eval_sqrt_result,
+    eval_sscanf_values_result,
     eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result,
     eval_str_split_result, eval_stream_bool_predicate_result, eval_stream_introspection_result,
     eval_string_case_result, eval_string_compare_result, eval_string_position_result,
@@ -251,8 +253,16 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Round,
     /// Dispatches `range(...)`.
     Range,
-    /// Dispatches regex builtins.
-    Regex,
+    /// Dispatches `preg_match(...)`.
+    PregMatch,
+    /// Dispatches `preg_match_all(...)`.
+    PregMatchAll,
+    /// Dispatches `preg_replace(...)`.
+    PregReplace,
+    /// Dispatches `preg_replace_callback(...)`.
+    PregReplaceCallback,
+    /// Dispatches `preg_split(...)`.
+    PregSplit,
     /// Dispatches raw pointer and buffer extension builtins.
     RawMemory,
     /// Dispatches by-value `settype(...)` callable calls.
@@ -475,7 +485,13 @@ impl EvalValuesHook {
                 _ => Err(EvalStatus::RuntimeFatal),
             },
             Self::Range => two_args(evaluated_args, values, eval_range_result),
-            Self::Regex => eval_regex_values_result(name, evaluated_args, context, values),
+            Self::PregMatch => eval_preg_match_values_result(evaluated_args, values),
+            Self::PregMatchAll => eval_preg_match_all_values_result(evaluated_args, values),
+            Self::PregReplace => eval_preg_replace_values_result(evaluated_args, values),
+            Self::PregReplaceCallback => {
+                eval_preg_replace_callback_values_result(evaluated_args, context, values)
+            }
+            Self::PregSplit => eval_preg_split_values_result(evaluated_args, values),
             Self::RawMemory => eval_raw_memory_values_result(name, evaluated_args, context, values),
             Self::Settype => eval_settype_values_result(evaluated_args, values),
             Self::Sin => one_arg(evaluated_args, values, eval_sin_result),
