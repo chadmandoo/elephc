@@ -379,7 +379,12 @@ pub(crate) fn compile(config: CliConfig) {
     if emit_source_map {
         let phase_started = Instant::now();
         if let Err(err) =
-            source_map::write_source_map(&user_asm, Path::new(filename), &output_paths.source_map)
+            source_map::write_source_map(
+                &user_asm,
+                Path::new(filename),
+                &output_paths.asm,
+                &output_paths.source_map,
+            )
         {
             eprintln!("Source map error: {}", err);
             process::exit(1);
