@@ -36,7 +36,7 @@ use super::super::{
     eval_builtin_str_split, eval_builtin_stream_bool_predicate, eval_builtin_stream_introspection,
     eval_builtin_string_case, eval_builtin_string_compare, eval_builtin_string_position,
     eval_builtin_string_search, eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr,
-    eval_builtin_substr_replace, eval_builtin_time_call, eval_builtin_trim_like,
+    eval_builtin_substr_replace, eval_builtin_symbols_call, eval_builtin_time_call, eval_builtin_trim_like,
     eval_builtin_ucwords, eval_builtin_wordwrap,
 };
 
@@ -181,6 +181,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Substr,
     /// Dispatches `substr_replace(...)`.
     SubstrReplace,
+    /// Dispatches symbol, class metadata, SPL, and language-construct probes.
+    Symbols,
     /// Dispatches date, time, and sleep builtins.
     Time,
     /// Dispatches trim-family builtins.
@@ -299,6 +301,7 @@ impl EvalDirectHook {
             Self::Strstr => eval_builtin_strstr(args, context, scope, values),
             Self::Substr => eval_builtin_substr(args, context, scope, values),
             Self::SubstrReplace => eval_builtin_substr_replace(args, context, scope, values),
+            Self::Symbols => eval_builtin_symbols_call(name, args, context, scope, values),
             Self::Time => eval_builtin_time_call(name, args, context, scope, values),
             Self::TrimLike => eval_builtin_trim_like(name, args, context, scope, values),
             Self::TypePredicate => eval_builtin_type_predicate(name, args, context, scope, values),

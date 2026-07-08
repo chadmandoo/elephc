@@ -31,9 +31,11 @@ use super::super::{
     eval_str_split_result, eval_stream_bool_predicate_result, eval_stream_introspection_result,
     eval_string_case_result, eval_string_compare_result, eval_string_position_result,
     eval_string_search_result, eval_strstr_result, eval_substr_replace_result, eval_substr_result,
-    eval_time_values_result, eval_trim_like_result, eval_type_predicate_result, eval_ucwords_result,
-    eval_url_decode_result, eval_url_encode_result, eval_wordwrap_result,
+    eval_symbols_values_result, eval_time_values_result, eval_trim_like_result,
+    eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result, eval_url_encode_result,
+    eval_wordwrap_result,
 };
+use super::arity::{one_arg, three_args, two_args};
 use super::hash::{eval_hash_algos_values, eval_hash_context_values};
 use super::number_format::eval_number_format_values;
 use super::random::eval_random_values;
@@ -184,6 +186,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Substr,
     /// Dispatches `substr_replace(...)`.
     SubstrReplace,
+    /// Dispatches symbol, class metadata, SPL, and language-construct probes.
+    Symbols,
     /// Dispatches date, time, and sleep builtins.
     Time,
     /// Dispatches trim-family builtins.
@@ -397,6 +401,7 @@ impl EvalValuesHook {
                 }
                 _ => Err(EvalStatus::RuntimeFatal),
             },
+            Self::Symbols => eval_symbols_values_result(name, evaluated_args, context, values),
             Self::Time => eval_time_values_result(name, evaluated_args, context, values),
             Self::TrimLike => match evaluated_args {
                 [value] => eval_trim_like_result(name, *value, None, values),
@@ -442,57 +447,4 @@ impl EvalValuesHook {
             }),
         }
     }
-}
-
-/// Validates and dispatches one evaluated builtin argument.
-fn one_arg<V, F>(
-    evaluated_args: &[RuntimeCellHandle],
-    values: &mut V,
-    callback: F,
-) -> Result<RuntimeCellHandle, EvalStatus>
-where
-    V: RuntimeValueOps,
-    F: FnOnce(RuntimeCellHandle, &mut V) -> Result<RuntimeCellHandle, EvalStatus>,
-{
-    let [value] = evaluated_args else {
-        return Err(EvalStatus::RuntimeFatal);
-    };
-    callback(*value, values)
-}
-
-/// Validates and dispatches two evaluated builtin arguments.
-fn two_args<V, F>(
-    evaluated_args: &[RuntimeCellHandle],
-    values: &mut V,
-    callback: F,
-) -> Result<RuntimeCellHandle, EvalStatus>
-where
-    V: RuntimeValueOps,
-    F: FnOnce(RuntimeCellHandle, RuntimeCellHandle, &mut V) -> Result<RuntimeCellHandle, EvalStatus>,
-{
-    let [left, right] = evaluated_args else {
-        return Err(EvalStatus::RuntimeFatal);
-    };
-    callback(*left, *right, values)
-}
-
-/// Validates and dispatches three evaluated builtin arguments.
-fn three_args<V, F>(
-    evaluated_args: &[RuntimeCellHandle],
-    values: &mut V,
-    callback: F,
-) -> Result<RuntimeCellHandle, EvalStatus>
-where
-    V: RuntimeValueOps,
-    F: FnOnce(
-        RuntimeCellHandle,
-        RuntimeCellHandle,
-        RuntimeCellHandle,
-        &mut V,
-    ) -> Result<RuntimeCellHandle, EvalStatus>,
-{
-    let [first, second, third] = evaluated_args else {
-        return Err(EvalStatus::RuntimeFatal);
-    };
-    callback(*first, *second, *third, values)
 }

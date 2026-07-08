@@ -234,6 +234,8 @@ mod tests {
             "chgrp",
             "chmod",
             "chown",
+            "class_alias",
+            "class_exists",
             "closedir",
             "clearstatcache",
             "copy",
@@ -250,6 +252,7 @@ mod tests {
             "die",
             "exec",
             "exit",
+            "function_exists",
             "explode",
             "file",
             "file_exists",
@@ -281,6 +284,7 @@ mod tests {
             "ftell",
             "fwrite",
             "getdate",
+            "get_class",
             "getcwd",
             "getenv",
             "gethostbyaddr",
@@ -317,11 +321,13 @@ mod tests {
             "inet_ntop",
             "inet_pton",
             "intval",
+            "interface_exists",
             "iterator_apply",
             "iterator_count",
             "iterator_to_array",
             "is_array",
             "is_bool",
+            "is_callable",
             "is_dir",
             "is_double",
             "is_executable",
@@ -343,6 +349,7 @@ mod tests {
             "is_resource",
             "is_scalar",
             "is_string",
+            "is_subclass_of",
             "is_writable",
             "is_writeable",
             "ip2long",
@@ -408,6 +415,8 @@ mod tests {
             "sleep",
             "sort",
             "sprintf",
+            "spl_autoload",
+            "spl_object_id",
             "sscanf",
             "stat",
             "stream_copy_to_stream",
@@ -441,12 +450,14 @@ mod tests {
             "time",
             "tmpfile",
             "touch",
+            "trait_exists",
             "trim",
             "strval",
             "uasort",
             "uksort",
             "umask",
             "unlink",
+            "unset",
             "usleep",
             "usort",
             "var_dump",
@@ -567,6 +578,46 @@ mod tests {
         assert_eq!(
             eval_builtin_signature_shape("var_dump").map(|shape| shape.variadic),
             Some(Some("values"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("class_exists"),
+            Some(["class", "autoload"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("class_exists", 1),
+            Some(EvalBuiltinDefaultValue::Bool(true))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("get_class"),
+            Some(["object"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("get_class", 0),
+            Some(EvalBuiltinDefaultValue::Null)
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("is_callable"),
+            Some(["value", "syntax_only", "callable_name"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_spec("is_callable").map(EvalBuiltinSpec::by_ref_param_names),
+            Some(["callable_name"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("is_callable", 1),
+            Some(EvalBuiltinDefaultValue::Bool(false))
+        );
+        assert_eq!(
+            eval_builtin_signature_shape("isset").map(|shape| shape.variadic),
+            Some(Some("vars"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("spl_autoload_register"),
+            Some(["callback", "throw", "prepend"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("spl_autoload_register", 2),
+            Some(EvalBuiltinDefaultValue::Bool(false))
         );
         for name in ["rand", "mt_rand", "random_int"] {
             assert_eq!(

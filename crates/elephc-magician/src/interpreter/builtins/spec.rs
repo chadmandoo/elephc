@@ -36,6 +36,8 @@ pub(in crate::interpreter) enum EvalArea {
     Regex,
     /// String-processing builtins.
     String,
+    /// Symbol, class metadata, SPL, and language-construct probes.
+    Symbols,
     /// Date, time, and sleep builtins.
     Time,
     /// Scalar conversion and type-related builtins.

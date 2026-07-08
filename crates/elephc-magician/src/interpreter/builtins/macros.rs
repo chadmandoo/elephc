@@ -222,8 +222,16 @@ macro_rules! eval_builtin {
         "class"
     };
 
+    (@name_str r#enum) => {
+        "enum"
+    };
+
     (@name_str r#return) => {
         "return"
+    };
+
+    (@name_str r#trait) => {
+        "trait"
     };
 
     (@name_str r#type) => {

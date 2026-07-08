@@ -9,6 +9,12 @@
 //!   behavior through `RuntimeValueOps`.
 
 use super::super::*;
+
+mod declarations;
+
+pub(in crate::interpreter) use declarations::{
+    eval_builtin_symbols_call, eval_symbols_values_result,
+};
 use super::*;
 
 const EVAL_DATE_PROCEDURAL_ALIAS_FUNCTIONS: &[&str] = &[

@@ -124,33 +124,8 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
     }
 
     match name {
-        "empty" => Some(&["value"]),
-        "is_callable" => Some(&["value", "syntax_only", "callable_name"]),
         "buffer_new" => Some(&["length"]),
         "buffer_len" | "buffer_free" => Some(&["buffer"]),
-        "get_called_class" => Some(&[]),
-        "get_class" => Some(&["object"]),
-        "get_class_methods" => Some(&["object_or_class"]),
-        "get_class_vars" => Some(&["class"]),
-        "get_object_vars" => Some(&["object"]),
-        "get_parent_class" => Some(&["object_or_class"]),
-        "class_alias" => Some(&["class", "alias", "autoload"]),
-        "class_attribute_args" => Some(&["class_name", "attribute_name"]),
-        "class_attribute_names" | "class_get_attributes" => Some(&["class_name"]),
-        "class_exists" => Some(&["class", "autoload"]),
-        "class_implements" | "class_parents" | "class_uses" => {
-            Some(&["object_or_class", "autoload"])
-        }
-        "method_exists" => Some(&["object_or_class", "method"]),
-        "property_exists" => Some(&["object_or_class", "property"]),
-        "enum_exists" => Some(&["enum", "autoload"]),
-        "interface_exists" => Some(&["interface", "autoload"]),
-        "trait_exists" => Some(&["trait", "autoload"]),
-        "is_a" | "is_subclass_of" => Some(&["object_or_class", "class", "allow_string"]),
-        "function_exists" => Some(&["function"]),
-        "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => Some(&[]),
-        "get_resource_id" | "get_resource_type" => Some(&["resource"]),
-        "isset" | "unset" => Some(&["var", "vars"]),
         "ptr" => Some(&["value"]),
         "ptr_null" => Some(&[]),
         "ptr_is_null" | "ptr_get" | "ptr_read8" | "ptr_read16" | "ptr_read32" => {
@@ -163,13 +138,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         }
         "ptr_write_string" => Some(&["pointer", "string"]),
         "ptr_sizeof" => Some(&["type"]),
-        "spl_autoload_register" => Some(&["callback", "throw", "prepend"]),
-        "spl_autoload_unregister" => Some(&["callback"]),
-        "spl_autoload_functions" | "spl_classes" => Some(&[]),
-        "spl_autoload_extensions" => Some(&["file_extensions"]),
-        "spl_autoload_call" => Some(&["class"]),
-        "spl_autoload" => Some(&["class", "file_extensions"]),
-        "spl_object_id" | "spl_object_hash" => Some(&["object"]),
         _ => None,
     }
 }

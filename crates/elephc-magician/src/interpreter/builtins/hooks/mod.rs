@@ -8,6 +8,7 @@
 //! - Direct expression dispatch, already-evaluated argument dispatch, and
 //!   focused hook helpers stay split so ordinary files remain small.
 
+mod arity;
 mod direct;
 mod hash;
 mod number_format;
