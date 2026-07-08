@@ -41,10 +41,25 @@
   builtins, and static-only builtins not yet present in magician.
 - [ ] Reduce the remaining manual AOT mini-codegen and converge on internal EIR
   functions for supported literal fragments.
+- [ ] Define dynamic-name semantics and fallback boundaries for variable
+  variables, dynamic instance properties, dynamic static properties, dynamic
+  member access, and `isset`/`empty`/`unset` over those forms.
+- [ ] Complete or audit magician fallback support for `$$name`, `${$expr}`,
+  `$object->$property`, `$object->{$expr}`, nullsafe dynamic property reads,
+  dynamic static properties, and their write/ref-like variants.
+- [ ] Add conservative AOT classification for statically known dynamic names
+  only when variable, object, method, property, and access-context facts are
+  precise.
+- [ ] Add access-context-aware object/member lowering so specialized
+  private/protected reads preserve the original method/class scope instead of
+  becoming public call-site property reads.
+- [ ] Add call-site method specialization for constant arguments such as
+  `$car->getProperty("color")`, guarded by exact receiver/method resolution and
+  semantic equivalence tests.
 - [ ] Expand AOT only where semantics are covered. Full arrays/iterables,
-  object/member access, references/by-ref, `global`, `static`, variable
-  variables, `try`/`throw`, include/require, and declarations stay fallback
-  until they have a dedicated model and tests.
+  references/by-ref, `global`, `static`, unresolved dynamic names,
+  `try`/`throw`, include/require, and declarations stay fallback until they have
+  a dedicated model and tests.
 - [ ] Close or explicitly maintain the static-only builtin gap: implement them
   in magician or keep them in a tested allowlist until eval exposes them.
 - [ ] Promote the most useful AOT acceptance benchmarks into the permanent
@@ -260,22 +275,287 @@ Done criteria:
 - the assembly marker remains explicit;
 - no regression on macOS ARM64, Linux ARM64, or Linux x86_64.
 
-### 2. Extend AOT Beyond the Current Static Subset
+### 2. Dynamic Names and Static Object/Member Specialization
+
+The current AOT classifier deliberately treats object/member access and dynamic
+names as fallback territory. That is correct until the compiler can prove the
+same PHP-visible behavior as the magician fallback. The goal is not to make
+dynamic PHP magically static everywhere; the goal is to recognize cases that are
+only syntactically dynamic but semantically fixed at the call site or inside the
+analyzed fragment.
+
+Important example:
+
+```php
+class Car {
+    private string $color;
+
+    public function getProperty($property) {
+        if (isset($this->$property)) {
+            return $this->$property;
+        }
+        return null;
+    }
+}
+
+$car = new Car();
+echo $car->getProperty("color");
+```
+
+The optimization must not rewrite this as a source-level `echo $car->color` in
+the caller context, because `color` is private. The safe rewrite is either an
+inlined clone that preserves `Car` as the lexical access context, or a synthetic
+specialized method/helper such as `Car::getProperty$specialized_color($this)`
+whose property reads are still authorized by `Car`.
+
+#### 2.1 Semantic Surfaces
+
+Cover these PHP forms explicitly before allowing AOT:
+
+- variable variables:
+  - `$$name`;
+  - `${$expr}`;
+  - read, assignment, compound assignment, increment/decrement, by-reference
+    binding, `isset`, `empty`, and `unset`;
+  - local scope, function scope, method scope, and eval-created variables;
+  - invalid or non-string-like names after PHP coercion.
+- dynamic instance properties:
+  - `$object->$name`;
+  - `$object->{$expr}`;
+  - `$object?->$name` and `$object?->{$expr}`;
+  - read, assignment, compound assignment, array append/set, inc/dec,
+    by-reference binding, `isset`, `empty`, and `unset`.
+- dynamic static properties and members:
+  - `$class::${$property}`;
+  - `self::${$property}`, `static::${$property}`, and `parent::${$property}`;
+  - static property read/write/isset/empty/unset where PHP permits it.
+- member resolution rules:
+  - declared public/protected/private properties;
+  - private property slots attached to the declaring class;
+  - inheritance and trait-origin metadata;
+  - dynamic-property tails and `stdClass` properties;
+  - typed properties, uninitialized typed properties, readonly properties, and
+    nullable typed properties;
+  - `__get`, `__set`, `__isset`, and `__unset`;
+  - fatal/error behavior for inaccessible, undefined, or invalid accesses.
+
+Anything outside the modeled surface stays in magician fallback with an explicit
+fallback reason.
+
+#### 2.2 Runtime Fallback Completion
+
+The fallback remains the semantic oracle. Before AOT is extended, audit and fill
+gaps in:
+
+- `crates/elephc-magician/src/parser/` for all dynamic-name syntax accepted by
+  the main parser;
+- `crates/elephc-magician/src/eval_ir.rs` for distinct read/write/isset/unset
+  operations instead of ad hoc expression handling;
+- `crates/elephc-magician/src/interpreter/` for scope lookup, variable creation,
+  object property lookup, static property lookup, magic methods, typed-property
+  state, readonly checks, and by-reference aliases;
+- `crates/elephc-magician/src/context.rs` for metadata needed to reflect AOT
+  classes and native runtime classes accurately;
+- native runtime hooks under `src/codegen_support/runtime/` when magician must
+  call back into generated/AOT object layouts.
+
+Fallback done criteria:
+
+- every supported dynamic-name form has direct interpreter tests;
+- PHP-equivalence tests cover visible output, return value, warnings/fatals, and
+  mutation side effects where practical;
+- unsupported forms fail or fall back deliberately rather than partially
+  evaluating with the wrong scope or visibility.
+
+#### 2.3 AOT Fact Model
+
+Introduce a small, invalidation-aware fact model before changing the AOT
+classifier. Required facts:
+
+- known local string value: `$property === "color"`;
+- known variable-variable target: `$$name` maps to `$color` only while `$name`
+  and the target scope remain unchanged;
+- exact object allocation: `$car` is exactly `new Car()` and cannot be an
+  unknown subclass at that point;
+- receiver method target: `$car->getProperty(...)` resolves to exactly
+  `Car::getProperty`;
+- constant argument facts at call sites;
+- declared property identity: `Car::$color` as a property slot, not just the
+  string `"color"`;
+- lexical access context: the class scope that authorized the original
+  property access;
+- initialization/nullability facts only when they are already proven by
+  existing type/flow analysis.
+
+Facts must be invalidated by:
+
+- assignments to any variable participating in the fact;
+- variable variables that may alias the variable;
+- by-reference calls, references, `global`, `static`, or unknown mutating calls;
+- dynamic `eval`, include/require, or unknown callbacks;
+- writes to object properties that may affect the resolved slot;
+- any path where control-flow merge loses precision.
+
+The first implementation can be local and conservative. It does not need a full
+whole-program optimizer, but it must refuse ambiguous cases.
+
+#### 2.4 Static Dynamic-Name AOT
+
+After fallback semantics and facts exist, allow AOT only for narrow cases:
+
+- `$$name` when `name` is a compile-time-known string and the target variable
+  is a normal local/scope variable with no active reference ambiguity;
+- `${$expr}` when `$expr` folds to the same safe known string;
+- `$this->$property` inside a known class method when `$property` is a known
+  string and resolves to a declared property visible from that method's lexical
+  class;
+- `$object->{$property}` when the object has an exact class fact, the property
+  string is known, and the access is public or has an explicitly preserved
+  lexical access context;
+- `isset($object->$property)` / `empty($object->$property)` when the lowering can
+  use a non-reading property probe that preserves PHP behavior for uninitialized
+  typed properties and magic `__isset`;
+- nullsafe dynamic property reads only when the null branch and non-null branch
+  match PHP evaluation order and side effects.
+
+Keep fallback for:
+
+- unknown property names;
+- unknown receiver classes;
+- possible subclass overrides without an exact receiver or final method/class;
+- inaccessible properties without a preserved lexical access context;
+- magic methods unless the AOT path explicitly models their dispatch;
+- references/by-ref paths until the ref-cell model is identical to fallback;
+- dynamic static properties involving late static binding unless `self`/`static`
+  context is precise.
+
+#### 2.5 Access-Context-Aware Lowering
+
+Private and protected properties require a lowering model that distinguishes
+source context from call-site context.
+
+Do not lower a specialized private read to a normal caller-side property access.
+Instead, choose one of these representations:
+
+- an internal EIR property operation carrying:
+  - object value;
+  - resolved property identity/slot;
+  - lexical access context;
+  - operation kind (`read`, `isset`, `write`, `unset`, etc.);
+- or a synthetic specialized method/helper compiled with the original class as
+  its access context.
+
+Required invariants:
+
+- property visibility is checked as if the original method body performed the
+  access;
+- private properties resolve to the declaring class slot, not to a public or
+  child-class property with the same string name;
+- protected properties preserve inheritance visibility rules;
+- `isset` and `empty` do not accidentally read uninitialized typed properties;
+- readonly and asymmetric property rules remain enforced on writes;
+- magic methods are called only when PHP would call them;
+- the generated path remains target-aware across macOS ARM64, Linux ARM64, and
+  Linux x86_64.
+
+#### 2.6 Call-Site Method Specialization
+
+Specialization should be a separate phase from basic dynamic-name support.
+
+Candidate requirements:
+
+- receiver exactness:
+  - exact allocation such as `$car = new Car()` in the same analyzable flow; or
+  - final class/final method evidence strong enough to avoid virtual dispatch
+    changes;
+- method body available in the current compilation unit after includes are
+  resolved;
+- call arguments have stable constant facts or simple value facts;
+- the method body does not contain unsupported constructs for the chosen
+  specialization path;
+- no by-reference parameters, references, dynamic `eval`, include/require,
+  unknown callbacks, or global/static interactions unless explicitly modeled;
+- parameter defaults, named arguments, variadics, and spread arguments have been
+  normalized through the shared call-argument planner.
+
+Implementation options:
+
+1. Inline a cloned method body at the call site, preserving lexical class scope.
+2. Generate a synthetic internal function/method keyed by receiver class,
+   method, and constant-argument shape.
+
+The first version should prefer synthetic helpers if that keeps access context,
+cleanup, and debug markers easier to reason about.
+
+Specialization must preserve:
+
+- source evaluation order for receiver and arguments;
+- method return semantics;
+- `$this`, `self`, `static`, and `parent` resolution;
+- visibility and property initialization checks;
+- side effects before any early return or fatal;
+- fallback behavior when any guard/fact is not available at compile time.
+
+#### 2.7 Tests and Benchmarks
+
+Add focused coverage in layers:
+
+- parser tests for `$$name`, `${$expr}`, `$obj->$name`, `$obj->{$expr}`,
+  nullsafe dynamic properties, and dynamic static properties;
+- magician tests for dynamic variables and dynamic properties in normal reads,
+  writes, `isset`, `empty`, `unset`, typed properties, private/protected/public
+  properties, magic methods, and dynamic-property tails;
+- codegen tests proving unsupported dynamic paths use magician fallback with a
+  readable marker;
+- AOT tests proving statically known dynamic names do not call
+  `__elephc_eval_execute`;
+- specialization tests for the `Car::getProperty("color")` shape, including:
+  - private property access remains legal through preserved `Car` context;
+  - uninitialized typed property returns the `isset`/`null` behavior;
+  - initialized property returns the expected value;
+  - subclass/override ambiguity falls back;
+  - public dynamic property access still works without private-context rules;
+- negative/error tests for inaccessible properties, readonly writes, invalid
+  dynamic names, and magic-method edge cases;
+- PHP cross-checks with `ELEPHC_PHP_CHECK=1` where behavior is subtle.
+
+Benchmark only after correctness is in place. A useful manual benchmark would
+compare:
+
+- plain static property access;
+- dynamic property access through magician;
+- static dynamic-name AOT;
+- call-site specialized getter.
+
+#### 2.8 Done Criteria
+
+This work is done only when:
+
+1. fallback semantics cover the declared dynamic-name subset;
+2. unsupported dynamic-name cases produce explicit fallback reasons;
+3. AOT accepts only statically resolved dynamic names with precise facts;
+4. private/protected property specialization preserves lexical access context;
+5. call-site specialization never changes virtual dispatch, visibility,
+   evaluation order, or error behavior;
+6. tests cover runtime fallback, AOT acceptance, AOT rejection, and PHP-equivalent
+   edge cases;
+7. focused checks pass on all supported targets for any codegen/runtime changes.
+
+### 3. General AOT Expansion Beyond Dynamic Names
 
 Every new construct must be introduced only with a semantic model and tests.
-Reasonable priority:
+Reasonable priority after the dynamic-name work:
 
 1. arrays/iterables in AOT once COW and ownership are clear;
-2. statically resolvable object/member access;
-3. references/by-ref only if the ref-cell model is identical to runtime;
-4. `global`, `static`, and variable variables;
-5. `try`/`throw`;
-6. include/require;
-7. declarations inside eval.
+2. references/by-ref only if the ref-cell model is identical to runtime;
+3. `global` and `static`;
+4. `try`/`throw`;
+5. include/require;
+6. declarations inside eval.
 
 Everything not modeled stays fallback.
 
-### 3. Compiler/Eval Builtin Parity
+### 4. Compiler/Eval Builtin Parity
 
 `tests/builtin_parity_tests.rs` distinguishes:
 
@@ -292,7 +572,7 @@ When a static-only builtin is implemented in magician:
 - add named/positional tests when relevant;
 - update benchmarks only if the builtin enters an eval hot path.
 
-### 4. Benchmarks and Measurement
+### 5. Benchmarks and Measurement
 
 The benchmark suite exists. Remaining work:
 
@@ -302,7 +582,7 @@ The benchmark suite exists. Remaining work:
   regression or CI artifact;
 - preserve output correctness against PHP where practical.
 
-### 5. Documentation
+### 6. Documentation
 
 Update docs when the subset changes:
 
@@ -329,6 +609,17 @@ For runtime bridge or interpreter changes:
 cargo check
 cargo test -p elephc-magician <filter>
 cargo test --test codegen_tests eval_<filter>
+git diff --check
+```
+
+For dynamic-name or object/member specialization changes:
+
+```bash
+cargo check
+cargo test -p elephc-magician dynamic_property
+cargo test -p elephc-magician variable_variable
+cargo test --test codegen_tests eval_dynamic
+cargo test --test codegen_tests literal_eval_static
 git diff --check
 ```
 
@@ -359,6 +650,13 @@ python3 scripts/benchmark_magician.py --case literal_scalar_aot --iterations 5 -
   leaks, or missed mutations if they bypass runtime helpers.
 - `eval('$x + 1;')` returns `null`, not the last expression.
 - Over-aggressive fallback selection can miscompile dynamic code.
+- Variable variables can invalidate otherwise local-looking facts.
+- Dynamic property specialization can break private/protected visibility unless
+  lexical access context is preserved explicitly.
+- `isset`/`empty` over typed properties must not be lowered into reads that
+  fatal on uninitialized state.
+- Magic property methods can turn apparently local object access into arbitrary
+  user code.
 - Magician optimizations must not freeze context/scope/magic constants.
 - Every new path must stay target-aware on macOS ARM64, Linux ARM64, and Linux
   x86_64.
@@ -372,7 +670,9 @@ The eval/magician work can be considered closed when:
 3. the AOT subset does not depend on an unmaintainable manual mini-backend;
 4. fully AOT programs do not link `elephc_magician`;
 5. static/eval builtin parity has no stale allowlist entries;
-6. prime-loop and algebra-heavy benchmarks remain correct and measurable;
-7. all three supported targets have focused coverage for every ABI/codegen
+6. dynamic-name and object/member specializations preserve lexical access
+   context, visibility, and PHP fallback behavior;
+7. prime-loop and algebra-heavy benchmarks remain correct and measurable;
+8. all three supported targets have focused coverage for every ABI/codegen
    change;
-8. docs and tests exactly reflect the supported subset and fallbacks.
+9. docs and tests exactly reflect the supported subset and fallbacks.
