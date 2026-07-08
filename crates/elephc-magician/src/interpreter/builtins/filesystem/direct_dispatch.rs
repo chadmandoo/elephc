@@ -159,7 +159,7 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     match name {
-        "basename" => eval_builtin_basename(args, context, scope, values),
+        "basename" => super::basename::eval_basename_declared_call(args, context, scope, values),
         "chdir" | "mkdir" | "rmdir" => {
             eval_builtin_unary_path_bool(name, args, context, scope, values)
         }
@@ -171,7 +171,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "copy" | "link" | "rename" | "symlink" => {
             eval_builtin_binary_path_bool(name, args, context, scope, values)
         }
-        "dirname" => eval_builtin_dirname(args, context, scope, values),
         "disk_free_space" | "disk_total_space" => {
             eval_builtin_disk_space(name, args, context, scope, values)
         }
@@ -204,7 +203,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "glob" => eval_builtin_glob(args, context, scope, values),
         "linkinfo" => eval_builtin_linkinfo(args, context, scope, values),
         "opendir" => eval_builtin_opendir(args, context, scope, values),
-        "pathinfo" => eval_builtin_pathinfo(args, context, scope, values),
         "pclose" => eval_builtin_pclose(args, context, scope, values),
         "popen" => eval_builtin_popen(args, context, scope, values),
         "closedir" | "readdir" | "rewinddir" => {
@@ -213,7 +211,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "readfile" => eval_builtin_readfile(args, context, scope, values),
         "readline" => eval_builtin_readline(args, context, scope, values),
         "readlink" => eval_builtin_readlink(args, context, scope, values),
-        "realpath" => eval_builtin_realpath(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
         "scandir" => eval_builtin_scandir(args, context, scope, values),
@@ -255,9 +252,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "stream_get_contents" => eval_builtin_stream_get_contents(args, context, scope, values),
         "stream_get_line" => eval_builtin_stream_get_line(args, context, scope, values),
         "stream_isatty" => eval_builtin_stream_isatty(args, context, scope, values),
-        "stream_resolve_include_path" => {
-            eval_builtin_stream_resolve_include_path(args, context, scope, values)
-        }
         "stream_set_blocking" => eval_builtin_stream_set_blocking(args, context, scope, values),
         "stream_set_chunk_size" | "stream_set_read_buffer" | "stream_set_write_buffer" => {
             eval_builtin_stream_set_buffer_like(name, args, context, scope, values)

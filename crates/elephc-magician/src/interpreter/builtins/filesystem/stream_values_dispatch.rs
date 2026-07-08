@@ -254,10 +254,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_stream_value
             }
             _ => return Err(EvalStatus::RuntimeFatal),
         },
-        "stream_resolve_include_path" => match evaluated_args {
-            [filename] => eval_stream_resolve_include_path_result(*filename, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "stream_isatty" => match evaluated_args {
             [stream] => eval_stream_isatty_result(*stream, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),

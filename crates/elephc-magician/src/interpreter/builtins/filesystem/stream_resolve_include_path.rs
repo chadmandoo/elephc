@@ -24,14 +24,39 @@ pub(in crate::interpreter) fn eval_stream_resolve_include_path_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_resolve_include_path", args, context, scope, values)
+    eval_builtin_stream_resolve_include_path(args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument calls for the `stream_resolve_include_path` filesystem builtin through the area dispatcher.
 pub(in crate::interpreter) fn eval_stream_resolve_include_path_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_resolve_include_path", evaluated_args, context, values)
+    match evaluated_args {
+        [filename] => eval_stream_resolve_include_path_result(*filename, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
+}
+
+/// Evaluates PHP `stream_resolve_include_path($filename)` over one eval expression.
+pub(in crate::interpreter) fn eval_builtin_stream_resolve_include_path(
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let [filename] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let filename = eval_expr(filename, context, scope, values)?;
+    eval_stream_resolve_include_path_result(filename, values)
+}
+
+/// Resolves one filename using elephc's realpath-equivalent include-path semantics.
+pub(in crate::interpreter) fn eval_stream_resolve_include_path_result(
+    filename: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    super::realpath::eval_realpath_result(filename, values)
 }

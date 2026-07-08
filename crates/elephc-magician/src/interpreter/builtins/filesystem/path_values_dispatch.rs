@@ -19,11 +19,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
     let result = match name {
-        "basename" => match evaluated_args {
-            [path] => eval_basename_result(*path, None, values)?,
-            [path, suffix] => eval_basename_result(*path, Some(*suffix), values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "chdir" | "mkdir" | "rmdir" => match evaluated_args {
             [path] => eval_unary_path_bool_result(name, *path, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
@@ -46,11 +41,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
         }
         "copy" | "link" | "rename" | "symlink" => match evaluated_args {
             [from, to] => eval_binary_path_bool_result(name, *from, *to, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "dirname" => match evaluated_args {
-            [path] => eval_dirname_result(*path, None, values)?,
-            [path, levels] => eval_dirname_result(*path, Some(*levels), values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "disk_free_space" | "disk_total_space" => match evaluated_args {
@@ -112,11 +102,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
             [directory] => eval_opendir_result(*directory, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
-        "pathinfo" => match evaluated_args {
-            [path] => eval_pathinfo_result(*path, None, values)?,
-            [path, flags] => eval_pathinfo_result(*path, Some(*flags), values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "pclose" => match evaluated_args {
             [handle] => eval_pclose_result(*handle, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
@@ -135,10 +120,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
         },
         "readlink" => match evaluated_args {
             [path] => eval_readlink_result(*path, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "realpath" => match evaluated_args {
-            [path] => eval_realpath_result(*path, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "realpath_cache_get" => match evaluated_args {
