@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `get_resource_type`.
+//! Eval registry entry for `get_resource_type`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::symbols`.
 //!
 //! Key details:
-//! - Runtime behavior stays delegated to the resource introspection helper.
+//! - Resource introspection implementation is shared with `get_resource_id()`.
 
 eval_builtin! {
     name: "get_resource_type",
@@ -17,21 +17,34 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `get_resource_type` symbol builtin through the area dispatcher.
+/// Evaluates direct `get_resource_type(...)` calls through the `get_resource_id` owner.
 pub(in crate::interpreter) fn eval_get_resource_type_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::super::eval_builtin_resource_introspection("get_resource_type", args, context, scope, values)
+    super::get_resource_id::eval_builtin_resource_introspection(
+        "get_resource_type",
+        args,
+        context,
+        scope,
+        values,
+    )
 }
 
-/// Dispatches evaluated-argument calls for the `get_resource_type` symbol builtin through the area dispatcher.
+/// Evaluates materialized `get_resource_type(...)` arguments through the `get_resource_id` owner.
 pub(in crate::interpreter) fn eval_get_resource_type_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    match evaluated_args { [resource] => super::super::eval_resource_introspection_result("get_resource_type", *resource, values), _ => Err(EvalStatus::RuntimeFatal), }
+    match evaluated_args {
+        [resource] => super::get_resource_id::eval_resource_introspection_result(
+            "get_resource_type",
+            *resource,
+            values,
+        ),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }
