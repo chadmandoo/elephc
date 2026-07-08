@@ -26,7 +26,7 @@
 - [x] Phase 4: convert `array_keys` and `array_values` so each builtin home file
   contains both its `eval_builtin!` declaration and its PHP-visible
   implementation.
-- [ ] Phase 4: merge the remaining declaration-only builtin home files with
+- [x] Phase 4: merge the remaining declaration-only builtin home files with
   their PHP-visible direct/by-value implementations, area by area.
 
 ## Goal
@@ -247,6 +247,16 @@ For each migrated builtin:
 
 The pilot conversion moved `array_keys` and `array_values` into this stricter
 shape and deleted the old shared projection implementation file.
+
+Phase 4 completion notes:
+
+- Declaration-only `eval_builtin!` leaf files have been eliminated. Each
+  migrated builtin home file now contains PHP-visible eval functions after its
+  registry declaration.
+- The remaining shared functions are common algorithms owned by a sibling
+  builtin file or shared helper module, not one-builtin implementation files
+  hidden away from declaration-only homes.
+- Old `declarations/` folders are gone from `crates/elephc-magician`.
 
 ## Acceptance Criteria
 
