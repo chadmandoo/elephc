@@ -83,6 +83,15 @@ pub(crate) fn build_method_sig(
             method.span,
             &format!("Method '{}'", method.name),
         )?,
+        // A user-declared bodyless method (interface / abstract) with no return
+        // hint has no statements to infer from — an empty body syntactically
+        // reduces to `Int`, mis-typing every `$iface->method()` result (PSR
+        // `ContainerInterface::get()` etc. read `@return mixed` but declare no
+        // hint). PHP's implicit return type for an un-hinted method is `mixed`,
+        // so default to that. Builtins (span.line == 0) keep the legacy
+        // syntactic inference their runtime paths were built under — mirrors the
+        // parameter default above.
+        None if !method.has_body && method.span.line != 0 => PhpType::Mixed,
         None => super::super::infer_return_type_syntactic(&method.body),
     };
     let mut sig = Checker::callable_wrapper_sig(&FunctionSig {

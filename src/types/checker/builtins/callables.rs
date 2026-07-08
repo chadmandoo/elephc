@@ -781,6 +781,29 @@ pub(crate) fn check_callback_builtin_call(
         return Ok(PhpType::Mixed);
     }
 
+    // A Callable value with no statically-resolvable signature — an
+    // `instanceof Closure`-narrowed local, a `?Closure` property read
+    // narrowed to Callable — is dispatched by descriptor at runtime (the
+    // sort/callback runtimes invoke it by pointer). PHP is runtime-enforced
+    // here: accept it, type the args generically, and return Mixed (the
+    // caller re-applies the builtin's own result-shape rules; comparators
+    // return int, mappers return Mixed). Union[Callable, ...] narrows the
+    // same way (`?Closure` = Union[Callable, Void]).
+    // NOTE: `instanceof Closure` narrows a local to Object("Closure"), not Callable;
+    // Closure IS a callable value dispatched by descriptor.
+    let is_closure_object = matches!(&callback_ty,
+        PhpType::Object(name) if name.trim_start_matches('\\').eq_ignore_ascii_case("Closure"));
+    let callable_valued = matches!(callback_ty, PhpType::Callable)
+        || is_closure_object
+        || matches!(&callback_ty, PhpType::Union(members)
+            if members.iter().any(|m| matches!(m, PhpType::Callable)));
+    if callable_valued {
+        for arg in callback_args {
+            checker.infer_type(arg, env)?;
+        }
+        return Ok(PhpType::Mixed);
+    }
+
     Err(CompileError::new(
         callback.span,
         &format!("{} must have a statically known callable signature", label),

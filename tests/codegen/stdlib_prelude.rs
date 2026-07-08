@@ -106,3 +106,24 @@ echo strncmp("ab", "ab", 10);
     );
     assert_eq!(out, "3|3|1|2|0|neg|pos|0");
 }
+
+/// EC-50 (#543): end() returns the last element of an array (read-only value
+/// access — ComponentDescriptorFactory's `(string) preg_replace(..., end($segments))`).
+/// The internal-pointer side effect PHP's end() performs is not modeled (elephc
+/// arrays carry no per-value cursor); the returned value is byte-parity for a
+/// non-empty read.
+#[test]
+fn test_end_returns_last_element() {
+    let out = compile_and_run(
+        r#"<?php
+$segments = explode(" ", "camel case words");
+echo (string) end($segments), "|";
+$one = ["only"];
+echo end($one), "|";
+$nums = [10, 20, 30];
+echo end($nums);
+"#,
+    );
+    assert_eq!(out, "words|only|30");
+}
+

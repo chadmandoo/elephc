@@ -611,7 +611,13 @@ fn updated_array_property_assign_type(
 
 /// Returns true if `ty` is a valid PHP array key type (Int, Str, or Mixed).
 fn is_php_array_key_type(ty: &PhpType) -> bool {
-    matches!(ty, PhpType::Int | PhpType::Str | PhpType::Mixed)
+    match ty {
+        PhpType::Int | PhpType::Str | PhpType::Mixed => true,
+        // A `int|string` (or any union of valid key types) is a legal PHP array key:
+        // integer members index the packed segment, string members promote to a hash.
+        PhpType::Union(members) => members.iter().all(is_php_array_key_type),
+        _ => false,
+    }
 }
 
 /// Computes the resulting `PhpType::AssocArray` type after writing to an array property with a

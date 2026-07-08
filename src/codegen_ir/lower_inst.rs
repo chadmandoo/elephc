@@ -4799,14 +4799,33 @@ fn materialize_direct_call_arg_for_param(
             Ok(PhpType::Mixed)
         }
         PhpType::Array(param_elem) if param_elem.codegen_repr() == PhpType::Mixed => {
-            if let PhpType::Array(source_elem) = source_ty.codegen_repr() {
-                let source_elem = source_elem.codegen_repr();
-                if source_elem != PhpType::Mixed {
-                    emit_loaded_indexed_array_to_mixed(ctx, &source_elem);
+            match source_ty.codegen_repr() {
+                PhpType::Array(source_elem) => {
+                    let source_elem = source_elem.codegen_repr();
+                    if source_elem != PhpType::Mixed {
+                        emit_loaded_indexed_array_to_mixed(ctx, &source_elem);
+                    }
+                    Ok(PhpType::Array(Box::new(PhpType::Mixed)))
                 }
-                return Ok(PhpType::Array(Box::new(PhpType::Mixed)));
+                // A Mixed/Union value coerced into an `array` (Array(Mixed))
+                // parameter is a boxed Mixed cell (heap kind 5). The callee types
+                // the parameter as Array(Mixed) and iterates it via the adaptive
+                // heap-kind dispatch, which reads the heap-kind word directly and
+                // has no arm for a boxed cell — foreach fatals with "unsupported
+                // kind". Unbox the cell here to the raw iterable pointer (value_lo)
+                // so the callee reads the array's real indexed/hash kind. Mirrors
+                // the `__rt_mixed_unbox` register contract (result reg in → tag in
+                // x0/rax, value_lo in x1/rdi).
+                PhpType::Mixed | PhpType::Union(_) => {
+                    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+                    match ctx.emitter.target.arch {
+                        Arch::AArch64 => ctx.emitter.instruction("mov x0, x1"),
+                        Arch::X86_64 => ctx.emitter.instruction("mov rax, rdi"),
+                    }
+                    Ok(PhpType::Array(Box::new(PhpType::Mixed)))
+                }
+                _ => Ok(PhpType::Array(param_elem)),
             }
-            Ok(PhpType::Array(param_elem))
         }
         target_ty => Ok(target_ty),
     }

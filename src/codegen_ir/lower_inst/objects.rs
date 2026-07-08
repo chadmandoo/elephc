@@ -3728,11 +3728,19 @@ fn emit_property_assign_on_null_fatal(ctx: &mut FunctionContext<'_>, property: &
 pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
     let value_ty = ctx.value_php_type(value)?;
+    let class_name = class_name_immediate(ctx, inst)?;
+    // `$x instanceof Closure` — Closure is not a registered class in elephc
+    // (closures are callable descriptors, not class-6 objects). A Mixed/Union
+    // value IS a Closure when its boxed payload is a callable descriptor
+    // (tag 10); a statically Callable value is always a Closure. Other value
+    // types are never Closures.
+    if class_name.trim_start_matches('\\').eq_ignore_ascii_case("Closure") {
+        return lower_instanceof_closure(ctx, inst, value, &value_ty);
+    }
     if !matches!(value_ty, PhpType::Object(_) | PhpType::Mixed | PhpType::Union(_)) {
         emit_false(ctx);
         return store_if_result(ctx, inst);
     }
-    let class_name = class_name_immediate(ctx, inst)?;
     let Some((target_id, target_kind)) = classify_named_target(ctx, class_name) else {
         emit_false(ctx);
         return store_if_result(ctx, inst);
@@ -3745,6 +3753,40 @@ pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction
         PhpType::Mixed | PhpType::Union(_) => {
             ctx.load_value_to_reg(value, abi::int_arg_reg_name(ctx.emitter.target, 0))?;
             emit_match_call(ctx, target_id, target_kind, "__rt_mixed_instanceof");
+        }
+        _ => emit_false(ctx),
+    }
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `$x instanceof Closure`: a Callable value is always true; a
+/// Mixed/Union value is true iff its unboxed runtime tag is 10 (callable
+/// descriptor); everything else is false.
+fn lower_instanceof_closure(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    value: crate::ir::ValueId,
+    value_ty: &PhpType,
+) -> Result<()> {
+    match value_ty.codegen_repr() {
+        PhpType::Callable => {
+            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+        }
+        PhpType::Mixed | PhpType::Union(_) => {
+            ctx.load_value_to_reg(value, abi::int_arg_reg_name(ctx.emitter.target, 0))?;
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            // __rt_mixed_unbox → x0/rax = runtime value tag. Tag 10 = callable.
+            match ctx.emitter.target.arch {
+                Arch::AArch64 => {
+                    ctx.emitter.instruction("cmp x0, #10");                     // MIXED_TAG_CALLABLE
+                    ctx.emitter.instruction("cset x0, eq");
+                }
+                Arch::X86_64 => {
+                    ctx.emitter.instruction("cmp rax, 10");                     // MIXED_TAG_CALLABLE
+                    ctx.emitter.instruction("sete al");
+                    ctx.emitter.instruction("movzx rax, al");
+                }
+            }
         }
         _ => emit_false(ctx),
     }

@@ -531,6 +531,113 @@ fn reserve_descriptor_callback_env(
     Ok(16)
 }
 
+/// Reserves the descriptor-callback env slot from a BOXED Mixed callback:
+/// unboxes to the callable descriptor (fataling like Zend if the payload is
+/// not a callable) and stores the raw descriptor for the wrapper.
+fn reserve_descriptor_callback_env_from_mixed(
+    ctx: &mut FunctionContext<'_>,
+    callback: ValueId,
+) -> Result<usize> {
+    abi::emit_reserve_temporary_stack(ctx.emitter, 16);
+    let fatal_label = ctx.next_label("usort_callback_not_callable");
+    let done_label = ctx.next_label("usort_callback_unboxed");
+    // A nullable-callable slot (?Closure = Union[Callable, Void]) stores the
+    // RAW callable descriptor (null-sentinel for the null case), NOT a boxed
+    // Mixed cell — heap kind 5 marks a boxed cell, so probe the kind word and
+    // unbox only when boxed; otherwise the value already IS the descriptor.
+    let raw_label = ctx.next_label("usort_callback_raw_descriptor");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_value_to_reg(callback, "x0")?;
+            // range-gated boxed-cell probe (mirrors __rt_hash_get's unwrap)
+            crate::codegen::abi::emit_symbol_address(ctx.emitter, "x9", "_heap_buf");
+            ctx.emitter.instruction("cmp x0, x9");
+            ctx.emitter.instruction(&format!("b.lo {}", raw_label));
+            crate::codegen::abi::emit_symbol_address(ctx.emitter, "x10", "_heap_off");
+            ctx.emitter.instruction("ldr x10, [x10]");
+            ctx.emitter.instruction("add x10, x9, x10");
+            ctx.emitter.instruction("cmp x0, x10");
+            ctx.emitter.instruction(&format!("b.hs {}", raw_label));
+            ctx.emitter.instruction("ldr x9, [x0, #-8]");
+            ctx.emitter.instruction("and x9, x9, #0xff");
+            ctx.emitter.instruction("cmp x9, #5");                              // heap kind 5 = boxed Mixed cell
+            ctx.emitter.instruction(&format!("b.ne {}", raw_label));           // raw descriptor: use as-is
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            ctx.emitter.instruction("cmp x0, #10");                             // MIXED_TAG_CALLABLE
+            ctx.emitter.instruction(&format!("b.ne {}", fatal_label));
+            ctx.emitter.instruction("str x1, [sp]");
+            abi::emit_jump(ctx.emitter, &done_label);
+            ctx.emitter.label(&raw_label);
+            ctx.emitter.instruction("str x0, [sp]");                           // raw callable descriptor stored directly
+            abi::emit_jump(ctx.emitter, &done_label);
+        }
+        Arch::X86_64 => {
+            ctx.load_value_to_reg(callback, "rax")?;
+            crate::codegen::abi::emit_symbol_address(ctx.emitter, "r10", "_heap_buf");
+            ctx.emitter.instruction("cmp rax, r10");
+            ctx.emitter.instruction(&format!("jb {}", raw_label));
+            crate::codegen::abi::emit_symbol_address(ctx.emitter, "r11", "_heap_off");
+            ctx.emitter.instruction("mov r11, QWORD PTR [r11]");
+            ctx.emitter.instruction("add r11, r10");
+            ctx.emitter.instruction("cmp rax, r11");
+            ctx.emitter.instruction(&format!("jae {}", raw_label));
+            ctx.emitter.instruction("mov r11, QWORD PTR [rax - 8]");
+            ctx.emitter.instruction("and r11, 0xff");
+            ctx.emitter.instruction("cmp r11, 5");                             // heap kind 5 = boxed Mixed cell
+            ctx.emitter.instruction(&format!("jne {}", raw_label));
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+            ctx.emitter.instruction("cmp rax, 10");                            // MIXED_TAG_CALLABLE
+            ctx.emitter.instruction(&format!("jne {}", fatal_label));
+            ctx.emitter.instruction("mov QWORD PTR [rsp], rdi");
+            abi::emit_jump(ctx.emitter, &done_label);
+            ctx.emitter.label(&raw_label);
+            ctx.emitter.instruction("mov QWORD PTR [rsp], rax");              // raw callable descriptor stored directly
+            abi::emit_jump(ctx.emitter, &done_label);
+        }
+    }
+    ctx.emitter.label(&fatal_label);
+    let message = b"Fatal error: usort() comparator is not callable\n";
+    let (message_label, message_len) = ctx.data.add_string(message);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #2");                             // stderr
+            ctx.emitter.adrp("x1", &message_label);
+            ctx.emitter.add_lo12("x1", "x1", &message_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));
+            ctx.emitter.syscall(4);
+            abi::emit_exit(ctx.emitter, 1);
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov edi, 2");                             // stderr
+            abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", message_len));
+            ctx.emitter.instruction("mov eax, 1");
+            ctx.emitter.instruction("syscall");
+            abi::emit_exit(ctx.emitter, 1);
+        }
+    }
+    ctx.emitter.label(&done_label);
+    Ok(16)
+}
+
+/// Descriptor-callback runtime for a BOXED Mixed callback (unboxes first).
+fn lower_descriptor_callback_runtime_from_mixed<F>(
+    ctx: &mut FunctionContext<'_>,
+    callback: ValueId,
+    visible_arg_types: Vec<PhpType>,
+    return_ty: PhpType,
+    mut emit_call: F,
+) -> Result<()>
+where
+    F: FnMut(&mut FunctionContext<'_>, &str, usize) -> Result<()>,
+{
+    let wrapper_label = emit_descriptor_callback_wrapper(ctx, visible_arg_types, return_ty);
+    let env_bytes = reserve_descriptor_callback_env_from_mixed(ctx, callback)?;
+    emit_call(ctx, &wrapper_label, env_bytes)?;
+    abi::emit_release_temporary_stack(ctx.emitter, env_bytes);
+    Ok(())
+}
+
 /// Calls a descriptor-backed array callback runtime using a callable descriptor value.
 fn lower_descriptor_callback_runtime<F>(
     ctx: &mut FunctionContext<'_>,
@@ -1925,10 +2032,49 @@ fn lower_user_sort_static_callback(
     }
     let callback_ty = ctx.value_php_type(callback)?.codegen_repr();
     let callback_owner = format!("{} callback", name);
-    if callback_ty == PhpType::Callable && static_callback_operand_is_recoverable(ctx, callback) {
+    // A callback local with no same-block store (a `?Closure` narrowed to
+    // Callable across a guard, a parameter) is not statically resolvable to a
+    // closure literal — route it through the runtime descriptor path instead
+    // of the static-binding path, which would fail on the missing store
+    // (mirrors array_map's descriptor-callback routing).
+    let runtime_local_callback =
+        descriptor_callback_local_without_same_block_store(ctx, callback)?;
+    if callback_ty == PhpType::Callable
+        && !runtime_local_callback
+        && static_callback_operand_is_recoverable(ctx, callback)
+    {
         let callback_binding =
             static_sort_callback_binding(ctx, callback, &callback_owner, Some(&[PhpType::Int, PhpType::Int]))?;
         return lower_user_sort_with_static_callback_binding(ctx, inst, array, callback_binding);
+    }
+    // A Mixed/Union callback (an `instanceof Closure`-narrowed local whose
+    // ir_lower slot type stayed Mixed, a callable fetched from a Mixed
+    // container) holds a boxed callable descriptor at runtime. Unbox it to a
+    // Callable value and route through the descriptor runtime path — PHP is
+    // runtime-enforced here (a non-callable fatals inside the unbox).
+    if matches!(callback_ty, PhpType::Mixed | PhpType::Union(_)) {
+        lower_descriptor_callback_runtime_from_mixed(
+            ctx,
+            callback,
+            vec![PhpType::Int, PhpType::Int],
+            PhpType::Int,
+            |ctx, wrapper_label, env_bytes| {
+                let callback_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 0);
+                let array_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 1);
+                let env_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 2);
+                abi::emit_symbol_address(ctx.emitter, callback_arg_reg, wrapper_label);
+                ctx.load_value_to_reg(array, array_arg_reg)?;
+                load_static_callback_env_arg(ctx, env_arg_reg, env_bytes);
+                abi::emit_call_label(ctx.emitter, "__rt_usort");
+                Ok(())
+            },
+        )?;
+        abi::emit_load_int_immediate(
+            ctx.emitter,
+            abi::int_result_reg(ctx.emitter),
+            0x7fff_ffff_ffff_fffe,
+        );
+        return store_if_result(ctx, inst);
     }
     match callback_ty {
         PhpType::Callable => {

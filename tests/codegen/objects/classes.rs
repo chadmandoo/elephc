@@ -511,3 +511,29 @@ echo $u->id();
     );
     assert_eq!(out, "7");
 }
+
+/// Writing to an `array` property with an `int|string` (union) key is legal PHP: integer
+/// members index the packed segment, string members promote the array to a hash. The write
+/// gate must accept the union key rather than rejecting it as "Array index must be integer".
+#[test]
+fn test_array_property_union_key_assignment() {
+    let out = compile_and_run(
+        r#"<?php
+final class Bag {
+    /** @var array<int|string, string> */
+    private array $slots = [];
+    public function put(int|string $key, string $value): void {
+        $this->slots[$key] = $value;
+    }
+    public function get(int|string $key): string {
+        return $this->slots[$key] ?? "?";
+    }
+}
+$b = new Bag();
+$b->put(1, "one");
+$b->put("name", "chad");
+echo $b->get(1), "|", $b->get("name"), "|", $b->get(2);
+"#,
+    );
+    assert_eq!(out, "one|chad|?");
+}

@@ -1458,3 +1458,51 @@ echo $c(21);
     );
     assert_eq!(out, "1|null-ok|42");
 }
+
+/// EC-49 (#542): `$x instanceof Closure` returns true for a callable value
+/// (closures are descriptors, not class-6 objects — the previous lowering
+/// found no registered "Closure" class and always emitted false, so any
+/// `if ($x instanceof Closure)` guard took the wrong branch). Covers the
+/// direct-call-after-guard AND the usort-after-guard shapes (Dbal File
+/// applySort: a `?Closure` fetched from a method, narrowed, then used as a
+/// usort comparator — the narrowed local reaches usort's runtime descriptor
+/// path).
+#[test]
+fn test_instanceof_closure_and_narrowed_usort_comparator() {
+    let out = compile_and_run(
+        r#"<?php
+function callIt(mixed $cmp): int {
+    if (!$cmp instanceof Closure) {
+        return -1;
+    }
+    return $cmp(5, 3);
+}
+echo callIt(fn(int $a, int $b): int => $a <=> $b), "|";
+echo callIt(42), "|";
+final class Plan {
+    public function __construct(private ?Closure $cmp) {}
+    public function compare(): ?Closure {
+        return $this->cmp;
+    }
+}
+final class Sorter {
+    public function __construct(private Plan $plan) {}
+    /** @param list<int> $rows */
+    public function applySort(array $rows): array {
+        $compare = $this->plan->compare();
+        if (!$compare instanceof Closure) {
+            return $rows;
+        }
+        $sortable = $rows;
+        usort($sortable, $compare);
+        return $sortable;
+    }
+}
+$sorted = new Sorter(new Plan(fn(int $a, int $b): int => $a <=> $b));
+echo implode(",", $sorted->applySort([3, 1, 2])), "|";
+$noop = new Sorter(new Plan(null));
+echo implode(",", $noop->applySort([3, 1, 2]));
+"#,
+    );
+    assert_eq!(out, "1|-1|1,2,3|3,1,2");
+}

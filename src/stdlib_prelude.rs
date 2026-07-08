@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 30] = [
+const STDLIB_PRELUDE_NAMES: [&str; 31] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -95,6 +95,13 @@ const STDLIB_PRELUDE_NAMES: [&str; 30] = [
     "strspn",
     "mb_substr_count",
     "strncmp",
+    // `end` is a 3-letter substring that occurs unquoted inside unrelated AST
+    // `Debug` output (variant/field fragments), which would spuriously inject
+    // the whole prelude — and, via the shared runtime object, surface unrelated
+    // link gaps. A genuine `end(...)` call renders its `Name` as `parts: ["end"]`
+    // / `text: "end"`, so match the QUOTED form: strictly a subset of the bare
+    // match, so it only removes false positives.
+    "\"end\"",
     "sort",
     // Matches the Debug rendering of `ExprKind::Spread` — runtime spreads
     // into variadic parameters desugar to `__elephc_variadic_collect_*`.
@@ -259,6 +266,19 @@ function parse_url(string $url, int $component = -1): mixed {
     return false;
 }
 function array_last(mixed $array): mixed {
+    $last = null;
+    foreach ($array as $value) {
+        $last = $value;
+    }
+    return $last;
+}
+function end(mixed $array): mixed {
+    // Read-only last-element access (the AIC uses are `end($list)` value
+    // reads). PHP also advances the array's internal pointer to the last
+    // element and returns false for an empty array; the pointer side effect
+    // is NOT modeled (elephc arrays carry no per-value internal cursor) and
+    // empty returns null rather than false — documented approximations. The
+    // returned VALUE is byte-parity for a non-empty read.
     $last = null;
     foreach ($array as $value) {
         $last = $value;

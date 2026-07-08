@@ -147,3 +147,43 @@ echo paint($names[1]);
     );
     assert_eq!(out, "bar");
 }
+
+/// A bodyless interface method with no declared return hint (only a `@return mixed` docblock,
+/// like PSR `ContainerInterface::get()`) must default to `Mixed`, not the `Int` an empty body
+/// syntactically reduces to. The narrowed result then flows into an `array`-typed parameter and
+/// is iterated: exercises both the return-type default (checker) and the Mixed→`array`-param
+/// unbox at the call boundary (codegen), which previously fatalled "foreach over iterable with
+/// unsupported kind".
+#[test]
+fn test_bodyless_method_mixed_return_flows_into_array_param_foreach() {
+    let out = compile_and_run(
+        r#"<?php
+interface Registry {
+    public function has(string $id): bool;
+    /** @return mixed */
+    public function get(string $id);
+}
+final class ArrayRegistry implements Registry {
+    public function has(string $id): bool { return $id === "tags"; }
+    /** @return mixed */
+    public function get(string $id) { return ["alpha", "beta", "gamma"]; }
+}
+/** @param array<array-key, mixed> $items */
+function countStrings(array $items): int {
+    $n = 0;
+    foreach ($items as $item) {
+        if (is_string($item)) { $n++; }
+    }
+    return $n;
+}
+function resolve(Registry $registry): int {
+    if (!$registry->has("tags")) { return -1; }
+    $value = $registry->get("tags");
+    if (!is_array($value)) { return -1; }
+    return countStrings($value);
+}
+echo resolve(new ArrayRegistry());
+"#,
+    );
+    assert_eq!(out, "3");
+}
