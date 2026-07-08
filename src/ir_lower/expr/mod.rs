@@ -1810,6 +1810,18 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_filter_assoc(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_keys_mixed(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_map_any(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_merge_pairwise_any(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_merge_fold(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_strtr_pairs(ctx, canonical, args, expr) {
         return value;
     }
@@ -4391,6 +4403,28 @@ fn lower_static_base64_decode_strict(
 /// receivers keep the packed `__rt_array_filter` path. The prelude impl is
 /// injected whenever "array_filter" appears in the program (trigger entry in
 /// STDLIB_PRELUDE_NAMES); unused impls are dead-stripped.
+/// Static type of a desugar-gate operand: like `materialized_expr_type_for_merge`,
+/// but call-expression operands resolve through recorded signatures (user/prelude
+/// functions, extern decls, builtin decls) instead of that helper's syntactic Int
+/// fallback. Gate routing on call-expression receivers (nested merge folds,
+/// direct `json_decode(...)` receivers) would otherwise misclassify and fall
+/// through to shape-strict native lowerings.
+fn desugar_call_arg_static_type(ctx: &LoweringContext<'_, '_>, expr: &Expr) -> PhpType {
+    if let ExprKind::FunctionCall { name, .. } = &expr.kind {
+        let canonical = php_symbol_key(name.trim_start_matches('\\'));
+        if let Some(sig) = ctx.functions.get(&canonical) {
+            return sig.return_type.codegen_repr();
+        }
+        if let Some(sig) = ctx.extern_functions.get(&canonical) {
+            return sig.return_type.codegen_repr();
+        }
+        if let Some(sig) = builtin_call_signature(&canonical) {
+            return sig.return_type.codegen_repr();
+        }
+    }
+    materialized_expr_type_for_merge(ctx, expr)
+}
+
 fn lower_static_array_filter_assoc(
     ctx: &mut LoweringContext<'_, '_>,
     name: &str,
@@ -4406,38 +4440,206 @@ fn lower_static_array_filter_assoc(
     if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
         return None;
     }
-    let receiver_ty = materialized_expr_type_for_merge(ctx, &args[0]);
-    let PhpType::AssocArray { key, .. } = receiver_ty.codegen_repr() else {
-        return None;
-    };
-    // The impl builds its result with mixed-key writes, so the runtime hash
-    // holds BOXED value cells regardless of the receiver's element type — the
-    // result's honest static value type is Mixed (typed element reads would
-    // otherwise read a box pointer as the payload). Keys survive verbatim.
-    let assoc_ty = PhpType::AssocArray {
-        key,
-        value: Box::new(PhpType::Mixed),
-    };
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
     let mode_arg = args.get(2).cloned().unwrap_or_else(|| Expr {
         kind: ExprKind::IntLiteral(0),
         span: expr.span,
     });
+    match receiver_ty.codegen_repr() {
+        PhpType::AssocArray { key, .. } => {
+            // The impl builds its result with mixed-key writes, so the runtime hash
+            // holds BOXED value cells regardless of the receiver's element type — the
+            // result's honest static value type is Mixed (typed element reads would
+            // otherwise read a box pointer as the payload). Keys survive verbatim.
+            let assoc_ty = PhpType::AssocArray {
+                key,
+                value: Box::new(PhpType::Mixed),
+            };
+            let impl_call = Expr {
+                kind: ExprKind::FunctionCall {
+                    name: Name::from("__elephc_array_filter_hash"),
+                    args: vec![args[0].clone(), args[1].clone(), mode_arg],
+                },
+                span: expr.span,
+            };
+            let result = lower_expr(ctx, &impl_call);
+            // Re-type the result as the receiver's associative type: the impl's
+            // declared `array` return under-types the runtime hash it builds, and a
+            // packed-typed consumer (implode's indexed walk) would crash on hash
+            // storage. A typed hidden temp re-anchors the static type.
+            let temp = ctx.declare_hidden_temp(assoc_ty.clone());
+            ctx.store_local(&temp, result, assoc_ty, Some(expr.span));
+            ctx.mark_local_initialized(&temp);
+            Some(ctx.load_local(&temp, Some(expr.span)))
+        }
+        // Mixed receivers (json_decode results, adaptive locals) route to the
+        // adaptive impl; its declared `mixed` return already types the
+        // call-site result honestly, so no re-anchor is needed.
+        PhpType::Mixed | PhpType::Union(_) => {
+            let impl_call = Expr {
+                kind: ExprKind::FunctionCall {
+                    name: Name::from("__elephc_array_filter_any"),
+                    args: vec![args[0].clone(), args[1].clone(), mode_arg],
+                },
+                span: expr.span,
+            };
+            Some(lower_expr(ctx, &impl_call))
+        }
+        _ => None,
+    }
+}
+
+fn lower_static_array_keys_mixed(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_keys" {
+        return None;
+    }
+    if args.len() != 1 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
+    if !matches!(
+        receiver_ty.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) {
+        return None;
+    }
+    // Mixed receivers route to the adaptive prelude impl (keys may be int or
+    // string, collected into a packed list); statically-typed receivers keep
+    // the native lowering.
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
-            name: Name::from("__elephc_array_filter_hash"),
-            args: vec![args[0].clone(), args[1].clone(), mode_arg],
+            name: Name::from("__elephc_array_keys_any"),
+            args: vec![args[0].clone()],
         },
         span: expr.span,
     };
-    let result = lower_expr(ctx, &impl_call);
-    // Re-type the result as the receiver's associative type: the impl's
-    // declared `array` return under-types the runtime hash it builds, and a
-    // packed-typed consumer (implode's indexed walk) would crash on hash
-    // storage. A typed hidden temp re-anchors the static type.
-    let temp = ctx.declare_hidden_temp(assoc_ty.clone());
-    ctx.store_local(&temp, result, assoc_ty, Some(expr.span));
-    ctx.mark_local_initialized(&temp);
-    Some(ctx.load_local(&temp, Some(expr.span)))
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_map_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_map" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[1]);
+    // Associative receivers route here too: PHP's single-array array_map
+    // preserves keys, so the adaptive impl's keyed writes are the correct
+    // semantics for both shapes. The impl's declared `mixed` return IS the
+    // call-site value type — the result is a Mixed box, so re-anchoring it
+    // as an associative type would hand a box pointer to hash readers.
+    if !matches!(
+        receiver_ty.codegen_repr(),
+        PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
+    ) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_map_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_merge_pairwise_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_merge" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let left = desugar_call_arg_static_type(ctx, &args[0]).codegen_repr();
+    let right = desugar_call_arg_static_type(ctx, &args[1]).codegen_repr();
+    // Packed pairs keep the native lowering; any associative or Mixed
+    // operand (json_decode results, folded inner merges, promoted hashes)
+    // routes to the adaptive prelude impl, which reproduces PHP's merge
+    // semantics for both shapes (string keys overwrite, int keys renumber).
+    if matches!(left, PhpType::Array(_)) && matches!(right, PhpType::Array(_)) {
+        return None;
+    }
+    let adaptive = |ty: &PhpType| {
+        matches!(
+            ty,
+            PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
+        )
+    };
+    if !adaptive(&left) && !adaptive(&right) {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_merge_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_merge_fold(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_merge" {
+        return None;
+    }
+    if args.len() < 3 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    // The native lowering handles exactly two operands; fold 3+ argument
+    // calls left-associatively into nested pairs — array_merge(a, b, c)
+    // becomes array_merge(array_merge(a, b), c). The inner 2-argument calls
+    // fall through this desugar (len < 3) into the native path.
+    let mut folded = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("array_merge"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    for arg in &args[2..] {
+        folded = Expr {
+            kind: ExprKind::FunctionCall {
+                name: Name::from("array_merge"),
+                args: vec![folded, arg.clone()],
+            },
+            span: expr.span,
+        };
+    }
+    Some(lower_expr(ctx, &folded))
 }
 
 fn lower_static_preg_match_all_capture(
@@ -5034,7 +5236,19 @@ fn lower_args_with_signature(
         return coerce_operands_to_params(ctx, sig, operands);
     }
     if args.iter().any(is_spread_arg) {
-        return lower_args(ctx, args);
+        // A single trailing runtime spread feeding a variadic slot falls
+        // through to the variadic assembly below — lower_variadic_tail_array
+        // routes it through the prelude `__elephc_variadic_collect_*` impls.
+        // Anything else (interleaved spreads, spreads into fixed params not
+        // caught above) keeps the plain lowering.
+        let regular_param_count = crate::types::call_args::regular_param_count(sig);
+        let single_trailing_variadic_spread = sig.variadic.is_some()
+            && args.len() == regular_param_count + 1
+            && matches!(args.last().map(|arg| &arg.kind), Some(ExprKind::Spread(_)))
+            && !args[..regular_param_count].iter().any(is_spread_arg);
+        if !single_trailing_variadic_spread {
+            return lower_args(ctx, args);
+        }
     }
     let regular_param_count = crate::types::call_args::regular_param_count(sig);
     let fixed_arg_count = if sig.variadic.is_some() {
@@ -6084,6 +6298,9 @@ fn lower_variadic_tail_array(
     sig: &FunctionSig,
     tail: &[Expr],
 ) -> LoweredValue {
+    if let Some(value) = lower_variadic_pure_spread_tail(ctx, sig, tail) {
+        return value;
+    }
     let span = tail
         .first()
         .map(|arg| arg.span)
@@ -6111,6 +6328,52 @@ fn lower_variadic_tail_array(
         super::stmt::release_indexed_array_write_operand(ctx, elem_ty.as_ref(), value, item.span);
     }
     array
+}
+
+/// Lowers a variadic tail that is exactly one runtime spread (`f(...$xs)`)
+/// by collecting the spread source into a fresh typed array via the prelude
+/// `__elephc_variadic_collect_*` impls.
+///
+/// The adaptive foreach in the impls accepts packed, hash, and Mixed-boxed
+/// sources; the per-variant `(cast)` keeps raw slots matching the callee's
+/// typed variadic reads (a Mixed-element variadic keeps boxed cells). The
+/// static-literal spread flattening runs earlier, so only variable-length
+/// sources reach this path. Interleaved plain-plus-spread tails are not yet
+/// supported and keep the existing lowering.
+fn lower_variadic_pure_spread_tail(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    tail: &[Expr],
+) -> Option<LoweredValue> {
+    let [arg] = tail else {
+        return None;
+    };
+    let ExprKind::Spread(inner) = &arg.kind else {
+        return None;
+    };
+    let collect = match variadic_tail_value_type(sig).codegen_repr() {
+        PhpType::Int => "__elephc_variadic_collect_int",
+        PhpType::Float => "__elephc_variadic_collect_float",
+        PhpType::Str => "__elephc_variadic_collect_string",
+        PhpType::Bool => "__elephc_variadic_collect_bool",
+        _ => "__elephc_variadic_collect_mixed",
+    };
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from(collect),
+            args: vec![(**inner).clone()],
+        },
+        span: arg.span,
+    };
+    let result = lower_expr(ctx, &impl_call);
+    // Re-anchor as the variadic slot's array type: the impl's raw slots
+    // already match (casted pushes), but its declared `array` return
+    // under-types the value for the callee's typed reads.
+    let array_ty = variadic_array_type(sig);
+    let temp = ctx.declare_hidden_temp(array_ty.clone());
+    ctx.store_local(&temp, result, array_ty, Some(arg.span));
+    ctx.mark_local_initialized(&temp);
+    Some(ctx.load_local(&temp, Some(arg.span)))
 }
 
 /// Returns the element type expected inside a variadic tail container.

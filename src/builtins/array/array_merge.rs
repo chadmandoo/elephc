@@ -6,15 +6,16 @@
 //!   backend (lower hook), all via `crate::builtins::registry`.
 //!
 //! Key details:
-//! - The PHP golden signature is `variadic(&[], "arrays")` (min=0). The legacy CHECK
-//!   arm requires exactly 2 arguments. `min_args: 2, max_args: 2` reproduce that
-//!   enforcement in `check_arity` only; `function_sig` and the parity gate keep the
-//!   variadic shape from the golden.
-//! - `check` validates that the first argument is an indexed or associative array and
-//!   returns the merged result type. The return type logic mirrors the legacy checker:
-//!   when the first operand is an empty array (element type `Void`), the result adopts
-//!   the second operand's element type if it is a scalar-merge type.
-//! - Arity is pre-validated by `check_arity`; the hook can assume exactly 2 args.
+//! - The PHP golden signature is `variadic(&[], "arrays")` (min=0). The native
+//!   lowering handles exactly 2 operands; `min_args: 2` keeps that floor while
+//!   3+ argument calls are folded by the EIR frontend into nested 2-argument
+//!   merges (`array_merge(a, b, c)` → `array_merge(array_merge(a, b), c)`), so
+//!   the lowering still only ever sees pairs.
+//! - `check` validates that every argument is an indexed or associative array
+//!   (or Mixed) and returns the pairwise-folded result type. The 2-arg logic
+//!   mirrors the legacy checker: when the left operand is an empty indexed
+//!   array (element type `Void`), the result adopts the right operand's
+//!   element type if it is a scalar-merge type.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::codegen_ir::context::FunctionContext;
@@ -29,36 +30,56 @@ builtin! {
     params: [],
     variadic: "arrays",
     min_args: 2,
-    max_args: 2,
     returns: Mixed,
     check: check,
     lower: lower,
-    summary: "Merges the elements of two arrays.",
+    summary: "Merges the elements of two or more arrays.",
     php_manual: "https://www.php.net/manual/en/function.array-merge.php",
 }
 
-/// Validates the first argument is an array and returns the merged result type.
+/// Validates every argument is an array (or Mixed) and returns the merged result type.
 ///
-/// Arity (exactly 2 args) is pre-validated by `check_arity`. The hook re-infers both
-/// argument types to derive the precise result type: when the left operand is an empty
-/// indexed array (element type `Void`), the result adopts the right operand's element
-/// type if it is a scalar-merge-compatible type.
+/// Arity (2+ args) is pre-validated by `check_arity`; 3+ argument calls are folded
+/// into nested pairs by the EIR frontend, so the result type is derived by the same
+/// pairwise fold. For each pair: when the left operand is an empty indexed array
+/// (element type `Void`), the result adopts the right operand's element type if it
+/// is a scalar-merge-compatible type.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    let ty1 = cx.checker.infer_type(&cx.args[0], cx.env)?;
-    let ty2 = cx.checker.infer_type(&cx.args[1], cx.env)?;
+    // The 3+ fold desugar bails on spread/named args, which would reach the
+    // pair-only native lowering — reject them here with a real error.
+    if cx.args.len() > 2
+        && (crate::types::call_args::has_named_args(cx.args)
+            || cx
+                .args
+                .iter()
+                .any(|arg| matches!(arg.kind, crate::parser::ast::ExprKind::Spread(_))))
+    {
+        return Err(CompileError::new(
+            cx.span,
+            "array_merge() spread/named arguments are not supported with 3+ arguments",
+        ));
+    }
+    let mut merged = cx.checker.infer_type(&cx.args[0], cx.env)?;
     // A Mixed operand (an `array`-hinted property's element, a `?? []` result) is an array at
     // runtime in well-typed code — runtime-enforced PHP, same trust posture as the argument
     // boundary. The merged result is Mixed because the element type is unknown.
-    if matches!(ty1, PhpType::Mixed) {
-        return Ok(PhpType::Mixed);
-    }
-    if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+    if !matches!(
+        merged,
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
+    ) {
         return Err(CompileError::new(
             cx.span,
             "array_merge() first argument must be array",
         ));
     }
-    Ok(array_merge_return_type(ty1, ty2))
+    for arg in &cx.args[1..] {
+        let next = cx.checker.infer_type(arg, cx.env)?;
+        if matches!(merged, PhpType::Mixed) {
+            continue;
+        }
+        merged = array_merge_return_type(merged, next);
+    }
+    Ok(merged)
 }
 
 /// Lowers an `array_merge` call by delegating to the shared array-merge emitter.

@@ -1123,3 +1123,81 @@ echo $acc["z"];
     );
     assert_eq!(out, "1|s|78|1");
 }
+
+/// EC-37 (#530): a conditional scalar reassign of a Mixed-typed local must
+/// not leak the branch's narrower flow type into the skip path. The DCE tail
+/// pass copies the continuation into both arms, so the else copy of
+/// `$out[$key] = $v` previously lowered with `$key: Int` from the then arm —
+/// reading the skip path's box with `(int)` cast semantics (key "a" became
+/// key 0). Locals retyped by the then branch now enter the else branch at
+/// the widened (split, then) lattice type. Byte-parity vs PHP 8.5.
+#[test]
+fn test_conditional_scalar_reassign_keeps_skip_path_representation() {
+    let out = compile_and_run(
+        r#"<?php
+function renumber(mixed $a): mixed {
+    $out = [];
+    $n = 0;
+    foreach ($a as $k => $v) {
+        $key = $k;
+        if (!is_string($k)) {
+            $key = $n;
+            $n = $n + 1;
+        }
+        $out[$key] = $v;
+    }
+    return $out;
+}
+function pick(mixed $k): mixed {
+    $key = $k;
+    if (is_bool($k)) {
+        $key = 5;
+    }
+    return $key;
+}
+$h = renumber(json_decode('{"a":1,"b":2}', true));
+foreach ($h as $k => $v) {
+    echo $k, "=", $v, ";";
+}
+echo "|";
+$p = renumber(json_decode('[7,8]', true));
+foreach ($p as $k => $v) {
+    echo $k, "=", $v, ";";
+}
+echo "|";
+var_dump(pick("a"));
+var_dump(pick(true));
+var_dump(pick(42));
+"#,
+    );
+    assert_eq!(
+        out,
+        "a=1;b=2;|0=7;1=8;|string(1) \"a\"\nint(5)\nint(42)\n"
+    );
+}
+
+/// EC-37 (#530): a hash built through mixed-key writes and returned as
+/// Mixed must box with its RUNTIME heap kind, not the static packed tag —
+/// the adaptive foreach previously classified the box as a packed array and
+/// iterated zero entries (while count() read the shared length header
+/// correctly).
+#[test]
+fn test_promoted_hash_boxed_as_mixed_iterates() {
+    let out = compile_and_run(
+        r#"<?php
+function mk(mixed $h): mixed {
+    $out = [];
+    foreach ($h as $k => $v) {
+        $out[$k] = $v;
+    }
+    return $out;
+}
+$c = mk(json_decode('{"a":1,"b":2}', true));
+echo count($c), "|";
+foreach ($c as $k => $v) {
+    echo $k, "=", $v, ";";
+}
+"#,
+    );
+    assert_eq!(out, "2|a=1;b=2;");
+}

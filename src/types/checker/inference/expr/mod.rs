@@ -541,6 +541,10 @@ impl Checker {
                 match ty {
                     PhpType::Array(elem_ty) => Ok(*elem_ty),
                     PhpType::AssocArray { value, .. } => Ok(*value),
+                    // A Mixed spread source (json_decode result, adaptive
+                    // local) is an array at runtime in well-typed code;
+                    // elements spread as Mixed.
+                    PhpType::Mixed => Ok(PhpType::Mixed),
                     _ => Err(CompileError::new(
                         expr.span,
                         "Spread operator requires an array",

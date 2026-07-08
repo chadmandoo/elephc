@@ -60,13 +60,13 @@ use crate::parser::ast::{Program, StmtKind};
 
 /// The names that trigger prelude injection, in injection order.
 ///
-/// Most entries name a function the prelude provides. `preg_match_all` and
-/// `array_filter` are triggers only: those builtins cannot be redeclared in
-/// PHP source, so the prelude ships `__elephc_preg_match_all_*` /
-/// `__elephc_array_filter_hash` impls and the EIR lowering desugars the
-/// matching call shapes into calls of those impls (associative `array_filter`
-/// receivers route to the hash impl; unused impls are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 20] = [
+/// Most entries name a function the prelude provides. Builtins that cannot be
+/// redeclared in PHP source (`preg_match_all`, `array_filter`, `strtr`,
+/// `base64_decode`, `implode`, `var_dump`, `array_keys`, `array_map`) are
+/// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
+/// desugars the matching call shapes into calls of those impls (unused impls
+/// are dead-stripped).
+const STDLIB_PRELUDE_NAMES: [&str; 24] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -87,6 +87,12 @@ const STDLIB_PRELUDE_NAMES: [&str; 20] = [
     "Randomizer",
     "implode",
     "var_dump",
+    "array_keys",
+    "array_map",
+    "array_merge",
+    // Matches the Debug rendering of `ExprKind::Spread` — runtime spreads
+    // into variadic parameters desugar to `__elephc_variadic_collect_*`.
+    "Spread(",
 ];
 
 /// The elephc-PHP stdlib prelude source. `__elephc_mb_byte_index` is the shared
@@ -505,6 +511,123 @@ function __elephc_array_filter_hash(array $h, callable $cb, int $mode): array {
         if ($keep) {
             $out[$k] = $v;
         }
+    }
+    return $out;
+}
+
+function __elephc_array_filter_any(mixed $h, callable $cb, int $mode): mixed {
+    // array_filter over a statically-Mixed receiver (json_decode results,
+    // adaptive locals). The `mixed` parameter keeps the adaptive foreach —
+    // an `array` param receiving a raw box fatals. Keys survive verbatim
+    // for BOTH shapes: PHP array_filter preserves keys even on packed input.
+    $out = [];
+    foreach ($h as $k => $v) {
+        $keep = false;
+        if ($mode === 2) {
+            $keep = $cb($k);
+        } elseif ($mode === 1) {
+            $keep = $cb($v, $k);
+        } else {
+            $keep = $cb($v);
+        }
+        if ($keep) {
+            $out[$k] = $v;
+        }
+    }
+    return $out;
+}
+
+function __elephc_array_keys_any(mixed $h): mixed {
+    // array_keys over a statically-Mixed receiver: adaptive foreach collects
+    // keys (int or string) into a fresh packed list, PHP order preserved.
+    $out = [];
+    foreach ($h as $k => $v) {
+        $out[] = $k;
+    }
+    return $out;
+}
+
+function __elephc_array_map_any(callable $fn, mixed $h): mixed {
+    // Single-array array_map over a statically-Mixed receiver. PHP's
+    // one-array form preserves keys (string AND int), so the result is
+    // built with keyed writes.
+    $out = [];
+    foreach ($h as $k => $v) {
+        $out[$k] = $fn($v);
+    }
+    return $out;
+}
+
+function __elephc_array_merge_any(mixed $a, mixed $b): mixed {
+    // Pairwise array_merge for associative/Mixed operands (the native
+    // lowering handles packed pairs only). PHP semantics: string keys
+    // overwrite in place (first-occurrence position), int keys are
+    // renumbered sequentially. Every write funnels through the ONE
+    // mixed-key store below — mixing statically-int keyed writes with
+    // mixed-key writes on the same local would pick the packed set op
+    // on promoted-hash storage.
+    $out = [];
+    $n = 0;
+    foreach ($a as $k => $v) {
+        $key = $k;
+        if (!is_string($k)) {
+            $key = $n;
+            $n = $n + 1;
+        }
+        $out[$key] = $v;
+    }
+    foreach ($b as $k => $v) {
+        $key = $k;
+        if (!is_string($k)) {
+            $key = $n;
+            $n = $n + 1;
+        }
+        $out[$key] = $v;
+    }
+    return $out;
+}
+
+function __elephc_variadic_collect_int(mixed $src): array {
+    // Runtime spread into an `int ...$n` variadic: adaptive walk over the
+    // spread source (packed, hash, or Mixed box), casting each element so
+    // the collection holds raw int slots matching the callee's typed reads.
+    $out = [];
+    foreach ($src as $v) {
+        $out[] = (int) $v;
+    }
+    return $out;
+}
+
+function __elephc_variadic_collect_float(mixed $src): array {
+    $out = [];
+    foreach ($src as $v) {
+        $out[] = (float) $v;
+    }
+    return $out;
+}
+
+function __elephc_variadic_collect_string(mixed $src): array {
+    $out = [];
+    foreach ($src as $v) {
+        $out[] = (string) $v;
+    }
+    return $out;
+}
+
+function __elephc_variadic_collect_bool(mixed $src): array {
+    $out = [];
+    foreach ($src as $v) {
+        $out[] = (bool) $v;
+    }
+    return $out;
+}
+
+function __elephc_variadic_collect_mixed(mixed $src): array {
+    // Mixed-element variadics keep boxed cells; the callee's adaptive
+    // reads handle per-slot tags.
+    $out = [];
+    foreach ($src as $v) {
+        $out[] = $v;
     }
     return $out;
 }

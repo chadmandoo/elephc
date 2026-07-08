@@ -717,6 +717,15 @@ pub(super) fn check_list_unpack(
                 update_list_unpack_callable_metadata(checker, var, value, &unpack_ty);
             }
         }
+        // A Mixed right-hand side (json_decode result, adaptive local) is an
+        // array at runtime in well-typed code — runtime-enforced PHP, same
+        // trust posture as the argument boundary. Elements bind as Mixed.
+        PhpType::Mixed => {
+            for var in vars {
+                env.insert(var.clone(), PhpType::Mixed);
+                update_list_unpack_callable_metadata(checker, var, value, &PhpType::Mixed);
+            }
+        }
         _ => {
             return Err(CompileError::new(
                 span,

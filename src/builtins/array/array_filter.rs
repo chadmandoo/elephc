@@ -50,9 +50,13 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     // Indexed receivers keep the packed runtime path; associative receivers
     // are desugared by the EIR frontend into the prelude
     // `__elephc_array_filter_hash` impl (keys preserved). Both report the
-    // receiver's own type as the result.
+    // receiver's own type as the result. Mixed receivers (json_decode
+    // results, adaptive locals) desugar to `__elephc_array_filter_any`,
+    // whose adaptive foreach handles either runtime shape — the result
+    // shape is input-dependent, so it stays Mixed.
     let result_ty = match &arr_ty {
         PhpType::Array(_) | PhpType::AssocArray { .. } => arr_ty.clone(),
+        PhpType::Mixed => PhpType::Mixed,
         _ => {
             return Err(CompileError::new(
                 cx.span,

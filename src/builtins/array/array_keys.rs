@@ -43,6 +43,10 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     match ty {
         PhpType::Array(_) => Ok(PhpType::Array(Box::new(PhpType::Int))),
         PhpType::AssocArray { key, .. } => Ok(PhpType::Array(key)),
+        // Mixed receivers (json_decode results, adaptive locals) desugar to
+        // the prelude `__elephc_array_keys_any` impl; keys may be int or
+        // string, so the result shape stays Mixed.
+        PhpType::Mixed => Ok(PhpType::Mixed),
         _ => Err(CompileError::new(
             cx.span,
             "array_keys() argument must be array",

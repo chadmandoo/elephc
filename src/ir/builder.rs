@@ -382,7 +382,7 @@ impl<'f> Builder<'f> {
 }
 
 /// Returns the local frame PHP representation that can store both observed types.
-fn widened_local_storage_type(current: &PhpType, incoming: &PhpType) -> PhpType {
+pub(crate) fn widened_local_storage_type(current: &PhpType, incoming: &PhpType) -> PhpType {
     let current = current.codegen_repr();
     let incoming = incoming.codegen_repr();
     if current == incoming {

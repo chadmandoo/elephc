@@ -372,6 +372,7 @@ fn lower_if_chain(
     let cond_value = lower_expr(ctx, condition);
     let cond_value = ctx.truthy(cond_value, Some(condition.span));
     let split_initialized = ctx.initialized_slots_snapshot();
+    let split_types = ctx.local_types.clone();
     let then_block = ctx.builder.create_named_block("if.then", Vec::new());
     let else_block = ctx.builder.create_named_block("if.else", Vec::new());
     ctx.builder.terminate(Terminator::CondBr {
@@ -386,6 +387,7 @@ fn lower_if_chain(
     ctx.restore_initialized_slots(split_initialized.clone());
     lower_block(ctx, then_body);
     let then_initialized = ctx.initialized_slots_snapshot();
+    let then_types = ctx.local_types.clone();
     let mut merge_reachable = false;
     let then_reachable = !ctx.builder.insertion_block_is_terminated();
     if then_reachable {
@@ -396,6 +398,30 @@ fn lower_if_chain(
     ctx.clear_static_callable_locals();
     ctx.builder.position_at_end(else_block);
     ctx.restore_initialized_slots(split_initialized.clone());
+    // Flow-type handling across branches is deliberate. The DCE tail pass
+    // hoists the statements FOLLOWING an if into every branch, so the else
+    // body is usually a full copy of the continuation and must lower with
+    // types that are true on the skip path. Locals the then branch retyped
+    // enter the else branch at the WIDENED lattice of (split, then) instead
+    // of then's flow type: containers keep then's widened shape (the else
+    // writer must converge on it — raw array layouts are not self-describing,
+    // so divergent per-branch layouts would be unreadable downstream: EC-20
+    // union-element lists; this holds even when then TERMINATED, because its
+    // data still escapes through returns), while a scalar retype over a Mixed
+    // slot stays Mixed (the skip path still holds a box; leaking `Int` would
+    // make else-path reads narrow it with `(int)` cast semantics —
+    // `$key = $k; if (...) { $key = $n; } $out[$key] = $v` wrote key 0
+    // instead of "a").
+    for (name, then_ty) in &then_types {
+        let Some(split_ty) = split_types.get(name) else {
+            continue;
+        };
+        if split_ty.codegen_repr() == then_ty.codegen_repr() {
+            continue;
+        }
+        let widened = crate::ir::widened_local_storage_type(split_ty, then_ty);
+        ctx.local_types.insert(name.clone(), widened);
+    }
     let else_reachable = if let Some(((next_condition, next_body), rest)) = elseif_clauses.split_first() {
         lower_if_chain(ctx, next_condition, next_body, rest, else_body, merge, span)
     } else if let Some(else_body) = else_body {
@@ -417,6 +443,7 @@ fn lower_if_chain(
     };
     merge_reachable |= else_reachable;
     let else_initialized = ctx.initialized_slots_snapshot();
+    let else_types = ctx.local_types.clone();
     ctx.restore_initialized_slots(merge_initialized_slots(
         &split_initialized,
         then_initialized,
@@ -424,7 +451,66 @@ fn lower_if_chain(
         else_initialized,
         else_reachable,
     ));
+    ctx.local_types = merge_local_types(
+        ctx,
+        split_types,
+        then_types,
+        then_reachable,
+        else_types,
+        else_reachable,
+    );
     merge_reachable
+}
+
+/// Merges flow-sensitive local types from the reachable branches of an `if`.
+///
+/// The else branch lowers with the then branch's type updates visible (writer
+/// convergence — see the comment at the restore site), so `else_types` is the
+/// authoritative view for any local BOTH paths (re)wrote: when else disagrees
+/// with then, its writer widened FROM then's layout and the merged data is
+/// self-consistent under else's type. The dangerous case is a local only the
+/// THEN branch retyped (then == else snapshot, both differ from the split):
+/// the skip path never rewrote the slot, so the leaked flow type would make
+/// post-merge loads narrow storage the skip path never converted (a Mixed
+/// slot read as Int applies `(int)` semantics to a box). Those resolve to the
+/// widened frame storage type — the physical truth for both paths.
+fn merge_local_types(
+    ctx: &LoweringContext<'_, '_>,
+    split_types: crate::types::TypeEnv,
+    then_types: crate::types::TypeEnv,
+    then_reachable: bool,
+    else_types: crate::types::TypeEnv,
+    else_reachable: bool,
+) -> crate::types::TypeEnv {
+    match (then_reachable, else_reachable) {
+        (true, false) => then_types,
+        (false, true) => else_types,
+        (false, false) => split_types,
+        (true, true) => {
+            let mut merged = crate::types::TypeEnv::new();
+            for (name, else_ty) in else_types {
+                let then_ty = then_types.get(&name);
+                let split_ty = split_types.get(&name);
+                let then_only_retype = then_ty
+                    .is_some_and(|t| t.codegen_repr() == else_ty.codegen_repr())
+                    && split_ty.is_some_and(|s| s.codegen_repr() != else_ty.codegen_repr());
+                if then_only_retype {
+                    let storage_ty = ctx
+                        .local_slots
+                        .get(&name)
+                        .map(|slot| ctx.builder.local_php_type(*slot))
+                        .unwrap_or(PhpType::Mixed);
+                    merged.insert(name, storage_ty);
+                } else {
+                    merged.insert(name, else_ty);
+                }
+            }
+            for (name, then_ty) in then_types {
+                merged.entry(name).or_insert(then_ty);
+            }
+            merged
+        }
+    }
 }
 
 /// Merges definitely-initialized locals from the reachable branches of an `if`.

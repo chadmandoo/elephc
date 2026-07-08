@@ -414,3 +414,116 @@ var_dump([]);
         "array(3) {\n  [0]=>\n  int(1)\n  [1]=>\n  array(1) {\n    [\"deep\"]=>\n    array(2) {\n      [0]=>\n      bool(true)\n      [1]=>\n      NULL\n    }\n  }\n  [2]=>\n  float(2.5)\n}\narray(1) {\n  [\"a\"]=>\n  array(1) {\n    [\"b\"]=>\n    array(2) {\n      [0]=>\n      int(1)\n      [1]=>\n      int(2)\n    }\n  }\n}\narray(0) {\n}\n"
     );
 }
+
+/// EC-37 (#530): container builtins over statically-Mixed receivers
+/// (json_decode results) route through the adaptive prelude impls with PHP
+/// key semantics: array_filter preserves keys on BOTH shapes (hash AND
+/// packed — PHP keeps packed keys too, leaving gaps), array_keys collects
+/// int/string keys in order, single-array array_map preserves keys, and the
+/// results compose through implode/var_dump.
+#[test]
+fn test_mixed_receiver_container_builtins_adaptive() {
+    let out = compile_and_run(
+        r#"<?php
+$m = json_decode('{"a":1,"b":0,"c":2}', true);
+$f = array_filter($m, fn(mixed $v): bool => $v > 0);
+echo implode(",", array_keys($f)), "|";
+$p = json_decode('[5,0,7,0,9]', true);
+$fp = array_filter($p, fn(mixed $v): bool => $v > 0);
+echo implode(",", array_keys($fp)), "|";
+$d = array_map(fn(mixed $v): int => $v * 2, json_decode('[1,2,3]', true));
+echo implode(",", $d), "|";
+$am = array_map(fn(int $v): int => $v * 10, ["x" => 1, "y" => 2]);
+echo implode(",", array_keys($am)), "=", implode(",", $am);
+"#,
+    );
+    assert_eq!(out, "a,c|0,2,4|2,4,6|x,y=10,20");
+}
+
+/// EC-37 (#530): array_merge accepts 3+ arguments (folded into native pairs
+/// for packed operands) and associative/Mixed operands (adaptive prelude
+/// impl): string keys overwrite in first-occurrence position, int keys
+/// renumber sequentially — including across a folded 3-argument call whose
+/// inner result reaches the outer merge as a Mixed value.
+#[test]
+fn test_array_merge_variadic_and_assoc_semantics() {
+    let out = compile_and_run(
+        r#"<?php
+echo implode(",", array_merge([1], [2], [3], [4])), "|";
+$h = array_merge(["a" => 1], ["b" => 2], ["a" => 9]);
+foreach ($h as $k => $v) {
+    echo $k, "=", $v, ";";
+}
+echo "|";
+$mixed = array_merge(["x" => 1], json_decode('{"y":2}', true));
+foreach ($mixed as $k => $v) {
+    echo $k, "=", $v, ";";
+}
+"#,
+    );
+    assert_eq!(out, "1,2,3,4|a=9;b=2;|x=1;y=2;");
+}
+
+/// EC-37 (#530): list unpacking and single-trailing-spread calls accept
+/// statically-Mixed sources (json_decode results). The spread collects into
+/// the callee's typed variadic slot via the prelude collectors — int and
+/// string variadics, free functions and methods, typed and Mixed sources.
+#[test]
+fn test_mixed_list_unpack_and_variadic_spread() {
+    let out = compile_and_run(
+        r#"<?php
+function sum(int ...$n): int {
+    $t = 0;
+    foreach ($n as $x) {
+        $t = $t + $x;
+    }
+    return $t;
+}
+function joinAll(string ...$parts): string {
+    $out = "";
+    foreach ($parts as $p) {
+        $out = $out . $p;
+    }
+    return $out;
+}
+final class Acc {
+    public function total(int ...$n): int {
+        $t = 0;
+        foreach ($n as $x) {
+            $t = $t + $x;
+        }
+        return $t;
+    }
+}
+$m = json_decode('[1,2]', true);
+[$a, $b] = $m;
+echo $a + $b, "|";
+$typed = [3, 4];
+echo sum(...$typed), "|";
+echo sum(...json_decode('[10,20,30]', true)), "|";
+$acc = new Acc();
+echo $acc->total(...$typed), "|";
+echo joinAll(...json_decode('["x","y"]', true));
+"#,
+    );
+    assert_eq!(out, "3|7|60|7|xy");
+}
+
+/// EC-37 (#530): invoking a Union[Callable, Void] value (a `?Closure`
+/// property read) dispatches through the dynamic descriptor invoke — the
+/// call is runtime-enforced like Zend (null would fatal at runtime).
+#[test]
+fn test_nullable_closure_property_direct_call() {
+    let out = compile_and_run(
+        r#"<?php
+final class H {
+    public function __construct(public ?Closure $cb) {
+    }
+}
+$h = new H(fn(): string => "called");
+$cb = $h->cb;
+echo $cb();
+"#,
+    );
+    assert_eq!(out, "called");
+}

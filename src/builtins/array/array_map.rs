@@ -46,36 +46,46 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         cx.checker.infer_type(arg, cx.env)?;
     }
     let arr_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
+    // The dummy argument mirrors the element type. Object elements (no literal form)
+    // and Mixed/Never elements (unknown — e.g. an `array`-hinted param or property)
+    // use the synthetic binding, so a TYPED callback parameter is checked against the
+    // real (or runtime-enforced) element type instead of a fabricated Int placeholder.
+    // Associative and Mixed receivers desugar to the prelude
+    // `__elephc_array_map_any` impl (adaptive foreach, keys preserved per
+    // PHP's single-array form).
+    let elem_ty = match &arr_ty {
+        PhpType::Array(elem_ty) => (**elem_ty).clone(),
+        PhpType::AssocArray { value, .. } => (**value).clone(),
+        PhpType::Mixed => PhpType::Mixed,
+        _ => {
+            return Err(CompileError::new(
+                cx.span,
+                "array_map() second argument must be array",
+            ))
+        }
+    };
+    let (dummy_arg, elem_binding) =
+        crate::types::checker::builtins::comparator_dummy_arg_for_elem(&elem_ty, cx.span);
+    let dummy_args = vec![dummy_arg];
+    let mut env_with_elem;
+    let cb_env: &crate::types::TypeEnv = match &elem_binding {
+        Some((binding_name, binding_ty)) => {
+            env_with_elem = cx.env.clone();
+            env_with_elem.insert(binding_name.clone(), binding_ty.clone());
+            &env_with_elem
+        }
+        None => cx.env,
+    };
+    let callback_ret_ty = crate::types::checker::builtins::check_callback_builtin_call(
+        cx.checker,
+        &cx.args[0],
+        &dummy_args,
+        cx.span,
+        cb_env,
+        "array_map() callback",
+    )?;
     match arr_ty {
         PhpType::Array(elem_ty) => {
-            // The dummy argument mirrors the element type. Object elements (no literal form)
-            // and Mixed/Never elements (unknown — e.g. an `array`-hinted param or property)
-            // use the synthetic binding, so a TYPED callback parameter is checked against the
-            // real (or runtime-enforced) element type instead of a fabricated Int placeholder.
-            let (dummy_arg, elem_binding) =
-                crate::types::checker::builtins::comparator_dummy_arg_for_elem(
-                    elem_ty.as_ref(),
-                    cx.span,
-                );
-            let dummy_args = vec![dummy_arg];
-            let mut env_with_elem;
-            let cb_env: &crate::types::TypeEnv = match &elem_binding {
-                Some((binding_name, binding_ty)) => {
-                    env_with_elem = cx.env.clone();
-                    env_with_elem.insert(binding_name.clone(), binding_ty.clone());
-                    &env_with_elem
-                }
-                None => cx.env,
-            };
-            let callback_ret_ty =
-                crate::types::checker::builtins::check_callback_builtin_call(
-                    cx.checker,
-                    &cx.args[0],
-                    &dummy_args,
-                    cx.span,
-                    cb_env,
-                    "array_map() callback",
-                )?;
             let result_elem_ty = if callback_ret_ty == PhpType::Mixed {
                 Box::new(PhpType::Mixed)
             } else {
@@ -83,10 +93,13 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             };
             Ok(PhpType::Array(result_elem_ty))
         }
-        _ => Err(CompileError::new(
-            cx.span,
-            "array_map() second argument must be array",
-        )),
+        // The desugared impl builds its result with mixed-key writes, so the
+        // runtime hash holds BOXED value cells — Mixed is the honest value type.
+        PhpType::AssocArray { key, .. } => Ok(PhpType::AssocArray {
+            key,
+            value: Box::new(PhpType::Mixed),
+        }),
+        _ => Ok(PhpType::Mixed),
     }
 }
 

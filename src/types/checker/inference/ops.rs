@@ -431,6 +431,18 @@ impl Checker {
                 }
                 return Ok(PhpType::Mixed);
             }
+            // A union that includes Callable (e.g. `?Closure` property reads,
+            // Union[Callable, Void]) is runtime-enforced PHP: invoking null
+            // fatals at runtime, exactly like Zend. The signature is unknown
+            // statically, so args type generically and the result is Mixed.
+            if let PhpType::Union(members) = &var_ty {
+                if members.iter().any(|m| matches!(m, PhpType::Callable)) {
+                    for arg in args {
+                        self.infer_type(arg, env)?;
+                    }
+                    return Ok(PhpType::Mixed);
+                }
+            }
             if let Some(target) = self.callable_array_targets.get(var).cloned() {
                 return self.infer_callable_array_target_call(&target, args, expr, env);
             }

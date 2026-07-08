@@ -521,7 +521,16 @@ pub(crate) fn emit_box_current_value_as_mixed(emitter: &mut Emitter, ty: &PhpTyp
                 emitter.instruction("call __rt_mixed_from_value");              // box the string payload into a mixed cell
             }
         },
-        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_) => {
+        // Containers can change shape at runtime — a mixed-key store promotes
+        // packed storage to a hash while the static type stays Array — so the
+        // box tag is derived from the payload's heap-kind word (array→4,
+        // hash→5) instead of the static type. A wrong static tag makes every
+        // tag-switching Mixed consumer (foreach, adaptive reads) walk the
+        // wrong layout.
+        PhpType::Array(_) | PhpType::AssocArray { .. } => {
+            emit_box_iterable_as_mixed(emitter);
+        }
+        PhpType::Object(_) => {
             match emitter.target.arch {
                 Arch::AArch64 => {
                     emitter.instruction("mov x1, x0");                          // move the current heap pointer into the mixed helper payload register
