@@ -206,6 +206,18 @@ pub(crate) fn expr_invalidation(expr: &Expr) -> Invalidation {
                 acc.union(unset_target_invalidation(arg))
             })
         }
+        // `ptr($x)` (elephc pointer extension) takes the address of a local:
+        // from this point on, `ptr_set`/`ptr_write*` through any alias of the
+        // pointer rewrites the variable outside the PHP reference model, so
+        // the root is exposed permanently — invalidated here and volatile
+        // forever after.
+        ExprKind::FunctionCall { name, args } if name == "ptr" => {
+            let mut inv = Invalidation::none();
+            for arg in args {
+                expose_argument_root(arg, true, &mut inv);
+            }
+            inv
+        }
         ExprKind::FunctionCall { name, args } => {
             // A callback-invoking builtin runs arbitrary user code with the
             // caller's arguments (`call_user_func($cb, $value)` forwards

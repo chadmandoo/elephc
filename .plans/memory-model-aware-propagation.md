@@ -132,6 +132,7 @@ sites, each a reference-exposure point:
 | `global $x;` | `$x` (aliases global storage; callees can write it) |
 | `static $x;` | `$x` (recursive calls write the shared cell) |
 | by-ref arg to user-defined callee | argument root (callee may retain the reference) |
+| `ptr($x)` (pointer extension) | `$x` (address taken: `ptr_set` through any alias rewrites it outside the PHP reference model) |
 | request superglobals (`_GET`, …) | always (writable from any scope under `--web`) |
 
 Volatile names never enter the env, so calls need no extra invalidation for

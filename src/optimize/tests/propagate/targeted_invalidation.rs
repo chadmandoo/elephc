@@ -331,3 +331,34 @@ fn test_nested_lvalue_assignment_expr_kills_array_fact() {
         "a string-offset write through $a[0][1] mutates $a; the fact must die"
     );
 }
+
+/// `ptr($x)` takes the address of a local: any later `ptr_set` through any
+/// alias of that pointer rewrites `$x` invisibly, so `$x` must never carry a
+/// fact from the exposure point on. Regression for the elephc pointer
+/// extension bypassing the PHP reference model.
+#[test]
+fn test_ptr_address_of_kills_and_volatilizes_fact() {
+    let program = vec![
+        Stmt::assign("x", Expr::int_lit(21)),
+        Stmt::assign(
+            "p",
+            Expr::new(
+                ExprKind::FunctionCall {
+                    name: Name::from("ptr"),
+                    args: vec![Expr::var("x")],
+                },
+                Span::dummy(),
+            ),
+        ),
+        call_stmt("ptr_set", vec![Expr::var("p"), Expr::int_lit(42)]),
+        Stmt::echo(Expr::binop(Expr::var("x"), BinOp::Add, Expr::int_lit(1))),
+    ];
+
+    let propagated = propagate_constants(program);
+
+    assert_eq!(
+        propagated[3],
+        Stmt::echo(Expr::binop(Expr::var("x"), BinOp::Add, Expr::int_lit(1))),
+        "an address-taken local must never carry a propagated fact"
+    );
+}
