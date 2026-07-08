@@ -8,6 +8,9 @@
 //! Key details:
 //! - Direct callable invocation still uses normal method-call errors; these helpers
 //!   are scoped to `call_user_func` and `call_user_func_array`.
+//! - This file is a deliberate >500 LoC single-scope validation matrix for PHP's
+//!   callback TypeErrors; splitting it would duplicate method visibility and AOT
+//!   bridge checks across call_user_func surfaces.
 
 use super::super::super::*;
 

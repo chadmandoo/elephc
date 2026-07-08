@@ -8,6 +8,9 @@
 //! Key details:
 //! - This module only handles builtin calls whose direct PHP semantics can write
 //!   to caller storage. Other builtins continue through the by-value dispatcher.
+//! - This file is a deliberate >500 LoC single-scope by-reference dispatcher:
+//!   the shared concern is preserving captured writeback targets, not builtin
+//!   area ownership, so splitting by area would duplicate binding semantics.
 
 use super::super::super::*;
 use super::super::*;

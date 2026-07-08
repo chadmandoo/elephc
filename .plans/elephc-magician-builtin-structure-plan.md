@@ -14,14 +14,14 @@
   by-ref parameters, and dispatch in migrated areas.
 - [x] Phase 2: keep ordinary files below 500 LoC, leaving exceptions only for
   cohesive single-scope helpers documented in their module preambles.
-- [ ] Phase 3: split remaining large builtin files (`symbols.rs`,
+- [x] Phase 3: split remaining large builtin files (`symbols.rs`,
   `filesystem/streams.rs`, `class_metadata/oop_introspection.rs`,
   `registry/callable.rs`, `arrays/core.rs`) into builtin home files and shared
   helpers.
-- [ ] Phase 3: replace the giant direct-dispatch match in
+- [x] Phase 3: replace the giant direct-dispatch match in
   `interpreter/expressions.rs` with smaller registry lookups, preserving special
   paths for language constructs and by-ref/source-sensitive calls.
-- [ ] Phase 3: update agent/contributor documentation if the workflow for adding
+- [x] Phase 3: update agent/contributor documentation if the workflow for adding
   eval builtins changes.
 
 ## Goal
@@ -199,6 +199,28 @@ For each one, decide whether:
 - it is a single-scope helper that should stay cohesive with an explicit
   preamble;
 - it mixes responsibilities and should be split before builtin migration.
+
+Phase 3 completion notes:
+
+- `registry/names.rs` and `registry/signature.rs` are now thin registry-derived
+  helpers rather than manual tables.
+- `interpreter/expressions.rs` no longer contains the giant positional builtin
+  dispatch match. Function-like calls live under `interpreter/expressions/calls*`
+  and fall through to `eval_declared_builtin_direct_call()` after preserving the
+  special source-sensitive and by-reference paths.
+- `interpreter/builtins/symbols.rs` is now an orchestration module with focused
+  `symbols/` modules for callable probes, function probes, constants,
+  class-name lookup, class relations, and language constructs.
+- `filesystem/streams.rs`, `class_metadata/oop_introspection.rs`, and
+  `arrays/core.rs` have already been split into focused helper modules.
+- `filesystem/stream_sockets.rs` was also split during the cleanup because it
+  was a multi-builtin stream-socket bucket above the ordinary file-size target.
+- `registry/callable.rs`, `registry/callable_validation.rs`,
+  `registry/dynamic_mutation.rs`, and `time/aliases.rs` remain above 500 LoC as
+  documented single-scope engines in their module preambles.
+- No `AGENTS.md` or contributor workflow update was needed for Phase 3 because
+  adding eval builtins still follows the existing one-home-file plus area
+  `mod.rs` wiring model established by the declarative registry.
 
 ## Acceptance Criteria
 

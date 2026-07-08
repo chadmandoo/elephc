@@ -9,6 +9,9 @@
 //! Key details:
 //! - The eval parser cannot run the static name-resolver rewrite, so this module
 //!   mirrors the alias dispatch at runtime and delegates to native AOT bridges.
+//! - This file is a deliberate >500 LoC single-scope runtime bridge for
+//!   procedural date/time aliases; splitting by alias would obscure the shared
+//!   fallback and timezone-table rules.
 
 use super::super::super::*;
 use super::*;

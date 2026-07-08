@@ -7,6 +7,9 @@
 //! Key details:
 //! - Helpers are scoped to the eval interpreter and operate on already parsed
 //!   EvalIR call metadata or evaluated runtime-cell handles.
+//! - This file is a deliberate >500 LoC single-scope callable engine: splitting
+//!   normalization, ref-target preservation, and invocation would spread one PHP
+//!   callable state machine across artificial modules.
 
 use super::*;
 
