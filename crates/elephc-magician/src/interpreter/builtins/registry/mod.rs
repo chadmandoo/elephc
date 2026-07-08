@@ -251,7 +251,19 @@ mod tests {
             "gmmktime",
             "glob",
             "grapheme_strrev",
+            "gzcompress",
+            "gzdeflate",
+            "gzinflate",
+            "gzuncompress",
+            "hash",
+            "hash_algos",
+            "hash_copy",
             "hash_equals",
+            "hash_file",
+            "hash_final",
+            "hash_hmac",
+            "hash_init",
+            "hash_update",
             "hex2bin",
             "htmlspecialchars",
             "hrtime",
@@ -294,6 +306,7 @@ mod tests {
             "log",
             "lstat",
             "microtime",
+            "md5",
             "min",
             "mkdir",
             "mktime",
@@ -321,6 +334,7 @@ mod tests {
             "rewinddir",
             "rmdir",
             "scandir",
+            "sha1",
             "sleep",
             "stat",
             "stream_copy_to_stream",
@@ -750,6 +764,50 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("stream_get_filters"),
             Some([].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("gzcompress"),
+            Some(["data", "level"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("gzcompress", 1),
+            Some(EvalBuiltinDefaultValue::Int(-1))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("gzinflate", 1),
+            Some(EvalBuiltinDefaultValue::Int(0))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("hash"),
+            Some(["algo", "data", "binary"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("hash", 2),
+            Some(EvalBuiltinDefaultValue::Bool(false))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("hash_algos"),
+            Some([].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("hash_init"),
+            Some(["algo", "flags", "key"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("hash_init", 1),
+            Some(EvalBuiltinDefaultValue::Int(0))
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("hash_init", 2),
+            Some(EvalBuiltinDefaultValue::String(""))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("md5"),
+            Some(["string", "binary"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("sha1", 1),
+            Some(EvalBuiltinDefaultValue::Bool(false))
         );
         assert_eq!(
             eval_declared_builtin_param_names("stream_is_local"),

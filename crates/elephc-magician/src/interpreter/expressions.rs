@@ -1607,18 +1607,7 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
             eval_builtin_resource_introspection(name, args, context, scope, values)
         }
         "getenv" => eval_builtin_getenv(args, context, scope, values),
-        "gzcompress" | "gzdeflate" | "gzinflate" | "gzuncompress" => {
-            eval_builtin_gzip(name, args, context, scope, values)
-        }
-        "hash" | "hash_file" | "hash_hmac" | "md5" | "sha1" => {
-            eval_builtin_hash_one_shot(name, args, context, scope, values)
-        }
         "header" => eval_builtin_header(args, context, scope, values),
-        "hash_algos" => eval_builtin_hash_algos(args, values),
-        "hash_copy" => eval_builtin_hash_copy(args, context, scope, values),
-        "hash_final" => eval_builtin_hash_final(args, context, scope, values),
-        "hash_init" => eval_builtin_hash_init(args, context, scope, values),
-        "hash_update" => eval_builtin_hash_update(args, context, scope, values),
         "implode" => eval_builtin_implode(args, context, scope, values),
         "inet_ntop" => eval_builtin_inet_ntop(args, context, scope, values),
         "inet_pton" => eval_builtin_inet_pton(args, context, scope, values),

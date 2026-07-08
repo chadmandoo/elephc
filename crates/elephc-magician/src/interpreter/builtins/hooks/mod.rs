@@ -5,10 +5,11 @@
 //! - `crate::interpreter::builtins::spec` re-exports used by `eval_builtin!`.
 //!
 //! Key details:
-//! - Direct expression dispatch and already-evaluated argument dispatch are kept
-//!   in separate files so each hook table can grow independently.
+//! - Direct expression dispatch, already-evaluated argument dispatch, and
+//!   focused hook helpers stay split so ordinary files remain small.
 
 mod direct;
+mod hash;
 mod values;
 
 pub(in crate::interpreter) use direct::EvalDirectHook;

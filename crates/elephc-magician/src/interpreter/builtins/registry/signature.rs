@@ -63,8 +63,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
 
     let params = eval_builtin_param_names(name)?;
     Some(match name {
-        "gzcompress" | "gzdeflate" | "gzinflate" | "gzuncompress" => optional(params, 1),
-
         "isset" | "unset" => variadic(params, &[]),
         "settype" => fixed_by_ref(params, &["var"]),
 
@@ -85,11 +83,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "implode" => optional(params, 1),
         "sprintf" | "printf" | "sscanf" => variadic(params, &[]),
         "fprintf" | "fscanf" => variadic(params, &[]),
-
-        "hash" | "hash_file" => optional(params, 2),
-        "hash_hmac" => optional(params, 3),
-        "hash_init" => optional(params, 1),
-        "hash_final" | "md5" | "sha1" => optional(params, 1),
 
         "array_pop" | "array_shift" => fixed_by_ref(params, &["array"]),
         "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort" | "arsort"
@@ -144,9 +137,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
     use EvalBuiltinDefaultValue::*;
 
     Some(match (name, param_index) {
-        ("gzcompress" | "gzdeflate", 1) => Int(-1),
-        ("gzinflate" | "gzuncompress", 1) => Int(0),
-
         ("class_alias", 2) => Bool(true),
         (
             "class_exists" | "interface_exists" | "trait_exists" | "enum_exists"
@@ -171,11 +161,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("explode", 2) => Int(i64::MAX),
         ("implode", 0) => Null,
 
-        ("hash" | "hash_file", 2) => Bool(false),
-        ("hash_hmac", 3) => Bool(false),
-        ("hash_init", 1) => Int(0),
-        ("hash_init", 2) => String(""),
-        ("hash_final" | "md5" | "sha1", 1) => Bool(false),
         ("array_splice", 2) => Null,
         ("array_splice", 3) => EmptyArray,
         ("array_filter", 1) => Null,

@@ -21,18 +21,18 @@ use super::super::{
     eval_base64_decode_result, eval_base64_encode_result, eval_bin2hex_result, eval_cast_result,
     eval_chr_result, eval_clamp_result, eval_crc32_result, eval_ctype_result,
     eval_filesystem_values_result, eval_float_binary_result, eval_float_pair_result,
-    eval_float_unary_result, eval_gettype_result, eval_grapheme_strrev_result,
-    eval_hash_equals_result, eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result,
-    eval_json_values_result, eval_log_result, eval_min_max_result, eval_nl2br_result,
-    eval_number_format_result, eval_range_result, eval_regex_values_result, eval_slashes_result,
-    eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result, eval_str_split_result,
-    eval_stream_bool_predicate_result, eval_stream_introspection_result, eval_string_case_result,
-    eval_string_compare_result, eval_string_position_result, eval_string_search_result,
-    eval_strstr_result, eval_substr_replace_result, eval_substr_result, eval_time_values_result,
-    eval_trim_like_result,
-    eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result, eval_url_encode_result,
-    eval_wordwrap_result,
+    eval_float_unary_result, eval_gettype_result, eval_grapheme_strrev_result, eval_gzip_result,
+    eval_hash_equals_result, eval_hash_one_shot_result, eval_hex2bin_result, eval_html_entity_result,
+    eval_intdiv_result, eval_json_values_result, eval_log_result, eval_min_max_result,
+    eval_nl2br_result, eval_number_format_result, eval_range_result, eval_regex_values_result,
+    eval_slashes_result, eval_str_pad_result, eval_str_replace_result, eval_str_repeat_result,
+    eval_str_split_result, eval_stream_bool_predicate_result, eval_stream_introspection_result,
+    eval_string_case_result, eval_string_compare_result, eval_string_position_result,
+    eval_string_search_result, eval_strstr_result, eval_substr_replace_result, eval_substr_result,
+    eval_time_values_result, eval_trim_like_result, eval_type_predicate_result, eval_ucwords_result,
+    eval_url_decode_result, eval_url_encode_result, eval_wordwrap_result,
 };
+use super::hash::{eval_hash_algos_values, eval_hash_context_values};
 
 /// Evaluated-argument dispatch hooks for migrated builtins.
 #[derive(Clone, Copy)]
@@ -93,8 +93,16 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Gettype,
     /// Dispatches `grapheme_strrev(...)`.
     GraphemeStrrev,
+    /// Dispatches gzip/zlib string builtins.
+    Gzip,
+    /// Dispatches `hash_algos()`.
+    HashAlgos,
+    /// Dispatches incremental hash-context builtins.
+    HashContext,
     /// Dispatches `hash_equals(...)`.
     HashEquals,
+    /// Dispatches one-shot hash digest builtins.
+    HashOneShot,
     /// Dispatches `hex2bin(...)`.
     Hex2Bin,
     /// Dispatches HTML entity encode/decode builtins.
@@ -246,7 +254,11 @@ impl EvalValuesHook {
             Self::Floor => one_arg(evaluated_args, values, |value, values| values.floor(value)),
             Self::Gettype => one_arg(evaluated_args, values, eval_gettype_result),
             Self::GraphemeStrrev => one_arg(evaluated_args, values, eval_grapheme_strrev_result),
+            Self::Gzip => eval_gzip_result(name, evaluated_args, values),
+            Self::HashAlgos => eval_hash_algos_values(evaluated_args, values),
+            Self::HashContext => eval_hash_context_values(name, evaluated_args, context, values),
             Self::HashEquals => two_args(evaluated_args, values, eval_hash_equals_result),
+            Self::HashOneShot => eval_hash_one_shot_result(name, evaluated_args, values),
             Self::Hex2Bin => one_arg(evaluated_args, values, eval_hex2bin_result),
             Self::HtmlEntity => one_arg(evaluated_args, values, |value, values| {
                 eval_html_entity_result(name, value, values)

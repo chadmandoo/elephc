@@ -13,12 +13,15 @@ use super::super::super::{
     eval_builtin_base64_decode, eval_builtin_base64_encode, eval_builtin_bin2hex,
     eval_builtin_ceil, eval_builtin_chr, eval_builtin_clamp, eval_builtin_count,
     eval_builtin_crc32, eval_builtin_ctype, eval_builtin_float_binary, eval_builtin_float_pair,
-    eval_builtin_float_unary, eval_builtin_floor, eval_builtin_gettype, eval_builtin_hex2bin,
-    eval_builtin_intdiv, eval_builtin_log, eval_builtin_min_max, eval_builtin_number_format,
-    eval_builtin_ord, eval_builtin_pi, eval_builtin_pow, eval_builtin_round, eval_builtin_slashes,
-    eval_builtin_sqrt, eval_builtin_str_repeat, eval_builtin_strlen, eval_builtin_type_predicate,
-    eval_builtin_url_decode, eval_builtin_url_encode, ElephcEvalContext, ElephcEvalScope,
-    EvalExpr, EvalStatus, RuntimeCellHandle, RuntimeValueOps,
+    eval_builtin_float_unary, eval_builtin_floor, eval_builtin_gettype, eval_builtin_gzip,
+    eval_builtin_hash_algos, eval_builtin_hash_copy, eval_builtin_hash_final,
+    eval_builtin_hash_init, eval_builtin_hash_one_shot, eval_builtin_hash_update,
+    eval_builtin_hex2bin, eval_builtin_intdiv, eval_builtin_log, eval_builtin_min_max,
+    eval_builtin_number_format, eval_builtin_ord, eval_builtin_pi, eval_builtin_pow,
+    eval_builtin_round, eval_builtin_slashes, eval_builtin_sqrt, eval_builtin_str_repeat,
+    eval_builtin_strlen, eval_builtin_type_predicate, eval_builtin_url_decode,
+    eval_builtin_url_encode, ElephcEvalContext, ElephcEvalScope, EvalExpr, EvalStatus,
+    RuntimeCellHandle, RuntimeValueOps,
 };
 use super::super::{
     eval_builtin_abs, eval_builtin_array_aggregate, eval_builtin_array_flip,
@@ -94,8 +97,16 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Gettype,
     /// Dispatches `grapheme_strrev(...)`.
     GraphemeStrrev,
+    /// Dispatches gzip/zlib string builtins.
+    Gzip,
+    /// Dispatches `hash_algos()`.
+    HashAlgos,
+    /// Dispatches incremental hash-context builtins.
+    HashContext,
     /// Dispatches `hash_equals(...)`.
     HashEquals,
+    /// Dispatches one-shot hash digest builtins.
+    HashOneShot,
     /// Dispatches `hex2bin(...)`.
     Hex2Bin,
     /// Dispatches HTML entity encode/decode builtins.
@@ -213,7 +224,17 @@ impl EvalDirectHook {
             Self::Floor => eval_builtin_floor(args, context, scope, values),
             Self::Gettype => eval_builtin_gettype(args, context, scope, values),
             Self::GraphemeStrrev => eval_builtin_grapheme_strrev(args, context, scope, values),
+            Self::Gzip => eval_builtin_gzip(name, args, context, scope, values),
+            Self::HashAlgos => eval_builtin_hash_algos(args, values),
+            Self::HashContext => match name {
+                "hash_copy" => eval_builtin_hash_copy(args, context, scope, values),
+                "hash_final" => eval_builtin_hash_final(args, context, scope, values),
+                "hash_init" => eval_builtin_hash_init(args, context, scope, values),
+                "hash_update" => eval_builtin_hash_update(args, context, scope, values),
+                _ => Err(EvalStatus::RuntimeFatal),
+            },
             Self::HashEquals => eval_builtin_hash_equals(args, context, scope, values),
+            Self::HashOneShot => eval_builtin_hash_one_shot(name, args, context, scope, values),
             Self::Hex2Bin => eval_builtin_hex2bin(args, context, scope, values),
             Self::HtmlEntity => eval_builtin_html_entity(name, args, context, scope, values),
             Self::Intdiv => eval_builtin_intdiv(args, context, scope, values),
