@@ -12,7 +12,6 @@
 
 use super::super::*;
 
-mod cache;
 mod exec;
 mod getenv;
 mod gethostbyaddr;
@@ -33,7 +32,6 @@ mod putenv;
 mod shell_exec;
 mod system;
 
-pub(in crate::interpreter) use cache::*;
 pub(in crate::interpreter) use exec::*;
 pub(in crate::interpreter) use getenv::*;
 pub(in crate::interpreter) use gethostbyaddr::*;

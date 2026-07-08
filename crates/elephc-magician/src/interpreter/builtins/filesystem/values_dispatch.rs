@@ -10,7 +10,6 @@
 
 use super::super::super::*;
 
-use super::path_values_dispatch::eval_filesystem_path_values_result;
 
 /// Routes evaluated-argument filesystem builtin calls through per-builtin leaf wrappers.
 pub(in crate::interpreter) fn eval_filesystem_values_result(
@@ -148,19 +147,4 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
         "vfprintf" => super::vfprintf::eval_vfprintf_declared_values_result(evaluated_args, context, values),
         _ => Err(EvalStatus::RuntimeFatal),
     }
-}
-
-/// Dispatches evaluated-argument calls for declaratively migrated filesystem builtins.
-pub(in crate::interpreter) fn eval_filesystem_values_result_impl(
-    name: &str,
-    evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    if let Some(result) =
-        eval_filesystem_path_values_result(name, evaluated_args, context, values)?
-    {
-        return Ok(result);
-    }
-    Err(EvalStatus::RuntimeFatal)
 }

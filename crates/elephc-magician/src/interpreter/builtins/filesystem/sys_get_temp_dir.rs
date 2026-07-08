@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `sys_get_temp_dir`.
+//! Declarative eval registry entry and implementation for `sys_get_temp_dir`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the temporary-directory helper.
+//! - Returns the same temporary directory literal as the native static builtin.
 
 eval_builtin! {
     name: "sys_get_temp_dir",
@@ -17,21 +17,42 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `sys_get_temp_dir` filesystem builtin through the area dispatcher.
+/// Evaluates `sys_get_temp_dir()` with no arguments.
 pub(in crate::interpreter) fn eval_sys_get_temp_dir_declared_call(
     args: &[EvalExpr],
-    context: &mut ElephcEvalContext,
-    scope: &mut ElephcEvalScope,
+    _context: &mut ElephcEvalContext,
+    _scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("sys_get_temp_dir", args, context, scope, values)
+    eval_builtin_sys_get_temp_dir(args, values)
 }
 
-/// Dispatches evaluated-argument calls for the `sys_get_temp_dir` filesystem builtin through the area dispatcher.
+/// Evaluates `sys_get_temp_dir()` from already evaluated arguments.
 pub(in crate::interpreter) fn eval_sys_get_temp_dir_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("sys_get_temp_dir", evaluated_args, context, values)
+    if !evaluated_args.is_empty() {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    eval_sys_get_temp_dir_result(values)
+}
+
+/// Evaluates PHP `sys_get_temp_dir()` with no arguments.
+pub(in crate::interpreter) fn eval_builtin_sys_get_temp_dir(
+    args: &[EvalExpr],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    if !args.is_empty() {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    eval_sys_get_temp_dir_result(values)
+}
+
+/// Returns the same temporary directory literal as the native static builtin.
+pub(in crate::interpreter) fn eval_sys_get_temp_dir_result(
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    values.string("/tmp")
 }

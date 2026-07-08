@@ -9,7 +9,6 @@
 //!   metadata lives in individual declaration files.
 
 use super::super::super::*;
-use super::*;
 
 /// Routes direct expression-level filesystem builtin calls through per-builtin leaf wrappers.
 pub(in crate::interpreter) fn eval_builtin_filesystem_call(
@@ -146,24 +145,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "umask" => super::umask::eval_umask_declared_call(args, context, scope, values),
         "unlink" => super::unlink::eval_unlink_declared_call(args, context, scope, values),
         "vfprintf" => super::vfprintf::eval_vfprintf_declared_call(args, context, scope, values),
-        _ => Err(EvalStatus::RuntimeFatal),
-    }
-}
-
-/// Dispatches direct expression-level calls for declaratively migrated filesystem builtins.
-pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
-    name: &str,
-    args: &[EvalExpr],
-    context: &mut ElephcEvalContext,
-    scope: &mut ElephcEvalScope,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    match name {
-        "basename" => super::basename::eval_basename_declared_call(args, context, scope, values),
-        "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
-        "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
-        "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
-        "sys_get_temp_dir" => eval_builtin_sys_get_temp_dir(args, values),
         _ => Err(EvalStatus::RuntimeFatal),
     }
 }

@@ -73,7 +73,6 @@ mod lstat;
 mod mkdir;
 mod opendir;
 mod path;
-mod path_values_dispatch;
 mod pathinfo;
 mod pclose;
 mod pfsockopen;
@@ -151,7 +150,6 @@ mod user_wrapper_streams;
 mod values_dispatch;
 mod vfprintf;
 
-pub(in crate::interpreter) use fnmatch::*;
 pub(in crate::interpreter) use path::*;
 pub(in crate::interpreter) use streams::*;
 pub(in crate::interpreter) use user_wrapper_cast::*;

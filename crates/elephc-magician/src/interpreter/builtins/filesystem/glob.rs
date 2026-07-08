@@ -131,7 +131,11 @@ pub(in crate::interpreter) fn eval_glob_collect(
     }
     names.sort();
     for name in names {
-        if !eval_fnmatch_bytes(component.as_bytes(), name.as_bytes(), EVAL_FNM_PERIOD) {
+        if !super::fnmatch::eval_fnmatch_bytes(
+            component.as_bytes(),
+            name.as_bytes(),
+            EVAL_FNM_PERIOD,
+        ) {
             continue;
         }
         let next_base = base.join(&name);
