@@ -164,20 +164,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "readline" => eval_builtin_readline(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
-        "stream_bucket_append" | "stream_bucket_prepend" => {
-            eval_builtin_stream_bucket_push(name, args, context, scope, values)
-        }
-        "stream_bucket_make_writeable" => {
-            eval_builtin_stream_bucket_make_writeable(args, context, scope, values)
-        }
-        "stream_bucket_new" => eval_builtin_stream_bucket_new(args, context, scope, values),
-        "stream_filter_append" | "stream_filter_prepend" => {
-            eval_builtin_stream_filter_attach(name, args, context, scope, values)
-        }
-        "stream_filter_register" => {
-            eval_builtin_stream_filter_register(args, context, scope, values)
-        }
-        "stream_filter_remove" => eval_builtin_stream_filter_remove(args, context, scope, values),
         "stream_socket_client" => eval_builtin_stream_socket_client(args, context, scope, values),
         "stream_socket_enable_crypto" => {
             eval_builtin_stream_socket_enable_crypto(args, context, scope, values)
@@ -190,9 +176,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "stream_socket_server" => eval_builtin_stream_socket_server(args, context, scope, values),
         "stream_socket_shutdown" => {
             eval_builtin_stream_socket_shutdown(args, context, scope, values)
-        }
-        "stream_wrapper_register" | "stream_wrapper_unregister" | "stream_wrapper_restore" => {
-            eval_builtin_stream_wrapper_registry(name, args, context, scope, values)
         }
         "sys_get_temp_dir" => eval_builtin_sys_get_temp_dir(args, values),
         _ => Err(EvalStatus::RuntimeFatal),

@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `stream_bucket_append`.
+//! Declarative eval registry entry and implementation for `stream_bucket_append`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the stream bucket push helper.
+//! - Appends bucket objects to the brigade `_buckets` array used by eval filters.
 
 eval_builtin! {
     name: "stream_bucket_append",
@@ -17,21 +17,56 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `stream_bucket_append` filesystem builtin through the area dispatcher.
+/// Evaluates `stream_bucket_append($brigade, $bucket)`.
 pub(in crate::interpreter) fn eval_stream_bucket_append_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_bucket_append", args, context, scope, values)
+    let [brigade, bucket] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let brigade = eval_expr(brigade, context, scope, values)?;
+    let bucket = eval_expr(bucket, context, scope, values)?;
+    eval_stream_bucket_append_result(brigade, bucket, values)
 }
 
-/// Dispatches evaluated-argument calls for the `stream_bucket_append` filesystem builtin through the area dispatcher.
+/// Appends an already evaluated bucket to an already evaluated brigade.
 pub(in crate::interpreter) fn eval_stream_bucket_append_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_bucket_append", evaluated_args, context, values)
+    let [brigade, bucket] = evaluated_args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    eval_stream_bucket_append_result(*brigade, *bucket, values)
+}
+
+/// Adds a bucket object to the end of the brigade's `_buckets` array.
+pub(in crate::interpreter) fn eval_stream_bucket_append_result(
+    brigade: RuntimeCellHandle,
+    bucket: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let buckets = eval_brigade_buckets(brigade, values)?;
+    let len = values.array_len(buckets)?;
+    let index = values.int(i64::try_from(len).map_err(|_| EvalStatus::RuntimeFatal)?)?;
+    let buckets = values.array_set(buckets, index, bucket)?;
+    values.property_set(brigade, "_buckets", buckets)?;
+    values.null()
+}
+
+/// Returns an existing brigade bucket array or creates an empty one.
+pub(in crate::interpreter) fn eval_brigade_buckets(
+    brigade: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let buckets = values.property_get(brigade, "_buckets")?;
+    if values.is_array_like(buckets)? {
+        Ok(buckets)
+    } else {
+        values.array_new(0)
+    }
 }

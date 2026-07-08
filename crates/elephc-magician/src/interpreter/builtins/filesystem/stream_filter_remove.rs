@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `stream_filter_remove`.
+//! Declarative eval registry entry and implementation for `stream_filter_remove`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the stream filter removal helper.
+//! - Closes eval-local filter resources created by append/prepend.
 
 eval_builtin! {
     name: "stream_filter_remove",
@@ -17,21 +17,38 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `stream_filter_remove` filesystem builtin through the area dispatcher.
+/// Evaluates `stream_filter_remove($stream_filter)`.
 pub(in crate::interpreter) fn eval_stream_filter_remove_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_filter_remove", args, context, scope, values)
+    let [stream_filter] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let stream_filter = eval_expr(stream_filter, context, scope, values)?;
+    eval_stream_filter_remove_result(stream_filter, context, values)
 }
 
-/// Dispatches evaluated-argument calls for the `stream_filter_remove` filesystem builtin through the area dispatcher.
+/// Removes an already evaluated eval-local filter resource.
 pub(in crate::interpreter) fn eval_stream_filter_remove_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_filter_remove", evaluated_args, context, values)
+    let [stream_filter] = evaluated_args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    eval_stream_filter_remove_result(*stream_filter, context, values)
+}
+
+/// Removes an eval-local filter resource.
+pub(in crate::interpreter) fn eval_stream_filter_remove_result(
+    stream_filter: RuntimeCellHandle,
+    context: &mut ElephcEvalContext,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let id = super::stream_bucket_new::eval_stream_extension_resource_id(stream_filter, values)?;
+    values.bool_value(context.stream_resources_mut().close_filter_resource(id))
 }

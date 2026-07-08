@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `stream_filter_register`.
+//! Declarative eval registry entry and implementation for `stream_filter_register`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the conservative filter registry helper.
+//! - Eval conservatively accepts registrations without mutating stream bytes.
 
 eval_builtin! {
     name: "stream_filter_register",
@@ -17,21 +17,40 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `stream_filter_register` filesystem builtin through the area dispatcher.
+/// Evaluates `stream_filter_register($filter_name, $class)`.
 pub(in crate::interpreter) fn eval_stream_filter_register_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_filter_register", args, context, scope, values)
+    let [filter_name, class] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let filter_name = eval_expr(filter_name, context, scope, values)?;
+    let class = eval_expr(class, context, scope, values)?;
+    eval_stream_filter_register_result(filter_name, class, values)
 }
 
-/// Dispatches evaluated-argument calls for the `stream_filter_register` filesystem builtin through the area dispatcher.
+/// Registers an already evaluated stream filter name and class pair.
 pub(in crate::interpreter) fn eval_stream_filter_register_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_filter_register", evaluated_args, context, values)
+    let [filter_name, class] = evaluated_args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    eval_stream_filter_register_result(*filter_name, *class, values)
+}
+
+/// Evaluates a materialized `stream_filter_register()` call.
+pub(in crate::interpreter) fn eval_stream_filter_register_result(
+    filter_name: RuntimeCellHandle,
+    class: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let _ = values.string_bytes(filter_name)?;
+    let _ = values.string_bytes(class)?;
+    values.bool_value(true)
 }

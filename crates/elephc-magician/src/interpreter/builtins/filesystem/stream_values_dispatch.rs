@@ -33,48 +33,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_stream_value
             let prompt = evaluated_args.first().copied();
             eval_readline_result(prompt, values)?
         }
-        "stream_bucket_new" => {
-            let [stream, buffer] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stream_bucket_new_result(*stream, *buffer, context, values)?
-        }
-        "stream_bucket_make_writeable" => {
-            let [brigade] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stream_bucket_make_writeable_result(*brigade, values)?
-        }
-        "stream_bucket_append" | "stream_bucket_prepend" => {
-            let [brigade, bucket] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stream_bucket_push_result(name, *brigade, *bucket, values)?
-        }
-        "stream_filter_register" => {
-            let [filter_name, class] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stream_filter_register_result(*filter_name, *class, values)?
-        }
-        "stream_filter_append" | "stream_filter_prepend" => {
-            if !(2..=4).contains(&evaluated_args.len()) {
-                return Err(EvalStatus::RuntimeFatal);
-            }
-            eval_stream_filter_attach_result(
-                name,
-                evaluated_args[0],
-                evaluated_args[1],
-                context,
-                values,
-            )?
-        }
-        "stream_filter_remove" => {
-            let [stream_filter] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_stream_filter_remove_result(*stream_filter, context, values)?
-        }
         "stream_select" => {
             eval_stream_select_by_value_ref_warnings(evaluated_args.len(), values)?;
             eval_stream_select_result(evaluated_args, context, values)?
@@ -152,9 +110,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_stream_value
                 return Err(EvalStatus::RuntimeFatal);
             };
             eval_stream_socket_pair_result(context, values)?
-        }
-        "stream_wrapper_register" | "stream_wrapper_unregister" | "stream_wrapper_restore" => {
-            eval_stream_wrapper_registry_result(name, evaluated_args, context, values)?
         }
         _ => return Ok(None),
     };
