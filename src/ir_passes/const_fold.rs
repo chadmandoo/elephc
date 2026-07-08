@@ -324,6 +324,7 @@ fn convert_to_const(inst: &mut Instruction, value: Const) {
         }
     }
     inst.effects = inst.op.default_effects();
+    inst.origin = Some("const_fold");
 }
 
 /// Narrows the instruction's `result_type`, `result_php_type`, and

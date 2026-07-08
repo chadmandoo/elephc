@@ -45,6 +45,11 @@ pub struct Instruction {
     pub result_ownership: Ownership,
     pub effects: Effects,
     pub span: Option<Span>,
+    /// Optimization-pass provenance: set when a pass rewrote this instruction
+    /// (e.g. `"const_fold"`) or moved it (e.g. `"licm"`), so source maps can
+    /// explain assembly that no longer matches the source shape. `None` for
+    /// instructions lowered directly from the AST.
+    pub origin: Option<&'static str>,
 }
 
 impl Instruction {
@@ -70,6 +75,7 @@ impl Instruction {
             result_ownership,
             effects,
             span,
+            origin: None,
         }
     }
 
