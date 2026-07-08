@@ -173,18 +173,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "die" | "exit" => Some(&["status"]),
         "exec" | "shell_exec" | "system" | "passthru" => Some(&["command"]),
         "explode" => Some(&["separator", "string", "limit"]),
-        "fclose"
-        | "fgetc"
-        | "fgets"
-        | "feof"
-        | "fflush"
-        | "fpassthru"
-        | "fsync"
-        | "fdatasync"
-        | "ftell"
-        | "rewind"
-        | "fstat"
-        | "stream_get_meta_data" => Some(&["stream"]),
         "fgetcsv" => Some(&["stream", "length", "separator"]),
         "fopen" => Some(&["filename", "mode", "use_include_path", "context"]),
         "fputcsv" => Some(&["stream", "fields", "separator", "enclosure"]),

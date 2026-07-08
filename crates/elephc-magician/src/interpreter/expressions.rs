@@ -1581,18 +1581,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         }
         "eval" => eval_nested_eval(args, context, scope, values),
         "explode" => eval_builtin_explode(args, context, scope, values),
-        "fclose"
-        | "fgetc"
-        | "fgets"
-        | "feof"
-        | "fflush"
-        | "fpassthru"
-        | "fsync"
-        | "fdatasync"
-        | "ftell"
-        | "rewind"
-        | "fstat"
-        | "stream_get_meta_data" => eval_builtin_unary_stream(name, args, context, scope, values),
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),
         "fopen" => eval_builtin_fopen(args, context, scope, values),
         "fputcsv" => eval_builtin_fputcsv(args, context, scope, values),

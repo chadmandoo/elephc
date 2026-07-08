@@ -36,10 +36,20 @@ mod fileowner;
 mod fileperms;
 mod filesize;
 mod filetype;
+mod fclose;
+mod fdatasync;
+mod feof;
+mod fflush;
+mod fgetc;
+mod fgets;
 mod fnmatch;
+mod fpassthru;
 mod fread;
 mod fseek;
+mod fstat;
 mod ftruncate;
+mod fsync;
+mod ftell;
 mod fwrite;
 mod getcwd;
 mod glob;
@@ -67,6 +77,7 @@ mod realpath;
 mod realpath_cache_get;
 mod realpath_cache_size;
 mod rename;
+mod rewind;
 mod rewinddir;
 mod rmdir;
 mod scandir;
@@ -74,6 +85,7 @@ mod stat;
 mod stream_copy_to_stream;
 mod stream_get_contents;
 mod stream_get_line;
+mod stream_get_meta_data;
 mod stream_isatty;
 mod stream_resolve_include_path;
 mod stream_set_blocking;
@@ -125,6 +137,10 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call(
         "file_put_contents" => eval_builtin_file_put_contents(args, context, scope, values),
         "filesize" => eval_builtin_filesize(args, context, scope, values),
         "filetype" => eval_builtin_filetype(args, context, scope, values),
+        "fclose" | "fgetc" | "fgets" | "feof" | "fflush" | "fpassthru" | "fsync"
+        | "fdatasync" | "ftell" | "rewind" | "fstat" | "stream_get_meta_data" => {
+            eval_builtin_unary_stream(name, args, context, scope, values)
+        }
         "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
         "fread" => eval_builtin_fread(args, context, scope, values),
         "fseek" => eval_builtin_fseek(args, context, scope, values),
@@ -246,6 +262,13 @@ pub(in crate::interpreter) fn eval_filesystem_values_result(
             [filename] => eval_filetype_result(*filename, context, values),
             _ => Err(EvalStatus::RuntimeFatal),
         },
+        "fclose" | "fgetc" | "fgets" | "feof" | "fflush" | "fpassthru" | "fsync"
+        | "fdatasync" | "ftell" | "rewind" | "fstat" | "stream_get_meta_data" => {
+            match evaluated_args {
+                [stream] => eval_unary_stream_result(name, *stream, context, values),
+                _ => Err(EvalStatus::RuntimeFatal),
+            }
+        }
         "fnmatch" => match evaluated_args {
             [pattern, filename] => eval_fnmatch_result(*pattern, *filename, None, values),
             [pattern, filename, flags] => {

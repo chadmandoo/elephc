@@ -228,11 +228,21 @@ mod tests {
             "fileperms",
             "filesize",
             "filetype",
+            "fclose",
+            "fdatasync",
+            "feof",
+            "fflush",
+            "fgetc",
+            "fgets",
             "floatval",
             "fnmatch",
+            "fpassthru",
             "fread",
             "fseek",
+            "fstat",
             "ftruncate",
+            "fsync",
+            "ftell",
             "fwrite",
             "getdate",
             "getcwd",
@@ -307,6 +317,7 @@ mod tests {
             "realpath_cache_get",
             "realpath_cache_size",
             "rename",
+            "rewind",
             "rewinddir",
             "rmdir",
             "scandir",
@@ -316,6 +327,7 @@ mod tests {
             "stream_get_contents",
             "stream_get_filters",
             "stream_get_line",
+            "stream_get_meta_data",
             "stream_get_transports",
             "stream_get_wrappers",
             "stream_is_local",
@@ -655,6 +667,26 @@ mod tests {
             eval_declared_builtin_param_names("tmpfile"),
             Some([].as_slice())
         );
+        for name in [
+            "fclose",
+            "fgetc",
+            "fgets",
+            "feof",
+            "fflush",
+            "fpassthru",
+            "fsync",
+            "fdatasync",
+            "ftell",
+            "rewind",
+            "fstat",
+            "stream_get_meta_data",
+        ] {
+            assert_eq!(
+                eval_declared_builtin_param_names(name),
+                Some(["stream"].as_slice()),
+                "{name} should declare one stream parameter"
+            );
+        }
         assert_eq!(
             eval_declared_builtin_param_names("fread"),
             Some(["stream", "length"].as_slice())

@@ -19,23 +19,6 @@ pub(in crate::interpreter) fn eval_filesystem_builtin_with_values(
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
     let result = match name {
-        "fclose"
-        | "fgetc"
-        | "fgets"
-        | "feof"
-        | "fflush"
-        | "fpassthru"
-        | "fsync"
-        | "fdatasync"
-        | "ftell"
-        | "rewind"
-        | "fstat"
-        | "stream_get_meta_data" => {
-            let [stream] = evaluated_args else {
-                return Err(EvalStatus::RuntimeFatal);
-            };
-            eval_unary_stream_result(name, *stream, context, values)?
-        }
         "fgetcsv" => match evaluated_args {
             [stream] => eval_fgetcsv_result(*stream, None, None, context, values)?,
             [stream, length] => {
