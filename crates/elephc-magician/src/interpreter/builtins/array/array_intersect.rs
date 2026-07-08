@@ -24,7 +24,7 @@ pub(in crate::interpreter) fn eval_array_intersect_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    eval_builtin_array_value_set("array_intersect", args, context, scope, values)
+    super::array_diff::eval_builtin_array_value_set("array_intersect", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument eval calls for the `array_intersect` array builtin.
@@ -34,5 +34,5 @@ pub(in crate::interpreter) fn eval_array_intersect_declared_values_result(
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [left, right] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
-    eval_array_value_set_result("array_intersect", *left, *right, values)
+    super::array_diff::eval_array_value_set_result("array_intersect", *left, *right, values)
 }

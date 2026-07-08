@@ -25,5 +25,5 @@ pub(in crate::interpreter) fn eval_uasort_declared_values_result(
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [array, callback] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
     super::array_pop::eval_warn_array_by_value("uasort", values)?;
-    eval_user_sort_value_result("uasort", *array, *callback, context, values)
+    super::usort::eval_user_sort_value_result("uasort", *array, *callback, context, values)
 }

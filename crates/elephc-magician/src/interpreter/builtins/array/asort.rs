@@ -25,5 +25,5 @@ pub(in crate::interpreter) fn eval_asort_declared_values_result(
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [array] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
     super::array_pop::eval_warn_array_by_value("asort", values)?;
-    eval_array_sort_value_result(*array, values)
+    super::sort::eval_array_sort_value_result(*array, values)
 }

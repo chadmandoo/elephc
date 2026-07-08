@@ -35,3 +35,18 @@ pub(in crate::interpreter) fn eval_array_key_exists_declared_values_result(
     let [key, array] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
     values.array_key_exists(*key, *array)
 }
+
+/// Evaluates PHP `array_key_exists()` over a key and array expression.
+pub(in crate::interpreter) fn eval_builtin_array_key_exists(
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let [key, array] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let key = eval_expr(key, context, scope, values)?;
+    let array = eval_expr(array, context, scope, values)?;
+    values.array_key_exists(key, array)
+}

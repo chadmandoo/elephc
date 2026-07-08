@@ -15,7 +15,6 @@
 mod macros;
 
 mod array;
-mod arrays;
 mod class_metadata;
 mod core;
 mod filesystem;
@@ -25,6 +24,7 @@ mod json;
 mod math;
 mod network_env;
 mod raw_memory;
+mod random;
 mod ref_targets;
 mod regex;
 mod registry;
@@ -36,7 +36,6 @@ mod symbols;
 mod time;
 mod types;
 
-pub(super) use arrays::*;
 pub(super) use array::*;
 pub(super) use class_metadata::*;
 pub(super) use core::*;
@@ -46,6 +45,7 @@ pub(super) use json::*;
 pub(super) use math::*;
 pub(super) use network_env::*;
 pub(super) use raw_memory::*;
+pub(super) use random::*;
 pub(super) use ref_targets::*;
 pub(super) use regex::*;
 pub(super) use registry::*;

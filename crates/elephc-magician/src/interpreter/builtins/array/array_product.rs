@@ -23,7 +23,7 @@ pub(in crate::interpreter) fn eval_array_product_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    eval_builtin_array_aggregate("array_product", args, context, scope, values)
+    super::array_sum::eval_builtin_array_aggregate("array_product", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument eval calls for the `array_product` array builtin.
@@ -33,5 +33,5 @@ pub(in crate::interpreter) fn eval_array_product_declared_values_result(
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [array] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
-    eval_array_aggregate_result("array_product", *array, values)
+    super::array_sum::eval_array_aggregate_result("array_product", *array, values)
 }

@@ -25,5 +25,5 @@ pub(in crate::interpreter) fn eval_array_shift_declared_values_result(
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [array] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
     super::array_pop::eval_warn_array_by_value("array_shift", values)?;
-    eval_array_pop_shift_value_result("array_shift", *array, values)
+    super::array_pop::eval_array_pop_shift_value_result("array_shift", *array, values)
 }

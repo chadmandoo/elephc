@@ -49,6 +49,8 @@ mod iterator_count;
 mod iterator_to_array;
 mod krsort;
 mod ksort;
+mod mutating_dispatch;
+mod mutation;
 mod natcasesort;
 mod natsort;
 mod range;
@@ -60,6 +62,14 @@ mod uksort;
 mod usort;
 mod values_dispatch;
 
+pub(in crate::interpreter) use array_pop::eval_array_pop_shift_replacement;
+pub(in crate::interpreter) use array_push::{
+    eval_array_push_unshift_count_result, eval_array_push_unshift_replacement,
+};
+pub(in crate::interpreter) use array_splice::eval_array_splice_removed_and_replacement;
+pub(in crate::interpreter) use array_walk::eval_array_walk_ref_result;
 pub(in crate::interpreter) use direct_dispatch::eval_builtin_array_declared_call;
-pub(in crate::interpreter) use array_values::eval_array_values_result;
+pub(in crate::interpreter) use mutating_dispatch::eval_builtin_array_mutating_declared_call;
+pub(in crate::interpreter) use sort::eval_array_sort_replacement;
+pub(in crate::interpreter) use usort::eval_user_sort_replacement;
 pub(in crate::interpreter) use values_dispatch::eval_array_declared_values_result;

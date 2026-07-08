@@ -25,7 +25,7 @@ pub(in crate::interpreter) fn eval_in_array_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    eval_builtin_array_search("in_array", args, context, scope, values)
+    super::array_search::eval_builtin_array_search("in_array", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument eval calls for the `in_array` array builtin.
@@ -35,5 +35,5 @@ pub(in crate::interpreter) fn eval_in_array_declared_values_result(
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let [needle, array] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
-    eval_array_search_result("in_array", *needle, *array, values)
+    super::array_search::eval_array_search_result("in_array", *needle, *array, values)
 }

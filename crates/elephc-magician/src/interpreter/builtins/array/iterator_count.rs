@@ -35,3 +35,29 @@ pub(in crate::interpreter) fn eval_iterator_count_declared_values_result(
     let [iterator] = evaluated_args else { return Err(EvalStatus::RuntimeFatal); };
     eval_iterator_count_result(*iterator, values)
 }
+
+/// Evaluates PHP `iterator_count()` for eval-supported array iterator inputs.
+pub(in crate::interpreter) fn eval_builtin_iterator_count(
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let [iterator] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let iterator = eval_expr(iterator, context, scope, values)?;
+    eval_iterator_count_result(iterator, values)
+}
+
+/// Returns the element count for eval-supported array iterator inputs.
+pub(in crate::interpreter) fn eval_iterator_count_result(
+    iterator: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    if !matches!(values.type_tag(iterator)?, EVAL_TAG_ARRAY | EVAL_TAG_ASSOC) {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    let len = values.array_len(iterator)?;
+    values.int(i64::try_from(len).map_err(|_| EvalStatus::RuntimeFatal)?)
+}

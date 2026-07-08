@@ -26,5 +26,5 @@ pub(in crate::interpreter) fn eval_array_unshift_declared_values_result(
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let Some((array, inserted)) = evaluated_args.split_first() else { return Err(EvalStatus::RuntimeFatal); };
     super::array_pop::eval_warn_array_by_value("array_unshift", values)?;
-    eval_array_push_unshift_count_result(*array, inserted.len(), values)
+    super::array_push::eval_array_push_unshift_count_result(*array, inserted.len(), values)
 }
