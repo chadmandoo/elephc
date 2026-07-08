@@ -1,28 +1,38 @@
 //! Purpose:
-//! Implements eval-side debug output builtins such as `print_r()` and `var_dump()`.
+//! Eval registry entry and implementation for `print_r` plus shared debug-output helpers.
 //!
 //! Called from:
-//! - `crate::interpreter::eval_positional_expr_call()` for debug-output builtin dispatch.
+//! - `crate::interpreter::builtins::core` direct and by-value dispatch.
+//! - `crate::interpreter::builtins::core::var_dump` for shared object metadata rendering.
 //!
 //! Key details:
-//! - Output formatting walks runtime arrays, scalars, object names, and public or
-//!   eval-declared object properties through `RuntimeValueOps` and eval context metadata.
-//! - Eval property aliases are rendered as references when dumping eval-declared objects.
 //! - `print_r($value, true)` returns captured output instead of echoing it.
+//! - Object metadata helpers stay here so related debug builtins can reuse one
+//!   PHP-visible object traversal model without a generic implementation bucket.
 
 use std::collections::HashSet;
 
-use super::*;
+use super::super::super::*;
+use super::super::spec::EvalBuiltinDefaultValue;
+
+eval_builtin! {
+    name: "print_r",
+    area: Core,
+    params: [value, r#return = EvalBuiltinDefaultValue::Bool(false)],
+    direct: Core,
+    values: Core,
+}
+
 
 /// Property visibility rendered by `var_dump()` and `print_r()` object output.
 #[derive(Clone)]
-struct EvalDebugPropertyVisibility {
-    kind: EvalDebugPropertyVisibilityKind,
+pub(in crate::interpreter) struct EvalDebugPropertyVisibility {
+    pub(in crate::interpreter) kind: EvalDebugPropertyVisibilityKind,
 }
 
 /// Concrete PHP visibility shape for one object property key.
 #[derive(Clone)]
-enum EvalDebugPropertyVisibilityKind {
+pub(in crate::interpreter) enum EvalDebugPropertyVisibilityKind {
     Public,
     Protected,
     Private(String),
@@ -30,15 +40,16 @@ enum EvalDebugPropertyVisibilityKind {
 
 /// Object property entry collected before rendering object headers.
 #[derive(Clone)]
-struct EvalDebugObjectProperty {
-    name: String,
-    visibility: EvalDebugPropertyVisibility,
-    value: RuntimeCellHandle,
-    is_reference: bool,
+pub(in crate::interpreter) struct EvalDebugObjectProperty {
+    pub(in crate::interpreter) name: String,
+    pub(in crate::interpreter) visibility: EvalDebugPropertyVisibility,
+    pub(in crate::interpreter) value: RuntimeCellHandle,
+    pub(in crate::interpreter) is_reference: bool,
 }
 
 /// Evaluates PHP `print_r()` over one value and an optional return flag.
-pub(super) fn eval_builtin_print_r(
+
+pub(in crate::interpreter) fn eval_builtin_print_r(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
@@ -99,310 +110,6 @@ fn eval_print_r_value_result(
     } else {
         values.echo(output)?;
         values.bool_value(true)
-    }
-}
-
-/// Evaluates PHP `var_dump()` over one or more eval expressions and returns null.
-pub(super) fn eval_builtin_var_dump(
-    args: &[EvalExpr],
-    context: &mut ElephcEvalContext,
-    scope: &mut ElephcEvalScope,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    if args.is_empty() {
-        return Err(EvalStatus::RuntimeFatal);
-    }
-    let mut evaluated_args = Vec::with_capacity(args.len());
-    for arg in args {
-        evaluated_args.push(eval_expr(arg, context, scope, values)?);
-    }
-    eval_var_dump_result(&evaluated_args, context, values)
-}
-
-/// Emits already materialized values using PHP-style `var_dump()` debug formatting.
-pub(in crate::interpreter) fn eval_var_dump_result(
-    values_to_dump: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    if values_to_dump.is_empty() {
-        return Err(EvalStatus::RuntimeFatal);
-    }
-    let mut output = Vec::new();
-    let mut arrays_seen = Vec::new();
-    let mut objects_seen = Vec::new();
-    for value in values_to_dump {
-        eval_var_dump_append_value(
-            *value,
-            context,
-            values,
-            0,
-            false,
-            &mut arrays_seen,
-            &mut objects_seen,
-            &mut output,
-        )?;
-    }
-    let output = values.string_bytes_value(&output)?;
-    values.echo(output)?;
-    values.null()
-}
-
-/// Appends one value and its nested entries to a `var_dump()` byte buffer.
-fn eval_var_dump_append_value(
-    value: RuntimeCellHandle,
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    arrays_seen: &mut Vec<usize>,
-    objects_seen: &mut Vec<usize>,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    match values.type_tag(value)? {
-        EVAL_TAG_INT => {
-            eval_var_dump_append_scalar(b"int", value, values, depth, is_reference, output)
-        }
-        EVAL_TAG_STRING => eval_var_dump_append_string(value, values, depth, is_reference, output),
-        EVAL_TAG_FLOAT => {
-            eval_var_dump_append_scalar(b"float", value, values, depth, is_reference, output)
-        }
-        EVAL_TAG_BOOL => eval_var_dump_append_bool(value, values, depth, is_reference, output),
-        EVAL_TAG_ARRAY | EVAL_TAG_ASSOC => eval_var_dump_append_array(
-            value,
-            context,
-            values,
-            depth,
-            is_reference,
-            arrays_seen,
-            objects_seen,
-            output,
-        ),
-        EVAL_TAG_OBJECT => eval_var_dump_append_object(
-            value,
-            context,
-            values,
-            depth,
-            is_reference,
-            arrays_seen,
-            objects_seen,
-            output,
-        ),
-        EVAL_TAG_NULL => {
-            eval_var_dump_append_prefix(depth, is_reference, output);
-            output.extend_from_slice(b"NULL\n");
-            Ok(())
-        }
-        EVAL_TAG_RESOURCE => {
-            eval_var_dump_append_prefix(depth, is_reference, output);
-            output.extend_from_slice(b"resource(0) of type (stream)\n");
-            Ok(())
-        }
-        _ => Err(EvalStatus::RuntimeFatal),
-    }
-}
-
-/// Appends one integer-like or float-like `var_dump()` scalar line.
-fn eval_var_dump_append_scalar(
-    label: &[u8],
-    value: RuntimeCellHandle,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    eval_var_dump_append_prefix(depth, is_reference, output);
-    output.extend_from_slice(label);
-    output.extend_from_slice(b"(");
-    output.extend_from_slice(&values.string_bytes(value)?);
-    output.extend_from_slice(b")\n");
-    Ok(())
-}
-
-/// Appends one string `var_dump()` line while preserving raw PHP string bytes.
-fn eval_var_dump_append_string(
-    value: RuntimeCellHandle,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    let bytes = values.string_bytes(value)?;
-    eval_var_dump_append_prefix(depth, is_reference, output);
-    output.extend_from_slice(b"string(");
-    output.extend_from_slice(bytes.len().to_string().as_bytes());
-    output.extend_from_slice(b") \"");
-    output.extend_from_slice(&bytes);
-    output.extend_from_slice(b"\"\n");
-    Ok(())
-}
-
-/// Appends one boolean `var_dump()` line from PHP truthiness.
-fn eval_var_dump_append_bool(
-    value: RuntimeCellHandle,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    eval_var_dump_append_prefix(depth, is_reference, output);
-    if values.truthy(value)? {
-        output.extend_from_slice(b"bool(true)\n");
-    } else {
-        output.extend_from_slice(b"bool(false)\n");
-    }
-    Ok(())
-}
-
-/// Appends one array shell and recursively emits foreach-visible entries.
-fn eval_var_dump_append_array(
-    value: RuntimeCellHandle,
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    arrays_seen: &mut Vec<usize>,
-    objects_seen: &mut Vec<usize>,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    let address = value.as_ptr() as usize;
-    if arrays_seen.contains(&address) {
-        eval_var_dump_append_prefix(depth, is_reference, output);
-        output.extend_from_slice(b"*RECURSION*\n");
-        return Ok(());
-    }
-
-    arrays_seen.push(address);
-    let len = values.array_len(value)?;
-    eval_var_dump_append_prefix(depth, is_reference, output);
-    output.extend_from_slice(b"array(");
-    output.extend_from_slice(len.to_string().as_bytes());
-    output.extend_from_slice(b") {\n");
-    for position in 0..len {
-        let key = values.array_iter_key(value, position)?;
-        let element = values.array_get(value, key)?;
-        eval_var_dump_append_array_key(key, values, depth + 1, output)?;
-        eval_var_dump_append_value(
-            element,
-            context,
-            values,
-            depth + 1,
-            false,
-            arrays_seen,
-            objects_seen,
-            output,
-        )?;
-    }
-    eval_var_dump_append_indent(depth, output);
-    output.extend_from_slice(b"}\n");
-    arrays_seen.pop();
-    Ok(())
-}
-
-/// Appends one object shell and its collected properties.
-fn eval_var_dump_append_object(
-    value: RuntimeCellHandle,
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    is_reference: bool,
-    arrays_seen: &mut Vec<usize>,
-    objects_seen: &mut Vec<usize>,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    let identity = eval_debug_object_identity(value, values);
-    let object_key = identity.unwrap_or(value.as_ptr() as usize as u64) as usize;
-    if objects_seen.contains(&object_key) {
-        eval_var_dump_append_prefix(depth, is_reference, output);
-        output.extend_from_slice(b"*RECURSION*\n");
-        return Ok(());
-    }
-
-    objects_seen.push(object_key);
-    let class_name = eval_debug_object_class_name(value, identity, context, values)?;
-    let properties = eval_debug_object_properties(value, identity, &class_name, context, values)?;
-    eval_var_dump_append_prefix(depth, is_reference, output);
-    output.extend_from_slice(b"object(");
-    output.extend_from_slice(class_name.as_bytes());
-    output.extend_from_slice(b")#");
-    output.extend_from_slice(object_key.to_string().as_bytes());
-    output.extend_from_slice(b" (");
-    output.extend_from_slice(properties.len().to_string().as_bytes());
-    output.extend_from_slice(b") {\n");
-    for property in &properties {
-        eval_var_dump_append_object_key(property, depth + 1, output);
-        eval_var_dump_append_value(
-            property.value,
-            context,
-            values,
-            depth + 1,
-            property.is_reference,
-            arrays_seen,
-            objects_seen,
-            output,
-        )?;
-    }
-    eval_var_dump_append_indent(depth, output);
-    output.extend_from_slice(b"}\n");
-    objects_seen.pop();
-    Ok(())
-}
-
-/// Appends one array key line for an indexed or associative `var_dump()` entry.
-fn eval_var_dump_append_array_key(
-    key: RuntimeCellHandle,
-    values: &mut impl RuntimeValueOps,
-    depth: usize,
-    output: &mut Vec<u8>,
-) -> Result<(), EvalStatus> {
-    eval_var_dump_append_indent(depth, output);
-    output.extend_from_slice(b"[");
-    match values.type_tag(key)? {
-        EVAL_TAG_STRING => {
-            output.extend_from_slice(b"\"");
-            output.extend_from_slice(&values.string_bytes(key)?);
-            output.extend_from_slice(b"\"");
-        }
-        _ => output.extend_from_slice(&values.string_bytes(key)?),
-    }
-    output.extend_from_slice(b"]=>\n");
-    Ok(())
-}
-
-/// Appends one object property key line for `var_dump()`.
-fn eval_var_dump_append_object_key(
-    property: &EvalDebugObjectProperty,
-    depth: usize,
-    output: &mut Vec<u8>,
-) {
-    eval_var_dump_append_indent(depth, output);
-    output.extend_from_slice(b"[\"");
-    output.extend_from_slice(property.name.as_bytes());
-    output.extend_from_slice(b"\"");
-    match &property.visibility.kind {
-        EvalDebugPropertyVisibilityKind::Public => {}
-        EvalDebugPropertyVisibilityKind::Protected => output.extend_from_slice(b":protected"),
-        EvalDebugPropertyVisibilityKind::Private(class_name) => {
-            output.extend_from_slice(b":\"");
-            output.extend_from_slice(class_name.as_bytes());
-            output.extend_from_slice(b"\":private");
-        }
-    }
-    output.extend_from_slice(b"]=>\n");
-}
-
-/// Appends one `var_dump()` line prefix, including a reference marker when needed.
-fn eval_var_dump_append_prefix(depth: usize, is_reference: bool, output: &mut Vec<u8>) {
-    eval_var_dump_append_indent(depth, output);
-    if is_reference {
-        output.extend_from_slice(b"&");
-    }
-}
-
-/// Appends the two-space indentation used by PHP `var_dump()` arrays and objects.
-fn eval_var_dump_append_indent(depth: usize, output: &mut Vec<u8>) {
-    for _ in 0..depth {
-        output.extend_from_slice(b"  ");
     }
 }
 
@@ -542,7 +249,7 @@ fn eval_print_r_append_indent(depth: usize, output: &mut Vec<u8>) {
 }
 
 /// Returns an object identity without turning non-object-like values into fatals.
-fn eval_debug_object_identity(
+pub(in crate::interpreter) fn eval_debug_object_identity(
     value: RuntimeCellHandle,
     values: &mut impl RuntimeValueOps,
 ) -> Option<u64> {
@@ -550,7 +257,7 @@ fn eval_debug_object_identity(
 }
 
 /// Resolves the PHP-visible class name for one object value.
-fn eval_debug_object_class_name(
+pub(in crate::interpreter) fn eval_debug_object_class_name(
     value: RuntimeCellHandle,
     identity: Option<u64>,
     context: &ElephcEvalContext,
@@ -569,7 +276,7 @@ fn eval_debug_object_class_name(
 }
 
 /// Collects object properties visible to debug-output rendering.
-fn eval_debug_object_properties(
+pub(in crate::interpreter) fn eval_debug_object_properties(
     object: RuntimeCellHandle,
     identity: Option<u64>,
     class_name: &str,

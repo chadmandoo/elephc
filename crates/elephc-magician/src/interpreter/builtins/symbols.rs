@@ -13,7 +13,6 @@ use super::super::*;
 mod callable_probe;
 mod class_names;
 mod class_relations;
-mod constants;
 mod declarations;
 mod function_probe;
 mod language_constructs;
@@ -21,7 +20,6 @@ mod language_constructs;
 pub(in crate::interpreter) use callable_probe::*;
 pub(in crate::interpreter) use class_names::*;
 pub(in crate::interpreter) use class_relations::*;
-pub(in crate::interpreter) use constants::*;
 pub(in crate::interpreter) use declarations::{
     eval_builtin_symbols_call, eval_symbols_values_result,
 };

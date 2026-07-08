@@ -1,14 +1,22 @@
 //! Purpose:
-//! Dynamic constant definition and lookup builtins for runtime eval fragments.
+//! Eval registry entry and implementation for `define`.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::symbols` re-exports.
+//! - `crate::interpreter::builtins::core`.
 //!
 //! Key details:
-//! - Dynamic constants are stored in the eval context and checked after
-//!   predefined constants using PHP's case-sensitive dynamic constant names.
+//! - Dynamic constants are stored in the eval context after predefined-constant
+//!   checks and keep PHP's case-sensitive dynamic constant names.
 
-use super::*;
+use super::super::super::*;
+
+eval_builtin! {
+    name: "define",
+    area: Core,
+    params: [constant_name, value],
+    direct: Core,
+    values: Core,
+}
 
 /// Evaluates `define(name, value)` for eval dynamic constant-name registration.
 pub(in crate::interpreter) fn eval_builtin_define(
@@ -26,21 +34,6 @@ pub(in crate::interpreter) fn eval_builtin_define(
     values.bool_value(defined)
 }
 
-/// Evaluates `defined(name)` against eval dynamic constant names.
-pub(in crate::interpreter) fn eval_builtin_defined(
-    args: &[EvalExpr],
-    context: &mut ElephcEvalContext,
-    scope: &mut ElephcEvalScope,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    let [name] = args else {
-        return Err(EvalStatus::RuntimeFatal);
-    };
-    let name = eval_expr(name, context, scope, values)?;
-    let exists = eval_defined_name(name, context, values)?;
-    values.bool_value(exists)
-}
-
 /// Evaluates `define(...)` from already materialized call arguments.
 pub(in crate::interpreter) fn eval_define_result(
     evaluated_args: &[RuntimeCellHandle],
@@ -54,21 +47,8 @@ pub(in crate::interpreter) fn eval_define_result(
     values.bool_value(defined)
 }
 
-/// Evaluates `defined(...)` from already materialized call arguments.
-pub(in crate::interpreter) fn eval_defined_result(
-    evaluated_args: &[RuntimeCellHandle],
-    context: &ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-) -> Result<RuntimeCellHandle, EvalStatus> {
-    let [name] = evaluated_args else {
-        return Err(EvalStatus::RuntimeFatal);
-    };
-    let exists = eval_defined_name(*name, context, values)?;
-    values.bool_value(exists)
-}
-
 /// Normalizes and registers one eval dynamic constant name.
-pub(in crate::interpreter) fn eval_define_name(
+fn eval_define_name(
     name: RuntimeCellHandle,
     value: RuntimeCellHandle,
     context: &mut ElephcEvalContext,
@@ -89,16 +69,6 @@ pub(in crate::interpreter) fn eval_define_name(
         values.release(value)?;
         Ok(false)
     }
-}
-
-/// Normalizes and probes one eval dynamic constant name.
-pub(in crate::interpreter) fn eval_defined_name(
-    name: RuntimeCellHandle,
-    context: &ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-) -> Result<bool, EvalStatus> {
-    let name = eval_constant_name(name, values)?;
-    Ok(eval_predefined_constant_value(&name).is_some() || context.has_constant(&name))
 }
 
 /// Reads a PHP constant name from a runtime cell without changing case.

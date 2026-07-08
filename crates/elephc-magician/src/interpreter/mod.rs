@@ -19,7 +19,6 @@ mod constant_eval;
 mod constants;
 mod control;
 mod core_builtins;
-mod debug_output;
 mod dynamic_functions;
 mod expressions;
 mod include_exec;
@@ -57,12 +56,11 @@ use constant_eval::*;
 use constants::*;
 pub use control::EvalOutcome;
 use control::{
-    BoundMethodArg, BoundNativeFunctionArgs, BoundNativeFunctionRefSlot, EvalByRefBindingMode,
-    EvalArraySpliceDirectArgs, EvalControl, EvalPredefinedConstant, EvalSprintfSpec,
+    BoundMethodArg, BoundNativeFunctionArgs, BoundNativeFunctionRefSlot, EvalArraySpliceDirectArgs,
+    EvalByRefBindingMode, EvalControl, EvalPredefinedConstant, EvalSprintfSpec,
     EvaluatedCallArg, EvaluatedCallable,
 };
 use core_builtins::*;
-use debug_output::*;
 use dynamic_functions::*;
 use expressions::*;
 use include_exec::*;
