@@ -34,6 +34,8 @@ pub(in crate::interpreter) enum EvalArea {
     NetworkEnv,
     /// PCRE-style regex builtins.
     Regex,
+    /// Raw pointer and buffer extension builtins.
+    RawMemory,
     /// String-processing builtins.
     String,
     /// Symbol, class metadata, SPL, and language-construct probes.

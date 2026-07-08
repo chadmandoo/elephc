@@ -227,6 +227,7 @@ mod tests {
             "boolval",
             "base64_encode",
             "bin2hex",
+            "buffer_new",
             "call_user_func",
             "call_user_func_array",
             "checkdate",
@@ -387,6 +388,9 @@ mod tests {
             "popen",
             "print_r",
             "printf",
+            "ptr_null",
+            "ptr_read16",
+            "ptr_write_string",
             "preg_match",
             "preg_match_all",
             "preg_replace",
@@ -618,6 +622,18 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_default_value("spl_autoload_register", 2),
             Some(EvalBuiltinDefaultValue::Bool(false))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("buffer_new"),
+            Some(["length"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("ptr_read_string"),
+            Some(["pointer", "length"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("ptr_sizeof"),
+            Some(["type"].as_slice())
         );
         for name in ["rand", "mt_rand", "random_int"] {
             assert_eq!(

@@ -31,7 +31,7 @@ use super::super::{
     eval_str_split_result, eval_stream_bool_predicate_result, eval_stream_introspection_result,
     eval_string_case_result, eval_string_compare_result, eval_string_position_result,
     eval_string_search_result, eval_strstr_result, eval_substr_replace_result, eval_substr_result,
-    eval_symbols_values_result, eval_time_values_result, eval_trim_like_result,
+    eval_raw_memory_values_result, eval_symbols_values_result, eval_time_values_result, eval_trim_like_result,
     eval_type_predicate_result, eval_ucwords_result, eval_url_decode_result, eval_url_encode_result,
     eval_wordwrap_result,
 };
@@ -148,6 +148,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Range,
     /// Dispatches regex builtins.
     Regex,
+    /// Dispatches raw pointer and buffer extension builtins.
+    RawMemory,
     /// Dispatches by-value `settype(...)` callable calls.
     Settype,
     /// Dispatches `addslashes(...)` and `stripslashes(...)`.
@@ -322,6 +324,7 @@ impl EvalValuesHook {
             },
             Self::Range => two_args(evaluated_args, values, eval_range_result),
             Self::Regex => eval_regex_values_result(name, evaluated_args, context, values),
+            Self::RawMemory => eval_raw_memory_values_result(name, evaluated_args, context, values),
             Self::Settype => two_args(evaluated_args, values, eval_settype_value_result),
             Self::Slashes => one_arg(evaluated_args, values, |value, values| {
                 eval_slashes_result(name, value, values)

@@ -123,21 +123,5 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         return Some(params);
     }
 
-    match name {
-        "buffer_new" => Some(&["length"]),
-        "buffer_len" | "buffer_free" => Some(&["buffer"]),
-        "ptr" => Some(&["value"]),
-        "ptr_null" => Some(&[]),
-        "ptr_is_null" | "ptr_get" | "ptr_read8" | "ptr_read16" | "ptr_read32" => {
-            Some(&["pointer"])
-        }
-        "ptr_offset" => Some(&["pointer", "offset"]),
-        "ptr_read_string" => Some(&["pointer", "length"]),
-        "ptr_set" | "ptr_write8" | "ptr_write16" | "ptr_write32" => {
-            Some(&["pointer", "value"])
-        }
-        "ptr_write_string" => Some(&["pointer", "string"]),
-        "ptr_sizeof" => Some(&["type"]),
-        _ => None,
-    }
+    None
 }

@@ -19,6 +19,12 @@ use std::slice;
 
 use super::super::*;
 
+mod declarations;
+
+pub(in crate::interpreter) use declarations::{
+    eval_builtin_raw_memory_call, eval_raw_memory_values_result,
+};
+
 const BUFFER_HEADER_WORDS: usize = 2;
 const BUFFER_DEFAULT_STRIDE: usize = 8;
 
@@ -46,24 +52,6 @@ pub(in crate::interpreter) fn eval_builtin_raw_memory(
         .map(|arg| eval_expr(arg, context, scope, values))
         .collect::<Result<Vec<_>, _>>()?;
     eval_raw_memory_builtin_result(name, &evaluated_args, context, values)
-}
-
-/// Dispatches already evaluated raw-memory builtin arguments for dynamic calls.
-pub(in crate::interpreter) fn eval_raw_memory_builtin_with_values(
-    name: &str,
-    evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
-    values: &mut impl RuntimeValueOps,
-) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
-    match name {
-        "buffer_free" | "buffer_len" | "buffer_new" | "ptr" | "ptr_get" | "ptr_is_null"
-        | "ptr_null" | "ptr_offset" | "ptr_read8" | "ptr_read16" | "ptr_read32"
-        | "ptr_read_string" | "ptr_set" | "ptr_sizeof" | "ptr_write8" | "ptr_write16"
-        | "ptr_write32" | "ptr_write_string" => {
-            eval_raw_memory_builtin_result(name, evaluated_args, context, values).map(Some)
-        }
-        _ => Ok(None),
-    }
 }
 
 /// Applies one raw-memory builtin to already evaluated runtime cells.

@@ -1,12 +1,14 @@
 //! Purpose:
-//! Routes by-value dynamic builtin dispatch to focused builtin-family dispatchers.
+//! Routes by-value dynamic builtin dispatch through declarative registry lookup
+//! and eval-only runtime alias fallbacks.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::registry` re-exports.
 //!
 //! Key details:
-//! - Each child dispatcher handles already evaluated runtime-cell arguments for one
-//!   builtin family and returns `Ok(None)` when the name is outside its domain.
+//! - Migrated builtins dispatch through `eval_declared_builtin_values_call`.
+//! - Procedural date/time aliases remain a runtime fallback because eval cannot
+//!   run the static name-resolver rewrite before dispatch.
 
 use super::eval_declared_builtin_values_call;
 use super::super::super::*;
@@ -22,11 +24,6 @@ pub(in crate::interpreter) fn eval_builtin_with_values(
         return Ok(Some(result));
     }
 
-    if let Some(result) =
-        eval_raw_memory_builtin_with_values(name, evaluated_args, context, values)?
-    {
-        return Ok(Some(result));
-    }
     if let Some(result) =
         eval_date_procedural_alias_with_values(name, evaluated_args, context, values)?
     {
