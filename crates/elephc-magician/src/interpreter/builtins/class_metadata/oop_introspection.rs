@@ -15,10 +15,8 @@ use super::{eval_class_metadata_name, eval_class_relation_name_exists};
 
 mod class_vars;
 mod common;
-mod methods;
 mod object_vars;
 
 pub(in crate::interpreter) use class_vars::*;
 pub(in crate::interpreter) use common::*;
-pub(in crate::interpreter) use methods::*;
 pub(in crate::interpreter) use object_vars::*;
