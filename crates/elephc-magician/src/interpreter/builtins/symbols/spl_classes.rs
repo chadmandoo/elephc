@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `spl_classes`.
+//! Eval registry entry and implementation for `spl_classes`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::symbols`.
 //!
 //! Key details:
-//! - Runtime behavior stays delegated to the SPL classes helper.
+//! - The result is a fixed indexed array of SPL class names.
 
 eval_builtin! {
     name: "spl_classes",
@@ -18,23 +18,27 @@ eval_builtin! {
 use super::super::eval_static_string_array_result;
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `spl_classes` symbol builtin through the area dispatcher.
+/// Dispatches direct eval calls for the `spl_classes` symbol builtin.
 pub(in crate::interpreter) fn eval_spl_classes_declared_call(
     args: &[EvalExpr],
     _context: &mut ElephcEvalContext,
     _scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::spl_classes::eval_builtin_spl_classes(args, values)
+    eval_builtin_spl_classes(args, values)
 }
 
-/// Dispatches evaluated-argument calls for the `spl_classes` symbol builtin through the area dispatcher.
+/// Dispatches evaluated-argument calls for the `spl_classes` symbol builtin.
 pub(in crate::interpreter) fn eval_spl_classes_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    if evaluated_args.is_empty() { super::spl_classes::eval_spl_classes_result(values) } else { Err(EvalStatus::RuntimeFatal) }
+    if evaluated_args.is_empty() {
+        eval_spl_classes_result(values)
+    } else {
+        Err(EvalStatus::RuntimeFatal)
+    }
 }
 
 /// Evaluates PHP `spl_classes()` with no arguments.
