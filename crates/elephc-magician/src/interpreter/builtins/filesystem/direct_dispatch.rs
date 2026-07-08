@@ -175,13 +175,10 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
             eval_builtin_disk_space(name, args, context, scope, values)
         }
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),
-        "file" => eval_builtin_file(args, context, scope, values),
         "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
         | "is_writable" | "is_writeable" => {
             eval_builtin_file_probe(name, args, context, scope, values)
         }
-        "file_get_contents" => eval_builtin_file_get_contents(args, context, scope, values),
-        "file_put_contents" => eval_builtin_file_put_contents(args, context, scope, values),
         "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
         | "fileperms" => eval_builtin_file_stat_scalar(name, args, context, scope, values),
         "filesize" => eval_builtin_filesize(args, context, scope, values),
@@ -208,7 +205,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "closedir" | "readdir" | "rewinddir" => {
             eval_builtin_unary_directory(name, args, context, scope, values)
         }
-        "readfile" => eval_builtin_readfile(args, context, scope, values),
         "readline" => eval_builtin_readline(args, context, scope, values),
         "readlink" => eval_builtin_readlink(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),

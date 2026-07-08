@@ -47,23 +47,9 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
             [directory] => eval_disk_space_result(name, *directory, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
-        "file" => match evaluated_args {
-            [filename] => eval_file_result(*filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
         | "is_writable" | "is_writeable" => match evaluated_args {
             [filename] => eval_file_probe_result(name, *filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "file_get_contents" => match evaluated_args {
-            [filename] => eval_file_get_contents_result(*filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "file_put_contents" => match evaluated_args {
-            [filename, data] => {
-                eval_file_put_contents_result(*filename, *data, context, values)?
-            }
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
@@ -112,10 +98,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
         },
         "closedir" | "readdir" | "rewinddir" => match evaluated_args {
             [dir_handle] => eval_unary_directory_result(name, *dir_handle, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "readfile" => match evaluated_args {
-            [filename] => eval_readfile_result(*filename, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "readlink" => match evaluated_args {

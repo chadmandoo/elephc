@@ -30,7 +30,6 @@ mod fgetc;
 mod fgetcsv;
 mod fgets;
 mod file;
-mod file_contents;
 mod file_exists;
 mod file_get_contents;
 mod file_io;
@@ -162,7 +161,6 @@ mod values_dispatch;
 mod vfprintf;
 
 pub(in crate::interpreter) use directories::*;
-pub(in crate::interpreter) use file_contents::*;
 pub(in crate::interpreter) use file_io::*;
 pub(in crate::interpreter) use fnmatch::*;
 pub(in crate::interpreter) use ops::*;

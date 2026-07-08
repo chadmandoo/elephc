@@ -156,7 +156,7 @@ pub(in crate::interpreter) fn eval_filesize_result(
         let size = eval_user_wrapper_stat_int_field(stat, "size", values)?.unwrap_or(0);
         return values.int(size);
     }
-    if let Ok(bytes) = eval_read_path_or_wrapper_bytes(&path) {
+    if let Ok(bytes) = super::file_get_contents::eval_read_path_or_wrapper_bytes(&path) {
         return values.int(i64::try_from(bytes.len()).map_err(|_| EvalStatus::RuntimeFatal)?);
     }
     let Some(path) = stream_wrappers::local_filesystem_path(&path) else {
