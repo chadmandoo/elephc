@@ -51,7 +51,8 @@ pub fn propagate_constants(program: Program) -> Program {
     for name in crate::superglobals::SUPERGLOBALS {
         mark_reference_volatile(name);
     }
-    propagate_block(program, HashMap::new()).0
+    let signatures = collect_by_ref_signatures(&program);
+    with_by_ref_signatures(signatures, || propagate_block(program, HashMap::new()).0)
 }
 
 /// Normalizes control flow structures (ifs, switches, try/catch) for easier optimization.

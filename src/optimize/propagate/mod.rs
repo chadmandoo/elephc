@@ -11,11 +11,13 @@
 use super::*;
 
 mod expr;
+mod signatures;
 mod simulate;
 mod stmt;
 mod writes;
 
 pub(crate) use expr::*;
+pub(crate) use signatures::*;
 pub(crate) use simulate::*;
 pub(crate) use stmt::*;
 pub(crate) use writes::*;
