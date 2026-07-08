@@ -161,14 +161,6 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
     match name {
         "basename" => super::basename::eval_basename_declared_call(args, context, scope, values),
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),
-        "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
-        | "is_writable" | "is_writeable" => {
-            eval_builtin_file_probe(name, args, context, scope, values)
-        }
-        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
-        | "fileperms" => eval_builtin_file_stat_scalar(name, args, context, scope, values),
-        "filesize" => eval_builtin_filesize(args, context, scope, values),
-        "filetype" => eval_builtin_filetype(args, context, scope, values),
         "fclose" | "fgetc" | "fgets" | "feof" | "fflush" | "fpassthru" | "fsync"
         | "fdatasync" | "ftell" | "rewind" | "fstat" | "stream_get_meta_data" => {
             eval_builtin_unary_stream(name, args, context, scope, values)
@@ -182,11 +174,9 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
         "fseek" => eval_builtin_fseek(args, context, scope, values),
         "ftruncate" => eval_builtin_ftruncate(args, context, scope, values),
         "fwrite" => eval_builtin_fwrite(args, context, scope, values),
-        "getcwd" => eval_builtin_getcwd(args, values),
         "readline" => eval_builtin_readline(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
-        "stat" | "lstat" => eval_builtin_stat_array(name, args, context, scope, values),
         "stream_bucket_append" | "stream_bucket_prepend" => {
             eval_builtin_stream_bucket_push(name, args, context, scope, values)
         }

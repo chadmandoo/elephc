@@ -24,7 +24,7 @@ pub(in crate::interpreter) fn eval_fileowner_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("fileowner", args, context, scope, values)
+    super::stat::eval_builtin_file_stat_scalar("fileowner", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument calls for the `fileowner` filesystem builtin through the area dispatcher.
@@ -33,5 +33,8 @@ pub(in crate::interpreter) fn eval_fileowner_declared_values_result(
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("fileowner", evaluated_args, context, values)
+    match evaluated_args {
+        [filename] => super::stat::eval_file_stat_scalar_result("fileowner", *filename, context, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }

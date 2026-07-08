@@ -117,7 +117,7 @@ pub(in crate::interpreter) fn eval_unary_stream_result(
                 return Ok(result);
             }
             match context.stream_resources().metadata(id) {
-                Some(metadata) => eval_stat_metadata_array(&metadata, values),
+                Some(metadata) => super::stat::eval_stat_metadata_array(&metadata, values),
                 None => values.bool_value(false),
             }
         }

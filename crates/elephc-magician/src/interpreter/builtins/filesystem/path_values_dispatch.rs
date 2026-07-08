@@ -19,33 +19,11 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
     let result = match name {
-        "file_exists" | "is_dir" | "is_executable" | "is_file" | "is_link" | "is_readable"
-        | "is_writable" | "is_writeable" => match evaluated_args {
-            [filename] => eval_file_probe_result(name, *filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "fileatime" | "filectime" | "filegroup" | "fileinode" | "filemtime" | "fileowner"
-        | "fileperms" => match evaluated_args {
-            [filename] => eval_file_stat_scalar_result(name, *filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "filesize" => match evaluated_args {
-            [filename] => eval_filesize_result(*filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "filetype" => match evaluated_args {
-            [filename] => eval_filetype_result(*filename, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "fnmatch" => match evaluated_args {
             [pattern, filename] => eval_fnmatch_result(*pattern, *filename, None, values)?,
             [pattern, filename, flags] => {
                 eval_fnmatch_result(*pattern, *filename, Some(*flags), values)?
             }
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "getcwd" => match evaluated_args {
-            [] => eval_getcwd_result(values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "realpath_cache_get" => match evaluated_args {
@@ -54,10 +32,6 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_path_values_
         },
         "realpath_cache_size" => match evaluated_args {
             [] => eval_realpath_cache_size_result(values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "stat" | "lstat" => match evaluated_args {
-            [filename] => eval_stat_array_result(name, *filename, context, values)?,
             _ => return Err(EvalStatus::RuntimeFatal),
         },
         "sys_get_temp_dir" => match evaluated_args {

@@ -2,8 +2,8 @@
 //! Dispatches one-shot file I/O builtins through eval userspace stream wrappers.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::filesystem::file_io` for `file()`,
-//!   `file_get_contents()`, `readfile()`, and `file_put_contents()`.
+//! - `crate::interpreter::builtins::filesystem::file`, `file_get_contents`,
+//!   `readfile`, and `file_put_contents` for one-shot wrapper I/O.
 //!
 //! Key details:
 //! - These helpers open a temporary wrapper stream, perform the requested read or

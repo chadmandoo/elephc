@@ -24,7 +24,7 @@ pub(in crate::interpreter) fn eval_is_writeable_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("is_writeable", args, context, scope, values)
+    super::file_exists::eval_builtin_file_probe("is_writeable", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument calls for the `is_writeable` filesystem builtin through the area dispatcher.
@@ -33,5 +33,8 @@ pub(in crate::interpreter) fn eval_is_writeable_declared_values_result(
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("is_writeable", evaluated_args, context, values)
+    match evaluated_args {
+        [filename] => super::file_exists::eval_file_probe_result("is_writeable", *filename, context, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }

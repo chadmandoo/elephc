@@ -20,18 +20,40 @@ use super::super::super::*;
 /// Dispatches direct eval calls for the `getcwd` filesystem builtin through the area dispatcher.
 pub(in crate::interpreter) fn eval_getcwd_declared_call(
     args: &[EvalExpr],
-    context: &mut ElephcEvalContext,
-    scope: &mut ElephcEvalScope,
+    _context: &mut ElephcEvalContext,
+    _scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("getcwd", args, context, scope, values)
+    eval_builtin_getcwd(args, values)
 }
 
 /// Dispatches evaluated-argument calls for the `getcwd` filesystem builtin through the area dispatcher.
 pub(in crate::interpreter) fn eval_getcwd_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("getcwd", evaluated_args, context, values)
+    match evaluated_args {
+        [] => eval_getcwd_result(values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
+}
+
+/// Evaluates PHP `getcwd()` with no arguments.
+pub(in crate::interpreter) fn eval_builtin_getcwd(
+    args: &[EvalExpr],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    if !args.is_empty() {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    eval_getcwd_result(values)
+}
+
+/// Returns the process current working directory as a boxed PHP string.
+pub(in crate::interpreter) fn eval_getcwd_result(
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let cwd = std::env::current_dir().map_err(|_| EvalStatus::RuntimeFatal)?;
+    values.string(cwd.to_string_lossy().as_ref())
 }

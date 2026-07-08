@@ -31,7 +31,6 @@ mod fgets;
 mod file;
 mod file_exists;
 mod file_get_contents;
-mod file_io;
 mod file_put_contents;
 mod fileatime;
 mod filectime;
@@ -157,7 +156,6 @@ mod user_wrapper_streams;
 mod values_dispatch;
 mod vfprintf;
 
-pub(in crate::interpreter) use file_io::*;
 pub(in crate::interpreter) use fnmatch::*;
 pub(in crate::interpreter) use path::*;
 pub(in crate::interpreter) use readline::*;

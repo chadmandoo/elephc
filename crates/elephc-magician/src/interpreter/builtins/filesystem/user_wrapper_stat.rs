@@ -2,8 +2,8 @@
 //! Interprets userspace stream-wrapper stat results for path and stream builtins.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::filesystem::file_io` when a path belongs
-//!   to a registered eval userspace stream wrapper.
+//! - `crate::interpreter::builtins::filesystem::file_exists`, `stat`,
+//!   `filesize`, and `filetype` for wrapper-backed paths.
 //! - `crate::interpreter::builtins::filesystem::streams` when `fstat()` sees a
 //!   userspace-wrapper stream resource.
 //!
