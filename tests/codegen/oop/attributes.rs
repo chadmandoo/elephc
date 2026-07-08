@@ -1731,3 +1731,70 @@ echo $c instanceof Conc ? "ok" : "bad";
     );
     assert_eq!(out, "ok");
 }
+
+/// EC-36 (#529): ReflectionMethod round 2 — literal construction bakes
+/// parameter metadata (getParameters mirrors ReflectionFunction's surface)
+/// and attribute metadata; getAttributes accepts PHP's optional
+/// (?string $name, int $flags) filter arguments; dynamic construction
+/// (runtime class string) stores the runtime names with empty metadata; and
+/// ReflectionClass::getMethod builds through the dynamic-tolerant path.
+#[test]
+fn test_reflection_method_parameters_attributes_and_get_method() {
+    let out = compile_and_run(
+        r#"<?php
+#[Attribute]
+final class Marker {
+    public function __construct(public string $tag = "") {}
+}
+final class Svc {
+    #[Marker(tag: "hot")]
+    public function run(int $a, string $b = "x"): string {
+        return $b . $a;
+    }
+    public function other(): void {}
+}
+$rm = new ReflectionMethod("Svc", "run");
+echo $rm->getName(), "|", count($rm->getParameters()), "\n";
+foreach ($rm->getParameters() as $p) {
+    echo $p->getName(), ":", $p->isOptional() ? "opt" : "req", ";";
+}
+echo "\n";
+echo count($rm->getAttributes()), "|", count($rm->getAttributes("Marker")), "|", count($rm->getAttributes("Missing")), "\n";
+$cls = "Svc";
+$dyn = new ReflectionMethod($cls, "other");
+echo $dyn->getName(), "|", count($dyn->getAttributes()), "\n";
+$rc = new ReflectionClass("Svc");
+echo $rc->getMethod("run")->getName();
+"#,
+    );
+    assert_eq!(out, "run|2\na:req;b:opt;\n1|1|0\nother|0\nrun");
+}
+
+/// EC-36 (#529): ReflectionMethod::invoke dispatches through the runtime
+/// callable-array machinery — and the `mixed ...$args` variadic it relies on
+/// keeps its Mixed element type at call sites (wider_type_syntactic narrowed
+/// Mixed to a concrete call-site type: a string argument turned the sig into
+/// Array(Str), rejecting ints on the same call).
+#[test]
+fn test_reflection_method_invoke_and_mixed_variadic_stability() {
+    let out = compile_and_run(
+        r#"<?php
+final class Svc {
+    public function run(int $a, string $b): string {
+        return $b . $a;
+    }
+}
+final class Acc {
+    public function count(mixed ...$args): int {
+        return count($args);
+    }
+}
+$rm = new ReflectionMethod("Svc", "run");
+$s = new Svc();
+echo $rm->invoke($s, 7, "z"), "|";
+$acc = new Acc();
+echo $acc->count(7, "z", true);
+"#,
+    );
+    assert_eq!(out, "z7|3");
+}

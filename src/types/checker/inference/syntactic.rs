@@ -132,6 +132,12 @@ pub(crate) fn wider_type_syntactic(a: &PhpType, b: &PhpType) -> PhpType {
     if *b == PhpType::Never {
         return a.clone();
     }
+    // Mixed absorbs every operand: widening a Mixed variadic/merge type with
+    // a concrete arm must not NARROW it (a `mixed ...$args` sig widened by a
+    // string call-site argument became Array(Str) and then rejected ints).
+    if *a == PhpType::Mixed || *b == PhpType::Mixed {
+        return PhpType::Mixed;
+    }
     if *a == PhpType::Str || *b == PhpType::Str {
         return PhpType::Str;
     }

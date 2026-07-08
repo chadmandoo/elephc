@@ -239,18 +239,34 @@ impl Checker {
             };
         }
 
+        // ReflectionMethod accepts dynamic class AND method names — the
+        // synthesized `ReflectionClass::getMethod()` body and user code over
+        // `$this->__name` both construct with runtime strings. Compile-time
+        // attribute validation runs only when BOTH are literal; otherwise
+        // the lowering stores the runtime strings and metadata stays empty.
+        if class_name == "ReflectionMethod" {
+            let reflected_class = self.reflection_class_dynamic_or_literal_arg(
+                class_name,
+                &normalized_args[0],
+                env,
+            )?;
+            let method_name = self.reflection_string_dynamic_or_literal_arg(
+                class_name,
+                "method name",
+                normalized_args.get(1),
+                env,
+            )?;
+            return match (reflected_class, method_name) {
+                (Some(reflected_class), Some(method_name)) => {
+                    self.validate_reflection_method_attrs(&reflected_class, &method_name, expr)
+                }
+                _ => Ok(()),
+            };
+        }
+
         let reflected_class =
             self.reflection_class_literal_arg(class_name, &normalized_args[0], env)?;
         match class_name {
-            "ReflectionMethod" => {
-                let method_name = self.reflection_string_literal_arg(
-                    class_name,
-                    "method name",
-                    normalized_args.get(1),
-                    env,
-                )?;
-                self.validate_reflection_method_attrs(&reflected_class, &method_name, expr)
-            }
             "ReflectionProperty" => {
                 let property_name = self.reflection_string_literal_arg(
                     class_name,
@@ -261,6 +277,36 @@ impl Checker {
                 self.validate_reflection_property_attrs(&reflected_class, &property_name, expr)
             }
             _ => Ok(()),
+        }
+    }
+
+    /// Extracts a reflection constructor string argument that may be dynamic.
+    ///
+    /// A string literal returns `Ok(Some(value))`; any other string-typed
+    /// runtime expression returns `Ok(None)` (the value binds at runtime, so
+    /// compile-time validation is skipped). A non-string argument is a hard
+    /// error.
+    fn reflection_string_dynamic_or_literal_arg(
+        &mut self,
+        reflection_type: &str,
+        label: &str,
+        arg: Option<&Expr>,
+        env: &TypeEnv,
+    ) -> Result<Option<String>, CompileError> {
+        let arg = arg.expect("reflection constructor arity was validated");
+        let arg_ty = self.infer_type(arg, env)?;
+        if !matches!(arg_ty, PhpType::Str) {
+            return Err(CompileError::new(
+                arg.span,
+                &format!(
+                    "{}::__construct() {} argument must be a string",
+                    reflection_type, label
+                ),
+            ));
+        }
+        match &arg.kind {
+            ExprKind::StringLiteral(value) => Ok(Some(value.clone())),
+            _ => Ok(None),
         }
     }
 

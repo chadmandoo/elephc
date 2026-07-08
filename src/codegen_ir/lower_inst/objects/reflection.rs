@@ -40,6 +40,9 @@ pub(super) fn lower_reflection_owner_new(
     inst: &Instruction,
     class_name: &str,
 ) -> Result<()> {
+    if class_name == "ReflectionMethod" {
+        return lower_reflection_method_new(ctx, inst);
+    }
     let metadata = reflection_owner_metadata(ctx, class_name, inst)?;
     let (class_id, property_count, uninitialized_marker_offsets) = {
         let class_info = ctx
@@ -450,6 +453,171 @@ fn emit_reflection_parameter_array(
     Ok(())
 }
 
+/// Lowers `new ReflectionMethod(class, method)` with dynamic-name tolerance.
+///
+/// Literal operands bake the class/method strings and, when the pair resolves
+/// to a compiled method, the `__params` ReflectionParameter array and method
+/// attribute metadata. Runtime operands store the runtime strings; parameter
+/// and attribute metadata stay empty (the pair is only known at run time).
+fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let metadata = reflection_method_metadata(ctx, inst)?;
+    let (class_id, property_count, markers, class_off, name_off, params_off) = {
+        let class_info = ctx
+            .module
+            .class_infos
+            .get("ReflectionMethod")
+            .ok_or_else(|| CodegenIrError::unsupported("unknown class ReflectionMethod"))?;
+        let slot = |name: &str| -> Result<usize> {
+            class_info
+                .property_offsets
+                .get(name)
+                .copied()
+                .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))
+        };
+        (
+            class_info.class_id,
+            class_info.properties.len(),
+            super::uninitialized_property_marker_offsets(class_info),
+            slot("__class")?,
+            slot("__name")?,
+            slot("__params")?,
+        )
+    };
+    super::emit_object_allocation(ctx, class_id, property_count, false, &markers, &[])?;
+
+    let class_operand = inst.operands.first().copied();
+    let method_operand = inst.operands.get(1).copied();
+    let literal_class = class_operand
+        .and_then(|op| const_string_or_class_operand(ctx, op, "ReflectionMethod").ok());
+    let literal_method = method_operand
+        .and_then(|op| const_required_string_operand(ctx, op, "ReflectionMethod").ok());
+
+    match (&literal_class, class_operand) {
+        (Some(name), _) => emit_reflection_string_property(ctx, name, class_off, class_off + 8),
+        (None, Some(op)) => {
+            emit_reflection_runtime_name_property(ctx, op, class_off, class_off + 8)?;
+        }
+        (None, None) => {}
+    }
+    match (&literal_method, method_operand) {
+        (Some(name), _) => emit_reflection_string_property(ctx, name, name_off, name_off + 8),
+        (None, Some(op)) => {
+            emit_reflection_runtime_name_property(ctx, op, name_off, name_off + 8)?;
+        }
+        (None, None) => {}
+    }
+
+    // Parameter metadata: only a compile-time-resolvable pair can bake it.
+    let param_infos = match (&literal_class, &literal_method) {
+        (Some(class), Some(method)) => reflection_method_param_infos(ctx, class, method),
+        _ => Vec::new(),
+    };
+    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type) = {
+        let ci = ctx
+            .module
+            .class_infos
+            .get("ReflectionParameter")
+            .ok_or_else(|| CodegenIrError::unsupported("unknown class ReflectionParameter"))?;
+        let slot = |n: &str| -> Result<usize> {
+            ci.property_offsets
+                .get(n)
+                .copied()
+                .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))
+        };
+        (
+            ci.class_id,
+            ci.properties.len(),
+            super::uninitialized_property_marker_offsets(ci),
+            slot("__name")?,
+            slot("__position")?,
+            slot("__optional")?,
+            slot("__variadic")?,
+            slot("__type")?,
+            slot("__has_type")?,
+        )
+    };
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    let object_reg = abi::symbol_scratch_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, result_reg);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, object_reg, 0);
+    abi::emit_load_from_address(ctx.emitter, result_reg, object_reg, params_off);
+    abi::emit_call_label(ctx.emitter, "__rt_decref_array");
+    emit_reflection_parameter_array(
+        ctx,
+        &param_infos,
+        rp_class_id,
+        rp_prop_count,
+        &rp_markers,
+        rp_name,
+        rp_pos,
+        rp_opt,
+        rp_var,
+        rp_type,
+        rp_has_type,
+    )?;
+    abi::emit_pop_reg(ctx.emitter, object_reg);
+    abi::emit_store_to_address(ctx.emitter, result_reg, object_reg, params_off);
+    abi::emit_load_int_immediate(ctx.emitter, abi::secondary_scratch_reg(ctx.emitter), 4);
+    abi::emit_store_to_address(
+        ctx.emitter,
+        abi::secondary_scratch_reg(ctx.emitter),
+        object_reg,
+        params_off + 8,
+    );
+    abi::emit_push_reg(ctx.emitter, object_reg);
+    abi::emit_pop_reg(ctx.emitter, result_reg);
+
+    emit_reflection_attrs_property(
+        ctx,
+        "ReflectionMethod",
+        &metadata.attr_names,
+        &metadata.attr_args,
+    )?;
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("reflection object_new missing result"))?;
+    ctx.store_result_value(result)
+}
+
+/// Builds ReflectionParameter infos for a compiled method's signature.
+fn reflection_method_param_infos(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    method_name: &str,
+) -> Vec<ReflectionParamInfo> {
+    let Some((_, class_info)) = resolve_reflection_class(ctx, class_name) else {
+        return Vec::new();
+    };
+    let Some(signature) = class_info.methods.get(&php_symbol_key(method_name)) else {
+        return Vec::new();
+    };
+    let mut seen_optional = false;
+    signature
+        .params
+        .iter()
+        .enumerate()
+        .map(|(idx, (name, ty))| {
+            let variadic = signature.variadic.as_deref() == Some(name.as_str());
+            let has_default = signature.defaults.get(idx).map_or(false, Option::is_some);
+            if has_default || variadic {
+                seen_optional = true;
+            }
+            let declared = signature.declared_params.get(idx).copied().unwrap_or(false);
+            let type_info = if declared {
+                reflection_named_type_info(ty)
+            } else {
+                None
+            };
+            ReflectionParamInfo {
+                name: name.clone(),
+                optional: seen_optional,
+                variadic,
+                type_info,
+            }
+        })
+        .collect()
+}
+
 /// Resolves Reflection constructor operands to captured class/member metadata.
 fn reflection_owner_metadata(
     ctx: &FunctionContext<'_>,
@@ -511,7 +679,12 @@ fn reflection_method_metadata(
     else {
         return Ok(empty_reflection_metadata());
     };
-    let method_name = const_required_string_operand(ctx, method_operand, "ReflectionMethod")?;
+    let Ok(method_name) = const_required_string_operand(ctx, method_operand, "ReflectionMethod")
+    else {
+        // A runtime method name (the synthetic getMethod body's `$name`)
+        // cannot resolve attributes at compile time.
+        return Ok(empty_reflection_metadata());
+    };
     let method_key = php_symbol_key(&method_name);
     Ok(resolve_reflection_class(ctx, &reflected_class)
         .and_then(|(_, info)| {
@@ -736,9 +909,10 @@ fn emit_reflection_attrs_property(
 
 /// Returns the low/high object offsets for the private `__attrs` slot.
 fn reflection_attrs_offsets(class_name: &str) -> (usize, usize) {
-    if class_name == "ReflectionClass" {
-        (24, 32)
-    } else {
-        (8, 16)
+    match class_name {
+        "ReflectionClass" => (24, 32),
+        // __class (8/16), __name (24/32), __params (40/48), __attrs (56/64).
+        "ReflectionMethod" => (56, 64),
+        _ => (8, 16),
     }
 }

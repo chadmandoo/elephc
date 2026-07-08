@@ -84,13 +84,7 @@ pub(crate) fn inject_builtin_reflection(
     );
     class_map.insert(
         "ReflectionMethod".to_string(),
-        builtin_reflection_owner_class(
-            "ReflectionMethod",
-            vec![
-                ("class_name", Some(TypeExpr::Str), None, false),
-                ("method_name", Some(TypeExpr::Str), None, false),
-            ],
-        ),
+        builtin_reflection_method(),
     );
     class_map.insert(
         "ReflectionProperty".to_string(),
@@ -507,6 +501,7 @@ fn builtin_reflection_class() -> FlattenedClass {
             builtin_reflection_class_is_abstract_method(),
             builtin_reflection_class_get_parent_class_method(),
             builtin_reflection_class_get_constructor_method(),
+            builtin_reflection_class_get_method_method(),
             builtin_reflection_class_new_instance_without_constructor_method(),
             builtin_reflection_owner_get_attributes_method(),
         ],
@@ -911,10 +906,20 @@ fn builtin_reflection_owner_constructor_method(
     }
 }
 
-/// Returns a public `getAttributes()` method that returns the private `__attrs`
-/// property as an `array` of `ReflectionAttribute` objects.
+/// Returns a public `getAttributes(?string $name = null, int $flags = 0)`
+/// method over the private `__attrs` array of `ReflectionAttribute` objects.
+/// A non-null `$name` filters by exact attribute name (PHP's default flag
+/// behavior); `$flags` is accepted for signature parity and ignored (the
+/// synthesized attributes carry no inheritance hierarchy to match against).
 fn builtin_reflection_owner_get_attributes_method() -> ClassMethod {
     let dummy_span = crate::span::Span::dummy();
+    let this_attrs = Expr::new(
+        ExprKind::PropertyAccess {
+            object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+            property: "__attrs".to_string(),
+        },
+        dummy_span,
+    );
     ClassMethod {
         name: "getAttributes".to_string(),
         visibility: Visibility::Public,
@@ -922,16 +927,245 @@ fn builtin_reflection_owner_get_attributes_method() -> ClassMethod {
         is_abstract: false,
         is_final: false,
         has_body: true,
-        params: Vec::new(),
+        params: vec![
+            (
+                "name".to_string(),
+                Some(TypeExpr::Nullable(Box::new(TypeExpr::Str))),
+                Some(Expr::new(ExprKind::Null, dummy_span)),
+                false,
+            ),
+            (
+                "flags".to_string(),
+                Some(TypeExpr::Int),
+                Some(Expr::new(ExprKind::IntLiteral(0), dummy_span)),
+                false,
+            ),
+        ],
         variadic: None,
         variadic_type: None,
         return_type: Some(array_type()),
         by_ref_return: false,
+        body: vec![
+            // if ($name === null) { return $this->__attrs; }
+            Stmt::new(
+                StmtKind::If {
+                    condition: Expr::new(
+                        ExprKind::BinaryOp {
+                            left: Box::new(Expr::new(
+                                ExprKind::Variable("name".to_string()),
+                                dummy_span,
+                            )),
+                            op: crate::parser::ast::BinOp::StrictEq,
+                            right: Box::new(Expr::new(ExprKind::Null, dummy_span)),
+                        },
+                        dummy_span,
+                    ),
+                    then_body: vec![Stmt::new(
+                        StmtKind::Return(Some(this_attrs.clone())),
+                        dummy_span,
+                    )],
+                    elseif_clauses: Vec::new(),
+                    else_body: None,
+                },
+                dummy_span,
+            ),
+            // $out = [];
+            Stmt::new(
+                StmtKind::Assign {
+                    name: "out".to_string(),
+                    value: Expr::new(ExprKind::ArrayLiteral(Vec::new()), dummy_span),
+                },
+                dummy_span,
+            ),
+            // foreach ($this->__attrs as $a) { if ($a->getName() === $name) { $out[] = $a; } }
+            Stmt::new(
+                StmtKind::Foreach {
+                    array: this_attrs,
+                    key_var: None,
+                    value_var: "a".to_string(),
+                    value_by_ref: false,
+                    body: vec![Stmt::new(
+                        StmtKind::If {
+                            condition: Expr::new(
+                                ExprKind::BinaryOp {
+                                    left: Box::new(Expr::new(
+                                        ExprKind::MethodCall {
+                                            object: Box::new(Expr::new(
+                                                ExprKind::Variable("a".to_string()),
+                                                dummy_span,
+                                            )),
+                                            method: "getName".to_string(),
+                                            args: Vec::new(),
+                                        },
+                                        dummy_span,
+                                    )),
+                                    op: crate::parser::ast::BinOp::StrictEq,
+                                    right: Box::new(Expr::new(
+                                        ExprKind::Variable("name".to_string()),
+                                        dummy_span,
+                                    )),
+                                },
+                                dummy_span,
+                            ),
+                            then_body: vec![Stmt::new(
+                                StmtKind::ArrayPush {
+                                    array: "out".to_string(),
+                                    value: Expr::new(
+                                        ExprKind::Variable("a".to_string()),
+                                        dummy_span,
+                                    ),
+                                },
+                                dummy_span,
+                            )],
+                            elseif_clauses: Vec::new(),
+                            else_body: None,
+                        },
+                        dummy_span,
+                    )],
+                },
+                dummy_span,
+            ),
+            Stmt::new(
+                StmtKind::Return(Some(Expr::new(
+                    ExprKind::Variable("out".to_string()),
+                    dummy_span,
+                ))),
+                dummy_span,
+            ),
+        ],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Builds the `ReflectionMethod` shell: private class/method-name strings, a
+/// `__params` slot (ReflectionParameter objects, populated at codegen when the
+/// reflected pair is compile-time resolvable), and the shared `__attrs` array.
+fn builtin_reflection_method() -> FlattenedClass {
+    FlattenedClass {
+        name: "ReflectionMethod".to_string(),
+        extends: None,
+        implements: Vec::new(),
+        is_abstract: false,
+        is_final: true,
+        is_readonly_class: false,
+        properties: vec![
+            builtin_property("__class", Visibility::Private, Some(TypeExpr::Str), empty_string()),
+            builtin_property("__name", Visibility::Private, Some(TypeExpr::Str), empty_string()),
+            builtin_property("__params", Visibility::Private, Some(array_type()), empty_array()),
+            builtin_property(
+                "__attrs",
+                Visibility::Private,
+                Some(array_type()),
+                empty_array(),
+            ),
+        ],
+        methods: vec![
+            builtin_reflection_owner_constructor_method(vec![
+                ("class_name", Some(TypeExpr::Str), None, false),
+                ("method_name", Some(TypeExpr::Str), None, false),
+            ]),
+            builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
+            builtin_reflection_slot_getter("getDeclaringClassName", "__class", TypeExpr::Str),
+            builtin_reflection_slot_getter("getParameters", "__params", array_type()),
+            builtin_reflection_method_invoke_method(),
+            builtin_reflection_owner_get_attributes_method(),
+        ],
+        attributes: Vec::new(),
+        constants: Vec::new(),
+        used_traits: Vec::new(),
+    }
+}
+
+/// Returns `ReflectionMethod::invoke(?object $object, mixed ...$args)` whose
+/// body dispatches through the runtime callable-array machinery:
+/// `call_user_func_array([$object, $this->__name], $args)`.
+fn builtin_reflection_method_invoke_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "invoke".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        // Declared `object`, not PHP's `?object`: the runtime callable-array
+        // dispatch needs a concrete receiver, and the static-method null form
+        // is out of scope for the synthesized surface.
+        params: vec![(
+            "object".to_string(),
+            Some(TypeExpr::Named(crate::names::Name::unqualified("object"))),
+            None,
+            false,
+        )],
+        variadic: Some("args".to_string()),
+        // Untyped: `callable_wrapper_sig` defaults the collected container to
+        // `array<mixed>`, which is exactly PHP's `mixed ...$args` contract.
+        variadic_type: None,
+        return_type: Some(TypeExpr::Named(crate::names::Name::unqualified("mixed"))),
+        by_ref_return: false,
         body: vec![Stmt::new(
             StmtKind::Return(Some(Expr::new(
-                ExprKind::PropertyAccess {
-                    object: Box::new(Expr::new(ExprKind::This, dummy_span)),
-                    property: "__attrs".to_string(),
+                ExprKind::FunctionCall {
+                    name: crate::names::Name::from("call_user_func_array"),
+                    args: vec![
+                        Expr::new(
+                            ExprKind::ArrayLiteral(vec![
+                                Expr::new(ExprKind::Variable("object".to_string()), dummy_span),
+                                Expr::new(
+                                    ExprKind::PropertyAccess {
+                                        object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                                        property: "__name".to_string(),
+                                    },
+                                    dummy_span,
+                                ),
+                            ]),
+                            dummy_span,
+                        ),
+                        Expr::new(ExprKind::Variable("args".to_string()), dummy_span),
+                    ],
+                },
+                dummy_span,
+            ))),
+            dummy_span,
+        )],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns a public `ReflectionClass::getMethod(string $name)` whose body
+/// constructs a `ReflectionMethod` for the runtime class/method pair (the
+/// dynamic-tolerant construction path stores the runtime strings; attribute
+/// and parameter metadata stay empty for late-bound names).
+fn builtin_reflection_class_get_method_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "getMethod".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: vec![("name".to_string(), Some(TypeExpr::Str), None, false)],
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Named(crate::names::Name::from("ReflectionMethod"))),
+        by_ref_return: false,
+        body: vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::NewObject {
+                    class_name: crate::names::Name::from("ReflectionMethod"),
+                    args: vec![
+                        Expr::new(
+                            ExprKind::PropertyAccess {
+                                object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                                property: "__name".to_string(),
+                            },
+                            dummy_span,
+                        ),
+                        Expr::new(ExprKind::Variable("name".to_string()), dummy_span),
+                    ],
                 },
                 dummy_span,
             ))),
@@ -976,6 +1210,16 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
             if class_name == "ReflectionClass" {
                 if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getName")) {
                     sig.return_type = PhpType::Str;
+                }
+            }
+            if class_name == "ReflectionMethod" {
+                if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getName")) {
+                    sig.return_type = PhpType::Str;
+                }
+                if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getParameters")) {
+                    sig.return_type = PhpType::Array(Box::new(PhpType::Object(
+                        "ReflectionParameter".to_string(),
+                    )));
                 }
             }
             if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getAttributes")) {
