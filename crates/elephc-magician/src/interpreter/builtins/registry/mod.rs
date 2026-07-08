@@ -206,6 +206,8 @@ mod tests {
             "boolval",
             "base64_encode",
             "bin2hex",
+            "call_user_func",
+            "call_user_func_array",
             "checkdate",
             "chdir",
             "chgrp",
@@ -219,10 +221,14 @@ mod tests {
             "date",
             "date_default_timezone_get",
             "date_default_timezone_set",
+            "define",
+            "defined",
             "dirname",
             "disk_free_space",
             "disk_total_space",
+            "die",
             "exec",
+            "exit",
             "explode",
             "file",
             "file_exists",
@@ -556,6 +562,18 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("getservbyname"),
             Some(["service", "protocol"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("call_user_func"),
+            Some(["callback", "args"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("exit"),
+            Some(["status"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("exit", 0),
+            Some(EvalBuiltinDefaultValue::Int(0))
         );
         assert_eq!(
             eval_declared_builtin_param_names("getdate"),

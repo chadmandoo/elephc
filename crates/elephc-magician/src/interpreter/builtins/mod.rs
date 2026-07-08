@@ -17,6 +17,7 @@ mod macros;
 mod array;
 mod arrays;
 mod class_metadata;
+mod core;
 mod filesystem;
 mod formatting;
 mod hooks;
@@ -39,6 +40,7 @@ mod types;
 
 pub(super) use arrays::*;
 pub(super) use class_metadata::*;
+pub(super) use core::*;
 pub(super) use filesystem::*;
 pub(super) use formatting::*;
 pub(super) use json::*;

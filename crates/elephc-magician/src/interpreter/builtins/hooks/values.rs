@@ -19,8 +19,8 @@ use super::super::{
     eval_array_projection_result, eval_array_rand_result, eval_array_reverse_result,
     eval_array_search_result, eval_array_slice_result, eval_array_unique_result,
     eval_base64_decode_result, eval_base64_encode_result, eval_bin2hex_result, eval_cast_result,
-    eval_chr_result, eval_clamp_result, eval_crc32_result, eval_ctype_result,
-    eval_filesystem_values_result, eval_float_binary_result, eval_float_pair_result,
+    eval_chr_result, eval_clamp_result, eval_core_values_result, eval_crc32_result,
+    eval_ctype_result, eval_filesystem_values_result, eval_float_binary_result, eval_float_pair_result,
     eval_float_unary_result, eval_formatting_values_result, eval_gettype_result,
     eval_grapheme_strrev_result, eval_gzip_result, eval_hash_equals_result,
     eval_hash_one_shot_result, eval_hex2bin_result, eval_html_entity_result, eval_intdiv_result,
@@ -79,6 +79,8 @@ pub(in crate::interpreter) enum EvalValuesHook {
     Clamp,
     /// Dispatches `count(...)`.
     Count,
+    /// Dispatches core callable, constant, and process-control builtins.
+    Core,
     /// Dispatches `crc32(...)`.
     Crc32,
     /// Dispatches `ctype_*` predicates.
@@ -249,6 +251,7 @@ impl EvalValuesHook {
                 [value, mode] => eval_count_result(*value, Some(*mode), context, values),
                 _ => Err(EvalStatus::RuntimeFatal),
             },
+            Self::Core => eval_core_values_result(name, evaluated_args, context, values),
             Self::Crc32 => one_arg(evaluated_args, values, eval_crc32_result),
             Self::Ctype => one_arg(evaluated_args, values, |value, values| {
                 eval_ctype_result(name, value, values)

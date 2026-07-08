@@ -75,7 +75,7 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "is_a" | "is_subclass_of" => optional(params, 2),
 
         "is_callable" => optional_by_ref(params, 1, &["callable_name"]),
-        "readline" | "exit" | "die" => optional(params, 0),
+        "readline" => optional(params, 0),
 
         "fprintf" | "fscanf" => variadic(params, &[]),
 
@@ -92,11 +92,8 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "array_filter" => optional(params, 1),
         "array_reduce" => optional(params, 2),
         "array_walk" | "usort" | "uksort" | "uasort" => fixed_by_ref(params, &["array"]),
-        "call_user_func" => variadic(params, &[]),
-
         "print_r" => optional(params, 1),
         "var_dump" => variadic(params, &[]),
-
         "fopen" | "fputcsv" => optional(params, 2),
         "flock" => optional_by_ref(params, 2, &["would_block"]),
         "fgetcsv" => optional(params, 1),
@@ -147,14 +144,11 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("is_callable", 1) => Bool(false),
         ("is_callable", 2) => Null,
         ("readline", 0) => Null,
-        ("exit" | "die", 0) => Int(0),
-
         ("array_splice", 2) => Null,
         ("array_splice", 3) => EmptyArray,
         ("array_filter", 1) => Null,
         ("array_filter", 2) => Int(0),
         ("array_reduce", 2) => Null,
-
         ("print_r", 1) => Bool(false),
 
         ("fopen", 2) => Bool(false),

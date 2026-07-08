@@ -1548,8 +1548,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
             eval_builtin_array_key_set(name, args, context, scope, values)
         }
         "array_merge" => eval_builtin_array_merge(args, context, scope, values),
-        "call_user_func" => eval_builtin_call_user_func(args, context, scope, values),
-        "call_user_func_array" => eval_builtin_call_user_func_array(args, context, scope, values),
         "class_alias" => eval_builtin_class_alias(args, context, scope, values),
         "class_attribute_args" => {
             eval_builtin_class_attribute_metadata(name, args, context, scope, values)
@@ -1572,9 +1570,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
             eval_builtin_class_like_exists(name, args, context, scope, values)
         }
         "is_a" | "is_subclass_of" => eval_builtin_is_a_relation(name, args, context, scope, values),
-        "define" => eval_builtin_define(args, context, scope, values),
-        "defined" => eval_builtin_defined(args, context, scope, values),
-        "die" | "exit" => eval_builtin_exit(args, context, scope, values),
         "empty" => eval_builtin_empty(args, context, scope, values),
         "eval" => eval_nested_eval(args, context, scope, values),
         "fgetcsv" => eval_builtin_fgetcsv(args, context, scope, values),

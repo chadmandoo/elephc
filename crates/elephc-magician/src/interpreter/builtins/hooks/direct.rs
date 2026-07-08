@@ -28,7 +28,7 @@ use super::super::{
     eval_builtin_abs, eval_builtin_array_aggregate, eval_builtin_array_flip,
     eval_builtin_array_key_exists, eval_builtin_array_pad, eval_builtin_array_projection,
     eval_builtin_array_rand, eval_builtin_array_reverse, eval_builtin_array_search,
-    eval_builtin_array_slice, eval_builtin_array_unique, eval_builtin_cast,
+    eval_builtin_array_slice, eval_builtin_array_unique, eval_builtin_cast, eval_builtin_core_call,
     eval_builtin_filesystem_call, eval_builtin_grapheme_strrev, eval_builtin_hash_equals,
     eval_builtin_html_entity, eval_builtin_json_call, eval_builtin_network_env_call,
     eval_builtin_nl2br, eval_builtin_range, eval_builtin_regex_call, eval_builtin_str_pad,
@@ -81,6 +81,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Clamp,
     /// Dispatches `count(...)`.
     Count,
+    /// Dispatches core callable, constant, and process-control builtins.
+    Core,
     /// Dispatches `crc32(...)`.
     Crc32,
     /// Dispatches `ctype_*` predicates.
@@ -225,6 +227,7 @@ impl EvalDirectHook {
             Self::Chr => eval_builtin_chr(args, context, scope, values),
             Self::Clamp => eval_builtin_clamp(args, context, scope, values),
             Self::Count => eval_builtin_count(args, context, scope, values),
+            Self::Core => eval_builtin_core_call(name, args, context, scope, values),
             Self::Crc32 => eval_builtin_crc32(args, context, scope, values),
             Self::Ctype => eval_builtin_ctype(name, args, context, scope, values),
             Self::Filesystem => eval_builtin_filesystem_call(name, args, context, scope, values),
