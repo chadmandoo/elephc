@@ -208,8 +208,12 @@ If no arm matches and there is no `default`, elephc aborts with a fatal runtime 
 Arms may produce values of different types (objects, arrays, strings, ints, `null`),
 and an arm may be a `throw` expression. When the arm types are heterogeneous, the
 result is stored as a boxed `mixed` value and each value-producing arm keeps its
-own runtime type, matching PHP. Arms whose types share one runtime representation
-(two array types, or `int` and `bool`) merge to that representation instead.
+own runtime type, matching PHP; a `null` arm keeps the merged result nullable, so
+returning such a match from a function with an inferred return type preserves the
+null. Exception: arms whose types share one runtime representation (two array
+types with different element types, or `int` and `bool`) merge to that
+representation, which can change an arm value's observable type — see
+[Known incompatibilities with PHP](types.md#known-incompatibilities-with-php).
 
 ## try / catch / finally / throw
 
