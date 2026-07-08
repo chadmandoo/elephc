@@ -42,7 +42,6 @@ mod is_a;
 mod is_callable;
 mod is_subclass_of;
 mod isset;
-mod language_constructs;
 mod method_exists;
 mod property_exists;
 mod spl_autoload;

@@ -1,5 +1,5 @@
 //! Purpose:
-//! Declarative eval registry entry for `unset`.
+//! Eval registry entry and implementation for `unset`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::symbols`.
@@ -18,21 +18,64 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `unset` symbol builtin through the area dispatcher.
+/// Evaluates direct `unset(...)` calls over eval-visible variables and object properties.
 pub(in crate::interpreter) fn eval_unset_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::language_constructs::eval_builtin_unset(args, context, scope, values)
+    eval_builtin_unset(args, context, scope, values)
 }
 
-/// Dispatches evaluated-argument calls for the `unset` symbol builtin through the area dispatcher.
+/// Evaluates callable `unset(...)` after values have already been materialized.
 pub(in crate::interpreter) fn eval_unset_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::language_constructs::eval_unset_result(evaluated_args, values)
+    eval_unset_result(evaluated_args, values)
+}
+
+/// Evaluates direct `unset(...)` calls over eval-visible variables and object properties.
+pub(in crate::interpreter) fn eval_builtin_unset(
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    if args.is_empty() {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    for arg in args {
+        match arg {
+            EvalExpr::LoadVar(name) => {
+                if let Some(replaced) = unset_scope_cell(scope, name.clone()) {
+                    values.release(replaced)?;
+                }
+            }
+            EvalExpr::PropertyGet { object, property } => {
+                let object = eval_expr(object, context, scope, values)?;
+                eval_property_unset_result(object, property, context, values)?;
+            }
+            EvalExpr::DynamicPropertyGet { object, property } => {
+                let object = eval_expr(object, context, scope, values)?;
+                let property = eval_dynamic_member_name(property, context, scope, values)?;
+                eval_property_unset_result(object, &property, context, values)?;
+            }
+            _ => return Err(EvalStatus::RuntimeFatal),
+        }
+    }
+    values.null()
+}
+
+/// Evaluates callable `unset(...)` after values have already been materialized.
+pub(in crate::interpreter) fn eval_unset_result(
+    evaluated_args: &[RuntimeCellHandle],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    if evaluated_args.is_empty() {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    values.null()
 }
