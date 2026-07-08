@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `get_declared_interfaces`.
+//! Eval registry entry for `get_declared_interfaces`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::symbols`.
 //!
 //! Key details:
-//! - Runtime behavior stays delegated to the declared-symbols helper.
+//! - Array construction is shared with `get_declared_classes()`.
 
 eval_builtin! {
     name: "get_declared_interfaces",
@@ -17,21 +17,34 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `get_declared_interfaces` symbol builtin through the area dispatcher.
+/// Evaluates direct `get_declared_interfaces()` calls.
 pub(in crate::interpreter) fn eval_get_declared_interfaces_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     _scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::class_names::eval_builtin_get_declared_symbols("get_declared_interfaces", args, context, values)
+    super::get_declared_classes::eval_builtin_get_declared_symbols(
+        "get_declared_interfaces",
+        args,
+        context,
+        values,
+    )
 }
 
-/// Dispatches evaluated-argument calls for the `get_declared_interfaces` symbol builtin through the area dispatcher.
+/// Evaluates materialized `get_declared_interfaces()` arguments.
 pub(in crate::interpreter) fn eval_get_declared_interfaces_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    if evaluated_args.is_empty() { super::class_names::eval_get_declared_symbols_result("get_declared_interfaces", context, values) } else { Err(EvalStatus::RuntimeFatal) }
+    if evaluated_args.is_empty() {
+        super::get_declared_classes::eval_get_declared_symbols_result(
+            "get_declared_interfaces",
+            context,
+            values,
+        )
+    } else {
+        Err(EvalStatus::RuntimeFatal)
+    }
 }

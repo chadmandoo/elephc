@@ -17,7 +17,6 @@ mod class_attribute_names;
 mod class_exists;
 mod class_get_attributes;
 mod class_implements;
-mod class_names;
 mod class_parents;
 mod class_uses;
 mod dispatch;
