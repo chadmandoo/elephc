@@ -142,7 +142,7 @@ pub(super) fn lower_reflection_function_new(
         .and_then(|ci| ci.property_offsets.get("__params").copied())
         .ok_or_else(|| CodegenIrError::missing_entry("property offset", 0))?;
     let param_infos = reflection_function_param_infos(ctx, &full_name);
-    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type) = {
+    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type, rp_has_default) = {
         let ci = ctx
             .module
             .class_infos
@@ -164,6 +164,7 @@ pub(super) fn lower_reflection_function_new(
             slot("__variadic")?,
             slot("__type")?,
             slot("__has_type")?,
+            slot("__has_default")?,
         )
     };
     let result_reg = abi::int_result_reg(ctx.emitter);
@@ -184,6 +185,7 @@ pub(super) fn lower_reflection_function_new(
         rp_var,
         rp_type,
         rp_has_type,
+        rp_has_default,
     )?;
     abi::emit_pop_reg(ctx.emitter, object_reg);
     abi::emit_store_to_address(ctx.emitter, result_reg, object_reg, params_off);
@@ -263,6 +265,9 @@ struct ReflectionParamInfo {
     name: String,
     optional: bool,
     variadic: bool,
+    /// True when the parameter declares a default value (distinct from
+    /// `optional`: variadic parameters are optional but have no default).
+    has_default: bool,
     /// `Some((type_name, is_builtin, allows_null))` when the parameter declares a
     /// single named type; `None` for an untyped parameter (`getType()` is null).
     type_info: Option<(String, bool, bool)>,
@@ -339,6 +344,7 @@ fn reflection_function_param_infos(
                 name: name.clone(),
                 optional: seen_optional,
                 variadic,
+                has_default,
                 type_info,
             }
         })
@@ -379,6 +385,7 @@ fn emit_append_object_to_array(ctx: &mut FunctionContext<'_>) {
 /// Builds an indexed array of `ReflectionParameter` objects (one per function
 /// parameter), leaving the array pointer in the result register. Stack-balanced.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn emit_reflection_parameter_array(
     ctx: &mut FunctionContext<'_>,
     params: &[ReflectionParamInfo],
@@ -391,6 +398,7 @@ fn emit_reflection_parameter_array(
     var_off: usize,
     type_off: usize,
     has_type_off: usize,
+    has_default_off: usize,
 ) -> Result<()> {
     // ReflectionNamedType layout for building per-parameter type objects.
     let named_type = ctx.module.class_infos.get("ReflectionNamedType").map(|ci| {
@@ -418,6 +426,7 @@ fn emit_reflection_parameter_array(
         emit_reflection_int_property(ctx, position as i64, pos_off, pos_off + 8);
         emit_reflection_int_property(ctx, param.optional as i64, opt_off, opt_off + 8);
         emit_reflection_int_property(ctx, param.variadic as i64, var_off, var_off + 8);
+        emit_reflection_int_property(ctx, param.has_default as i64, has_default_off, has_default_off + 8);
         if let (Some((type_name, builtin, allows_null)), Some((nt_id, nt_count, nt_markers, nt_name, nt_anull, nt_builtin))) =
             (&param.type_info, &named_type)
         {
@@ -461,7 +470,7 @@ fn emit_reflection_parameter_array(
 /// and attribute metadata stay empty (the pair is only known at run time).
 fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let metadata = reflection_method_metadata(ctx, inst)?;
-    let (class_id, property_count, markers, class_off, name_off, params_off) = {
+    let (class_id, property_count, markers, class_off, name_off, params_off, declaring_off) = {
         let class_info = ctx
             .module
             .class_infos
@@ -481,6 +490,7 @@ fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             slot("__class")?,
             slot("__name")?,
             slot("__params")?,
+            slot("__declaring")?,
         )
     };
     super::emit_object_allocation(ctx, class_id, property_count, false, &markers, &[])?;
@@ -507,12 +517,39 @@ fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         (None, None) => {}
     }
 
+    // The DECLARING class (inheritance-aware): a compile-time-resolvable pair
+    // resolves through the checker's method_declaring_classes (an inherited
+    // method's declaring class is the ancestor). Dynamic pairs fall back to
+    // the reflected class name — a documented approximation (resolving a
+    // runtime pair would need per-class method-ownership tables).
+    let literal_declaring = match (&literal_class, &literal_method) {
+        (Some(class), Some(method)) => resolve_reflection_class(ctx, class)
+            .and_then(|(_, info)| {
+                info.method_declaring_classes
+                    .get(&php_symbol_key(method))
+                    .cloned()
+            }),
+        _ => None,
+    };
+    match (&literal_declaring, &literal_class, class_operand) {
+        (Some(declaring), _, _) => {
+            emit_reflection_string_property(ctx, declaring, declaring_off, declaring_off + 8);
+        }
+        (None, Some(class), _) => {
+            emit_reflection_string_property(ctx, class, declaring_off, declaring_off + 8);
+        }
+        (None, None, Some(op)) => {
+            emit_reflection_runtime_name_property(ctx, op, declaring_off, declaring_off + 8)?;
+        }
+        (None, None, None) => {}
+    }
+
     // Parameter metadata: only a compile-time-resolvable pair can bake it.
     let param_infos = match (&literal_class, &literal_method) {
         (Some(class), Some(method)) => reflection_method_param_infos(ctx, class, method),
         _ => Vec::new(),
     };
-    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type) = {
+    let (rp_class_id, rp_prop_count, rp_markers, rp_name, rp_pos, rp_opt, rp_var, rp_type, rp_has_type, rp_has_default) = {
         let ci = ctx
             .module
             .class_infos
@@ -534,6 +571,7 @@ fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
             slot("__variadic")?,
             slot("__type")?,
             slot("__has_type")?,
+            slot("__has_default")?,
         )
     };
     let result_reg = abi::int_result_reg(ctx.emitter);
@@ -554,6 +592,7 @@ fn lower_reflection_method_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         rp_var,
         rp_type,
         rp_has_type,
+        rp_has_default,
     )?;
     abi::emit_pop_reg(ctx.emitter, object_reg);
     abi::emit_store_to_address(ctx.emitter, result_reg, object_reg, params_off);
@@ -612,6 +651,7 @@ fn reflection_method_param_infos(
                 name: name.clone(),
                 optional: seen_optional,
                 variadic,
+                has_default,
                 type_info,
             }
         })

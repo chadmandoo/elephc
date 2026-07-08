@@ -103,3 +103,37 @@ if ($r instanceof Resp) {
     );
     assert_eq!(out, "text/html");
 }
+
+/// EC-44/EC-46 (#538/#540): an `instanceof` result stored in a boolean local
+/// narrows the guarded variable when the flag drives a ternary — the checker
+/// records the hoisted guard, and the ir_lower ternary applies the object
+/// narrowing to the then-branch method dispatch (BlockOverview's
+/// `$hasCustomWeight = $block instanceof HasCustomWeight; ... $hasCustomWeight
+/// ? $block->weight() : 0` pattern; weight() lives on the optional interface).
+#[test]
+fn test_hoisted_instanceof_flag_narrows_ternary_method_call() {
+    let out = compile_and_run(
+        r#"<?php
+interface HasCustomWeight {
+    public function weight(): int;
+}
+abstract readonly class Block {}
+final readonly class Heavy extends Block implements HasCustomWeight {
+    public function weight(): int {
+        return 9;
+    }
+}
+final readonly class Plain extends Block {}
+final class Summary {
+    public function describe(Block $block): string {
+        $hasCustomWeight = $block instanceof HasCustomWeight;
+        $w = $hasCustomWeight ? $block->weight() : 0;
+        return "w=" . $w;
+    }
+}
+$s = new Summary();
+echo $s->describe(new Heavy()), "|", $s->describe(new Plain());
+"#,
+    );
+    assert_eq!(out, "w=9|w=0");
+}

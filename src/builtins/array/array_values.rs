@@ -42,6 +42,10 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     match ty {
         PhpType::Array(elem_ty) => Ok(PhpType::Array(elem_ty)),
         PhpType::AssocArray { value, .. } => Ok(PhpType::Array(value)),
+        // Mixed receivers (json_decode results, adaptive locals) desugar to
+        // the prelude `__elephc_array_values_any` impl; the rebuilt list
+        // holds boxed cells, so the result shape stays Mixed.
+        PhpType::Mixed => Ok(PhpType::Mixed),
         _ => Err(CompileError::new(
             cx.span,
             "array_values() argument must be array",

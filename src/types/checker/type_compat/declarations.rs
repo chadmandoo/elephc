@@ -324,6 +324,7 @@ impl Checker {
         let saved_globals = self.active_globals.clone();
         let saved_statics = self.active_statics.clone();
         let saved_foreach_keys = self.foreach_key_locals.clone();
+        let saved_instanceof_flags = self.instanceof_flag_guards.clone();
         let saved_break_continue_depth = self.break_continue_depth;
         let saved_finally_break_continue_bases = self.finally_break_continue_bases.clone();
 
@@ -331,6 +332,7 @@ impl Checker {
         self.active_globals.clear();
         self.active_statics.clear();
         self.foreach_key_locals.clear();
+        self.instanceof_flag_guards.clear();
         self.break_continue_depth = 0;
         self.finally_break_continue_bases.clear();
 
@@ -340,6 +342,7 @@ impl Checker {
         self.active_globals = saved_globals;
         self.active_statics = saved_statics;
         self.foreach_key_locals = saved_foreach_keys;
+        self.instanceof_flag_guards = saved_instanceof_flags;
         self.break_continue_depth = saved_break_continue_depth;
         self.finally_break_continue_bases = saved_finally_break_continue_bases;
 

@@ -1798,3 +1798,79 @@ echo $acc->count(7, "z", true);
     );
     assert_eq!(out, "z7|3");
 }
+
+/// EC-43 (#537): ReflectionMethod::getDeclaringClass is inheritance-aware —
+/// an inherited method's declaring class is the ANCESTOR (baked at
+/// construction from the checker's method-declaring metadata for
+/// compile-time-resolvable pairs; EntityTypeRegistry feeds it to
+/// is_subclass_of to reject overrides that inherit the base factory).
+#[test]
+fn test_reflection_method_get_declaring_class_inheritance_aware() {
+    let out = compile_and_run(
+        r#"<?php
+abstract class BaseEntity {
+    public function fromRow(array $row): int {
+        return count($row);
+    }
+}
+final class UserEntity extends BaseEntity {
+}
+final class CustomEntity extends BaseEntity {
+    public function fromRow(array $row): int {
+        return count($row) * 2;
+    }
+}
+$rm = new ReflectionMethod("UserEntity", "fromRow");
+echo $rm->getDeclaringClass()->getName(), "|";
+$rc = new ReflectionMethod("CustomEntity", "fromRow");
+echo $rc->getDeclaringClass()->getName(), "|";
+function guardOverride(string $cls): string {
+    $declaring = (new ReflectionMethod($cls, "fromRow"))->getDeclaringClass()->getName();
+    return is_subclass_of($cls, $declaring) ? "inherits" : "own";
+}
+echo guardOverride("CustomEntity");
+"#,
+    );
+    assert_eq!(out, "BaseEntity|CustomEntity|own");
+}
+
+/// EC-43 (#537): ReflectionParameter::isDefaultValueAvailable (distinct from
+/// isOptional — variadics are optional with NO default), and the type name is
+/// reachable through the explicit `__toString()`/`getName()` surface
+/// (ReflectionNamedType::__toString is a slot getter over __name; the
+/// `(string)` cast on a MIXED-flow operand is a documented limitation — the
+/// runtime string cast has no object arm).
+#[test]
+fn test_reflection_parameter_default_availability_and_type_string_cast() {
+    let out = compile_and_run(
+        r#"<?php
+final class Card {
+    public function __construct(
+        public string $title,
+        public int $count = 3,
+    ) {}
+}
+function renderAll(string $glue, int $width = 80, mixed ...$parts): string {
+    return $glue . $width . count($parts);
+}
+$rm = new ReflectionMethod("Card", "__construct");
+foreach ($rm->getParameters() as $p) {
+    echo $p->getName(), ":", $p->isOptional() ? "opt" : "req", ":", $p->isDefaultValueAvailable() ? "def" : "nodef";
+    $t = $p->getType();
+    if ($t !== null) {
+        echo ":", $t->__toString();
+    }
+    echo ";";
+}
+echo "|";
+$rf = new ReflectionFunction("renderAll");
+foreach ($rf->getParameters() as $p) {
+    echo $p->getName(), ":", $p->isDefaultValueAvailable() ? "def" : "nodef", ";";
+}
+"#,
+    );
+    assert_eq!(
+        out,
+        "title:req:nodef:string;count:opt:def:int;|glue:nodef;width:def;parts:nodef;"
+    );
+}

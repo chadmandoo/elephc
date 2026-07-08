@@ -538,6 +538,14 @@ class PDOStatement implements Iterator {
         return $this->columnValue($column);
     }
 
+    public function closeCursor(): bool {
+        // Frees the cursor for re-execution. This prelude fetches eagerly at
+        // execute() time (the pgsql result is fully drained into PHP rows),
+        // so there is no server-side cursor left to close — accepted no-op,
+        // like PHP drivers without partial-fetch state.
+        return true;
+    }
+
     public function rowCount(): int {
         // The affected-row count captured at execute() time. Reliable for DML
         // (INSERT/UPDATE/DELETE); for SELECT it is driver-dependent, exactly as

@@ -1223,3 +1223,97 @@ var_dump($k);
         "array(2) {\n  [0]=>\n  string(3) \"b/x\"\n  [1]=>\n  string(3) \"a/y\"\n}\n"
     );
 }
+
+/// EC-47 (#536): an associative array flowing under a bare `array` hint is
+/// physically a boxed Mixed cell once container elements/returns are
+/// involved — `$p["key"] ?? null` probed the BOX as a hash header (garbage
+/// capacity → wild probe → segfault). __rt_hash_get now unwraps tag-5 boxed
+/// cells at entry, covering both `??` reads and isset.
+#[test]
+fn test_bare_array_param_assoc_silent_read() {
+    let out = compile_and_run(
+        r#"<?php
+function readName(array $p): mixed {
+    return $p["name"] ?? null;
+}
+$rows = [["name" => "a"], ["name" => "b"]];
+foreach ($rows as $row) {
+    var_dump(readName($row));
+    var_dump(isset($row["name"]));
+}
+var_dump(readName(["other" => "x"]));
+"#,
+    );
+    assert_eq!(
+        out,
+        "string(1) \"a\"\nbool(true)\nstring(1) \"b\"\nbool(true)\nNULL\n"
+    );
+}
+
+/// EC-47 (#536): sort() over Mixed-slotted storage (boxed cells — the
+/// adaptive array_keys result, Mixed-returned lists) routes through the
+/// prelude copy-sort with type-aware comparison instead of the typed native
+/// sorts (the string sort walked boxed cells as ptr/len pairs — WalCommitWriter
+/// applyRenames pattern); array_keys over assoc receivers is now honestly
+/// typed Array(Mixed) (the native runtime emits boxed key cells).
+#[test]
+fn test_sort_over_boxed_slots_and_assoc_keys_chain() {
+    let out = compile_and_run(
+        r#"<?php
+final class Wal {
+    /** @param array<string, string> $staged */
+    public function apply(array $staged): string {
+        $targets = $this->sortStrings(array_keys($staged));
+        return implode(",", $targets);
+    }
+    /** @param list<string> $strings */
+    private function sortStrings(array $strings): array {
+        sort($strings);
+        return $strings;
+    }
+}
+$w = new Wal();
+echo $w->apply(["b/x" => "s1", "a/y" => "s2", "c/z" => "s3"]), "|";
+function keysOf(array $staged): mixed {
+    return array_keys($staged);
+}
+function intKeysOf(array $staged): mixed {
+    return array_keys($staged);
+}
+$k = keysOf(["k2" => 1, "k1" => 2]);
+sort($k);
+echo implode(",", $k), "|";
+$nums = intKeysOf([9 => "x", 3 => "y", 7 => "z"]);
+sort($nums);
+echo implode(",", $nums);
+"#,
+    );
+    assert_eq!(out, "a/y,b/x,c/z|k1,k2|3,7,9");
+}
+
+/// EC-47 (#536): a value that is already a boxed Mixed cell passes through
+/// the Array→mixed argument boundary unchanged (with a retain) — re-boxing
+/// stamped the outer cell with the out-of-range default tag, and the callee's
+/// adaptive foreach read it as null ("foreach over iterable with unsupported
+/// kind").
+#[test]
+fn test_boxed_cell_passthrough_at_mixed_boundary() {
+    let out = compile_and_run(
+        r#"<?php
+function sortem(array $strings): array {
+    sort($strings);
+    return $strings;
+}
+function keysOf(array $staged): mixed {
+    return array_keys($staged);
+}
+$k = keysOf(["b" => 1, "a" => 2]);
+$s = sortem($k);
+var_dump($s);
+"#,
+    );
+    assert_eq!(
+        out,
+        "array(2) {\n  [0]=>\n  string(1) \"a\"\n  [1]=>\n  string(1) \"b\"\n}\n"
+    );
+}

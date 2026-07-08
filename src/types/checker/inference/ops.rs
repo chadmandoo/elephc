@@ -443,6 +443,16 @@ impl Checker {
                     return Ok(PhpType::Mixed);
                 }
             }
+            // A bare Mixed callee (a factory fetched from an
+            // array<string,mixed> wiring map, a listener-list element) is the
+            // same runtime-enforced posture: the dynamic descriptor invoke
+            // unboxes callables and fatals on non-callables like Zend.
+            if matches!(var_ty, PhpType::Mixed) {
+                for arg in args {
+                    self.infer_type(arg, env)?;
+                }
+                return Ok(PhpType::Mixed);
+            }
             if let Some(target) = self.callable_array_targets.get(var).cloned() {
                 return self.infer_callable_array_target_call(&target, args, expr, env);
             }
@@ -587,6 +597,15 @@ impl Checker {
         }
         let nullable_callable =
             Self::is_nullable_callable_from_nullsafe_chain(callee, &callee_ty);
+        // Mixed callee expressions (array reads, property fetches) take the
+        // dynamic descriptor invoke at runtime — same posture as Mixed
+        // variable callees above.
+        if matches!(callee_ty, PhpType::Mixed) {
+            for arg in args {
+                self.infer_type(arg, env)?;
+            }
+            return Ok(PhpType::Mixed);
+        }
         if callee_ty != PhpType::Callable && !nullable_callable {
             return Err(CompileError::new(
                 expr.span,

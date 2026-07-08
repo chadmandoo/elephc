@@ -43,7 +43,13 @@ builtin! {
 /// pre-validated by the registry. Returns `Ok(PhpType::Void)` on success.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
-    if !matches!(ty, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+    // Mixed receivers (adaptive array_keys results, Mixed-returned lists)
+    // are arrays at runtime in well-typed code; the EIR desugar routes them
+    // through the prelude copy-sort.
+    if !matches!(
+        ty,
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
+    ) {
         return Err(CompileError::new(cx.span, &format!("{}() argument must be array", cx.name)));
     }
     if let Some(flags) = cx.args.get(1) {

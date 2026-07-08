@@ -736,6 +736,19 @@ fn emit_box_iterable_as_mixed(emitter: &mut Emitter) {
         Arch::AArch64 => {
             emitter.instruction("str x0, [sp, #-16]!");                         // preserve the iterable heap pointer while probing its concrete heap kind
             emitter.instruction("bl __rt_heap_kind");                           // classify the raw iterable pointer by its heap-kind tag
+            // A value that is ALREADY a boxed Mixed cell (heap kind 5) passes
+            // through with a retain — re-boxing it would stamp the outer cell
+            // with the out-of-range default tag and read back as null
+            // (Array(Mixed) storage handed to a `mixed` parameter holds the
+            // box itself).
+            emitter.instruction("cmp x0, #5");                                  // already a boxed Mixed cell?
+            emitter.instruction("b.ne 1f");                                     // raw containers continue to the tag mapping
+            emitter.instruction("ldr x0, [sp], #16");                           // reload the existing boxed cell pointer
+            emitter.instruction("str x0, [sp, #-16]!");                         // preserve it across the retain helper call
+            emitter.instruction("bl __rt_incref");                              // the caller receives a NEW owned reference
+            emitter.instruction("ldr x0, [sp], #16");                           // return the retained boxed cell unchanged
+            emitter.instruction("b 2f");
+            emitter.raw("1:");
             emitter.instruction("mov x9, x0");                                  // keep the heap kind available for tag normalization
             emitter.instruction("cmp x0, #2");                                  // is the heap kind at least the indexed-array tag?
             emitter.instruction("cset x10, hs");                                // record whether the iterable is in the supported heap-backed range lower bound
@@ -749,10 +762,21 @@ fn emit_box_iterable_as_mixed(emitter: &mut Emitter) {
             emitter.instruction("ldr x1, [sp], #16");                           // restore the iterable heap pointer as the mixed payload low word
             emitter.instruction("mov x2, xzr");                                 // iterable payloads do not use a high payload word
             emitter.instruction("bl __rt_mixed_from_value");                    // retain the concrete heap payload and return an owned mixed cell
+            emitter.raw("2:");
         }
         Arch::X86_64 => {
             abi::emit_push_reg(emitter, "rax");                                  // preserve the iterable heap pointer while probing its concrete heap kind
             emitter.instruction("call __rt_heap_kind");                         // classify the raw iterable pointer by its heap-kind tag
+            // Already-boxed Mixed cells (heap kind 5) pass through with a
+            // retain — see the AArch64 note.
+            emitter.instruction("cmp rax, 5");                                  // already a boxed Mixed cell?
+            emitter.instruction("jne 8f");                                      // raw containers continue to the tag mapping
+            abi::emit_pop_reg(emitter, "rax");                                   // reload the existing boxed cell pointer
+            abi::emit_push_reg(emitter, "rax");                                  // preserve it across the retain helper call
+            emitter.instruction("call __rt_incref");                            // the caller receives a NEW owned reference
+            abi::emit_pop_reg(emitter, "rax");                                   // return the retained boxed cell unchanged
+            emitter.instruction("jmp 9f");
+            emitter.raw("8:");
             emitter.instruction("mov r10, rax");                                // keep the heap kind available for tag normalization
             emitter.instruction("cmp rax, 2");                                  // is the heap kind at least the indexed-array tag?
             emitter.instruction("setae r11b");                                  // record whether the iterable is in the supported heap-backed range lower bound
@@ -766,6 +790,7 @@ fn emit_box_iterable_as_mixed(emitter: &mut Emitter) {
             abi::emit_pop_reg(emitter, "rdi");                                   // restore the iterable heap pointer as the mixed payload low word
             emitter.instruction("xor rsi, rsi");                                // iterable payloads do not use a high payload word
             emitter.instruction("call __rt_mixed_from_value");                  // retain the concrete heap payload and return an owned mixed cell
+            emitter.raw("9:");
         }
     }
 }

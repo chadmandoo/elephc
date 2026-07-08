@@ -29,7 +29,7 @@ builtin! {
     area: Array,
     params: [],
     variadic: "arrays",
-    min_args: 2,
+    min_args: 1,
     returns: Mixed,
     check: check,
     lower: lower,
@@ -45,6 +45,23 @@ builtin! {
 /// (element type `Void`), the result adopts the right operand's element type if it
 /// is a scalar-merge-compatible type.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
+    // PHP's 1-arg form renumbers integer keys (identity for string keys); the
+    // EIR desugar routes it through the adaptive pairwise impl with an empty
+    // right operand.
+    if cx.args.len() == 1 {
+        let ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
+        if !matches!(
+            ty,
+            PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
+        ) {
+            return Err(CompileError::new(
+                cx.span,
+                "array_merge() first argument must be array",
+            ));
+        }
+        // Renumbering can change key layout; Mixed is the honest result.
+        return Ok(PhpType::Mixed);
+    }
     // The 3+ fold desugar bails on spread/named args, which would reach the
     // pair-only native lowering — reject them here with a real error.
     if cx.args.len() > 2

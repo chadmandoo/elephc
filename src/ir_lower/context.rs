@@ -95,6 +95,11 @@ pub(crate) struct LoweringContext<'m, 'f> {
     pub local_slots: HashMap<String, LocalSlotId>,
     pub local_kinds: HashMap<String, LocalKind>,
     pub local_types: TypeEnv,
+    /// Hoisted instanceof guards: `$flag = $x instanceof I;` maps flag name →
+    /// (guarded variable, interface/class name) so `$flag ? $x->m() : …`
+    /// dispatches the then-branch method call under the narrowed type
+    /// (mirrors the checker's instanceof_flag_guards).
+    pub instanceof_flag_guards: HashMap<String, (String, String)>,
     initialized_slots: HashSet<LocalSlotId>,
     pub functions: &'m HashMap<String, FunctionSig>,
     pub extern_functions: &'m HashMap<String, ExternFunctionSig>,
@@ -170,6 +175,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             local_slots: HashMap::new(),
             local_kinds: HashMap::new(),
             local_types: env,
+            instanceof_flag_guards: HashMap::new(),
             initialized_slots: HashSet::new(),
             functions,
             extern_functions,

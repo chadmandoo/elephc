@@ -42,6 +42,33 @@ pub fn emit_hash_get(emitter: &mut Emitter) {
     emitter.instruction("str x1, [sp, #8]");                                    // save key_ptr
     emitter.instruction("str x2, [sp, #16]");                                   // save key_len
     emitter.instruction("cbz x0, __rt_hash_get_not_found");                     // null tables cannot contain the requested key
+    // -- boxed-cell receivers unwrap to the wrapped hash --
+    // A statically hash-typed value can physically be a tag-5 Mixed cell
+    // (heap kind 5) wrapping the hash: bare `array` params refined to
+    // AssocArray receive boxed container elements. Probing the box as a
+    // hash header reads garbage capacity and crashes the probe loop. The
+    // header read is RANGE-GATED like __rt_heap_kind: static/foreign hash
+    // pointers have no uniform header, and a stray 0x05 byte there would
+    // silently misroute the lookup to not-found.
+    crate::codegen::abi::emit_symbol_address(emitter, "x5", "_heap_buf");
+    emitter.instruction("cmp x0, x5");                                          // below the managed heap → no header to probe
+    emitter.instruction("b.lo __rt_hash_get_receiver_raw");
+    crate::codegen::abi::emit_symbol_address(emitter, "x6", "_heap_off");
+    emitter.instruction("ldr x6, [x6]");                                        // load the current bump extent
+    emitter.instruction("add x6, x5, x6");                                      // compute the managed heap end
+    emitter.instruction("cmp x0, x6");                                          // at or beyond the heap end → no header to probe
+    emitter.instruction("b.hs __rt_hash_get_receiver_raw");
+    emitter.instruction("ldr x5, [x0, #-8]");                                   // load the heap kind word from the uniform header
+    emitter.instruction("and x5, x5, #0xff");                                   // isolate the low-byte heap kind tag
+    emitter.instruction("cmp x5, #5");                                          // heap kind 5 marks boxed Mixed cells
+    emitter.instruction("b.ne __rt_hash_get_receiver_raw");                     // raw hash receivers need no unwrap
+    emitter.instruction("ldr x5, [x0]");                                        // load the mixed cell's runtime tag
+    emitter.instruction("cmp x5, #5");                                          // tag 5 marks associative-array payloads
+    emitter.instruction("b.ne __rt_hash_get_not_found");                        // non-hash boxes cannot satisfy a hash lookup
+    emitter.instruction("ldr x0, [x0, #8]");                                    // unwrap the boxed hash payload pointer
+    emitter.instruction("str x0, [sp, #0]");                                    // re-save the unwrapped pointer for the probe loop
+    emitter.instruction("cbz x0, __rt_hash_get_not_found");                     // a null payload cannot contain the requested key
+    emitter.label("__rt_hash_get_receiver_raw");
     emitter.instruction("ldr x5, [x0, #8]");                                    // load capacity before hashing to avoid division by zero on empty tables
     emitter.instruction("cbz x5, __rt_hash_get_not_found");                     // zero-capacity tables cannot contain the requested key
 
@@ -145,6 +172,31 @@ fn emit_hash_get_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov QWORD PTR [rbp - 24], rdx");                       // save the key length across helper calls and probe iterations
     emitter.instruction("test rdi, rdi");                                       // null tables cannot contain the requested key
     emitter.instruction("jz __rt_hash_get_not_found");                          // return a miss before reading a null table header
+    // -- boxed-cell receivers unwrap to the wrapped hash (see AArch64 note) --
+    crate::codegen::abi::emit_symbol_address(emitter, "r10", "_heap_buf");
+    emitter.instruction("cmp rdi, r10");                                        // below the managed heap → no header to probe
+    emitter.instruction("jb __rt_hash_get_receiver_raw");
+    crate::codegen::abi::emit_symbol_address(emitter, "r11", "_heap_off");
+    emitter.instruction("mov r11, QWORD PTR [r11]");                            // load the current bump extent
+    emitter.instruction("add r11, r10");                                        // compute the managed heap end
+    emitter.instruction("cmp rdi, r11");                                        // at or beyond the heap end → no header to probe
+    emitter.instruction("jae __rt_hash_get_receiver_raw");
+    emitter.instruction("mov r11, QWORD PTR [rdi - 8]");                        // load the heap kind word from the uniform header
+    emitter.instruction("mov r10, r11");                                        // preserve the packed word for the magic validation
+    emitter.instruction("shr r10, 32");                                         // isolate the high-word heap marker
+    emitter.instruction("cmp r10d, 0x454c5048");                                // foreign blocks without the magic have no boxed-cell header
+    emitter.instruction("jne __rt_hash_get_receiver_raw");
+    emitter.instruction("and r11, 0xff");                                       // isolate the low-byte heap kind tag
+    emitter.instruction("cmp r11, 5");                                          // heap kind 5 marks boxed Mixed cells
+    emitter.instruction("jne __rt_hash_get_receiver_raw");                      // raw hash receivers need no unwrap
+    emitter.instruction("mov r11, QWORD PTR [rdi]");                            // load the mixed cell's runtime tag
+    emitter.instruction("cmp r11, 5");                                          // tag 5 marks associative-array payloads
+    emitter.instruction("jne __rt_hash_get_not_found");                         // non-hash boxes cannot satisfy a hash lookup
+    emitter.instruction("mov rdi, QWORD PTR [rdi + 8]");                        // unwrap the boxed hash payload pointer
+    emitter.instruction("mov QWORD PTR [rbp - 8], rdi");                        // re-save the unwrapped pointer for the probe loop
+    emitter.instruction("test rdi, rdi");                                       // a null payload cannot contain the requested key
+    emitter.instruction("jz __rt_hash_get_not_found");
+    emitter.label("__rt_hash_get_receiver_raw");
     emitter.instruction("mov r11, QWORD PTR [rdi + 8]");                        // load capacity before hashing to avoid division by zero on empty tables
     emitter.instruction("test r11, r11");                                       // zero capacity means there are no live entries to probe
     emitter.instruction("jz __rt_hash_get_not_found");                          // return a miss for empty hash tables

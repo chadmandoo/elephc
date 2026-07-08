@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 27] = [
+const STDLIB_PRELUDE_NAMES: [&str; 30] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -90,9 +90,12 @@ const STDLIB_PRELUDE_NAMES: [&str; 27] = [
     "array_keys",
     "array_map",
     "array_merge",
+    "array_values",
+    "array_key_exists",
     "strspn",
     "mb_substr_count",
     "strncmp",
+    "sort",
     // Matches the Debug rendering of `ExprKind::Spread` — runtime spreads
     // into variadic parameters desugar to `__elephc_variadic_collect_*`.
     "Spread(",
@@ -701,6 +704,67 @@ function strncmp(string $string1, string $string2, int $length): int {
     // PHP documents "< 0, > 0, or 0" — sign only — so the prefix spaceship
     // satisfies the contract (binary-safe byte comparison).
     return substr($string1, 0, $length) <=> substr($string2, 0, $length);
+}
+
+function __elephc_array_values_any(mixed $h): mixed {
+    // array_values over adaptive/Mixed receivers: rebuild as a fresh packed
+    // list (keys dropped, order preserved).
+    $out = [];
+    foreach ($h as $v) {
+        $out[] = $v;
+    }
+    return $out;
+}
+
+function __elephc_array_key_exists_any(mixed $key, mixed $h): bool {
+    // array_key_exists over adaptive/Mixed receivers: adaptive key walk with
+    // strict comparison per key type (PHP normalizes canonical numeric-string
+    // keys to ints at INSERT time, so stored keys never alias across types).
+    foreach ($h as $k => $v) {
+        if ($k === $key) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function __elephc_mixed_gt(mixed $a, mixed $b): bool {
+    // Type-aware "greater than" for boxed sort elements. Homogeneous
+    // string/int/float pairs compare exactly like PHP; anything else falls
+    // back to string comparison of the casts (documented approximation —
+    // PHP's full cross-type comparison table is out of scope). Spaceship is
+    // used throughout: relational `<`/`>` on strings is not lowered, but
+    // `<=>` has the dedicated string runtime.
+    if (is_int($a) && is_int($b)) {
+        return ((int) $a) > ((int) $b);
+    }
+    if (is_float($a) && is_float($b)) {
+        return ((float) $a) > ((float) $b);
+    }
+    return (((string) $a) <=> ((string) $b)) > 0;
+}
+
+function __elephc_sort_mixed_copy(mixed $h): array {
+    // sort() over Mixed-slotted storage (boxed cells): rebuild as a fresh
+    // packed list and insertion-sort it with type-aware comparison. The EIR
+    // desugar assigns the result back over the by-ref argument.
+    $out = [];
+    foreach ($h as $v) {
+        $out[] = $v;
+    }
+    $n = count($out);
+    $i = 1;
+    while ($i < $n) {
+        $v = $out[$i];
+        $j = $i - 1;
+        while ($j >= 0 && __elephc_mixed_gt($out[$j], $v)) {
+            $out[$j + 1] = $out[$j];
+            $j = $j - 1;
+        }
+        $out[$j + 1] = $v;
+        $i = $i + 1;
+    }
+    return $out;
 }
 
 function __elephc_strtr_pairs(string $s, array $pairs): string {

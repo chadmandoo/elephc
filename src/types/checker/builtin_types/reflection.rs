@@ -417,6 +417,14 @@ fn builtin_reflection_parameter() -> FlattenedClass {
             ),
             builtin_property("__has_type", Visibility::Private, Some(TypeExpr::Bool), bool_lit(false)),
             builtin_property("__type", Visibility::Private, Some(mixed_type()), null_lit()),
+            // Distinct from __optional: variadic parameters are optional but
+            // have NO default value.
+            builtin_property(
+                "__has_default",
+                Visibility::Private,
+                Some(TypeExpr::Bool),
+                bool_lit(false),
+            ),
         ],
         methods: vec![
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
@@ -425,6 +433,11 @@ fn builtin_reflection_parameter() -> FlattenedClass {
             builtin_reflection_slot_getter("isVariadic", "__variadic", TypeExpr::Bool),
             builtin_reflection_slot_getter("hasType", "__has_type", TypeExpr::Bool),
             builtin_reflection_slot_getter("getType", "__type", mixed_type()),
+            builtin_reflection_slot_getter(
+                "isDefaultValueAvailable",
+                "__has_default",
+                TypeExpr::Bool,
+            ),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -462,6 +475,10 @@ fn builtin_reflection_named_type() -> FlattenedClass {
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
             builtin_reflection_slot_getter("allowsNull", "__allows_null", TypeExpr::Bool),
             builtin_reflection_slot_getter("isBuiltin", "__builtin", TypeExpr::Bool),
+            // `(string) $param->getType()` is the idiomatic type-name read
+            // (ward-components ComponentPropsSchema); PHP's __toString on a
+            // non-nullable named type is exactly the name.
+            builtin_reflection_slot_getter("__toString", "__name", TypeExpr::Str),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -1059,6 +1076,16 @@ fn builtin_reflection_method() -> FlattenedClass {
                 Some(array_type()),
                 empty_array(),
             ),
+            // The class that DECLARES the reflected method (inheritance-aware:
+            // an inherited method's declaring class is the ancestor). Baked at
+            // construction for compile-time-resolvable pairs; dynamic pairs
+            // fall back to the reflected class name (documented approximation).
+            builtin_property(
+                "__declaring",
+                Visibility::Private,
+                Some(TypeExpr::Str),
+                empty_string(),
+            ),
         ],
         methods: vec![
             builtin_reflection_owner_constructor_method(vec![
@@ -1068,6 +1095,7 @@ fn builtin_reflection_method() -> FlattenedClass {
             builtin_reflection_slot_getter("getName", "__name", TypeExpr::Str),
             builtin_reflection_slot_getter("getDeclaringClassName", "__class", TypeExpr::Str),
             builtin_reflection_slot_getter("getParameters", "__params", array_type()),
+            builtin_reflection_method_get_declaring_class_method(),
             builtin_reflection_method_invoke_method(),
             builtin_reflection_owner_get_attributes_method(),
         ],
@@ -1124,6 +1152,45 @@ fn builtin_reflection_method_invoke_method() -> ClassMethod {
                         ),
                         Expr::new(ExprKind::Variable("args".to_string()), dummy_span),
                     ],
+                },
+                dummy_span,
+            ))),
+            dummy_span,
+        )],
+        span: dummy_span,
+        attributes: Vec::new(),
+    }
+}
+
+/// Returns `ReflectionMethod::getDeclaringClass(): ReflectionClass` whose body
+/// constructs a `ReflectionClass` for the DECLARING class baked into the
+/// `__declaring` slot (the ancestor for inherited methods when the reflected
+/// pair was compile-time-resolvable).
+fn builtin_reflection_method_get_declaring_class_method() -> ClassMethod {
+    let dummy_span = crate::span::Span::dummy();
+    ClassMethod {
+        name: "getDeclaringClass".to_string(),
+        visibility: Visibility::Public,
+        is_static: false,
+        is_abstract: false,
+        is_final: false,
+        has_body: true,
+        params: Vec::new(),
+        variadic: None,
+        variadic_type: None,
+        return_type: Some(TypeExpr::Named(crate::names::Name::from("ReflectionClass"))),
+        by_ref_return: false,
+        body: vec![Stmt::new(
+            StmtKind::Return(Some(Expr::new(
+                ExprKind::NewObject {
+                    class_name: crate::names::Name::from("ReflectionClass"),
+                    args: vec![Expr::new(
+                        ExprKind::PropertyAccess {
+                            object: Box::new(Expr::new(ExprKind::This, dummy_span)),
+                            property: "__declaring".to_string(),
+                        },
+                        dummy_span,
+                    )],
                 },
                 dummy_span,
             ))),
@@ -1241,7 +1308,11 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
     }
     if let Some(class_info) = checker.classes.get_mut("ReflectionParameter") {
         if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("getType")) {
-            // ?ReflectionNamedType — null for untyped parameters.
+            // ?ReflectionNamedType — null for untyped parameters. Downstream
+            // `(string) $param->getType()` casts reach the value under Mixed
+            // flow types; the string-cast lowering's runtime is_object branch
+            // dispatches __toString for the object case (see
+            // lower_string_cast_via_tostring).
             sig.return_type = PhpType::Union(vec![
                 PhpType::Object("ReflectionNamedType".to_string()),
                 PhpType::Void,

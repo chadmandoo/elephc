@@ -51,6 +51,24 @@ impl Checker {
             ExprKind::Not(inner) => (inner.as_ref(), true),
             _ => (condition, false),
         };
+        // A bare boolean-flag condition narrows through its recorded hoisted
+        // instanceof guard (`$flag = $x instanceof I; ... $flag ? $x->m() : …`).
+        if let ExprKind::Variable(flag) = &cond.kind {
+            if let Some((guarded, target)) = self.instanceof_flag_guards.get(flag).cloned() {
+                let current = match env.get(&guarded) {
+                    Some(ty) => ty.clone(),
+                    None => return Ok(None),
+                };
+                let matched = self.narrow_to(&current, &target);
+                let complement = self.narrow_complement(&current, &target);
+                let (then_ty, else_ty) = if negated {
+                    (complement, matched)
+                } else {
+                    (matched, complement)
+                };
+                return Ok(Some(GuardNarrowing { var: guarded, then_ty, else_ty }));
+            }
+        }
         let Some((receiver, target, inverted)) = guard_receiver_and_type(cond) else {
             return Ok(None);
         };
@@ -251,6 +269,10 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType, bool)> {
                 // `is_null($x)`: same narrowing as `$x === null` — elephc models a `?T` value's
                 // null as Void, so the complement strips it (`if (is_null($x)) { throw; }` leaves
                 // ?int as int on the fall-through path).
+                // NOTE deliberately NO `is_array` arm: narrowing Mixed to
+                // Array(Mixed) retypes physically-boxed/hash values as PACKED
+                // storage and misroutes every read in the guarded branch
+                // (var_export/strtr/PDO preludes corrupted under it).
                 "is_null" => PhpType::Void,
                 _ => return None,
             };

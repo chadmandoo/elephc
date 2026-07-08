@@ -68,6 +68,11 @@ pub(crate) struct Checker {
     /// Recursive calls may use their provisional signature, but must not re-specialize the same
     /// declaration while it is in flight.
     pub resolving_functions: HashSet<String>,
+    /// Hoisted instanceof guards: `$flag = $x instanceof I;` maps flag name →
+    /// (guarded variable, narrowed object type) so boolean-flag conditions
+    /// narrow like the inline instanceof. Reset per body via
+    /// `with_local_storage_context`.
+    pub instanceof_flag_guards: HashMap<String, (String, PhpType)>,
     /// Top-level constant types indexed by canonical name.
     pub constants: HashMap<String, PhpType>,
     /// Tracks the return type of closures assigned to variables, keyed by variable name.

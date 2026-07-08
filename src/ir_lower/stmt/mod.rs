@@ -215,6 +215,23 @@ fn lower_echo(ctx: &mut LoweringContext<'_, '_>, expr: &Expr, span: Span) {
 
 /// Lowers a plain PHP local assignment.
 fn lower_assign(ctx: &mut LoweringContext<'_, '_>, name: &str, value: &Expr, span: Span) {
+    // Hoisted-guard tracking (mirrors the checker): record
+    // `$flag = $x instanceof I;`, drop the record on any other assignment to
+    // the flag, and invalidate flags watching a reassigned variable.
+    ctx.instanceof_flag_guards
+        .retain(|flag, (guarded, _)| flag != name && guarded != name);
+    if let ExprKind::InstanceOf {
+        value: guarded,
+        target: crate::parser::ast::InstanceOfTarget::Name(target),
+    } = &value.kind
+    {
+        if let ExprKind::Variable(guarded_name) = &guarded.kind {
+            ctx.instanceof_flag_guards.insert(
+                name.to_string(),
+                (guarded_name.clone(), target.as_str().to_string()),
+            );
+        }
+    }
     // PHP allows compound assignment on an undefined variable (`$x += 1`),
     // treating the undefined variable as null/0 with a warning. The type
     // checker injects the variable as `Void` and emits a warning. At the

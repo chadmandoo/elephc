@@ -527,3 +527,47 @@ echo $cb();
     );
     assert_eq!(out, "called");
 }
+
+/// EC-44 (#538): container/callable operations accept bare Mixed at the
+/// checker and take the runtime-enforced path — a factory fetched from an
+/// array<string,mixed> wiring map and a listener-list element invoke through
+/// the dynamic descriptor invoke (Container/EventDispatcher pattern);
+/// array_values/array_key_exists over json_decode results ride the adaptive
+/// prelude impls; 1-arg array_merge renumbers a gapped packed array.
+#[test]
+fn test_mixed_callee_and_array_acceptance_stragglers() {
+    let out = compile_and_run(
+        r#"<?php
+final class Registry {
+    /** @var array<string, mixed> */
+    private array $factories = [];
+    public function set(string $key, mixed $factory): void {
+        $this->factories[$key] = $factory;
+    }
+    public function make(string $key): mixed {
+        $factory = $this->factories[$key] ?? null;
+        if ($factory === null) {
+            throw new RuntimeException("no factory");
+        }
+        return $factory();
+    }
+}
+$r = new Registry();
+$r->set("svc", fn(): string => "made");
+echo $r->make("svc"), "|";
+$listeners = [fn(int $n): int => $n + 1, fn(int $n): int => $n * 2];
+$total = 0;
+foreach ($listeners as $listener) {
+    $total = $total + $listener(5);
+}
+echo $total, "|";
+$m = json_decode('{"b":2,"a":1}', true);
+echo implode(",", array_values($m)), "|";
+echo array_key_exists("a", $m) ? "y" : "n", array_key_exists("z", $m) ? "y" : "n", "|";
+$gapped = array_filter(json_decode('[5,0,7]', true), fn(mixed $v): bool => $v > 0);
+$renum = array_merge($gapped);
+echo implode(",", array_keys($renum)), "=", implode(",", $renum);
+"#,
+    );
+    assert_eq!(out, "made|16|2,1|yn|0,1=5,7");
+}

@@ -56,7 +56,11 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             Ok(PhpType::Mixed)
         }
         PhpType::Array(_) => Ok(PhpType::Array(Box::new(PhpType::Int))),
-        PhpType::AssocArray { key, .. } => Ok(PhpType::Array(key)),
+        // The native assoc-keys runtime emits BOXED key cells (Mixed slots) —
+        // claiming Array(key) made downstream typed consumers walk boxes as
+        // raw payloads (a string sort over the keys of a hash segfaulted).
+        // Array(Mixed) is the honest slot type; adaptive consumers handle it.
+        PhpType::AssocArray { .. } => Ok(PhpType::Array(Box::new(PhpType::Mixed))),
         // Mixed receivers (json_decode results, adaptive locals) desugar to
         // the prelude `__elephc_array_keys_any` impl; keys may be int or
         // string, so the result shape stays Mixed.

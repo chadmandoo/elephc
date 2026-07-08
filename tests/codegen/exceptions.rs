@@ -691,3 +691,44 @@ try { echo $c->foo(); echo 'no'; } catch (Error $e) { echo 'err'; }
     );
     assert_eq!(out, "err");
 }
+
+/// EC-45 (#539): a user exception subclass declaring `?Throwable $previous`
+/// no longer resolves the param to Str. Root cause: propagate_constructor_arg_type
+/// clobbered ANY class sharing an inherited promoted property — `new
+/// LogicException("msg")` propagated message:Str to param index 0, overwriting
+/// a subclass whose own ctor takes `$previous` at index 0. The propagation now
+/// only rewrites a class's ctor param when that param actually maps to the
+/// shared property. Also: parent::__construct on a builtin throwable (no
+/// compiled body) desugars into direct message/code field writes on $this
+/// (EnvelopeTampered AIC pattern — getMessage/getCode round-trip).
+#[test]
+fn test_user_throwable_subclass_previous_param_and_parent_construct() {
+    let out = compile_and_run(
+        r#"<?php
+final class EnvelopeTampered extends RuntimeException {
+    public function __construct(?Throwable $previous = null) {
+        parent::__construct("envelope tampered", 7, $previous);
+    }
+}
+function decode(): void {
+    try {
+        throw new JsonException("bad json");
+    } catch (JsonException $e) {
+        throw new EnvelopeTampered($e);
+    }
+}
+try {
+    decode();
+} catch (EnvelopeTampered $t) {
+    echo $t->getMessage(), "|", $t->getCode();
+}
+echo "|";
+try {
+    throw new LogicException("plain");
+} catch (LogicException $e) {
+    echo $e->getMessage(), ":", $e->getCode();
+}
+"#,
+    );
+    assert_eq!(out, "envelope tampered|7|plain:0");
+}

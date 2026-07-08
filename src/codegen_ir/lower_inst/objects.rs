@@ -864,7 +864,7 @@ fn lower_builtin_throwable_new(
 }
 
 /// Returns true for builtin classes that share PHP's compact Throwable payload.
-fn is_builtin_throwable_payload_class(class_name: &str) -> bool {
+pub(crate) fn is_builtin_throwable_payload_class(class_name: &str) -> bool {
     matches!(
         class_name,
         "Error"

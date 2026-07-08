@@ -49,6 +49,7 @@ mod floats;
 mod hashes;
 mod iterators;
 mod objects;
+pub(crate) use objects::is_builtin_throwable_payload_class;
 mod ownership;
 mod pointers;
 mod predicates;
@@ -5857,6 +5858,11 @@ fn local_load_types_share_storage(source_ty: &PhpType, result_ty: &PhpType) -> b
             PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never
         ) | (PhpType::Array(_), PhpType::Array(_))
             | (PhpType::AssocArray { .. }, PhpType::AssocArray { .. })
+            // Interface/class narrowing on object locals: the frame stores
+            // one raw object pointer regardless of the class name, so a
+            // flow-narrowed load (`$flag ? $block->weight() : …` reading the
+            // Block slot as HasCustomWeight) is representation-identical.
+            | (PhpType::Object(_), PhpType::Object(_))
     )
 }
 

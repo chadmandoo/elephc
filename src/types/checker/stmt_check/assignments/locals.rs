@@ -109,6 +109,30 @@ pub(super) fn check_assign(
     // produce a spurious `AssocArray -> Array(Mixed)` backend error.
     checker.foreach_key_locals.remove(name);
 
+    // Hoisted-guard tracking: `$flag = $x instanceof I;` records the guard so
+    // a later `$flag ? $x->m() : ...` (BlockOverview's $hasCustomWeight
+    // pattern) narrows $x exactly like the inline instanceof would. Any other
+    // assignment to the flag drops the record, and any assignment to the
+    // GUARDED variable invalidates every flag watching it.
+    checker
+        .instanceof_flag_guards
+        .retain(|flag, (guarded, _)| flag != name && guarded != name);
+    if let ExprKind::InstanceOf {
+        value: guarded,
+        target: crate::parser::ast::InstanceOfTarget::Name(target),
+    } = &value.kind
+    {
+        if let ExprKind::Variable(guarded_name) = &guarded.kind {
+            checker.instanceof_flag_guards.insert(
+                name.to_string(),
+                (
+                    guarded_name.clone(),
+                    PhpType::Object(target.as_str().to_string()),
+                ),
+            );
+        }
+    }
+
     // PHP allows compound assignment on an undefined variable (`$x += 1`),
     // treating the undefined variable as null/0 with a warning. The parser
     // lowers `$x += 1` to `Assign { name: "x", value: BinaryOp { left:

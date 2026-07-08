@@ -1816,6 +1816,18 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_map_any(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_sort_mixed(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_values_any(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_key_exists_any(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_array_merge_single(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_array_merge_pairwise_any(ctx, canonical, args, expr) {
         return value;
     }
@@ -4584,6 +4596,161 @@ fn lower_static_array_map_any(
         kind: ExprKind::FunctionCall {
             name: Name::from("__elephc_array_map_any"),
             args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_sort_mixed(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "sort" {
+        return None;
+    }
+    if args.is_empty() || args.len() > 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let ExprKind::Variable(var_name) = &args[0].kind else {
+        return None;
+    };
+    // Mixed-slotted receivers (boxed cells: adaptive array_keys results,
+    // Mixed locals) crash or error in the typed native sorts — route through
+    // the prelude copy-sort and assign the result back over the by-ref
+    // argument. Concrete element types keep the native in-place fast path.
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
+    let adaptive = match receiver_ty.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => true,
+        PhpType::Array(elem) => matches!(elem.codegen_repr(), PhpType::Mixed),
+        _ => false,
+    };
+    if !adaptive || !prelude_impl_available(ctx, "__elephc_sort_mixed_copy") {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_sort_mixed_copy"),
+            args: vec![args[0].clone()],
+        },
+        span: expr.span,
+    };
+    let sorted = lower_expr(ctx, &impl_call);
+    let assigned_ty = PhpType::Array(Box::new(PhpType::Mixed));
+    ctx.store_local(var_name, sorted, assigned_ty, Some(expr.span));
+    ctx.mark_local_initialized(var_name);
+    // sort() returns true.
+    Some(ctx.emit_value(
+        Op::ConstBool,
+        Vec::new(),
+        Some(Immediate::Bool(true)),
+        PhpType::Bool,
+        Op::ConstBool.default_effects(),
+        Some(expr.span),
+    ))
+}
+
+fn lower_static_array_values_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_values" {
+        return None;
+    }
+    if args.len() != 1 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
+    if !matches!(
+        receiver_ty.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) || !prelude_impl_available(ctx, "__elephc_array_values_any")
+    {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_values_any"),
+            args: vec![args[0].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_key_exists_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_key_exists" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[1]);
+    if !matches!(
+        receiver_ty.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) || !prelude_impl_available(ctx, "__elephc_array_key_exists_any")
+    {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_key_exists_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_merge_single(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_merge" {
+        return None;
+    }
+    if args.len() != 1 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    if !prelude_impl_available(ctx, "__elephc_array_merge_any") {
+        return None;
+    }
+    // PHP's 1-arg merge renumbers integer keys (identity for string keys):
+    // exactly the adaptive pairwise impl with an empty right operand.
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_merge_any"),
+            args: vec![
+                args[0].clone(),
+                Expr {
+                    kind: ExprKind::ArrayLiteral(Vec::new()),
+                    span: expr.span,
+                },
+            ],
         },
         span: expr.span,
     };
@@ -8451,7 +8618,32 @@ fn lower_ternary(
 
     ctx.builder.position_at_end(then_block);
     ctx.restore_initialized_slots(split_initialized.clone());
+    // A boolean-flag condition recorded from `$flag = $x instanceof I;`
+    // narrows the guarded variable's FLOW type inside the then branch, so a
+    // `$flag ? $x->m() : …` method call dispatches under the interface
+    // (BlockOverview's $hasCustomWeight pattern). The flow type is restored
+    // before the else branch and the merge.
+    let flag_narrow = match &condition.kind {
+        ExprKind::Variable(flag) => ctx.instanceof_flag_guards.get(flag).cloned(),
+        _ => None,
+    };
+    let saved_guarded_ty = flag_narrow.as_ref().map(|(guarded, target)| {
+        let saved = ctx.local_types.get(guarded).cloned();
+        ctx.local_types
+            .insert(guarded.clone(), PhpType::Object(target.clone()));
+        (guarded.clone(), saved)
+    });
     store_expr_into_temp(ctx, &temp_name, result_type.clone(), then_expr, expr.span);
+    if let Some((guarded, saved)) = saved_guarded_ty {
+        match saved {
+            Some(ty) => {
+                ctx.local_types.insert(guarded, ty);
+            }
+            None => {
+                ctx.local_types.remove(&guarded);
+            }
+        }
+    }
     let then_reachable = !ctx.builder.insertion_block_is_terminated();
     let then_initialized = ctx.initialized_slots_snapshot();
     branch_to(ctx, merge);
@@ -10318,6 +10510,19 @@ fn lower_static_method_call(
             return emit_closure_bind(ctx, closure.value, new_this.value, expr);
         }
     }
+    // `parent::__construct(msg, code, prev)` where the parent is a builtin
+    // throwable has no compiled parent body (builtin ctors are compact-payload
+    // intrinsics). A user subclass that declares its OWN constructor is not
+    // compact, but its first properties are message/code in the payload-
+    // compatible order — desugar the forward into direct field writes on
+    // `$this` so getMessage/getCode read them back.
+    if matches!(receiver, StaticReceiver::Parent)
+        && php_symbol_key(method) == "__construct"
+    {
+        if let Some(value) = lower_parent_throwable_construct(ctx, args, expr) {
+            return value;
+        }
+    }
     let sig = static_method_implementation_signature(ctx, receiver, method)
         .or_else(|| lexical_instance_static_call_signature(ctx, receiver, method))
         .cloned();
@@ -10545,6 +10750,51 @@ fn static_method_implementation_signature<'a>(
     ctx.classes
         .get(impl_class)
         .and_then(|class_info| class_info.static_methods.get(&key))
+}
+
+/// Desugars `parent::__construct(message, code, previous)` into direct writes
+/// of `$this`'s throwable payload fields when the lexical parent is a builtin
+/// throwable-payload class. Returns `None` for non-throwable parents (the
+/// normal static-call lowering applies). The message/code properties are the
+/// first two fields in the payload-compatible layout; `previous` (arg 2) is
+/// evaluated for side effects but not stored (no property slot on a
+/// non-compact subclass).
+fn lower_parent_throwable_construct(
+    ctx: &mut LoweringContext<'_, '_>,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    let parent = static_receiver_class_name(ctx, &StaticReceiver::Parent)?;
+    if !crate::codegen_ir::lower_inst::is_builtin_throwable_payload_class(&parent) {
+        return None;
+    }
+    let this = Expr::new(ExprKind::This, expr.span);
+    let assign_prop = |ctx: &mut LoweringContext<'_, '_>, prop: &str, value: &Expr| {
+        let stmt = crate::parser::ast::Stmt::new(
+            crate::parser::ast::StmtKind::PropertyAssign {
+                object: Box::new(this.clone()),
+                property: prop.to_string(),
+                value: value.clone(),
+            },
+            expr.span,
+        );
+        crate::ir_lower::stmt::lower_stmt(ctx, &stmt);
+    };
+    if let Some(message) = args.first() {
+        assign_prop(ctx, "message", message);
+    }
+    if let Some(code) = args.get(1) {
+        assign_prop(ctx, "code", code);
+    }
+    // The optional `previous` (arg 2) is evaluated for side effects but not
+    // stored: a non-compact user subclass has no `previous` property, and
+    // getPrevious() on it is the synthesized null (matching the pre-#531
+    // behaviour for user throwable subclasses with their own ctor).
+    if let Some(previous) = args.get(2) {
+        let _ = lower_expr(ctx, previous);
+    }
+    // parent::__construct() is a void call — yield null.
+    Some(lower_null(ctx, expr))
 }
 
 /// Returns the instance-method signature used by `self::method()` or `parent::method()`.

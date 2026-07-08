@@ -385,7 +385,19 @@ impl Checker {
                 }
             }
 
-            if !param_has_declared_type {
+            // Only rewrite the sharing class's ctor param when ITS parameter
+            // at `param_index` actually maps to this same property. A
+            // subclass that declares its own constructor with a different
+            // parameter order (e.g. `Wrapped extends RuntimeException` taking
+            // `?Throwable $previous` at index 0) must not have its unrelated
+            // param clobbered by a sibling's promoted-property propagation
+            // (`new LogicException("msg")` propagating message:Str to index 0).
+            let param_maps_to_this_prop = class_info
+                .constructor_param_to_prop
+                .get(param_index)
+                .and_then(|mapped| mapped.as_ref())
+                .is_some_and(|mapped| mapped == &prop_name);
+            if !param_has_declared_type && param_maps_to_this_prop {
                 if let Some(sig) = class_info.methods.get_mut("__construct") {
                     if let Some((_, param_ty)) = sig.params.get_mut(param_index) {
                         *param_ty = arg_ty.clone();
