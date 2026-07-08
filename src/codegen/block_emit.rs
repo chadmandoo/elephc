@@ -1159,7 +1159,7 @@ fn emit_instruction_source_marker(ctx: &mut FunctionContext<'_>, inst_id: InstId
         }
         let _ = write!(marker, " op={}", inst.op.name());
         if let Some(origin) = inst.origin {
-            let _ = write!(marker, " origin={}", origin);
+            let _ = write!(marker, " origin={}", origin.name());
         }
         ctx.emitter.comment(&marker);
     }

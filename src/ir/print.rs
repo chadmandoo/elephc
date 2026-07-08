@@ -142,7 +142,7 @@ fn print_instruction(out: &mut String, function: &Function, data: &DataPool, ins
         let _ = write!(out, " ; span: {}:{}", span.line, span.col);
     }
     if let Some(origin) = inst.origin {
-        let _ = write!(out, " ; origin: {}", origin);
+        let _ = write!(out, " ; origin: {}", origin.name());
     }
     out.push('\n');
 }
