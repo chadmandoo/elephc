@@ -18972,7 +18972,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/debug.rs",
       "codegen_function": "lower_var_dump",
-      "codegen_line": 146,
+      "codegen_line": 152,
       "notes": [
         "Lowers `var_dump(value, ...values)` for concrete scalar/resource values and array/hash shells.",
         "Each operand is dumped independently in source order, matching PHP's variadic var_dump."
