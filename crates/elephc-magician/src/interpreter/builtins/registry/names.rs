@@ -122,7 +122,6 @@ pub(in crate::interpreter) const EVAL_PHP_VISIBLE_BUILTIN_FUNCTIONS: &[&str] = &
     "ptr_write32",
     "ptr_write_string",
     "print_r",
-    "printf",
     "property_exists",
     "putenv",
     "rand",
@@ -142,8 +141,6 @@ pub(in crate::interpreter) const EVAL_PHP_VISIBLE_BUILTIN_FUNCTIONS: &[&str] = &
     "spl_classes",
     "spl_object_hash",
     "spl_object_id",
-    "sprintf",
-    "sscanf",
     "stream_bucket_append",
     "stream_bucket_make_writeable",
     "stream_bucket_new",
@@ -180,8 +177,6 @@ pub(in crate::interpreter) const EVAL_PHP_VISIBLE_BUILTIN_FUNCTIONS: &[&str] = &
     "usort",
     "var_dump",
     "vfprintf",
-    "vprintf",
-    "vsprintf",
 ];
 
 /// Combined PHP-visible builtin names from legacy and declarative registries.

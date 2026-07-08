@@ -1644,8 +1644,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "spl_object_id" | "spl_object_hash" => {
             eval_builtin_spl_object_identity(name, args, context, scope, values)
         }
-        "sscanf" => eval_builtin_sscanf(args, context, scope, values),
-        "sprintf" | "printf" => eval_builtin_sprintf_like(name, args, context, scope, values),
         "stream_context_create" => eval_builtin_stream_context_create(args, context, scope, values),
         "stream_context_get_default" => {
             eval_builtin_stream_context_get_default(args, context, scope, values)
@@ -1704,7 +1702,6 @@ pub(in crate::interpreter) fn eval_positional_expr_call(
         "unset" => eval_builtin_unset(args, context, scope, values),
         "var_dump" => eval_builtin_var_dump(args, context, scope, values),
         "vfprintf" => eval_builtin_vfprintf(args, context, scope, values),
-        "vsprintf" | "vprintf" => eval_builtin_vsprintf_like(name, args, context, scope, values),
         _ => Err(EvalStatus::UnsupportedConstruct),
     }
 }

@@ -325,6 +325,7 @@ mod tests {
             "pathinfo",
             "pclose",
             "popen",
+            "printf",
             "preg_match",
             "preg_match_all",
             "preg_replace",
@@ -345,6 +346,8 @@ mod tests {
             "scandir",
             "sha1",
             "sleep",
+            "sprintf",
+            "sscanf",
             "stat",
             "stream_copy_to_stream",
             "stream_get_contents",
@@ -381,6 +384,8 @@ mod tests {
             "umask",
             "unlink",
             "usleep",
+            "vprintf",
+            "vsprintf",
             "wordwrap",
         ] {
             assert!(
@@ -793,6 +798,26 @@ mod tests {
         assert_eq!(
             eval_builtin_signature_shape("implode").map(|shape| shape.required_param_count),
             Some(1)
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("sprintf"),
+            Some(["format", "values"].as_slice())
+        );
+        assert_eq!(
+            eval_builtin_signature_shape("sprintf").map(|shape| shape.variadic),
+            Some(Some("values"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("sscanf"),
+            Some(["string", "format", "vars"].as_slice())
+        );
+        assert_eq!(
+            eval_builtin_signature_shape("sscanf").map(|shape| shape.variadic),
+            Some(Some("vars"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("vsprintf"),
+            Some(["format", "values"].as_slice())
         );
         assert_eq!(
             eval_declared_builtin_param_names("gzcompress"),

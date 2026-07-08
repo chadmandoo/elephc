@@ -12,6 +12,22 @@
 use super::super::super::*;
 use super::*;
 
+/// Dispatches direct expression-level calls for declaratively migrated formatting builtins.
+pub(in crate::interpreter) fn eval_builtin_formatting_call(
+    name: &str,
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    match name {
+        "sscanf" => eval_builtin_sscanf(args, context, scope, values),
+        "sprintf" | "printf" => eval_builtin_sprintf_like(name, args, context, scope, values),
+        "vsprintf" | "vprintf" => eval_builtin_vsprintf_like(name, args, context, scope, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
+}
+
 /// Evaluates direct positional `sprintf()` or `printf()` calls in source order.
 pub(in crate::interpreter) fn eval_builtin_sprintf_like(
     name: &str,
@@ -65,5 +81,24 @@ pub(in crate::interpreter) fn eval_vsprintf_like_result(
         "vsprintf" => eval_vsprintf_result(evaluated_args, values),
         "vprintf" => eval_vprintf_result(evaluated_args, values),
         _ => Err(EvalStatus::UnsupportedConstruct),
+    }
+}
+
+/// Dispatches evaluated-argument calls for declaratively migrated formatting builtins.
+pub(in crate::interpreter) fn eval_formatting_values_result(
+    name: &str,
+    evaluated_args: &[RuntimeCellHandle],
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    match name {
+        "sscanf" => {
+            let [input, format, ..] = evaluated_args else {
+                return Err(EvalStatus::RuntimeFatal);
+            };
+            eval_sscanf_result(*input, *format, values)
+        }
+        "sprintf" | "printf" => eval_sprintf_like_result(name, evaluated_args, values),
+        "vsprintf" | "vprintf" => eval_vsprintf_like_result(name, evaluated_args, values),
+        _ => Err(EvalStatus::RuntimeFatal),
     }
 }

@@ -227,8 +227,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "spl_autoload_call" => Some(&["class"]),
         "spl_autoload" => Some(&["class", "file_extensions"]),
         "spl_object_id" | "spl_object_hash" => Some(&["object"]),
-        "sscanf" => Some(&["string", "format", "vars"]),
-        "sprintf" | "printf" => Some(&["format", "values"]),
         "stream_bucket_make_writeable" => Some(&["brigade"]),
         "stream_bucket_new" => Some(&["stream", "buffer"]),
         "stream_bucket_append" | "stream_bucket_prepend" => Some(&["brigade", "bucket"]),
@@ -260,7 +258,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "stream_wrapper_unregister" | "stream_wrapper_restore" => Some(&["protocol"]),
         "long2ip" => Some(&["ip"]),
         "vfprintf" => Some(&["stream", "format", "values"]),
-        "vsprintf" | "vprintf" => Some(&["format", "values"]),
         _ => None,
     }
 }

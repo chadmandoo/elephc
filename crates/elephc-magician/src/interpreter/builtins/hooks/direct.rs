@@ -14,14 +14,15 @@ use super::super::super::{
     eval_builtin_ceil, eval_builtin_chr, eval_builtin_clamp, eval_builtin_count,
     eval_builtin_crc32, eval_builtin_ctype, eval_builtin_explode, eval_builtin_float_binary,
     eval_builtin_float_pair, eval_builtin_float_unary, eval_builtin_floor, eval_builtin_gettype,
-    eval_builtin_gzip, eval_builtin_hash_algos, eval_builtin_hash_copy, eval_builtin_hash_final,
-    eval_builtin_hash_init, eval_builtin_hash_one_shot, eval_builtin_hash_update,
-    eval_builtin_hex2bin, eval_builtin_implode, eval_builtin_intdiv, eval_builtin_log,
-    eval_builtin_min_max, eval_builtin_number_format, eval_builtin_ord, eval_builtin_pi,
-    eval_builtin_pow, eval_builtin_round, eval_builtin_slashes, eval_builtin_sqrt,
-    eval_builtin_str_repeat, eval_builtin_strlen, eval_builtin_type_predicate,
-    eval_builtin_url_decode, eval_builtin_url_encode, ElephcEvalContext, ElephcEvalScope,
-    EvalExpr, EvalStatus, RuntimeCellHandle, RuntimeValueOps,
+    eval_builtin_formatting_call, eval_builtin_gzip, eval_builtin_hash_algos,
+    eval_builtin_hash_copy, eval_builtin_hash_final, eval_builtin_hash_init,
+    eval_builtin_hash_one_shot, eval_builtin_hash_update, eval_builtin_hex2bin,
+    eval_builtin_implode, eval_builtin_intdiv, eval_builtin_log, eval_builtin_min_max,
+    eval_builtin_number_format, eval_builtin_ord, eval_builtin_pi, eval_builtin_pow,
+    eval_builtin_round, eval_builtin_slashes, eval_builtin_sqrt, eval_builtin_str_repeat,
+    eval_builtin_strlen, eval_builtin_type_predicate, eval_builtin_url_decode,
+    eval_builtin_url_encode, ElephcEvalContext, ElephcEvalScope, EvalExpr, EvalStatus,
+    RuntimeCellHandle, RuntimeValueOps,
 };
 use super::super::{
     eval_builtin_abs, eval_builtin_array_aggregate, eval_builtin_array_flip,
@@ -91,6 +92,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     FloatPair,
     /// Dispatches unary floating-point builtins.
     FloatUnary,
+    /// Dispatches printf-family formatting builtins.
+    Formatting,
     /// Dispatches `floor(...)`.
     Floor,
     /// Dispatches `gettype(...)`.
@@ -223,6 +226,7 @@ impl EvalDirectHook {
             Self::FloatBinary => eval_builtin_float_binary(name, args, context, scope, values),
             Self::FloatPair => eval_builtin_float_pair(name, args, context, scope, values),
             Self::FloatUnary => eval_builtin_float_unary(name, args, context, scope, values),
+            Self::Formatting => eval_builtin_formatting_call(name, args, context, scope, values),
             Self::Floor => eval_builtin_floor(args, context, scope, values),
             Self::Gettype => eval_builtin_gettype(args, context, scope, values),
             Self::GraphemeStrrev => eval_builtin_grapheme_strrev(args, context, scope, values),

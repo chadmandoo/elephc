@@ -10,6 +10,7 @@
 //!   behavior through `RuntimeValueOps`.
 
 mod common;
+mod declarations;
 mod dispatch;
 mod math;
 mod number_format;
