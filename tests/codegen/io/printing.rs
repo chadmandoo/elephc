@@ -327,6 +327,27 @@ fn test_print_r_return_length() {
     assert_eq!(out, "23");
 }
 
+/// Verifies `print_r($value, true)` clamps the capture at the 64 KiB buffer size
+/// instead of overflowing into adjacent runtime data. PHP would return all 70000
+/// bytes; elephc truncates at 65536 (documented safety cap of the fixed buffer).
+/// The prefix must survive intact — a corrupted capture or clobbered BSS would
+/// change the rendered bytes or crash the binary.
+#[test]
+fn test_print_r_return_clamps_at_buffer_capacity() {
+    let out = compile_and_run(
+        r#"<?php
+$s = str_repeat("x", 70000);
+$r = print_r($s, true);
+echo strlen($r);
+echo "|";
+echo substr($r, 0, 3);
+echo "|";
+echo substr($r, 65533, 3);
+"#,
+    );
+    assert_eq!(out, "65536|xxx|xxx");
+}
+
 /// Verifies `var_dump` formats each argument independently with correct type tags and a trailing newline per call, in source order.
 #[test]
 fn test_var_dump_multiple() {

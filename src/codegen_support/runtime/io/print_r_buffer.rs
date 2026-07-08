@@ -17,9 +17,11 @@
 //! Key details:
 //! - `_print_r_mode` (0/1), `_print_r_off` (byte count), and `_print_r_buf`
 //!   (64 KiB) live in the fixed runtime data section and default to zero.
-//! - `__rt_pr_append` owns the byte-copy loop; `__rt_pr_write` is the walker-ABI
-//!   wrapper that branches on mode (syscall vs. append); `__rt_pr_finish`
-//!   persists the buffer through `__rt_str_persist` and resets the state.
+//! - `__rt_pr_append` owns the byte-copy loop and clamps the copy length to the
+//!   remaining buffer capacity (oversized captures truncate at 64 KiB instead of
+//!   overflowing adjacent data); `__rt_pr_write` is the walker-ABI wrapper that
+//!   branches on mode (syscall vs. append); `__rt_pr_finish` persists the buffer
+//!   through `__rt_str_persist` and resets the state.
 //! - Return ABI of `__rt_pr_finish` matches the platform string result registers
 //!   (AArch64 x1=ptr, x2=len; x86_64 rax=ptr, rdx=len) so the caller stores it
 //!   directly as a `Str` value.
@@ -28,7 +30,9 @@ use crate::codegen_support::abi;
 use crate::codegen_support::{emit::Emitter, platform::Arch};
 
 /// Emits `__rt_pr_append`: append `len` bytes from `buf` to `_print_r_buf` at
-/// `_print_r_off` and advance the offset. No mode check.
+/// `_print_r_off` and advance the offset. No mode check. The length is clamped
+/// to the remaining buffer capacity (64 KiB total), so oversized captures
+/// truncate instead of overflowing into adjacent runtime data.
 ///
 /// Inputs: AArch64 x0=buf, x1=len / x86_64 rdi=buf, rsi=len. No result.
 pub fn emit_pr_append(emitter: &mut Emitter) {
@@ -52,6 +56,14 @@ pub fn emit_pr_append(emitter: &mut Emitter) {
     abi::emit_symbol_address(emitter, "x9", "_print_r_off");                    // materialize the address of the append-offset global
     emitter.instruction("ldr x10, [x9]");                                       // load the current append offset
     abi::emit_symbol_address(emitter, "x11", "_print_r_buf");                   // materialize the base address of the capture buffer
+
+    // -- clamp the requested length to the remaining buffer capacity --
+    emitter.instruction("mov x12, #65536");                                     // total capture-buffer capacity in bytes
+    emitter.instruction("sub x12, x12, x10");                                   // remaining capacity = capacity - current offset
+    emitter.instruction("ldr x13, [sp, #8]");                                   // reload the requested byte length
+    emitter.instruction("cmp x13, x12");                                        // does the request exceed the remaining capacity?
+    emitter.instruction("csel x13, x12, x13, hi");                              // clamp the copy length to the remaining capacity
+    emitter.instruction("str x13, [sp, #8]");                                   // save the clamped byte length
 
     // -- copy len bytes from buf to buf_base + off (byte loop) --
     emitter.label("__rt_pr_append_loop");
@@ -90,6 +102,14 @@ fn emit_pr_append_linux_x86_64(emitter: &mut Emitter) {
     abi::emit_symbol_address(emitter, "r9", "_print_r_off");                    // materialize the address of the append-offset global
     emitter.instruction("mov r10, QWORD PTR [r9]");                             // load the current append offset
     abi::emit_symbol_address(emitter, "r11", "_print_r_buf");                   // materialize the base address of the capture buffer
+
+    // -- clamp the requested length to the remaining buffer capacity --
+    emitter.instruction("mov rcx, 65536");                                      // total capture-buffer capacity in bytes
+    emitter.instruction("sub rcx, r10");                                        // remaining capacity = capacity - current offset
+    emitter.instruction("cmp QWORD PTR [rbp - 16], rcx");                       // does the request exceed the remaining capacity?
+    emitter.instruction("jbe __rt_pr_append_len_ok_x86");                       // request fits → keep it
+    emitter.instruction("mov QWORD PTR [rbp - 16], rcx");                       // clamp the copy length to the remaining capacity
+    emitter.label("__rt_pr_append_len_ok_x86");
 
     emitter.label("__rt_pr_append_loop_x86");
     emitter.instruction("mov rcx, QWORD PTR [rbp - 16]");                       // reload the remaining byte count
