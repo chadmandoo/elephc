@@ -294,7 +294,8 @@ pub(crate) fn legacy_builtin_call_sig(name: &str) -> Option<FunctionSig> {
         "array_keys" | "array_values" | "array_reverse" | "array_unique" | "array_flip"
         | "array_sum" | "array_product" | "array_rand" | "array_is_list"
         | "array_key_first" | "array_key_last" => Some(fixed(&["array"])),
-        "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
+        "sort" => Some(first_param_ref(optional(&["array", "flags"], 1, vec![int_lit(0)]))),
+        "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort"
         | "arsort" | "ksort" | "krsort" => Some(first_param_ref(fixed(&["array"]))),
         "in_array" => Some(optional(&["needle", "haystack", "strict"], 2, vec![bool_lit(false)])),
         "array_key_exists" => Some(fixed(&["key", "array"])),

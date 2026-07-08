@@ -62,3 +62,47 @@ fn test_array_search_accepts_strict_argument() {
     );
     assert_eq!(out, "1:F");
 }
+
+/// EC-40 (#533): strspn covers the 2-arg form and the 3-arg offset form
+/// (CssTokenScanner advances a cursor with `strspn($css, WS, $offset)`;
+/// FileConfigSyncStorage validates leading/body character runs).
+#[test]
+fn test_strspn_two_and_three_arg_forms() {
+    let out = compile_and_run(
+        r#"<?php
+$css = "   a  b";
+$offset = 0;
+$offset += strspn($css, " \t\n", $offset);
+echo $offset, "|";
+echo strspn("abc123", "abcdefghijklmnopqrstuvwxyz"), "|";
+echo strspn("42abc", "0123456789"), "|";
+echo strspn("", "abc"), "|";
+echo strspn("xxaayy", "a", 2);
+"#,
+    );
+    assert_eq!(out, "3|3|2|0|2");
+}
+
+/// EC-40 (#533): mb_substr_count counts non-overlapping needles (byte-wise
+/// counting is exact for well-formed UTF-8 — needles cannot straddle
+/// codepoints), and strncmp honors PHP's sign-only contract
+/// (PipelineSpec line counting; WalCommitWriter's 4096-byte prefix compare).
+#[test]
+fn test_mb_substr_count_and_strncmp() {
+    let out = compile_and_run(
+        r#"<?php
+$body = "line1\nline2\nline3\n";
+echo mb_substr_count(mb_rtrim($body, "\n"), "\n") + 1, "|";
+echo mb_substr_count("ababab", "ab"), "|";
+echo mb_substr_count("aaa", "aa"), "|";
+echo mb_substr_count("héhé", "é"), "|";
+echo strncmp("abcdef", "abcxyz", 3), "|";
+$c = strncmp("abcdef", "abcxyz", 4);
+echo $c < 0 ? "neg" : "posz", "|";
+$d = strncmp("b", "a", 4096);
+echo $d > 0 ? "pos" : "negz", "|";
+echo strncmp("ab", "ab", 10);
+"#,
+    );
+    assert_eq!(out, "3|3|1|2|0|neg|pos|0");
+}

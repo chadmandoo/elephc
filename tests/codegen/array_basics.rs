@@ -975,3 +975,25 @@ fn test_in_array_strict_flag() {
     );
     assert_eq!(out, "1010");
 }
+
+/// EC-40 (#533): sort() accepts PHP's optional `int $flags` argument. The
+/// flag value is validated but not dispatched on — the element-typed
+/// comparison already matches SORT_STRING on the homogeneous string lists
+/// strict-typed callers pass (WalCommitWriter/FileLockManager pattern).
+#[test]
+fn test_sort_accepts_flags_argument() {
+    let out = compile_and_run(
+        r#"<?php
+$sortable = ["b/x", "a/y", "c/z"];
+sort($sortable, SORT_STRING);
+echo implode(",", $sortable), "|";
+$nums = [3, 1, 2];
+sort($nums, SORT_NUMERIC);
+echo implode(",", $nums), "|";
+$plain = ["b", "a"];
+sort($plain);
+echo implode(",", $plain);
+"#,
+    );
+    assert_eq!(out, "a/y,b/x,c/z|1,2,3|a,b");
+}

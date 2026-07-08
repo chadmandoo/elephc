@@ -1847,7 +1847,11 @@ fn lower_indexed_array_sort(
     int_helper: &str,
     str_helper: Option<&str>,
 ) -> Result<()> {
-    super::ensure_arg_count(inst, name, 1)?;
+    // `sort` accepts PHP's optional `int $flags` second operand (validated by
+    // the check hook, not dispatched on — the element-typed comparison already
+    // matches SORT_STRING/SORT_NUMERIC for homogeneous typed arrays). The
+    // other seven sorts stay 1-argument.
+    ensure_arg_count_between(inst, name, 1, if name == "sort" { 2 } else { 1 })?;
     let array = expect_operand(inst, 0)?;
     let elem_ty = indexed_sort_element_type(ctx.value_php_type(array)?, name, str_helper.is_some())?;
     let source_local = source_load_local_slot(ctx, array)?;

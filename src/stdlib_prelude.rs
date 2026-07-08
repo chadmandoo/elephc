@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 24] = [
+const STDLIB_PRELUDE_NAMES: [&str; 27] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -90,6 +90,9 @@ const STDLIB_PRELUDE_NAMES: [&str; 24] = [
     "array_keys",
     "array_map",
     "array_merge",
+    "strspn",
+    "mb_substr_count",
+    "strncmp",
     // Matches the Debug rendering of `ExprKind::Spread` — runtime spreads
     // into variadic parameters desugar to `__elephc_variadic_collect_*`.
     "Spread(",
@@ -630,6 +633,74 @@ function __elephc_variadic_collect_mixed(mixed $src): array {
         $out[] = $v;
     }
     return $out;
+}
+
+function strspn(string $string, string $characters, int $offset = 0, int $length = PHP_INT_MAX): int {
+    // Length of the initial run of $string (from $offset) made entirely of
+    // bytes from $characters. Negative offset/length follow PHP's substr
+    // conventions; the PHP_INT_MAX sentinel means "to the end" (see the
+    // mb_substr note on null-default miscompiles).
+    $len = strlen($string);
+    $start = $offset;
+    if ($start < 0) {
+        $start = $len + $start;
+        if ($start < 0) {
+            $start = 0;
+        }
+    }
+    if ($start > $len) {
+        return 0;
+    }
+    $end = $len;
+    if ($length !== PHP_INT_MAX) {
+        if ($length < 0) {
+            $end = $len + $length;
+        } else {
+            $end = $start + $length;
+        }
+        if ($end > $len) {
+            $end = $len;
+        }
+    }
+    $n = 0;
+    $i = $start;
+    while ($i < $end) {
+        if (!str_contains($characters, $string[$i])) {
+            break;
+        }
+        $n = $n + 1;
+        $i = $i + 1;
+    }
+    return $n;
+}
+
+function mb_substr_count(string $haystack, string $needle): int {
+    // Non-overlapping needle count. Byte-wise counting is exact for
+    // well-formed UTF-8: a codepoint sequence cannot straddle another
+    // codepoint's bytes, so multibyte needles match at the same positions
+    // mb_substr_count reports.
+    if ($needle === '') {
+        return 0;
+    }
+    $count = 0;
+    $pos = 0;
+    $step = strlen($needle);
+    while (true) {
+        $rest = substr($haystack, $pos);
+        $found = strpos($rest, $needle);
+        if ($found === false) {
+            break;
+        }
+        $count = $count + 1;
+        $pos = $pos + $found + $step;
+    }
+    return $count;
+}
+
+function strncmp(string $string1, string $string2, int $length): int {
+    // PHP documents "< 0, > 0, or 0" — sign only — so the prefix spaceship
+    // satisfies the contract (binary-safe byte comparison).
+    return substr($string1, 0, $length) <=> substr($string2, 0, $length);
 }
 
 function __elephc_strtr_pairs(string $s, array $pairs): string {
