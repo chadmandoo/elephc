@@ -302,6 +302,14 @@ impl Checker {
             return Ok(());
         }
 
+        // A generator body never requires a tail return: calling it produces
+        // the Generator object itself, and falling off the end just exhausts
+        // iteration (`function iterate(): Generator { foreach (...) { yield
+        // ...; } }` is complete as written).
+        if crate::types::checker::yield_validation::body_contains_yield(body) {
+            return Ok(());
+        }
+
         if crate::termination::block_guarantees_function_exit(body) {
             Ok(())
         } else {

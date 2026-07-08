@@ -150,8 +150,29 @@ impl Checker {
                         .map(|(name, _, _, _)| name.clone())
                         .collect();
                     let mut method_errors = Vec::new();
+                    let mut return_infos = Vec::new();
+                    let mut callable_return_sigs = Vec::new();
+                    let mut callable_array_return_sigs = Vec::new();
                     self.with_local_storage_context(method_ref_params, |checker| {
                         for s in &method.body {
+                            // Collect return facts BEFORE checking the statement:
+                            // check_stmt persists flow complements past terminal
+                            // branches (`if ($x !== null) { return $x; }` leaves
+                            // $x: Void afterwards), so a post-body re-walk reads
+                            // returns under types that were only ever true on the
+                            // SKIP path — `return $cmp` inside the guard reported
+                            // Void and failed the declared-Int compat check.
+                            checker.collect_return_infos(s, &method_env, &mut return_infos);
+                            checker.collect_return_callable_sigs(
+                                s,
+                                &method_env,
+                                &mut callable_return_sigs,
+                            );
+                            checker.collect_return_callable_array_sigs(
+                                s,
+                                &method_env,
+                                &mut callable_array_return_sigs,
+                            );
                             if let Err(error) = checker.check_stmt(s, &mut method_env) {
                                 method_errors.extend(error.flatten());
                             }
@@ -162,7 +183,15 @@ impl Checker {
                     pass_errors.extend(method_errors);
 
                     if !method_has_errors {
-                        self.update_method_return_type(class, method, &method_env, &mut pass_errors);
+                        self.update_method_return_type(
+                            class,
+                            method,
+                            &method_env,
+                            return_infos,
+                            callable_return_sigs,
+                            callable_array_return_sigs,
+                            &mut pass_errors,
+                        );
                     }
                     self.current_class = None;
                     self.current_method = None;
@@ -234,25 +263,17 @@ impl Checker {
     /// it always throws/exits/loops). `Never` combined with a body that *does* contain
     /// return statements produces a compile error. Generic array hints are passed
     /// through as-is to preserve inference.
+    #[allow(clippy::too_many_arguments)]
     fn update_method_return_type(
         &mut self,
         class: &FlattenedClass,
         method: &ClassMethod,
-        method_env: &TypeEnv,
+        _method_env: &TypeEnv,
+        return_infos: Vec<super::functions::returns::ReturnInfo>,
+        callable_return_sigs: Vec<crate::types::FunctionSig>,
+        callable_array_return_sigs: Vec<crate::types::FunctionSig>,
         pass_errors: &mut Vec<CompileError>,
     ) {
-        let mut return_infos = Vec::new();
-        let mut callable_return_sigs = Vec::new();
-        let mut callable_array_return_sigs = Vec::new();
-        for stmt in &method.body {
-            self.collect_return_infos(stmt, method_env, &mut return_infos);
-            self.collect_return_callable_sigs(stmt, method_env, &mut callable_return_sigs);
-            self.collect_return_callable_array_sigs(
-                stmt,
-                method_env,
-                &mut callable_array_return_sigs,
-            );
-        }
         let raw_inferred = if return_infos.is_empty() {
             None
         } else {

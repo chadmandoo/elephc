@@ -275,3 +275,93 @@ echo describe(new RouteRule("/x")), "|", describe(new TypeRule("page"));
     );
     assert_eq!(out, "route:/x|type:page");
 }
+
+/// EC-39 (#532): generator bodies never require a tail return — calling one
+/// produces the Generator itself and falling off the end exhausts iteration
+/// (PgsqlResult::iterate / FileResult::yieldRows pattern).
+#[test]
+fn test_generator_method_requires_no_tail_return() {
+    let out = compile_and_run(
+        r#"<?php
+final class R {
+    /** @param list<int> $rows */
+    public function __construct(private array $rows) {}
+    public function iterate(): Generator {
+        foreach ($this->rows as $row) {
+            yield $row * 2;
+        }
+    }
+}
+$r = new R([1, 2, 3]);
+foreach ($r->iterate() as $v) {
+    echo $v, ";";
+}
+"#,
+    );
+    assert_eq!(out, "2;4;6;");
+}
+
+/// EC-39 (#532): return facts are collected under the FLOW env at each
+/// statement, not the post-body env — check_stmt persists flow complements
+/// past terminal branches (`if ($x !== null) { return $x; }` leaves $x: Void
+/// afterwards), so post-body collection reported the guarded `return $x` as
+/// Void and failed the declared-type compat check. Covers the ?int guard
+/// (RowComparator::compareForOrderBy), the Mixed session read
+/// (SynchronizerTokenStrategy::issue), and the foreach-guard-throw tail
+/// (VersionResolver::findOwnVersion).
+#[test]
+fn test_guarded_returns_report_narrowed_types() {
+    let out = compile_and_run(
+        r#"<?php
+function compareForPredicate(mixed $l, mixed $r): ?int {
+    if (is_int($l) && is_int($r)) {
+        return $l <=> $r;
+    }
+    return null;
+}
+function compareForOrderBy(mixed $l, mixed $r): int {
+    $cmp = compareForPredicate($l, $r);
+    if ($cmp !== null) {
+        return $cmp;
+    }
+    return strlen((string) $l) <=> strlen((string) $r);
+}
+function pickFirst(array $values): string {
+    foreach ($values as $value) {
+        if (is_string($value)) {
+            return $value;
+        }
+    }
+    throw new RuntimeException("no string entry");
+}
+final class Sess {
+    /** @var array<string, string> */
+    private array $data = [];
+    public function get(string $key): mixed {
+        return $this->data[$key] ?? null;
+    }
+    public function set(string $key, string $v): void {
+        $this->data[$key] = $v;
+    }
+}
+final class Strat {
+    public function issue(Sess $session, string $formId): string {
+        $key = "tok." . $formId;
+        $existing = $session->get($key);
+        if ($existing !== null) {
+            return $existing;
+        }
+        $token = "T" . $formId;
+        $session->set($key, $token);
+        return $token;
+    }
+}
+echo compareForOrderBy(2, 1), "|", compareForOrderBy("ab", "c"), "|";
+echo pickFirst([1, "hit", "later"]), "|";
+$s = new Strat();
+$sess = new Sess();
+echo $s->issue($sess, "f"), "=", $s->issue($sess, "f");
+"#,
+    );
+    assert_eq!(out, "1|1|hit|Tf=Tf");
+}

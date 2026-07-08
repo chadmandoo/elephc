@@ -125,9 +125,12 @@ impl Checker {
         self.resolving_functions.insert(function_key.clone());
         let body_check_result = self.with_local_storage_context(ref_param_names, |checker| {
             for stmt in &decl.body {
-                if let Err(error) = checker.check_stmt(stmt, &mut local_env) {
-                    errors.extend(error.flatten());
-                }
+                // Collect return facts BEFORE checking the statement: check_stmt
+                // persists flow complements past terminal branches
+                // (`if ($x !== null) { return $x; }` leaves $x: Void afterwards),
+                // so collecting after reads returns under skip-path types — the
+                // guarded `return $x` reported Void and failed the declared
+                // return compat check (mirrors the method-pass ordering).
                 checker.collect_return_infos(stmt, &local_env, &mut all_return_infos);
                 checker.collect_return_callable_sigs(stmt, &local_env, &mut callable_return_sigs);
                 checker.collect_return_callable_array_sigs(
@@ -135,6 +138,9 @@ impl Checker {
                     &local_env,
                     &mut callable_array_return_sigs,
                 );
+                if let Err(error) = checker.check_stmt(stmt, &mut local_env) {
+                    errors.extend(error.flatten());
+                }
             }
             Ok(())
         });
