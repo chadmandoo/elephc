@@ -97,6 +97,11 @@ pub fn eliminate_dead_code(program: Program) -> Program {
 struct Effect {
     has_side_effects: bool,
     may_throw: bool,
+    /// True when the callable/expression can write PHP global storage
+    /// (`global`-bound variables). Consumed by constant propagation to decide
+    /// whether a call can rewrite top-level locals; deliberately excluded from
+    /// `is_observable` so DCE and pruning decisions are unchanged.
+    writes_globals: bool,
 }
 
 impl Effect {
@@ -104,6 +109,7 @@ impl Effect {
     const PURE: Self = Self {
         has_side_effects: false,
         may_throw: false,
+        writes_globals: false,
     };
 
     /// Marks this effect as having side effects.
@@ -118,11 +124,18 @@ impl Effect {
         self
     }
 
+    /// Marks this effect as possibly writing PHP global storage.
+    fn with_writes_globals(mut self) -> Self {
+        self.writes_globals = true;
+        self
+    }
+
     /// Combines two effects. The result is observable if either operand is observable.
     fn combine(self, other: Self) -> Self {
         Self {
             has_side_effects: self.has_side_effects || other.has_side_effects,
             may_throw: self.may_throw || other.may_throw,
+            writes_globals: self.writes_globals || other.writes_globals,
         }
     }
 
