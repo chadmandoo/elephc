@@ -161,22 +161,8 @@ pub(in crate::interpreter) fn eval_builtin_filesystem_call_impl(
     match name {
         "basename" => super::basename::eval_basename_declared_call(args, context, scope, values),
         "fnmatch" => eval_builtin_fnmatch(args, context, scope, values),
-        "readline" => eval_builtin_readline(args, context, scope, values),
         "realpath_cache_get" => eval_builtin_realpath_cache_get(args, values),
         "realpath_cache_size" => eval_builtin_realpath_cache_size(args, values),
-        "stream_socket_client" => eval_builtin_stream_socket_client(args, context, scope, values),
-        "stream_socket_enable_crypto" => {
-            eval_builtin_stream_socket_enable_crypto(args, context, scope, values)
-        }
-        "stream_socket_get_name" => {
-            eval_builtin_stream_socket_get_name(args, context, scope, values)
-        }
-        "stream_socket_pair" => eval_builtin_stream_socket_pair(args, context, scope, values),
-        "stream_socket_sendto" => eval_builtin_stream_socket_sendto(args, context, scope, values),
-        "stream_socket_server" => eval_builtin_stream_socket_server(args, context, scope, values),
-        "stream_socket_shutdown" => {
-            eval_builtin_stream_socket_shutdown(args, context, scope, values)
-        }
         "sys_get_temp_dir" => eval_builtin_sys_get_temp_dir(args, values),
         _ => Err(EvalStatus::RuntimeFatal),
     }

@@ -2,7 +2,7 @@
 //! Dispatches eval userspace stream wrappers to `stream_cast()`.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::filesystem::stream_sockets`.
+//! - `crate::interpreter::builtins::filesystem::stream_select`.
 //!
 //! Key details:
 //! - Magician keeps `stream_select()` conservative and returns no ready streams,

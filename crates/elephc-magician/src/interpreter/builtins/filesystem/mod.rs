@@ -127,8 +127,6 @@ mod stream_socket_recvfrom;
 mod stream_socket_sendto;
 mod stream_socket_server;
 mod stream_socket_shutdown;
-mod stream_sockets;
-mod stream_values_dispatch;
 mod stream_wrapper_register;
 mod stream_wrapper_restore;
 mod stream_wrapper_unregister;
@@ -155,8 +153,6 @@ mod vfprintf;
 
 pub(in crate::interpreter) use fnmatch::*;
 pub(in crate::interpreter) use path::*;
-pub(in crate::interpreter) use readline::*;
-pub(in crate::interpreter) use stream_sockets::*;
 pub(in crate::interpreter) use streams::*;
 pub(in crate::interpreter) use user_wrapper_cast::*;
 pub(in crate::interpreter) use user_wrapper_controls::*;
@@ -171,3 +167,15 @@ pub(in crate::interpreter) use user_wrapper_streams::*;
 pub(in crate::interpreter) use direct_dispatch::eval_builtin_filesystem_call;
 pub(in crate::interpreter) use values_dispatch::eval_filesystem_values_result;
 pub(in crate::interpreter) use flock::{eval_builtin_flock, eval_flock_result};
+pub(in crate::interpreter) use fsockopen::{
+    eval_builtin_fsockopen_call, eval_fsockopen_with_error_result,
+};
+pub(in crate::interpreter) use stream_select::{
+    eval_builtin_stream_select_call, eval_stream_select_result,
+};
+pub(in crate::interpreter) use stream_socket_accept::{
+    eval_builtin_stream_socket_accept_call, eval_stream_socket_accept_with_peer_result,
+};
+pub(in crate::interpreter) use stream_socket_recvfrom::{
+    eval_builtin_stream_socket_recvfrom_call, eval_stream_socket_recvfrom_with_address_result,
+};

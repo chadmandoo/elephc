@@ -5,7 +5,7 @@
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the host stdin helper.
+//! - Reads from host stdin and returns false at EOF.
 
 use super::super::spec::EvalBuiltinDefaultValue;
 
@@ -19,28 +19,33 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `readline` filesystem builtin through the area dispatcher.
+/// Evaluates `readline([prompt])`.
 pub(in crate::interpreter) fn eval_readline_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("readline", args, context, scope, values)
+    eval_builtin_readline(args, context, scope, values)
 }
 
-/// Dispatches evaluated-argument calls for the `readline` filesystem builtin through the area dispatcher.
+/// Evaluates `readline()` from already evaluated arguments.
 pub(in crate::interpreter) fn eval_readline_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
-    context: &mut ElephcEvalContext,
+    _context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("readline", evaluated_args, context, values)
+    let prompt = match evaluated_args {
+        [] => None,
+        [prompt] => Some(*prompt),
+        _ => return Err(EvalStatus::RuntimeFatal),
+    };
+    eval_readline_result(prompt, values)
 }
 
 use std::io;
 
-/// Evaluates `readline([prompt])`.
+/// Evaluates `readline([prompt])` from unevaluated eval expressions.
 pub(in crate::interpreter) fn eval_builtin_readline(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,

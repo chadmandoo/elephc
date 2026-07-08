@@ -11,7 +11,6 @@
 use super::super::super::*;
 
 use super::path_values_dispatch::eval_filesystem_path_values_result;
-use super::stream_values_dispatch::eval_filesystem_stream_values_result;
 
 /// Routes evaluated-argument filesystem builtin calls through per-builtin leaf wrappers.
 pub(in crate::interpreter) fn eval_filesystem_values_result(
@@ -160,11 +159,6 @@ pub(in crate::interpreter) fn eval_filesystem_values_result_impl(
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     if let Some(result) =
         eval_filesystem_path_values_result(name, evaluated_args, context, values)?
-    {
-        return Ok(result);
-    }
-    if let Some(result) =
-        eval_filesystem_stream_values_result(name, evaluated_args, context, values)?
     {
         return Ok(result);
     }

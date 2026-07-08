@@ -1,11 +1,12 @@
 //! Purpose:
-//! Declarative eval registry entry for `stream_socket_get_name`.
+//! Declarative eval registry entry and implementation for `stream_socket_get_name`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the socket-name lookup helper.
+//! - Socket resources use eval's one-based displayed resource ids and zero-based
+//!   internal stream table ids.
 
 eval_builtin! {
     name: "stream_socket_get_name",
@@ -17,21 +18,56 @@ eval_builtin! {
 
 use super::super::super::*;
 
-/// Dispatches direct eval calls for the `stream_socket_get_name` filesystem builtin through the area dispatcher.
+/// Evaluates `stream_socket_get_name($socket, $remote)`.
 pub(in crate::interpreter) fn eval_stream_socket_get_name_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_socket_get_name", args, context, scope, values)
+    let [socket, remote] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let socket = eval_expr(socket, context, scope, values)?;
+    let remote = eval_expr(remote, context, scope, values)?;
+    eval_stream_socket_get_name_result(socket, remote, context, values)
 }
 
-/// Dispatches evaluated-argument calls for the `stream_socket_get_name` filesystem builtin through the area dispatcher.
+/// Returns a socket name for already evaluated socket and remote arguments.
 pub(in crate::interpreter) fn eval_stream_socket_get_name_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_socket_get_name", evaluated_args, context, values)
+    let [socket, remote] = evaluated_args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    eval_stream_socket_get_name_result(*socket, *remote, context, values)
+}
+
+/// Returns a tracked local or remote socket endpoint name.
+pub(in crate::interpreter) fn eval_stream_socket_get_name_result(
+    socket: RuntimeCellHandle,
+    remote: RuntimeCellHandle,
+    context: &ElephcEvalContext,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let id = eval_socket_resource_id(socket, values)?;
+    let remote = values.truthy(remote)?;
+    match context.stream_resources().socket_name(id, remote) {
+        Some(name) => values.string(&name),
+        None => values.bool_value(false),
+    }
+}
+
+/// Converts a runtime resource cell into eval's zero-based socket id.
+pub(in crate::interpreter) fn eval_socket_resource_id(
+    resource: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<i64, EvalStatus> {
+    if values.type_tag(resource)? != EVAL_TAG_RESOURCE {
+        return Err(EvalStatus::RuntimeFatal);
+    }
+    let display_id = eval_int_value(resource, values)?;
+    display_id.checked_sub(1).ok_or(EvalStatus::RuntimeFatal)
 }

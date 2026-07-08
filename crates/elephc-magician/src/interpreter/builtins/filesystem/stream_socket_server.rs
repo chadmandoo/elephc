@@ -1,11 +1,11 @@
 //! Purpose:
-//! Declarative eval registry entry for `stream_socket_server`.
+//! Declarative eval registry entry and implementation for `stream_socket_server`.
 //!
 //! Called from:
 //! - `crate::interpreter::builtins::filesystem`.
 //!
 //! Key details:
-//! - Runtime dispatch is declared here and delegated through the TCP listener helper.
+//! - Opened listeners enter eval's normal stream table.
 
 eval_builtin! {
     name: "stream_socket_server",
@@ -16,22 +16,43 @@ eval_builtin! {
 }
 
 use super::super::super::*;
+use super::*;
 
-/// Dispatches direct eval calls for the `stream_socket_server` filesystem builtin through the area dispatcher.
+/// Evaluates `stream_socket_server($address)`.
 pub(in crate::interpreter) fn eval_stream_socket_server_declared_call(
     args: &[EvalExpr],
     context: &mut ElephcEvalContext,
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_socket_server", args, context, scope, values)
+    let [address] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let address = eval_expr(address, context, scope, values)?;
+    eval_stream_socket_server_result(address, context, values)
 }
 
-/// Dispatches evaluated-argument calls for the `stream_socket_server` filesystem builtin through the area dispatcher.
+/// Opens a listener from an already evaluated address argument.
 pub(in crate::interpreter) fn eval_stream_socket_server_declared_values_result(
     evaluated_args: &[RuntimeCellHandle],
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_socket_server", evaluated_args, context, values)
+    let [address] = evaluated_args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    eval_stream_socket_server_result(*address, context, values)
+}
+
+/// Opens a TCP listener resource.
+pub(in crate::interpreter) fn eval_stream_socket_server_result(
+    address: RuntimeCellHandle,
+    context: &mut ElephcEvalContext,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let address = eval_path_string(address, values)?;
+    match context.stream_resources_mut().open_tcp_listener(&address) {
+        Some(id) => values.resource(id),
+        None => values.bool_value(false),
+    }
 }
