@@ -39,6 +39,7 @@ mod time;
 mod types;
 
 pub(super) use arrays::*;
+pub(super) use array::*;
 pub(super) use class_metadata::*;
 pub(super) use core::*;
 pub(super) use filesystem::*;

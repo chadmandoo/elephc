@@ -198,8 +198,21 @@ mod tests {
             "abs",
             "acos",
             "addslashes",
+            "array_chunk",
+            "array_column",
+            "array_combine",
+            "array_diff",
+            "array_diff_key",
+            "array_fill",
+            "array_fill_keys",
+            "array_filter",
             "array_key_exists",
             "array_keys",
+            "array_intersect",
+            "array_intersect_key",
+            "array_map",
+            "array_merge",
+            "array_reduce",
             "array_reverse",
             "array_sum",
             "basename",
@@ -296,6 +309,9 @@ mod tests {
             "inet_ntop",
             "inet_pton",
             "intval",
+            "iterator_apply",
+            "iterator_count",
+            "iterator_to_array",
             "is_array",
             "is_bool",
             "is_dir",
@@ -462,6 +478,34 @@ mod tests {
         assert_eq!(
             eval_declared_builtin_param_names("max"),
             Some(["value", "values"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("array_map"),
+            Some(["callback", "array", "arrays"].as_slice())
+        );
+        assert_eq!(
+            eval_builtin_signature_shape("array_map").map(|shape| shape.variadic),
+            Some(Some("arrays"))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("array_filter"),
+            Some(["array", "callback", "mode"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("array_filter", 1),
+            Some(EvalBuiltinDefaultValue::Null)
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("array_filter", 2),
+            Some(EvalBuiltinDefaultValue::Int(0))
+        );
+        assert_eq!(
+            eval_declared_builtin_param_names("iterator_to_array"),
+            Some(["iterator", "preserve_keys"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("iterator_to_array", 1),
+            Some(EvalBuiltinDefaultValue::Bool(true))
         );
         assert_eq!(
             eval_declared_builtin_param_names("settype"),

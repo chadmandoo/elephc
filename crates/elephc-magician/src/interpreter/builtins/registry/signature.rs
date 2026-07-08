@@ -67,8 +67,6 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "class_alias" => optional(params, 2),
         "class_exists" | "interface_exists" | "trait_exists" | "enum_exists"
         | "class_implements" | "class_parents" | "class_uses" => optional(params, 1),
-        "iterator_to_array" => optional(params, 1),
-        "iterator_apply" => optional(params, 2),
         "get_class" | "get_parent_class" => optional(params, 0),
         "is_a" | "is_subclass_of" => optional(params, 2),
 
@@ -81,14 +79,7 @@ pub(in crate::interpreter) fn eval_builtin_signature_shape(
         "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort" | "arsort"
         | "ksort" | "krsort" => fixed_by_ref(params, &["array"]),
         "array_push" | "array_unshift" => variadic(params, &["array"]),
-        "array_merge" => variadic(params, &[]),
-        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
-            variadic(params, &[])
-        }
         "array_splice" => optional_by_ref(params, 2, &["array"]),
-        "array_map" => variadic(params, &[]),
-        "array_filter" => optional(params, 1),
-        "array_reduce" => optional(params, 2),
         "array_walk" | "usort" | "uksort" | "uasort" => fixed_by_ref(params, &["array"]),
         "fopen" | "fputcsv" => optional(params, 2),
         "flock" => optional_by_ref(params, 2, &["would_block"]),
@@ -131,8 +122,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
             | "class_implements" | "class_parents" | "class_uses",
             1,
         ) => Bool(true),
-        ("iterator_to_array", 1) => Bool(true),
-        ("iterator_apply", 2) => Null,
         ("get_class" | "get_parent_class", 0) => Null,
         ("is_a", 2) => Bool(false),
         ("is_subclass_of", 2) => Bool(true),
@@ -142,9 +131,6 @@ pub(in crate::interpreter) fn eval_builtin_default_value(
         ("readline", 0) => Null,
         ("array_splice", 2) => Null,
         ("array_splice", 3) => EmptyArray,
-        ("array_filter", 1) => Null,
-        ("array_filter", 2) => Int(0),
-        ("array_reduce", 2) => Null,
         ("fopen", 2) => Bool(false),
         ("fopen", 3) => Null,
         ("flock", 2) => Null,

@@ -124,22 +124,10 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
     }
 
     match name {
-        "array_chunk" => Some(&["array", "length"]),
-        "array_column" => Some(&["array", "column_key"]),
-        "array_combine" => Some(&["keys", "values"]),
-        "array_fill" => Some(&["start_index", "count", "value"]),
-        "array_fill_keys" => Some(&["keys", "value"]),
-        "array_filter" => Some(&["array", "callback", "mode"]),
-        "array_map" => Some(&["callback", "array", "arrays"]),
-        "array_reduce" => Some(&["array", "callback", "initial"]),
         "array_walk" => Some(&["array", "callback"]),
         "uasort" | "uksort" | "usort" => Some(&["array", "callback"]),
         "array_pop" | "array_shift" | "arsort" | "asort" | "krsort" | "ksort"
         | "natcasesort" | "natsort" | "rsort" | "shuffle" | "sort" => Some(&["array"]),
-        "array_merge" => Some(&["arrays"]),
-        "array_diff" | "array_intersect" | "array_diff_key" | "array_intersect_key" => {
-            Some(&["array", "arrays"])
-        }
         "array_push" | "array_unshift" => Some(&["array", "values"]),
         "array_splice" => Some(&["array", "offset", "length", "replacement"]),
         "empty" => Some(&["value"]),
@@ -177,9 +165,6 @@ pub(in crate::interpreter) fn eval_builtin_param_names(
         "function_exists" => Some(&["function"]),
         "get_declared_classes" | "get_declared_interfaces" | "get_declared_traits" => Some(&[]),
         "get_resource_id" | "get_resource_type" => Some(&["resource"]),
-        "iterator_apply" => Some(&["iterator", "callback", "args"]),
-        "iterator_count" => Some(&["iterator"]),
-        "iterator_to_array" => Some(&["iterator", "preserve_keys"]),
         "isset" | "unset" => Some(&["var", "vars"]),
         "ptr" => Some(&["value"]),
         "ptr_null" => Some(&[]),

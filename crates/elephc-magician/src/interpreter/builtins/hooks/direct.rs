@@ -26,17 +26,17 @@ use super::super::super::{
 };
 use super::super::{
     eval_builtin_abs, eval_builtin_array_aggregate, eval_builtin_array_flip,
-    eval_builtin_array_key_exists, eval_builtin_array_pad, eval_builtin_array_projection,
-    eval_builtin_array_rand, eval_builtin_array_reverse, eval_builtin_array_search,
-    eval_builtin_array_slice, eval_builtin_array_unique, eval_builtin_cast, eval_builtin_core_call,
-    eval_builtin_filesystem_call, eval_builtin_grapheme_strrev, eval_builtin_hash_equals,
-    eval_builtin_html_entity, eval_builtin_json_call, eval_builtin_network_env_call,
-    eval_builtin_nl2br, eval_builtin_range, eval_builtin_regex_call, eval_builtin_str_pad,
-    eval_builtin_str_replace, eval_builtin_str_split, eval_builtin_stream_bool_predicate,
-    eval_builtin_stream_introspection, eval_builtin_string_case, eval_builtin_string_compare,
-    eval_builtin_string_position, eval_builtin_string_search, eval_builtin_strrev,
-    eval_builtin_strstr, eval_builtin_substr, eval_builtin_substr_replace, eval_builtin_time_call,
-    eval_builtin_trim_like,
+    eval_builtin_array_call, eval_builtin_array_key_exists, eval_builtin_array_pad,
+    eval_builtin_array_projection, eval_builtin_array_rand, eval_builtin_array_reverse,
+    eval_builtin_array_search, eval_builtin_array_slice, eval_builtin_array_unique,
+    eval_builtin_cast, eval_builtin_core_call, eval_builtin_filesystem_call,
+    eval_builtin_grapheme_strrev, eval_builtin_hash_equals, eval_builtin_html_entity,
+    eval_builtin_json_call, eval_builtin_network_env_call, eval_builtin_nl2br, eval_builtin_range,
+    eval_builtin_regex_call, eval_builtin_str_pad, eval_builtin_str_replace,
+    eval_builtin_str_split, eval_builtin_stream_bool_predicate, eval_builtin_stream_introspection,
+    eval_builtin_string_case, eval_builtin_string_compare, eval_builtin_string_position,
+    eval_builtin_string_search, eval_builtin_strrev, eval_builtin_strstr, eval_builtin_substr,
+    eval_builtin_substr_replace, eval_builtin_time_call, eval_builtin_trim_like,
     eval_builtin_ucwords, eval_builtin_wordwrap,
 };
 
@@ -47,6 +47,8 @@ pub(in crate::interpreter) enum EvalDirectHook {
     Abs,
     /// Dispatches `array_sum(...)` and `array_product(...)`.
     ArrayAggregate,
+    /// Dispatches non-mutating array and iterator builtins.
+    Array,
     /// Dispatches `array_flip(...)`.
     ArrayFlip,
     /// Dispatches `array_key_exists(...)`.
@@ -210,6 +212,7 @@ impl EvalDirectHook {
         match self {
             Self::Abs => eval_builtin_abs(args, context, scope, values),
             Self::ArrayAggregate => eval_builtin_array_aggregate(name, args, context, scope, values),
+            Self::Array => eval_builtin_array_call(name, args, context, scope, values),
             Self::ArrayFlip => eval_builtin_array_flip(args, context, scope, values),
             Self::ArrayKeyExists => eval_builtin_array_key_exists(args, context, scope, values),
             Self::ArrayPad => eval_builtin_array_pad(args, context, scope, values),

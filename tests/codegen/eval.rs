@@ -5950,7 +5950,8 @@ fn test_eval_dispatches_array_walk_builtin_call() {
     let out = compile_and_run(
         r#"<?php
 eval('function eval_walk_show($value, $key) { echo $key . "=" . $value . ";"; }
-echo array_walk(["a" => 2, "b" => 3], "eval_walk_show") ? "T:" : "F:";
+$walk = ["a" => 2, "b" => 3];
+echo array_walk($walk, "eval_walk_show") ? "T:" : "F:";
 $call = call_user_func("array_walk", [4, 5], "eval_walk_show");
 $spread = call_user_func_array("array_walk", ["array" => ["z" => 6], "callback" => "eval_walk_show"]);
 echo function_exists("array_walk");');
