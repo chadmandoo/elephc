@@ -50,6 +50,24 @@ pub(super) fn parse_expr_bp(
     pos: &mut usize,
     min_bp: u8,
 ) -> Result<Expr, CompileError> {
+    // Every expression-recursion cycle passes through here, so this single
+    // guard bounds the whole expression grammar: when less than 64 KiB of
+    // stack remains, the recursion continues on a fresh 4 MiB segment instead
+    // of overflowing. Deeply nested expressions (builtin preludes, generated
+    // code) otherwise abort 2 MiB test-thread stacks, and the headroom on
+    // linux-aarch64 was thin enough that adding a handful of locals to parser
+    // frames tipped it over.
+    stacker::maybe_grow(64 * 1024, 4 * 1024 * 1024, || {
+        parse_expr_bp_inner(tokens, pos, min_bp)
+    })
+}
+
+/// The actual Pratt loop behind the stack-growth guard of [`parse_expr_bp`].
+fn parse_expr_bp_inner(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    min_bp: u8,
+) -> Result<Expr, CompileError> {
     let mut lhs = parse_prefix(tokens, pos)?;
 
     loop {
