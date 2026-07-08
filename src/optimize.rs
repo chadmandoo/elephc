@@ -51,8 +51,19 @@ pub fn propagate_constants(program: Program) -> Program {
     for name in crate::superglobals::SUPERGLOBALS {
         mark_reference_volatile(name);
     }
+    // Install the callable effect summaries and by-ref signatures so calls to
+    // known-pure user callables stop clearing the environment. Substitution
+    // into by-ref argument positions is masked by `propagate_args`, which
+    // keeps those arguments lvalues.
+    let (function_effects, static_method_effects, private_instance_method_effects) =
+        compute_program_callable_effects(&program);
     let signatures = collect_by_ref_signatures(&program);
-    with_by_ref_signatures(signatures, || propagate_block(program, HashMap::new()).0)
+    with_callable_effects(
+        function_effects,
+        static_method_effects,
+        private_instance_method_effects,
+        || with_by_ref_signatures(signatures, || propagate_block(program, HashMap::new()).0),
+    )
 }
 
 /// Normalizes control flow structures (ifs, switches, try/catch) for easier optimization.
