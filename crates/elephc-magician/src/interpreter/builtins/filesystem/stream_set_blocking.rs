@@ -16,6 +16,7 @@ eval_builtin! {
 }
 
 use super::super::super::*;
+use super::*;
 
 /// Dispatches direct eval calls for the `stream_set_blocking` filesystem builtin through the area dispatcher.
 pub(in crate::interpreter) fn eval_stream_set_blocking_declared_call(
@@ -24,7 +25,7 @@ pub(in crate::interpreter) fn eval_stream_set_blocking_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_set_blocking", args, context, scope, values)
+    eval_builtin_stream_set_blocking(args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument calls for the `stream_set_blocking` filesystem builtin through the area dispatcher.
@@ -33,5 +34,45 @@ pub(in crate::interpreter) fn eval_stream_set_blocking_declared_values_result(
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_set_blocking", evaluated_args, context, values)
+    match evaluated_args {
+        [stream, enable] => eval_stream_set_blocking_result(*stream, *enable, context, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
+}
+
+/// Evaluates `stream_set_blocking($stream, $enable)`.
+pub(in crate::interpreter) fn eval_builtin_stream_set_blocking(
+    args: &[EvalExpr],
+    context: &mut ElephcEvalContext,
+    scope: &mut ElephcEvalScope,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let [stream, enable] = args else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let stream = eval_expr(stream, context, scope, values)?;
+    let enable = eval_expr(enable, context, scope, values)?;
+    eval_stream_set_blocking_result(stream, enable, context, values)
+}
+
+/// Toggles blocking mode on a materialized stream resource.
+pub(in crate::interpreter) fn eval_stream_set_blocking_result(
+    stream: RuntimeCellHandle,
+    enable: RuntimeCellHandle,
+    context: &mut ElephcEvalContext,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
+    let id = eval_stream_resource_id(stream, values)?;
+    let enable = values.truthy(enable)?;
+    if let Some(result) = eval_user_wrapper_stream_set_option_result(
+        id,
+        EVAL_STREAM_OPTION_BLOCKING,
+        if enable { 1 } else { 0 },
+        0,
+        context,
+        values,
+    )? {
+        return Ok(result);
+    }
+    values.bool_value(context.stream_resources().set_blocking(id, enable).unwrap_or(false))
 }

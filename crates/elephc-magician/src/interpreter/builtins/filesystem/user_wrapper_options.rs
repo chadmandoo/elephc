@@ -2,8 +2,8 @@
 //! Dispatches stream option builtins to eval userspace stream wrappers.
 //!
 //! Called from:
-//! - `crate::interpreter::builtins::filesystem::stream_settings` for
-//!   `stream_set_blocking()` and `stream_set_timeout()`.
+//! - `crate::interpreter::builtins::filesystem::stream_set_blocking` and
+//!   `stream_set_timeout` when the stream is wrapper-backed.
 //!
 //! Key details:
 //! - Mirrors the generated runtime's `stream_set_option($option, $arg1, $arg2)`

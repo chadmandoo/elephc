@@ -133,39 +133,10 @@ pub(in crate::interpreter::builtins::filesystem) fn eval_filesystem_stream_value
             };
             eval_stream_filter_remove_result(*stream_filter, context, values)?
         }
-        "stream_isatty" => match evaluated_args {
-            [stream] => eval_stream_isatty_result(*stream, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "stream_select" => {
             eval_stream_select_by_value_ref_warnings(evaluated_args.len(), values)?;
             eval_stream_select_result(evaluated_args, context, values)?
         }
-        "stream_set_blocking" => match evaluated_args {
-            [stream, enable] => eval_stream_set_blocking_result(*stream, *enable, context, values)?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
-        "stream_set_chunk_size" | "stream_set_read_buffer" | "stream_set_write_buffer" => {
-            match evaluated_args {
-                [stream, size] => {
-                    eval_stream_set_buffer_like_result(name, *stream, *size, context, values)?
-                }
-                _ => return Err(EvalStatus::RuntimeFatal),
-            }
-        }
-        "stream_set_timeout" => match evaluated_args {
-            [stream, seconds] => {
-                eval_stream_set_timeout_result(*stream, *seconds, None, context, values)?
-            }
-            [stream, seconds, microseconds] => eval_stream_set_timeout_result(
-                *stream,
-                *seconds,
-                Some(*microseconds),
-                context,
-                values,
-            )?,
-            _ => return Err(EvalStatus::RuntimeFatal),
-        },
         "stream_socket_server" => {
             let [address] = evaluated_args else {
                 return Err(EvalStatus::RuntimeFatal);

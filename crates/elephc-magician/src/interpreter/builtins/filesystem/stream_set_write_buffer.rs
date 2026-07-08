@@ -24,7 +24,7 @@ pub(in crate::interpreter) fn eval_stream_set_write_buffer_declared_call(
     scope: &mut ElephcEvalScope,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::direct_dispatch::eval_builtin_filesystem_call_impl("stream_set_write_buffer", args, context, scope, values)
+    super::stream_set_chunk_size::eval_builtin_stream_set_buffer_like("stream_set_write_buffer", args, context, scope, values)
 }
 
 /// Dispatches evaluated-argument calls for the `stream_set_write_buffer` filesystem builtin through the area dispatcher.
@@ -33,5 +33,8 @@ pub(in crate::interpreter) fn eval_stream_set_write_buffer_declared_values_resul
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    super::values_dispatch::eval_filesystem_values_result_impl("stream_set_write_buffer", evaluated_args, context, values)
+    match evaluated_args {
+        [stream, size] => super::stream_set_chunk_size::eval_stream_set_buffer_like_result("stream_set_write_buffer", *stream, *size, context, values),
+        _ => Err(EvalStatus::RuntimeFatal),
+    }
 }
