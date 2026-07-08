@@ -622,6 +622,14 @@ pub(crate) fn emit_runtime_data_user(
                         classes,
                     );
                     out.push_str(&format!("    .quad {}\n", symbol));
+                } else if let Some(runtime_symbol) =
+                    compact_throwable_interface_method_symbol(class_name, class_info, method_name)
+                {
+                    // Builtin/compact throwables have no compiled PHP method
+                    // bodies — dynamic dispatch (Mixed or interface-typed
+                    // receivers) lands on the `__rt_throwable_*` payload
+                    // readers instead of a NULL slot.
+                    out.push_str(&format!("    .quad {}\n", runtime_symbol));
                 } else {
                     out.push_str("    .quad 0\n");
                 }
@@ -1512,5 +1520,43 @@ mod tests {
         assert!(asm.contains("_class_parent_ids:\n    .quad -1\n    .quad -1\n    .quad -1\n    .quad -1\n"));
         assert!(asm.contains("_class_vtable_ptrs:\n    .quad _class_vtable_missing\n    .quad _class_vtable_1\n    .quad _class_vtable_2\n    .quad _class_vtable_3\n"));
         assert!(asm.contains("_class_static_vtable_ptrs:\n    .quad _class_static_vtable_missing\n    .quad _class_static_vtable_1\n    .quad _class_static_vtable_2\n    .quad _class_static_vtable_3\n"));
+    }
+}
+
+/// Maps a compact-payload throwable's standard method to its `__rt_throwable_*`
+/// interface-dispatch body.
+///
+/// Applies only to classes that store instances in the compact Throwable
+/// payload: they implement `Throwable` and declare no instance properties of
+/// their own (the payload has no property table — mirrors the compact-reuse
+/// test in `codegen_ir::lower_inst::objects`). Classes with user-declared
+/// method bodies never reach here (the impl-class arm wins).
+fn compact_throwable_interface_method_symbol(
+    class_name: &str,
+    class_info: &ClassInfo,
+    method_name: &str,
+) -> Option<&'static str> {
+    if !class_info
+        .interfaces
+        .iter()
+        .any(|interface| interface.trim_start_matches('\\') == "Throwable")
+    {
+        return None;
+    }
+    let class_declares_own_properties = class_info
+        .property_declaring_classes
+        .values()
+        .any(|declaring_class| declaring_class == class_name);
+    if class_declares_own_properties {
+        return None;
+    }
+    match method_name.to_ascii_lowercase().as_str() {
+        "getmessage" | "__tostring" => Some("__rt_throwable_get_message"),
+        "getcode" => Some("__rt_throwable_get_code"),
+        "getprevious" => Some("__rt_throwable_get_previous"),
+        "getfile" | "gettraceasstring" => Some("__rt_throwable_get_file"),
+        "getline" => Some("__rt_throwable_get_line"),
+        "gettrace" => Some("__rt_throwable_get_trace"),
+        _ => None,
     }
 }

@@ -748,7 +748,7 @@ fn emit_validate_iterator_iterator_aggregate_downcast(ctx: &mut FunctionContext<
 fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov x0, #40");                             // request Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 marks object instances
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp allocation as a runtime object
@@ -760,6 +760,7 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionConte
             ctx.emitter.instruction(&format!("mov x9, #{}", ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len())); // load static exception message length
             ctx.emitter.instruction("str x9, [x0, #16]");                       // store static exception message length
             ctx.emitter.instruction("str xzr, [x0, #24]");                      // exception code defaults to zero
+            ctx.emitter.instruction("str xzr, [x0, #32]");                                  // previous throwable defaults to null
             abi::emit_symbol_address(ctx.emitter, "x9", "_exc_value");
             ctx.emitter.instruction("str x0, [x9]");                            // publish the active exception object
             ctx.emitter.instruction("b __rt_throw_current");                    // enter the standard exception unwinder
@@ -768,7 +769,7 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionConte
             ctx.emitter.instruction("push rbp");                                // preserve caller frame pointer for exception allocation
             ctx.emitter.instruction("mov rbp, rsp");                            // establish an aligned helper frame
             ctx.emitter.instruction("sub rsp, 16");                             // keep the nested heap allocation call aligned
-            ctx.emitter.instruction("mov rax, 32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov rax, 40");                             // request Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov r10, 0x4548504c00000006");             // materialize the x86_64 object heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp allocation as a runtime object
@@ -778,6 +779,7 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionConte
             ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");            // store static exception message pointer
             ctx.emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len())); // store static exception message length
             ctx.emitter.instruction("mov QWORD PTR [rax + 24], 0");             // exception code defaults to zero
+            ctx.emitter.instruction("mov QWORD PTR [rax + 32], 0");                         // previous throwable defaults to null
             ctx.emitter.instruction("mov QWORD PTR [rip + _exc_value], rax");   // publish the active exception object
             ctx.emitter.instruction("mov rsp, rbp");                            // release helper frame before throwing
             ctx.emitter.instruction("pop rbp");                                 // restore caller frame pointer before throwing
@@ -856,9 +858,7 @@ fn lower_builtin_throwable_new(
     preserve_throwable_for_init(ctx);
     emit_throwable_message_fields(ctx, inst.operands.first().copied())?;
     emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
-    // Operand 2 is PHP's `$previous`: its expression was evaluated (side effects preserved),
-    // but the compact throwable payload has no previous slot — `getPrevious()` is synthesized
-    // as null — so the value is intentionally not stored.
+    emit_throwable_previous_field(ctx, inst.operands.get(2).copied())?;
     restore_throwable_after_init(ctx);
     store_if_result(ctx, inst)
 }
@@ -934,7 +934,7 @@ fn class_declares_own_constructor(class_name: &str, class_info: &ClassInfo) -> b
 fn emit_throwable_allocation(ctx: &mut FunctionContext<'_>, class_id: u64) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                             // request compact Throwable payload storage
+            ctx.emitter.instruction("mov x0, #40");                             // request compact Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 marks runtime object payloads
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp the heap header before the Throwable payload
@@ -942,7 +942,7 @@ fn emit_throwable_allocation(ctx: &mut FunctionContext<'_>, class_id: u64) {
             ctx.emitter.instruction("str x9, [x0]");                            // store class id at payload offset zero
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction("mov rax, 32");                             // request compact Throwable payload storage
+            ctx.emitter.instruction("mov rax, 40");                             // request compact Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 6)); // materialize the x86_64 Throwable heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp the heap header before the Throwable payload
@@ -1050,6 +1050,82 @@ fn emit_throwable_code_field_x86_64(
     }
     ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                        // reload the saved Throwable object for code initialization
     ctx.emitter.instruction("mov QWORD PTR [r11 + 24], rax");                   // store Throwable code
+    Ok(())
+}
+
+/// Writes PHP's `$previous` throwable into the compact payload slot at offset 32.
+///
+/// The operand may be a raw object pointer (`Object` repr), a typed null
+/// (`Void` sentinel), or a Mixed/Union box (`?Throwable` is a union — its
+/// codegen repr boxes). All shapes normalize to a raw object pointer or 0
+/// before the store; non-null pointers are retained (the throwable can
+/// outlive the variable that supplied it, and the compact payload — like its
+/// message field — is never field-released).
+fn emit_throwable_previous_field(
+    ctx: &mut FunctionContext<'_>,
+    previous: Option<ValueId>,
+) -> Result<()> {
+    let Some(previous) = previous else {
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.emitter.instruction("ldr x9, [sp]");                        // reload the saved Throwable object for previous initialization
+                ctx.emitter.instruction("str xzr, [x9, #32]");                  // previous throwable defaults to null
+            }
+            Arch::X86_64 => {
+                ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");            // reload the saved Throwable object for previous initialization
+                ctx.emitter.instruction("mov QWORD PTR [r11 + 32], 0");         // previous throwable defaults to null
+            }
+        }
+        return Ok(());
+    };
+    let repr = ctx.value_php_type(previous)?.codegen_repr();
+    ctx.load_value_to_result(previous)?;
+    let is_boxed = matches!(repr, PhpType::Mixed | PhpType::Union(_));
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            let done = ctx.next_label("throwable_prev_done");
+            let store = ctx.next_label("throwable_prev_store");
+            // Normalize the typed null sentinel to 0 before classifying.
+            abi::emit_load_int_immediate(ctx.emitter, "x9", 0x7fff_ffff_ffff_fffe); // materialize the typed null sentinel for comparison
+            ctx.emitter.instruction("cmp x0, x9");                              // typed null previous?
+            ctx.emitter.instruction("csel x0, xzr, x0, eq");                    // typed null normalizes to the 0 previous slot value
+            if is_boxed {
+                ctx.emitter.instruction(&format!("cbz x0, {}", store));         // Mixed null (zero box) stores 0 directly
+                abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");          // classify the boxed previous (tag in x0, payload in x1)
+                ctx.emitter.instruction("cmp x0, #6");                          // is the boxed payload an object?
+                ctx.emitter.instruction("csel x0, x1, xzr, eq");                // object payloads store their pointer; anything else stores null
+            }
+            ctx.emitter.label(&store);
+            ctx.emitter.instruction(&format!("cbz x0, {}", done));              // null previous skips the retain
+            abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Object(String::new()));
+            ctx.emitter.label(&done);
+            ctx.emitter.instruction("ldr x9, [sp]");                            // reload the saved Throwable object for previous initialization
+            ctx.emitter.instruction("str x0, [x9, #32]");                       // store the previous throwable pointer
+        }
+        Arch::X86_64 => {
+            let done = ctx.next_label("throwable_prev_done");
+            let store = ctx.next_label("throwable_prev_store");
+            abi::emit_load_int_immediate(ctx.emitter, "r10", 0x7fff_ffff_ffff_fffe); // materialize the typed null sentinel for comparison
+            ctx.emitter.instruction("cmp rax, r10");                            // typed null previous?
+            ctx.emitter.instruction("mov r10, 0");                              // stage the normalized null value (mov keeps flags)
+            ctx.emitter.instruction("cmove rax, r10");                          // typed null normalizes to the 0 previous slot value
+            if is_boxed {
+                ctx.emitter.instruction("test rax, rax");                       // Mixed null (zero box)?
+                ctx.emitter.instruction(&format!("jz {}", store));              // zero boxes store 0 directly
+                abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");          // classify the boxed previous (tag in rax, payload in rdi)
+                ctx.emitter.instruction("cmp rax, 6");                          // is the boxed payload an object?
+                ctx.emitter.instruction("mov rax, 0");                          // stage the null fallback (mov keeps flags)
+                ctx.emitter.instruction("cmove rax, rdi");                      // object payloads store their pointer; anything else stores null
+            }
+            ctx.emitter.label(&store);
+            ctx.emitter.instruction("test rax, rax");                           // null previous skips the retain
+            ctx.emitter.instruction(&format!("jz {}", done));
+            abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Object(String::new()));
+            ctx.emitter.label(&done);
+            ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                // reload the saved Throwable object for previous initialization
+            ctx.emitter.instruction("mov QWORD PTR [r11 + 32], rax");           // store the previous throwable pointer
+        }
+    }
     Ok(())
 }
 
@@ -5077,7 +5153,7 @@ fn emit_uninitialized_typed_property_fatal(
     let (message_label, message_len) = ctx.data.add_string(message.as_bytes());
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                                // request Throwable payload storage
+            ctx.emitter.instruction("mov x0, #40");                                // request Throwable payload storage
             ctx.emitter.instruction("bl __rt_heap_alloc");                         // allocate the Error object payload
             ctx.emitter.instruction("mov x9, #6");                                 // heap kind 6 = object instance
             ctx.emitter.instruction("str x9, [x0, #-8]");                          // stamp allocation as a runtime object
@@ -5089,6 +5165,7 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction(&format!("mov x9, #{}", message_len));         // load Error message length
             ctx.emitter.instruction("str x9, [x0, #16]");                         // store exception message length
             ctx.emitter.instruction("str xzr, [x0, #24]");                        // exception code defaults to zero
+            ctx.emitter.instruction("str xzr, [x0, #32]");                                  // previous throwable defaults to null
             abi::emit_symbol_address(ctx.emitter, "x9", "_exc_value");             // materialize the active exception cell
             ctx.emitter.instruction("str x0, [x9]");                               // publish the active exception object
             ctx.emitter.instruction("b __rt_throw_current");                      // enter the standard exception unwinder
@@ -5097,7 +5174,7 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction("push rbp");                                   // preserve caller frame pointer for exception allocation
             ctx.emitter.instruction("mov rbp, rsp");                               // establish aligned helper frame
             ctx.emitter.instruction("sub rsp, 16");                                // keep the nested heap allocation call 16-byte aligned
-            ctx.emitter.instruction("mov rax, 32");                                // request Throwable payload storage
+            ctx.emitter.instruction("mov rax, 40");                                // request Throwable payload storage
             ctx.emitter.instruction("call __rt_heap_alloc");                       // allocate the Error object payload
             ctx.emitter.instruction("mov r10, 0x4548504c00000006");              // x86_64 heap-kind word: HE LP magic + kind 6 object
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");               // stamp allocation as a runtime object
@@ -5107,6 +5184,7 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");               // store static Error message pointer
             ctx.emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", message_len)); // store Error message length
             ctx.emitter.instruction("mov QWORD PTR [rax + 24], 0");                // exception code defaults to zero
+            ctx.emitter.instruction("mov QWORD PTR [rax + 32], 0");                         // previous throwable defaults to null
             abi::emit_store_reg_to_symbol(ctx.emitter, "rax", "_exc_value", 0);   // publish the active exception object
             ctx.emitter.instruction("mov rsp, rbp");                               // release helper frame before throwing
             ctx.emitter.instruction("pop rbp");                                    // restore caller frame pointer before throwing

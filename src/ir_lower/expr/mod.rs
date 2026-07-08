@@ -4276,6 +4276,9 @@ fn lower_static_var_dump_container(
     ) {
         return None;
     }
+    if !prelude_impl_available(ctx, "__elephc_var_dump_value") {
+        return None;
+    }
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
             name: Name::from("__elephc_var_dump_value"),
@@ -4317,6 +4320,9 @@ fn lower_static_implode_hash(
         materialized_expr_type_for_merge(ctx, &args[1]).codegen_repr(),
         PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
     ) {
+        return None;
+    }
+    if !prelude_impl_available(ctx, "__elephc_implode_values") {
         return None;
     }
     let impl_call = Expr {
@@ -4425,6 +4431,17 @@ fn desugar_call_arg_static_type(ctx: &LoweringContext<'_, '_>, expr: &Expr) -> P
     materialized_expr_type_for_merge(ctx, expr)
 }
 
+/// Returns true when a prelude impl is present in the compiled program.
+///
+/// The stdlib prelude injects by trigger-name scan over the USER program;
+/// synthesized bodies (SPL builtins) can reach these desugars in programs
+/// where the prelude was never injected — rewriting to a missing function
+/// would surface as an unsupported-builtin backend error. Desugars fall
+/// through to the native lowering instead.
+fn prelude_impl_available(ctx: &LoweringContext<'_, '_>, name: &str) -> bool {
+    ctx.functions.contains_key(name)
+}
+
 fn lower_static_array_filter_assoc(
     ctx: &mut LoweringContext<'_, '_>,
     name: &str,
@@ -4445,6 +4462,9 @@ fn lower_static_array_filter_assoc(
         kind: ExprKind::IntLiteral(0),
         span: expr.span,
     });
+    if !prelude_impl_available(ctx, "__elephc_array_filter_hash") {
+        return None;
+    }
     match receiver_ty.codegen_repr() {
         PhpType::AssocArray { key, .. } => {
             // The impl builds its result with mixed-key writes, so the runtime hash
@@ -4505,15 +4525,23 @@ fn lower_static_array_keys_mixed(
         return None;
     }
     let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
-    if !matches!(
-        receiver_ty.codegen_repr(),
-        PhpType::Mixed | PhpType::Union(_)
-    ) {
+    let adaptive = match receiver_ty.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => true,
+        // Bare `array` hints erase the key layout; the packed native walk
+        // would misread a string-keyed argument's hash storage. Scoped to
+        // real user spans: synthesized SPL bodies (span line 0) were built
+        // against the legacy positional-keys typing.
+        PhpType::Array(elem) => {
+            matches!(elem.codegen_repr(), PhpType::Mixed) && expr.span.line != 0
+        }
+        _ => false,
+    };
+    if !adaptive || !prelude_impl_available(ctx, "__elephc_array_keys_any") {
         return None;
     }
-    // Mixed receivers route to the adaptive prelude impl (keys may be int or
-    // string, collected into a packed list); statically-typed receivers keep
-    // the native lowering.
+    // Adaptive receivers route to the prelude impl (keys may be int or
+    // string, collected into a packed list); concretely-typed receivers
+    // keep the native lowering.
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
             name: Name::from("__elephc_array_keys_any"),
@@ -4548,7 +4576,8 @@ fn lower_static_array_map_any(
     if !matches!(
         receiver_ty.codegen_repr(),
         PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
-    ) {
+    ) || !prelude_impl_available(ctx, "__elephc_array_map_any")
+    {
         return None;
     }
     let impl_call = Expr {
@@ -4591,7 +4620,9 @@ fn lower_static_array_merge_pairwise_any(
             PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
         )
     };
-    if !adaptive(&left) && !adaptive(&right) {
+    if (!adaptive(&left) && !adaptive(&right))
+        || !prelude_impl_available(ctx, "__elephc_array_merge_any")
+    {
         return None;
     }
     let impl_call = Expr {
@@ -6358,6 +6389,9 @@ fn lower_variadic_pure_spread_tail(
         PhpType::Bool => "__elephc_variadic_collect_bool",
         _ => "__elephc_variadic_collect_mixed",
     };
+    if !prelude_impl_available(ctx, collect) {
+        return None;
+    }
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
             name: Name::from(collect),

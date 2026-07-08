@@ -193,7 +193,8 @@ fn apply_instance_method(
     method: &ClassMethod,
 ) -> Result<(), CompileError> {
     let method_key = php_symbol_key(&method.name);
-    let sig = build_method_sig(checker, method)?;
+    let mut sig = build_method_sig(checker, method)?;
+    inherit_interface_untyped_param_types(checker, class, method, &method_key, &mut sig);
     if state.final_static_methods.contains(&method_key) {
         return Err(final_method_error(
             state
@@ -363,4 +364,57 @@ fn missing_override_target(class: &FlattenedClass, method: &ClassMethod) -> Comp
             class.name, method.name
         ),
     )
+}
+
+/// Adopts interface-declared parameter types for a method's UNTYPED parameters.
+///
+/// PHP treats an untyped parameter as accepting anything; the legacy schema
+/// models bodied untyped params as Int, which diverges from the interface
+/// sig once body-less declarations model them as Mixed (PSR-7's
+/// `withHeader(string $name, $value)`). The caller coerces arguments to the
+/// INTERFACE sig on dynamic dispatch, so the implementation must read them
+/// under the same types — untyped positions inherit the interface's param
+/// type (typed positions keep the implementation's declaration).
+fn inherit_interface_untyped_param_types(
+    checker: &Checker,
+    class: &FlattenedClass,
+    method: &ClassMethod,
+    method_key: &str,
+    sig: &mut crate::types::FunctionSig,
+) {
+    if method.params.iter().all(|(_, type_ann, _, _)| type_ann.is_some()) {
+        return;
+    }
+    let mut visited = std::collections::HashSet::new();
+    let mut queue: Vec<String> = class.implements.clone();
+    let mut ancestor = class.extends.clone();
+    while let Some(parent_name) = ancestor {
+        let Some(parent) = checker.classes.get(&parent_name) else {
+            break;
+        };
+        queue.extend(parent.interfaces.iter().cloned());
+        ancestor = parent.parent.clone();
+    }
+    while let Some(name) = queue.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        let Some(info) = checker.interfaces.get(&name) else {
+            continue;
+        };
+        if let Some(interface_sig) = info.methods.get(method_key) {
+            for (idx, (_, type_ann, _, _)) in method.params.iter().enumerate() {
+                if type_ann.is_some() {
+                    continue;
+                }
+                if let (Some(param), Some((_, interface_ty))) =
+                    (sig.params.get_mut(idx), interface_sig.params.get(idx))
+                {
+                    param.1 = interface_ty.clone();
+                }
+            }
+            return;
+        }
+        queue.extend(info.parents.iter().cloned());
+    }
 }

@@ -41,6 +41,20 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
     match ty {
+        // A Mixed-element array is usually a bare `array` hint — its KEY
+        // layout is erased too (an array<string,string> argument arrives
+        // under it), so the positional-keys claim would be wrong statically
+        // and the packed native walk wrong physically. Route adaptive when
+        // the prelude impl exists (user programs mentioning array_keys);
+        // synthesized-only programs keep the legacy native path, mirroring
+        // the ir_lower desugar's availability guard.
+        PhpType::Array(elem)
+            if matches!(*elem, PhpType::Mixed)
+                && cx.span.line != 0
+                && cx.checker.functions.contains_key("__elephc_array_keys_any") =>
+        {
+            Ok(PhpType::Mixed)
+        }
         PhpType::Array(_) => Ok(PhpType::Array(Box::new(PhpType::Int))),
         PhpType::AssocArray { key, .. } => Ok(PhpType::Array(key)),
         // Mixed receivers (json_decode results, adaptive locals) desugar to

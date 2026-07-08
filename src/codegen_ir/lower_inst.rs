@@ -3342,13 +3342,14 @@ fn lower_throwable_standard_method(
     }
     let object_reg = abi::symbol_scratch_reg(ctx.emitter);
     ctx.load_value_to_reg(object, object_reg)?;
+    emit_unwrap_boxed_throwable_receiver(ctx, object_reg);
     let return_ty = match php_symbol_key(method_name).as_str() {
         "getmessage" => lower_throwable_get_message(ctx, object_reg),
         "getcode" => lower_throwable_get_code(ctx, object_reg),
         "getfile" | "gettraceasstring" => lower_throwable_empty_string(ctx),
         "getline" => lower_throwable_zero_int(ctx),
         "gettrace" => lower_throwable_empty_trace_array(ctx),
-        "getprevious" => lower_throwable_null_previous(ctx, inst),
+        "getprevious" => lower_throwable_get_previous(ctx, inst, object_reg),
         "__tostring" => lower_throwable_get_message(ctx, object_reg),
         _ => Err(CodegenIrError::unsupported(format!(
             "Throwable intrinsic method {}",
@@ -3362,6 +3363,41 @@ fn lower_throwable_standard_method(
         emit_box_current_value_as_mixed(ctx.emitter, &return_ty.codegen_repr());
     }
     store_if_result(ctx, inst)
+}
+
+/// Unwraps a Mixed-boxed object receiver into its raw object pointer.
+///
+/// A Throwable read through a checker-narrowed local (`$p = $e->getPrevious();
+/// if ($p instanceof X) { $p->getMessage(); }`) is statically Object but
+/// physically still the tag-6 Mixed cell the read produced — the compact
+/// payload offsets would dereference the box. Boxed cells stamp heap kind 5
+/// (objects stamp 6), so the receiver is probed and unwrapped in place.
+fn emit_unwrap_boxed_throwable_receiver(ctx: &mut FunctionContext<'_>, object_reg: &str) {
+    let scratch = abi::secondary_scratch_reg(ctx.emitter);
+    let done = ctx.next_label("throwable_recv_unwrap_done");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("ldr {scratch}, [{object_reg}, #-8]")); // load the heap kind word from the uniform header
+            ctx.emitter.instruction(&format!("and {scratch}, {scratch}, #0xff")); // isolate the low-byte heap kind tag
+            ctx.emitter.instruction(&format!("cmp {scratch}, #5"));             // heap kind 5 marks boxed Mixed cells
+            ctx.emitter.instruction(&format!("b.ne {done}"));                   // raw object receivers need no unwrap
+            ctx.emitter.instruction(&format!("ldr {scratch}, [{object_reg}]")); // load the mixed cell's runtime tag
+            ctx.emitter.instruction(&format!("cmp {scratch}, #6"));             // tag 6 marks object payloads
+            ctx.emitter.instruction(&format!("b.ne {done}"));                   // non-object boxes are left untouched
+            ctx.emitter.instruction(&format!("ldr {object_reg}, [{object_reg}, #8]")); // unwrap the boxed object payload pointer
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("mov {scratch}, QWORD PTR [{object_reg} - 8]")); // load the heap kind word from the uniform header
+            ctx.emitter.instruction(&format!("and {scratch}, 0xff"));           // isolate the low-byte heap kind tag
+            ctx.emitter.instruction(&format!("cmp {scratch}, 5"));              // heap kind 5 marks boxed Mixed cells
+            ctx.emitter.instruction(&format!("jne {done}"));                    // raw object receivers need no unwrap
+            ctx.emitter.instruction(&format!("mov {scratch}, QWORD PTR [{object_reg}]")); // load the mixed cell's runtime tag
+            ctx.emitter.instruction(&format!("cmp {scratch}, 6"));              // tag 6 marks object payloads
+            ctx.emitter.instruction(&format!("jne {done}"));                    // non-object boxes are left untouched
+            ctx.emitter.instruction(&format!("mov {object_reg}, QWORD PTR [{object_reg} + 8]")); // unwrap the boxed object payload pointer
+        }
+    }
+    ctx.emitter.label(&done);
 }
 
 /// Loads `Throwable::getMessage()` from payload offsets 8/16 into string result registers.
@@ -3415,17 +3451,59 @@ fn lower_throwable_empty_trace_array(ctx: &mut FunctionContext<'_>) -> Result<Ph
     Ok(PhpType::Array(Box::new(PhpType::Mixed)))
 }
 
-/// Materializes the synthetic null result used by `Throwable::getPrevious()`.
-fn lower_throwable_null_previous(
+/// Loads `Throwable::getPrevious()` from the compact payload slot at offset 32.
+///
+/// The slot holds a raw object pointer or 0 (null). A Mixed consumer (the
+/// checker models the return as `?Throwable`, a union) receives 0 unchanged —
+/// the Mixed null representation — while a non-null pointer is boxed as a
+/// tag-6 object cell. Typed consumers get the raw pointer with 0 mapped to
+/// the typed null sentinel.
+fn lower_throwable_get_previous(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
+    object_reg: &str,
 ) -> Result<PhpType> {
-    let payload = if inst.result_php_type.codegen_repr() == PhpType::Mixed {
-        0
-    } else {
-        0x7fff_ffff_ffff_fffe
-    };
-    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), payload);
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, result_reg, object_reg, 32);
+    if inst.result_php_type.codegen_repr() == PhpType::Mixed {
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                let done = ctx.next_label("throwable_prev_read_done");
+                ctx.emitter.instruction(&format!("cbz x0, {}", done));          // null previous keeps the Mixed 0 representation
+                ctx.emitter.instruction("mov x1, x0");                          // pass the previous object pointer as the mixed payload low word
+                ctx.emitter.instruction("mov x2, xzr");                         // object payloads only use the low word
+                ctx.emitter.instruction("mov x0, #6");                          // runtime tag 6 = object
+                abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");     // retain the previous object and box it into a mixed cell
+                ctx.emitter.label(&done);
+            }
+            Arch::X86_64 => {
+                let done = ctx.next_label("throwable_prev_read_done");
+                ctx.emitter.instruction("test rax, rax");                       // null previous keeps the Mixed 0 representation
+                ctx.emitter.instruction(&format!("jz {}", done));
+                ctx.emitter.instruction("mov rdi, rax");                        // pass the previous object pointer as the mixed payload low word
+                ctx.emitter.instruction("xor rsi, rsi");                        // object payloads only use the low word
+                abi::emit_load_int_immediate(ctx.emitter, "rax", 6);
+                abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");     // retain the previous object and box it into a mixed cell
+                ctx.emitter.label(&done);
+            }
+        }
+        return Ok(PhpType::Mixed);
+    }
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            let done = ctx.next_label("throwable_prev_read_done");
+            ctx.emitter.instruction(&format!("cbnz x0, {}", done));             // non-null previous returns the raw object pointer
+            abi::emit_load_int_immediate(ctx.emitter, "x0", 0x7fff_ffff_ffff_fffe); // null previous maps to the typed null sentinel
+            ctx.emitter.label(&done);
+        }
+        Arch::X86_64 => {
+            let done = ctx.next_label("throwable_prev_read_done");
+            ctx.emitter.instruction("test rax, rax");                           // non-null previous returns the raw object pointer
+            ctx.emitter.instruction(&format!("jnz {}", done));
+            abi::emit_load_int_immediate(ctx.emitter, "rax", 0x7fff_ffff_ffff_fffe); // null previous maps to the typed null sentinel
+            ctx.emitter.label(&done);
+        }
+    }
     Ok(PhpType::Void)
 }
 

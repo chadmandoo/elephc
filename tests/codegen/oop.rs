@@ -45,3 +45,61 @@ mod abstract_properties;
 mod property_hooks;
 #[path = "oop/datetime.rs"]
 mod datetime;
+
+/// EC-38 (#531): a `self::` typed-class-constant default on a promoted constructor
+/// parameter materializes at OMITTING call sites — defaults are lowered in the CALLER's
+/// scope, where `self` has no meaning, so the flattening rewrites relative receivers to
+/// the declaring class (PgsqlDriver DEFAULT_PREPARED_CACHE_SIZE pattern).
+#[test]
+fn test_promoted_param_self_const_default() {
+    let out = compile_and_run(
+        r#"<?php
+final class Driver {
+    private const int DEFAULT_SIZE = 256;
+    public function __construct(
+        private int $size = self::DEFAULT_SIZE,
+    ) {}
+    public function size(): int {
+        return $this->size;
+    }
+}
+$d = new Driver();
+echo $d->size(), "|";
+$e = new Driver(32);
+echo $e->size();
+"#,
+    );
+    assert_eq!(out, "256|32");
+}
+
+/// EC-38 (#531): an UNTYPED parameter on a body-less interface method accepts any
+/// argument (PSR-7 `withHeader(string $name, $value)` pattern), and the implementing
+/// class's untyped parameter inherits the interface's param type so caller coercion
+/// and the body's reads agree on one representation.
+#[test]
+fn test_interface_untyped_param_accepts_any_argument() {
+    let out = compile_and_run(
+        r#"<?php
+interface ResponseLike {
+    public function withHeader(string $name, $value): static;
+}
+final class Resp implements ResponseLike {
+    /** @var array<string, string> */
+    public array $headers = [];
+    public function withHeader(string $name, $value): static {
+        $c = clone $this;
+        $c->headers[$name] = (string) $value;
+        return $c;
+    }
+}
+function handle(ResponseLike $r): ResponseLike {
+    return $r->withHeader("Content-Type", "text/html");
+}
+$r = handle(new Resp());
+if ($r instanceof Resp) {
+    echo $r->headers["Content-Type"];
+}
+"#,
+    );
+    assert_eq!(out, "text/html");
+}

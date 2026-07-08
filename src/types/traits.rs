@@ -12,8 +12,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::errors::CompileError;
 use crate::names::php_symbol_key;
+use crate::names::Name;
 use crate::parser::ast::{
-    ClassConst, ClassMethod, ClassProperty, Program, StmtKind, TraitUse,
+    ClassConst, ClassMethod, ClassProperty, Expr, ExprKind, Program, StaticReceiver, StmtKind,
+    TraitUse,
 };
 use crate::span::Span;
 
@@ -195,6 +197,11 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
                     merged_methods,
                     name,
                 );
+            let merged_methods = bind_relative_default_receivers(
+                merged_methods,
+                name,
+                extends.as_ref().map(|parent| parent.as_str()),
+            );
             flattened.push(FlattenedClass {
                 name: name.clone(),
                 extends: extends.as_ref().map(|name| name.as_str().to_string()),
@@ -232,4 +239,66 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
     }
 
     (flattened, errors)
+}
+
+/// Rebinds `self::`/`parent::` receivers inside parameter defaults to the
+/// declaring class's concrete names.
+///
+/// Defaults are materialized at CALL SITES, where no class context exists —
+/// `new Driver()` lowering a `self::DEFAULT_SIZE` default in main scope
+/// cannot resolve `self`. PHP resolves these relative names lexically at
+/// declaration time, so the flattened methods carry the resolved names.
+/// (`static::` is not rewritten: PHP forbids it in constant expressions.)
+fn bind_relative_default_receivers(
+    methods: Vec<ClassMethod>,
+    class_name: &str,
+    parent_name: Option<&str>,
+) -> Vec<ClassMethod> {
+    methods
+        .into_iter()
+        .map(|mut method| {
+            for (_, _, default, _) in &mut method.params {
+                if let Some(default_expr) = default {
+                    rewrite_relative_receivers(default_expr, class_name, parent_name);
+                }
+            }
+            method
+        })
+        .collect()
+}
+
+/// Recursively rewrites `self::`/`parent::` receivers in a constant expression.
+fn rewrite_relative_receivers(expr: &mut Expr, class_name: &str, parent_name: Option<&str>) {
+    match &mut expr.kind {
+        ExprKind::ScopedConstantAccess { receiver, .. } => match receiver {
+            StaticReceiver::Self_ => {
+                *receiver = StaticReceiver::Named(Name::from(class_name));
+            }
+            StaticReceiver::Parent => {
+                if let Some(parent) = parent_name {
+                    *receiver = StaticReceiver::Named(Name::from(parent));
+                }
+            }
+            _ => {}
+        },
+        ExprKind::ArrayLiteral(items) => {
+            for item in items {
+                rewrite_relative_receivers(item, class_name, parent_name);
+            }
+        }
+        ExprKind::ArrayLiteralAssoc(entries) => {
+            for (key, value) in entries {
+                rewrite_relative_receivers(key, class_name, parent_name);
+                rewrite_relative_receivers(value, class_name, parent_name);
+            }
+        }
+        ExprKind::BinaryOp { left, right, .. } => {
+            rewrite_relative_receivers(left, class_name, parent_name);
+            rewrite_relative_receivers(right, class_name, parent_name);
+        }
+        ExprKind::Negate(inner) | ExprKind::Not(inner) | ExprKind::BitNot(inner) => {
+            rewrite_relative_receivers(inner, class_name, parent_name);
+        }
+        _ => {}
+    }
 }

@@ -51,6 +51,13 @@ pub(crate) fn build_method_sig(
                     method.span,
                     &format!("Method parameter ${}", n),
                 )?,
+                // A USER-DECLARED body-less method (interface/abstract, real
+                // span) with an untyped parameter accepts anything in PHP —
+                // PSR interfaces (`withHeader(string $name, $value)`) rely on
+                // it. Synthetic builtin declarations (span line 0: SPL
+                // ArrayAccess/Iterator surfaces) and bodied methods keep the
+                // legacy Int assumption their runtime paths were built under.
+                None if !method.has_body && method.span.line != 0 => PhpType::Mixed,
                 None => PhpType::Int,
             };
             Ok((n.clone(), ty))

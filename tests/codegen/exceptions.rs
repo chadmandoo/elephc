@@ -473,16 +473,71 @@ fn test_sequential_try_catch_does_not_blow_up_codegen() {
     assert_eq!(out, expected);
 }
 
-/// EC-10 (#493): the builtin exception constructors accept PHP's third `$previous` parameter
-/// (positional or the `previous:` named argument). It is not stored — `getPrevious()` remains
-/// synthesized as null — but wrap-and-rethrow code compiles and the message/code round-trip is
-/// byte-identical to PHP 8.5 (ward-schema ForeignKeyNode pattern).
+/// EC-10 (#493) / EC-38 (#531): the builtin exception constructors accept AND store PHP's
+/// third `$previous` parameter (positional or the `previous:` named argument) in the compact
+/// payload's previous slot; `getPrevious()` reads it back for wrap-and-rethrow chains
+/// (ward-schema ForeignKeyNode pattern). Byte-identical to PHP 8.5.
 #[test]
 fn test_exception_constructor_accepts_previous() {
     let out = compile_and_run(
-        "<?php declare(strict_types=1); function f(): string { try { try { throw new \\ValueError('inner'); } catch (\\ValueError $e) { throw new \\InvalidArgumentException('outer: ' . $e->getMessage(), $e->getCode(), previous: $e); } } catch (\\InvalidArgumentException $x) { return $x->getMessage() . '/' . $x->getCode(); } } echo f();",
+        "<?php declare(strict_types=1); function f(): string { try { try { throw new \\ValueError('inner'); } catch (\\ValueError $e) { throw new \\InvalidArgumentException('outer: ' . $e->getMessage(), $e->getCode(), previous: $e); } } catch (\\InvalidArgumentException $x) { return $x->getMessage() . '/' . $x->getCode() . '/' . ($x->getPrevious()?->getMessage() ?? 'none'); } } echo f();",
     );
-    assert_eq!(out, "outer: inner/0");
+    assert_eq!(out, "outer: inner/0/inner");
+}
+
+/// EC-38 (#531): exception chaining round-trips through the compact payload — positional
+/// 3-arg and named `previous:` construction, `getPrevious()` through nullsafe Mixed chains,
+/// and instanceof-narrowed typed calls on the recovered previous (the narrowed local still
+/// physically holds the tag-6 Mixed cell; both the intrinsic receiver path and the
+/// `__rt_throwable_*` interface-dispatch bodies unwrap it).
+#[test]
+fn test_exception_chain_get_previous_round_trip() {
+    let out = compile_and_run(
+        r#"<?php
+final class DomainFail extends RuntimeException {}
+try {
+    try {
+        throw new LogicException("inner");
+    } catch (LogicException $e) {
+        throw new DomainFail("outer", 7, $e);
+    }
+} catch (DomainFail $d) {
+    echo $d->getMessage(), "|", $d->getCode(), "|", $d->getPrevious()?->getMessage(), "
+";
+    $p = $d->getPrevious();
+    var_dump($p === null);
+    if ($p instanceof LogicException) {
+        echo "narrowed=", $p->getMessage(), "|", $p->getCode(), "
+";
+    }
+}
+try {
+    try {
+        throw new LogicException("in2");
+    } catch (LogicException $e) {
+        throw new RuntimeException(message: "out2", previous: $e);
+    }
+} catch (RuntimeException $r) {
+    echo $r->getMessage(), "|", $r->getCode(), "|", $r->getPrevious()?->getMessage(), "
+";
+}
+try {
+    throw new RuntimeException("plain");
+} catch (RuntimeException $q) {
+    echo $q->getPrevious() === null ? "none" : "some", "
+";
+}
+"#,
+    );
+    assert_eq!(
+        out,
+        "outer|7|inner
+bool(false)
+narrowed=inner|0
+out2|0|in2
+none
+"
+    );
 }
 
 /// Verifies that a private method call from an inaccessible scope raises a

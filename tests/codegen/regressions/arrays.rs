@@ -1201,3 +1201,25 @@ foreach ($c as $k => $v) {
     );
     assert_eq!(out, "2|a=1;b=2;");
 }
+
+/// EC-38 (#531): array_keys over a bare `array` hint (element AND key layout erased)
+/// routes through the adaptive prelude impl — the static positional-keys claim was
+/// wrong for string-keyed arguments and the packed native walk misread their hash
+/// storage (WalCommitWriter applyRenames pattern).
+#[test]
+fn test_array_keys_bare_array_hint_string_keys() {
+    let out = compile_and_run(
+        r#"<?php
+/** @param array<string, string> $staged */
+function keysOf(array $staged): mixed {
+    return array_keys($staged);
+}
+$k = keysOf(["b/x" => "s1", "a/y" => "s2"]);
+var_dump($k);
+"#,
+    );
+    assert_eq!(
+        out,
+        "array(2) {\n  [0]=>\n  string(3) \"b/x\"\n  [1]=>\n  string(3) \"a/y\"\n}\n"
+    );
+}

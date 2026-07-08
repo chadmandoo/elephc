@@ -9,7 +9,7 @@
 //! - Rules here define accepted programs, so PHP covariance, inheritance, and extension-specific constraints must stay explicit.
 
 use crate::errors::CompileError;
-use crate::parser::ast::{Expr, ExprKind, StaticReceiver, TypeExpr};
+use crate::parser::ast::{Expr, ExprKind, TypeExpr};
 use crate::types::{callable_wrapper_sig, ClassInfo, FunctionSig, PhpType};
 
 use super::super::inference::syntactic::infer_expr_type_syntactic;
@@ -199,22 +199,17 @@ impl Checker {
         context: &str,
     ) -> Result<(), CompileError> {
         if let Some(default_expr) = default_expr {
-            // An enum-case access used as a parameter default (`E $x = E::Case`) has the
-            // enum object type, but purely-syntactic inference types every `::` access as
-            // Str (it has no class table, and enum cases are populated after this schema
-            // pass). When the declared type is an enum/class object and the default is a
-            // scoped access naming that same type, accept it here; the later semantic pass
-            // validates that the case actually exists.
-            if let PhpType::Object(expected_class) = expected_ty {
-                if let ExprKind::ScopedConstantAccess {
-                    receiver: StaticReceiver::Named(recv),
-                    ..
-                } = &default_expr.kind
-                {
-                    if recv.as_canonical() == *expected_class {
-                        return Ok(());
-                    }
-                }
+            // A scoped constant access used as a parameter default (`E $x = E::Case`,
+            // `int $n = self::DEFAULT_SIZE`) is opaque to purely-syntactic inference —
+            // it types every `::` access as Str (no class table exists yet; class
+            // constants and enum cases are populated after this schema pass). Accept
+            // any scoped-constant default here; the later semantic pass validates the
+            // constant's existence and its actual type.
+            if matches!(
+                &default_expr.kind,
+                ExprKind::ScopedConstantAccess { .. }
+            ) {
+                return Ok(());
             }
             let default_ty = infer_expr_type_syntactic(default_expr);
             // An object default for an object-typed parameter (e.g. an interface-typed promoted
