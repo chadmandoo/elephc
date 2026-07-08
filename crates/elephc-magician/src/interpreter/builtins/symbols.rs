@@ -10,7 +10,6 @@
 
 use super::super::*;
 
-mod callable_probe;
 mod class_alias;
 mod class_attribute_args;
 mod class_attribute_names;
@@ -53,10 +52,12 @@ mod spl_object_id;
 mod trait_exists;
 mod unset;
 
-pub(in crate::interpreter) use callable_probe::*;
 pub(in crate::interpreter) use dispatch::{eval_builtin_symbols_call, eval_symbols_values_result};
 pub(in crate::interpreter) use function_exists::eval_function_probe_exists;
 pub(in crate::interpreter) use get_class::eval_get_class_result;
 pub(in crate::interpreter) use get_parent_class::eval_get_parent_class_result;
 pub(in crate::interpreter) use is_a::dynamic_object_is_a;
-use super::*;
+pub(in crate::interpreter) use is_callable::{
+    eval_builtin_is_callable_call, eval_is_callable_call_with_evaluated_args,
+    eval_is_callable_value,
+};
