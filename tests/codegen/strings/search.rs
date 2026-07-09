@@ -148,6 +148,41 @@ fn test_strcasecmp() {
     assert_eq!(out, "0");
 }
 
+/// Verifies strcmp normalizes the prefix/length-difference case to a sign (-1/1),
+/// matching PHP 8.5 (ZEND_NORMALIZE_BOOL) — "test" is a prefix of "testing".
+#[test]
+fn test_strcmp_prefix_length_diff_normalized() {
+    assert_eq!(compile_and_run(r#"<?php echo strcmp("test", "testing");"#), "-1");
+    assert_eq!(compile_and_run(r#"<?php echo strcmp("testing", "test");"#), "1");
+    assert_eq!(compile_and_run(r#"<?php echo strcmp("abc", "abcd");"#), "-1");
+}
+
+/// Verifies strcmp preserves the first-differing-byte magnitude, matching PHP 8.5
+/// (raw byte delta, not a sign): 'a'(97) - 'A'(65) = 32; 'z'(122) - 'a'(97) = 25.
+#[test]
+fn test_strcmp_byte_diff_magnitude_preserved() {
+    assert_eq!(compile_and_run(r#"<?php echo strcmp("a", "A");"#), "32");
+    assert_eq!(compile_and_run(r#"<?php echo strcmp("zzz", "aaa");"#), "25");
+}
+
+/// Verifies strcasecmp normalizes the prefix/length-difference case to a sign,
+/// matching PHP 8.5 — case-folded "test" is a prefix of "TESTING".
+#[test]
+fn test_strcasecmp_prefix_length_diff_normalized() {
+    assert_eq!(compile_and_run(r#"<?php echo strcasecmp("test", "TESTING");"#), "-1");
+    assert_eq!(compile_and_run(r#"<?php echo strcasecmp("TESTING", "test");"#), "1");
+}
+
+/// Verifies strncmp matches PHP 8.5 byte-for-byte: the length-diff case normalizes to
+/// a sign, the first-byte-diff case preserves magnitude (delegates to strcmp over the
+/// length-truncated prefixes).
+#[test]
+fn test_strncmp_php_byte_parity() {
+    assert_eq!(compile_and_run(r#"<?php echo strncmp("test", "testing", 7);"#), "-1");
+    assert_eq!(compile_and_run(r#"<?php echo strncmp("a", "A", 1);"#), "32");
+    assert_eq!(compile_and_run(r#"<?php echo strncmp("test", "testing", 4);"#), "0");
+}
+
 /// Verifies str_contains returns 1 when the needle is present in the haystack.
 /// Fixture: "Hello World" contains "World".
 #[test]

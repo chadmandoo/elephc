@@ -57,8 +57,11 @@ pub fn emit_strcmp(emitter: &mut Emitter) {
 
     // -- all shared bytes equal: compare by length --
     emitter.label("__rt_strcmp_len");
-    emitter.instruction("sub x0, x2, x4");                                      // return len_a - len_b as tiebreaker
-    emitter.instruction("ret");                                                 // return to caller
+    emitter.instruction("sub x0, x2, x4");                                      // len_a - len_b before normalization
+    emitter.instruction("cmp x0, #0");                                          // PHP normalizes the length tiebreak to a sign (-1/0/1)
+    emitter.instruction("cset x9, gt");                                         // x9 = 1 when len_a > len_b, else 0
+    emitter.instruction("csinv x0, x9, xzr, ge");                               // ge: x0 = x9 (0/1); lt: x0 = ~xzr = -1
+    emitter.instruction("ret");                                                 // return the sign-normalized tiebreak
 }
 
 /// Emits the x86_64 Linux implementation of `__rt_strcmp`.
@@ -95,6 +98,12 @@ fn emit_strcmp_linux_x86_64(emitter: &mut Emitter) {
 
     emitter.label("__rt_strcmp_len_linux_x86_64");
     emitter.instruction("mov rax, rsi");                                        // seed the length-tiebreak result from the first string length
-    emitter.instruction("sub rax, rcx");                                        // return the signed length difference once the shared prefix is equal
-    emitter.instruction("ret");                                                 // return the length-difference result to the caller
+    emitter.instruction("sub rax, rcx");                                        // rax = len_a - len_b
+    emitter.instruction("mov rdx, rax");                                        // PHP normalizes the length tiebreak to a sign (-1/0/1)
+    emitter.instruction("sar rdx, 63");                                         // rdx = -1 when len_a < len_b, else 0
+    emitter.instruction("test rax, rax");                                       // flags from the signed length difference
+    emitter.instruction("setg al");                                            // al = 1 when len_a > len_b, else 0
+    emitter.instruction("movzx eax, al");                                       // rax = 0 or 1
+    emitter.instruction("or rax, rdx");                                         // -1|0=-1 ; 0|1=1 ; 0|0=0
+    emitter.instruction("ret");                                                 // return the sign-normalized tiebreak
 }

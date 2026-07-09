@@ -924,9 +924,10 @@ function __elephc_in_array_strict(mixed $needle, mixed $haystack): bool {
 }
 
 function strncmp(string $string1, string $string2, int $length): int {
-    // PHP documents "< 0, > 0, or 0" — sign only — so the prefix spaceship
-    // satisfies the contract (binary-safe byte comparison).
-    return substr($string1, 0, $length) <=> substr($string2, 0, $length);
+    // PHP's zend_binary_strncmp = raw byte delta at the first mismatch, sign
+    // (-1/0/1) on the length tiebreak — exactly what strcmp() yields over the
+    // length-truncated prefixes, so delegate for byte-for-byte parity.
+    return strcmp(substr($string1, 0, $length), substr($string2, 0, $length));
 }
 
 function __elephc_array_values_any(mixed $h): mixed {
