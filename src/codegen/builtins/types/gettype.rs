@@ -325,7 +325,7 @@ pub fn emit(
         PhpType::Void | PhpType::Never => b"NULL".as_slice(),
         PhpType::Array(_) | PhpType::AssocArray { .. } => b"array".as_slice(),
         PhpType::Callable => b"callable".as_slice(),
-        PhpType::Object(_) => b"object".as_slice(),
+        PhpType::Object(_) | PhpType::Intersection(_) => b"object".as_slice(),
         PhpType::Pointer(_) => b"pointer".as_slice(),
         PhpType::Buffer(_) => b"buffer".as_slice(),
         PhpType::Packed(_) => b"packed".as_slice(),

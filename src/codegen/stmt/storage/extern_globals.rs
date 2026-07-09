@@ -48,7 +48,8 @@ pub(super) fn emit_extern_global_store(emitter: &mut Emitter, name: &str, ty: &P
         | PhpType::TaggedScalar
         | PhpType::Array(_)
         | PhpType::AssocArray { .. }
-        | PhpType::Object(_) => {
+        | PhpType::Object(_)
+        | PhpType::Intersection(_) => {
             emitter.comment(&format!(
                 "WARNING: unsupported extern global store for ${}",
                 name
@@ -94,7 +95,8 @@ pub(super) fn emit_extern_global_load(emitter: &mut Emitter, name: &str, ty: &Ph
         | PhpType::TaggedScalar
         | PhpType::Array(_)
         | PhpType::AssocArray { .. }
-        | PhpType::Object(_) => {
+        | PhpType::Object(_)
+        | PhpType::Intersection(_) => {
             emitter.comment(&format!(
                 "WARNING: unsupported extern global load for ${}",
                 name

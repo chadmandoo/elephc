@@ -79,6 +79,7 @@ impl Checker {
                 | PhpType::Array(_)
                 | PhpType::AssocArray { .. }
                 | PhpType::Object(_)
+                | PhpType::Intersection(_)
                 | PhpType::Packed(_) => {
                     return Err(CompileError::new(
                         span,

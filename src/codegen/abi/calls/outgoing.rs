@@ -195,6 +195,7 @@ pub fn materialize_outgoing_args(
             | PhpType::Buffer(_)
             | PhpType::Callable
             | PhpType::Object(_)
+            | PhpType::Intersection(_)
             | PhpType::Packed(_)
             | PhpType::Pointer(_) => {
                 emit_load_temporary_stack_slot(

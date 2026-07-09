@@ -39,6 +39,64 @@ impl Checker {
         }
     }
 
+    /// Flattens nested intersections, drops `Mixed` (which absorbs to the other members),
+    /// removes duplicates and any member that is a strict SUPERtype of another member
+    /// (keeping the most specific object type), and canonicalizes member order for
+    /// order-independent equality. Returns a single `PhpType` when the intersection
+    /// reduces to one member, else a `PhpType::Intersection`.
+    pub(crate) fn normalize_intersection_type(&self, members: Vec<PhpType>) -> PhpType {
+        let mut flat = Vec::new();
+        for member in members {
+            match member {
+                PhpType::Intersection(inner) => flat.extend(inner),
+                PhpType::Mixed => {} // Mixed & X = X
+                other => flat.push(other),
+            }
+        }
+
+        let mut deduped: Vec<PhpType> = Vec::new();
+        for member in flat {
+            if !deduped.iter().any(|existing| existing == &member) {
+                deduped.push(member);
+            }
+        }
+
+        // A&B where A is-a B collapses to A: drop any member that is a supertype of
+        // another (an instanceof-narrowed concrete class absorbs its interfaces).
+        let mut reduced: Vec<PhpType> = deduped
+            .iter()
+            .filter(|candidate| {
+                !deduped
+                    .iter()
+                    .any(|other| other != *candidate && self.object_type_is_subtype(other, candidate))
+            })
+            .cloned()
+            .collect();
+
+        reduced.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+
+        match reduced.len() {
+            0 => PhpType::Mixed,
+            1 => reduced.pop().expect("intersection member exists"),
+            _ => PhpType::Intersection(reduced),
+        }
+    }
+
+    /// Returns true when object type `sub` is a subtype of object type `sup` (identical,
+    /// a subclass, an interface implementer, or an extending interface). Non-object types
+    /// are never related here.
+    pub(crate) fn object_type_is_subtype(&self, sub: &PhpType, sup: &PhpType) -> bool {
+        match (sub, sup) {
+            (PhpType::Object(sub_name), PhpType::Object(sup_name)) => {
+                sub_name == sup_name
+                    || self.is_subclass_of(sub_name, sup_name)
+                    || self.class_implements_interface(sub_name, sup_name)
+                    || self.interface_extends_interface(sub_name, sup_name)
+            }
+            _ => false,
+        }
+    }
+
     /// Returns true if `expected` type can accept a value of `actual` type (i.e., the
     /// assignment `expected = actual` is valid). Checks identity, Mixed, unions, arrays,
     /// associative arrays, object class/interface compatibility, `iterable`, pointers,
@@ -48,8 +106,20 @@ impl Checker {
             return true;
         }
 
+        // An intersection value satisfies `expected` if ANY of its members does: a value
+        // of type A&B is usable wherever an A, a B, or a supertype of either is expected.
+        if let PhpType::Intersection(actual_members) = actual {
+            return actual_members
+                .iter()
+                .any(|member| self.type_accepts(expected, member));
+        }
+
         match expected {
             PhpType::Mixed => true,
+            // An expected intersection requires the actual to satisfy EVERY member.
+            PhpType::Intersection(expected_members) => expected_members
+                .iter()
+                .all(|member| self.type_accepts(member, actual)),
             // PHP coercive mode: scalars accept Mixed with runtime narrowing.
             PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Str
                 if matches!(actual, PhpType::Mixed) =>

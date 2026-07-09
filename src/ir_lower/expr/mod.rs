@@ -10556,6 +10556,11 @@ fn method_signature(
 ) -> Option<FunctionSig> {
     let object_ty = ctx.builder.value_php_type(object);
     let key = php_symbol_key(method);
+    // An intersection receiver resolves the signature against whichever member declares
+    // the method (the intersection widens the receiver's method surface).
+    if let PhpType::Intersection(members) = &object_ty {
+        return intersection_member_signature(ctx, members, &key);
+    }
     if let Some((class_name, _)) = singular_object_class(&object_ty) {
         let normalized = class_name.trim_start_matches('\\');
         return class_method_signature(ctx, normalized, &key).cloned();
@@ -10564,6 +10569,21 @@ fn method_signature(
         return common_dynamic_method_signature(ctx, &key);
     }
     None
+}
+
+/// Returns the signature of `method_key` from the first intersection member (interface or
+/// class) that declares it — the member whose method the call resolves to.
+fn intersection_member_signature(
+    ctx: &LoweringContext<'_, '_>,
+    members: &[PhpType],
+    method_key: &str,
+) -> Option<FunctionSig> {
+    members.iter().find_map(|member| match member {
+        PhpType::Object(name) => {
+            class_method_signature(ctx, name.trim_start_matches('\\'), method_key).cloned()
+        }
+        _ => None,
+    })
 }
 
 /// Returns a class/interface method signature, preferring the implementing class metadata.

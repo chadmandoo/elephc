@@ -148,6 +148,11 @@ fn coerce_to_string_inner(
                 }
             }
         }
+        PhpType::Intersection(_) => {
+            unreachable!(
+                "intersection-to-string coercion: intersections collapse to their object member before coercion"
+            )
+        }
         PhpType::Object(class_name) => {
             if ctx
                 .classes

@@ -271,7 +271,7 @@ pub(super) fn emit_new_object_core(
                     abi::emit_load_int_immediate(emitter, tag_reg, 5);
                     abi::emit_store_to_address(emitter, tag_reg, object_reg, offset + 8);
                 }
-                PhpType::Object(_) => {
+                PhpType::Object(_) | PhpType::Intersection(_) => {
                     abi::emit_store_to_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
                     let tag_reg = abi::temp_int_reg(emitter.target);
                     abi::emit_load_int_immediate(emitter, tag_reg, 6);

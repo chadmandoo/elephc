@@ -198,7 +198,7 @@ pub fn emit(
                 }
             }
         }
-        PhpType::Callable | PhpType::Object(_) => {
+        PhpType::Callable | PhpType::Object(_) | PhpType::Intersection(_) => {
             // -- callable/object is never empty --
             match emitter.target.arch {
                 Arch::AArch64 => {

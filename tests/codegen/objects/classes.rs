@@ -565,3 +565,54 @@ echo (new Builder([new Leaf("a")]))->addLeaf(new Leaf("b"))->addGroup("AND")->re
     );
     assert_eq!(out, "G:AND|");
 }
+
+/// Verifies method dispatch on an intersection-typed receiver (`Field&AcceptsUploadedFile`):
+/// the call-side resolves each method against whichever member declares it — `name()` on the
+/// first member and `validateUpload()` on the second — rather than collapsing to one member.
+/// Mirrors PHP, which outputs "avatar:missing". Forge EC-72 / #566.
+#[test]
+fn test_intersection_receiver_method_dispatch() {
+    let out = compile_and_run(
+        r#"<?php
+interface Field { public function name(): string; }
+interface AcceptsUploadedFile { public function validateUpload(?string $f): ?string; }
+final class FileField implements Field, AcceptsUploadedFile {
+    public function name(): string { return 'avatar'; }
+    public function validateUpload(?string $f): ?string { return $f === null ? 'missing' : null; }
+}
+function resolve(Field&AcceptsUploadedFile $field): string {
+    $v = $field->validateUpload(null);
+    return $field->name() . ':' . ($v ?? 'ok');
+}
+echo resolve(new FileField());
+"#,
+    );
+    assert_eq!(out, "avatar:missing");
+}
+
+/// Verifies an `instanceof` guard on a value of an unrelated interface type refines it to the
+/// intersection, so it satisfies an `A&B` parameter: `$entity` (declared `Entity`) narrowed by
+/// `instanceof ValidatableEntity` is accepted by `collectErrors(Entity&ValidatableEntity)`.
+/// Mirrors PHP, which outputs "id=7,rules=name". Forge EC-72 / #566.
+#[test]
+fn test_intersection_instanceof_narrowing_into_param() {
+    let out = compile_and_run(
+        r#"<?php
+interface Entity { public function id(): int; }
+interface ValidatableEntity { public function rules(): array; }
+final class User implements Entity, ValidatableEntity {
+    public function id(): int { return 7; }
+    public function rules(): array { return ['name']; }
+}
+function collectErrors(Entity&ValidatableEntity $entity): string {
+    return 'id=' . $entity->id() . ',rules=' . implode('|', $entity->rules());
+}
+function handle(Entity $entity): string {
+    if (!$entity instanceof ValidatableEntity) { return 'skip'; }
+    return collectErrors($entity);
+}
+echo handle(new User());
+"#,
+    );
+    assert_eq!(out, "id=7,rules=name");
+}

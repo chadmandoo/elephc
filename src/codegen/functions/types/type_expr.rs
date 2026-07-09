@@ -84,11 +84,22 @@ pub(crate) fn codegen_declared_type(type_expr: &TypeExpr, ctx: &Context) -> PhpT
             }
             _ => PhpType::Int,
         },
-        // An intersection value is an object pointer; type it as its first member.
-        TypeExpr::Intersection(members) => members
-            .first()
-            .map(|member| codegen_declared_type(member, ctx))
-            .unwrap_or(PhpType::Int),
+        // An intersection value is a single object pointer, but keep it modeled as an
+        // intersection so per-method dispatch can resolve the receiver to whichever
+        // member declares the called method (a method on the non-primary member would
+        // otherwise be "unknown" at the EIR backend). A one-member intersection is just
+        // that member.
+        TypeExpr::Intersection(members) => {
+            let resolved: Vec<PhpType> = members
+                .iter()
+                .map(|member| codegen_declared_type(member, ctx))
+                .collect();
+            match resolved.len() {
+                0 => PhpType::Int,
+                1 => resolved.into_iter().next().unwrap_or(PhpType::Int),
+                _ => PhpType::Intersection(resolved),
+            }
+        }
         TypeExpr::Nullable(_) | TypeExpr::Union(_) => PhpType::Mixed,
     }
 }

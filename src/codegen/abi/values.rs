@@ -53,6 +53,7 @@ pub fn emit_store(emitter: &mut Emitter, ty: &PhpType, offset: usize) {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             store_at_offset(emitter, int_result_reg(emitter), offset);                  // store array/callable/object/pointer value
@@ -182,6 +183,7 @@ pub fn emit_load(emitter: &mut Emitter, ty: &PhpType, offset: usize) {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             load_at_offset(emitter, int_result_reg(emitter), offset);                   // load array/callable/object/pointer value
@@ -360,7 +362,8 @@ pub fn emit_write_stdout(emitter: &mut Emitter, ty: &PhpType) {
         | PhpType::Array(_)
         | PhpType::AssocArray { .. }
         | PhpType::Callable
-        | PhpType::Object(_) => {}
+        | PhpType::Object(_)
+        | PhpType::Intersection(_) => {}
     }
 }
 

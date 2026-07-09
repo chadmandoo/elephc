@@ -186,6 +186,7 @@ fn pop_saved_result_value(emitter: &mut Emitter, ty: &PhpType) {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             abi::emit_pop_reg(emitter, abi::int_result_reg(emitter));

@@ -231,7 +231,7 @@ fn static_gettype_name(ty: &PhpType) -> Option<&'static [u8]> {
             Some(b"array".as_slice())
         }
         PhpType::Callable => Some(b"callable".as_slice()),
-        PhpType::Object(_) => Some(b"object".as_slice()),
+        PhpType::Object(_) | PhpType::Intersection(_) => Some(b"object".as_slice()),
         PhpType::Pointer(_) => Some(b"pointer".as_slice()),
         PhpType::Buffer(_) => Some(b"buffer".as_slice()),
         PhpType::Packed(_) => Some(b"packed".as_slice()),
@@ -382,7 +382,7 @@ pub(crate) fn lower_is_callable(ctx: &mut FunctionContext<'_>, inst: &Instructio
             ctx.load_value_to_result(value)?;
             emit_is_callable_pointer_lookup(ctx, "__rt_is_callable_assoc");
         }
-        PhpType::Object(_) => {
+        PhpType::Object(_) | PhpType::Intersection(_) => {
             ctx.load_value_to_result(value)?;
             emit_is_callable_pointer_lookup(ctx, "__rt_is_callable_object");
         }
@@ -839,6 +839,9 @@ pub(crate) fn lower_is_iterable(ctx: &mut FunctionContext<'_>, inst: &Instructio
     let result = match ty {
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => true,
         PhpType::Object(name) => object_type_implements_iterable(ctx, &name),
+        PhpType::Intersection(members) => members
+            .iter()
+            .any(|member| matches!(member, PhpType::Object(name) if object_type_implements_iterable(ctx, name))),
         PhpType::Int
         | PhpType::Float
         | PhpType::Str

@@ -78,13 +78,13 @@ impl Checker {
                 Ok(self.normalize_union_type(resolved))
             }
             crate::parser::ast::TypeExpr::Intersection(members) => {
-                // Resolve every member so unknown types are reported, then type the value as its
-                // first member; call boundaries validate that arguments satisfy all members.
+                // Resolve every member so unknown types are reported, then model the value as
+                // the intersection of all members (a value that satisfies each simultaneously).
                 let resolved = members
                     .iter()
                     .map(|member| self.resolve_type_expr(member, span))
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(resolved.into_iter().next().unwrap_or(PhpType::Mixed))
+                Ok(self.normalize_intersection_type(resolved))
             }
             crate::parser::ast::TypeExpr::Ptr(target) => {
                 let normalized = match target {

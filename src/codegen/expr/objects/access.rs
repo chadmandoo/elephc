@@ -142,6 +142,7 @@ pub(super) fn emit_property_access(
             | PhpType::Buffer(_)
             | PhpType::Callable
             | PhpType::Object(_)
+            | PhpType::Intersection(_)
             | PhpType::Packed(_)
             | PhpType::Pointer(_) => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
@@ -175,6 +176,7 @@ pub(super) fn emit_property_access(
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
@@ -790,6 +792,7 @@ fn emit_loaded_object_property_value(
             | PhpType::Buffer(_)
             | PhpType::Callable
             | PhpType::Object(_)
+            | PhpType::Intersection(_)
             | PhpType::Packed(_)
             | PhpType::Pointer(_) => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
@@ -823,6 +826,7 @@ fn emit_loaded_object_property_value(
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);

@@ -36,6 +36,11 @@ pub enum PhpType {
     Pointer(Option<String>), // None = opaque ptr, Some("Class") = typed ptr<Class>
     Resource(Option<String>), // None = generic resource, Some("stream") = file/stdio stream
     Union(Vec<PhpType>),
+    /// Intersection type `A&B&…`: a value that satisfies EVERY member simultaneously
+    /// (all members are object/interface types). Purely a checker/inference construct —
+    /// the runtime representation is a single object pointer, identical to `Object`, so
+    /// `codegen_repr()` collapses it to its primary member and codegen never sees it.
+    Intersection(Vec<PhpType>),
     /// Codegen-internal inline nullable scalar: two words `{payload, tag}` with no heap
     /// allocation. The tag reuses the runtime value tag scheme (0 = int, 8 = null), so the
     /// pair is word-compatible with a boxed Mixed cell. The checker never produces this
@@ -84,6 +89,7 @@ impl PhpType {
             PhpType::Pointer(_) => 8,        // 64-bit address
             PhpType::Resource(_) => 8,       // runtime resource id / native handle
             PhpType::Union(_) => 8,          // boxed runtime-tagged payload (same storage as Mixed)
+            PhpType::Intersection(_) => 8,   // single object pointer (all members share the representation)
             PhpType::TaggedScalar => 16,     // inline nullable scalar: payload word + tag word
         }
     }
@@ -108,6 +114,7 @@ impl PhpType {
             PhpType::Pointer(_) => 1,
             PhpType::Resource(_) => 1,
             PhpType::Union(_) => 1,
+            PhpType::Intersection(_) => 1,
             PhpType::TaggedScalar => 2,
         }
     }
@@ -127,6 +134,7 @@ impl PhpType {
                 | PhpType::AssocArray { .. }
                 | PhpType::Object(_)
                 | PhpType::Union(_)
+                | PhpType::Intersection(_)
         )
     }
 
@@ -142,6 +150,12 @@ impl PhpType {
                 PhpType::TaggedScalar
             }
             PhpType::Union(_) => PhpType::Mixed,
+            // An intersection value is a single object pointer; collapse to its primary
+            // member's representation so codegen never encounters the checker-only variant.
+            PhpType::Intersection(members) => members
+                .first()
+                .map(PhpType::codegen_repr)
+                .unwrap_or(PhpType::Mixed),
             PhpType::Resource(_) => PhpType::Int,
             PhpType::Never => PhpType::Void, // never should not be materialized; fallback to void sentinel
             _ => self.clone(),
@@ -245,6 +259,15 @@ impl fmt::Display for PhpType {
                 for (i, member) in members.iter().enumerate() {
                     if i > 0 {
                         write!(f, "|")?;
+                    }
+                    write!(f, "{}", member)?;
+                }
+                Ok(())
+            }
+            PhpType::Intersection(members) => {
+                for (i, member) in members.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "&")?;
                     }
                     write!(f, "{}", member)?;
                 }

@@ -152,6 +152,16 @@ impl<'a> FunctionContext<'a> {
             .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))
     }
 
+    /// Returns a value's declared PHP type WITHOUT the `codegen_repr()` collapse, so an
+    /// intersection receiver keeps all its members for per-method dispatch (the collapsed
+    /// form would drop every member but the first).
+    pub(super) fn value_php_type_raw(&self, value: ValueId) -> Result<PhpType> {
+        self.function
+            .value(value)
+            .map(|metadata| metadata.php_type.clone())
+            .ok_or_else(|| CodegenIrError::missing_entry("value", value.as_raw()))
+    }
+
     /// Returns a function value's source PHP metadata before codegen representation erasure.
     pub(super) fn raw_value_php_type(&self, value: ValueId) -> Result<PhpType> {
         self.function

@@ -1215,6 +1215,7 @@ pub(crate) fn emit_loaded_array_callback_call(
             | PhpType::AssocArray { .. }
             | PhpType::Buffer(_)
             | PhpType::Object(_)
+            | PhpType::Intersection(_)
             | PhpType::Packed(_)
             | PhpType::Pointer(_)
             | PhpType::Union(_) | PhpType::Never => {

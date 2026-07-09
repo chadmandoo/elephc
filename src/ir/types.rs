@@ -51,7 +51,9 @@ impl IrType {
             PhpType::Array(_) => IrType::Heap(IrHeapKind::Array),
             PhpType::AssocArray { .. } => IrType::Heap(IrHeapKind::Hash),
             PhpType::Buffer(_) => IrType::Heap(IrHeapKind::Buffer),
-            PhpType::Object(_) | PhpType::Packed(_) => IrType::Heap(IrHeapKind::Object),
+            PhpType::Object(_) | PhpType::Packed(_) | PhpType::Intersection(_) => {
+                IrType::Heap(IrHeapKind::Object)
+            }
             PhpType::Union(_) => IrType::Heap(IrHeapKind::Union),
         }
     }

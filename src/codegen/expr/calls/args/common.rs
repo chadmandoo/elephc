@@ -252,7 +252,7 @@ fn store_pushed_value_to_ref_cell(emitter: &mut Emitter, cell_reg: &str, val_ty:
             abi::emit_load_int_immediate(emitter, temp_reg, 5);
             abi::emit_store_to_address(emitter, temp_reg, cell_reg, 8);
         }
-        PhpType::Object(_) => {
+        PhpType::Object(_) | PhpType::Intersection(_) => {
             abi::emit_pop_reg(emitter, temp_reg);
             abi::emit_store_to_address(emitter, temp_reg, cell_reg, 0);
             abi::emit_load_int_immediate(emitter, temp_reg, 6);

@@ -328,6 +328,7 @@ pub(in crate::codegen::expr) fn emit_strict_compare(
             | PhpType::Iterable
             | PhpType::Callable
             | PhpType::Object(_)
+            | PhpType::Intersection(_)
             | PhpType::Buffer(_)
             | PhpType::Packed(_)
             | PhpType::Pointer(_) => {

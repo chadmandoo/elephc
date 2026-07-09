@@ -135,6 +135,7 @@ fn is_destructor_free(php_type: &PhpType) -> bool {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Resource(_) => false,
     }

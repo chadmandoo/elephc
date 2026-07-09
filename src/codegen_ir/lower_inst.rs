@@ -2464,13 +2464,50 @@ fn catch_bind_store_type(
 }
 
 /// Lowers a direct instance-method call on a statically known object receiver.
+/// Resolves the dispatch class of an intersection receiver for a specific method: the first
+/// member (interface or class) that declares the method, else the first object member so an
+/// unknown method still yields the standard "unknown method" diagnostic.
+fn intersection_dispatch_member(
+    ctx: &FunctionContext<'_>,
+    members: &[PhpType],
+    method_name: &str,
+) -> Option<PhpType> {
+    let method_key = php_symbol_key(method_name);
+    let declaring = members.iter().find(|member| match member {
+        PhpType::Object(name) => {
+            let normalized = name.trim_start_matches('\\');
+            ctx.module
+                .interface_infos
+                .get(normalized)
+                .is_some_and(|info| info.methods.contains_key(&method_key))
+                || ctx
+                    .module
+                    .class_infos
+                    .get(normalized)
+                    .is_some_and(|info| info.methods.contains_key(&method_key))
+        }
+        _ => false,
+    });
+    declaring
+        .or_else(|| members.iter().find(|member| matches!(member, PhpType::Object(_))))
+        .cloned()
+}
+
 fn lower_method_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let object = expect_operand(inst, 0)?;
     let method_name = method_name_data(ctx, inst)?.to_string();
     if let Some((class_name, true)) = objects::nullable_object_receiver_class(ctx, object)? {
         return lower_nullable_receiver_method_call(ctx, inst, object, &class_name, &method_name);
     }
-    let object_ty = ctx.value_php_type(object)?.codegen_repr();
+    // An intersection receiver (A&B) dispatches to whichever member declares the method,
+    // rather than collapsing to a single member that may not declare it. Read the RAW type
+    // (the default accessor's `codegen_repr()` would already have collapsed the intersection).
+    let raw_object_ty = ctx.value_php_type_raw(object)?;
+    let object_ty = match &raw_object_ty {
+        PhpType::Intersection(members) => intersection_dispatch_member(ctx, members, &method_name)
+            .unwrap_or_else(|| raw_object_ty.codegen_repr()),
+        other => other.codegen_repr(),
+    };
     if matches!(object_ty, PhpType::Mixed | PhpType::Union(_)) {
         if let Some(state) = fiber_state_predicate_method(&method_name) {
             return lower_mixed_fiber_state_predicate(ctx, inst, object, &method_name, state);

@@ -421,7 +421,7 @@ pub(crate) fn runtime_value_tag(ty: &PhpType) -> u8 {
         PhpType::Bool => 3,
         PhpType::Array(_) => 4,
         PhpType::AssocArray { .. } => 5,
-        PhpType::Object(_) => 6,
+        PhpType::Object(_) | PhpType::Intersection(_) => 6,
         PhpType::Mixed => 7,
         PhpType::Union(_) => 7,
         PhpType::Iterable => 7,
@@ -530,7 +530,7 @@ pub(crate) fn emit_box_current_value_as_mixed(emitter: &mut Emitter, ty: &PhpTyp
         PhpType::Array(_) | PhpType::AssocArray { .. } => {
             emit_box_iterable_as_mixed(emitter);
         }
-        PhpType::Object(_) => {
+        PhpType::Object(_) | PhpType::Intersection(_) => {
             match emitter.target.arch {
                 Arch::AArch64 => {
                     emitter.instruction("mov x1, x0");                          // move the current heap pointer into the mixed helper payload register

@@ -83,6 +83,7 @@ pub(in crate::codegen::expr) fn emit_cast(
                 }
                 PhpType::Callable
                 | PhpType::Object(_)
+                | PhpType::Intersection(_)
                 | PhpType::Buffer(_)
                 | PhpType::Packed(_)
                 | PhpType::Pointer(_) => {}
@@ -132,6 +133,7 @@ pub(in crate::codegen::expr) fn emit_cast(
                 | PhpType::AssocArray { .. }
                 | PhpType::Callable
                 | PhpType::Object(_)
+                | PhpType::Intersection(_)
                 | PhpType::Buffer(_)
                 | PhpType::Packed(_)
                 | PhpType::Pointer(_) => {

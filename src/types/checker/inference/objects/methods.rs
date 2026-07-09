@@ -26,6 +26,20 @@ impl Checker {
     /// union of those candidates' return types (see
     /// `mixed_receiver_method_return_type`). Other unhandled receiver types fall
     /// back to `PhpType::Int`.
+    /// Returns true when the named interface or class declares `method_key` as an own
+    /// method — a lightweight probe used to pick the dispatch member of an intersection
+    /// receiver (a method inherited from a parent falls back to the first object member's
+    /// full lookup, which walks the hierarchy).
+    fn intersection_member_declares_method(&self, name: &str, method_key: &str) -> bool {
+        self.interfaces
+            .get(name)
+            .is_some_and(|interface_info| interface_info.methods.contains_key(method_key))
+            || self
+                .classes
+                .get(name)
+                .is_some_and(|class_info| class_info.methods.contains_key(method_key))
+    }
+
     pub(crate) fn infer_method_call_type(
         &mut self,
         object: &Expr,
@@ -42,6 +56,37 @@ impl Checker {
                 );
             }
             return self.infer_method_call_on_class_type(class_name, method, args, expr, env);
+        }
+        // A method call on an intersection receiver (A&B) resolves against whichever
+        // member declares the method — PHP dispatches on the runtime object, and the
+        // intersection widens the static method surface to the union of its members.
+        // Falls back to the first object member so an unresolved method still yields the
+        // standard "Undefined method" diagnostic naming a concrete member class.
+        if let PhpType::Intersection(members) = &obj_ty {
+            let method_key = php_symbol_key(method);
+            let dispatch_class = members
+                .iter()
+                .find_map(|member| match member {
+                    PhpType::Object(name)
+                        if self.intersection_member_declares_method(name, &method_key) =>
+                    {
+                        Some(name.clone())
+                    }
+                    _ => None,
+                })
+                .or_else(|| {
+                    members.iter().find_map(|member| match member {
+                        PhpType::Object(name) => Some(name.clone()),
+                        _ => None,
+                    })
+                });
+            if let Some(class_name) = dispatch_class {
+                if self.interfaces.contains_key(&class_name) {
+                    return self
+                        .infer_method_call_on_interface_type(&class_name, method, args, expr, env);
+                }
+                return self.infer_method_call_on_class_type(&class_name, method, args, expr, env);
+            }
         }
         // Method calls on a union object type are allowed when the union has a
         // single object class. `?Foo` / `Foo|null` faults on a null receiver as in

@@ -1493,11 +1493,18 @@ pub(crate) fn type_expr_to_php_type(type_expr: &TypeExpr) -> PhpType {
         TypeExpr::Union(members) => {
             PhpType::Union(members.iter().map(type_expr_to_php_type).collect())
         }
-        // An intersection value is an object pointer; type it as its first member.
-        TypeExpr::Intersection(members) => members
-            .first()
-            .map(type_expr_to_php_type)
-            .unwrap_or(PhpType::Mixed),
+        // An intersection value is a single object pointer, but keep it modeled as an
+        // intersection so per-method dispatch resolves the receiver to whichever member
+        // declares the called method (a method on a non-primary member would otherwise be
+        // "unknown" at the EIR backend). A one-member intersection is just that member.
+        TypeExpr::Intersection(members) => {
+            let resolved: Vec<PhpType> = members.iter().map(type_expr_to_php_type).collect();
+            match resolved.len() {
+                0 => PhpType::Mixed,
+                1 => resolved.into_iter().next().unwrap_or(PhpType::Mixed),
+                _ => PhpType::Intersection(resolved),
+            }
+        }
     }
 }
 

@@ -666,6 +666,10 @@ pub fn emit(
             emit_var_dump_array(emitter, data);
         }
         PhpType::Callable => emit_var_dump_callable(emitter, data),
+        PhpType::Intersection(members) => match members.first() {
+            Some(PhpType::Object(class_name)) => emit_var_dump_object_name(emitter, data, class_name),
+            _ => emit_var_dump_null(emitter, data),
+        },
         PhpType::Object(class_name) => emit_var_dump_object_name(emitter, data, class_name),
         PhpType::Pointer(_) | PhpType::Buffer(_) | PhpType::Packed(_) => {
             // -- print pointer as hex address followed by newline --

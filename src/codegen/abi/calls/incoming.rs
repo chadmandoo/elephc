@@ -162,6 +162,7 @@ pub fn emit_store_incoming_param(
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             if !cursor.int_stack_only && cursor.int_reg_idx < int_reg_limit {

@@ -326,6 +326,7 @@ fn pop_result_value(ctx: &mut FunctionContext<'_>, ty: &PhpType) {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));

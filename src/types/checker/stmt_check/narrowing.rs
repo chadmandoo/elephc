@@ -191,6 +191,14 @@ impl Checker {
                 }
             }
             _ if guard_matches(current, target) => current.clone(),
+            // An instanceof guard on a value of an unrelated object type REFINES rather
+            // than replaces: `Entity` guarded by `instanceof ValidatableEntity` becomes
+            // `Entity&ValidatableEntity` (both independent interfaces now hold). When the
+            // target is a subtype of `current`, `normalize_intersection_type` reduces the
+            // pair back to the more specific target, so this never widens a narrowing.
+            PhpType::Object(_) if matches!(target, PhpType::Object(_)) => {
+                self.normalize_intersection_type(vec![current.clone(), target.clone()])
+            }
             _ => target.clone(),
         }
     }

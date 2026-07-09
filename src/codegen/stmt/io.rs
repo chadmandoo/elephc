@@ -158,6 +158,7 @@ fn stabilize_x86_64_echo_result(emitter: &mut Emitter, ty: &PhpType) {
         | PhpType::Buffer(_)
         | PhpType::Callable
         | PhpType::Object(_)
+        | PhpType::Intersection(_)
         | PhpType::Packed(_)
         | PhpType::Pointer(_) => {
             abi::emit_push_reg(emitter, abi::int_result_reg(emitter));          // spill register-only x86_64 echo results through a temporary slot before sentinel checks or helper calls consume them
