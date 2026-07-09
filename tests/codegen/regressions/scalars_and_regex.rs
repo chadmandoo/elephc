@@ -265,3 +265,12 @@ fn test_mb_ereg_match_start_anchored() {
     );
     assert_eq!(out, "1010");
 }
+
+/// Verifies that `mb_ereg_match()` accepts the optional options argument and honors `i`.
+#[test]
+fn test_mb_ereg_match_options_case_insensitive() {
+    let out = compile_and_run(
+        "<?php echo (int)mb_ereg_match('ab','AB'), (int)mb_ereg_match('ab','AB','i'), (int)mb_ereg_match('ab','AB', null);",
+    );
+    assert_eq!(out, "010");
+}
