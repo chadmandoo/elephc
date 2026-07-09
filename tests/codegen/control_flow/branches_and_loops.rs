@@ -365,3 +365,32 @@ echo $s->issue($sess, "f"), "=", $s->issue($sess, "f");
     );
     assert_eq!(out, "1|1|hit|Tf=Tf");
 }
+
+/// A `match (true)` arm with MULTIPLE instanceof conditions (`$x instanceof A, $x instanceof B
+/// => ...`) narrows $x to the union `A|B`, so a member shared by both concrete classes (that the
+/// common interface does not declare) resolves. The AIC BlockDescriptorFactory PlacementRule
+/// idiom. Byte-parity vs PHP 8.5.
+#[test]
+fn test_match_multi_instanceof_arm_narrows_to_union() {
+    let out = compile_and_run(
+        r#"<?php
+interface Rule {}
+final class RouteRule implements Rule { public function __construct(public string $pattern) {} }
+final class AndRule implements Rule { public array $children; public function __construct(array $c) { $this->children = $c; } }
+final class OrRule implements Rule { public array $children; public function __construct(array $c) { $this->children = $c; } }
+final class F {
+    public function toStrings(Rule $r): array {
+        return match (true) {
+            $r instanceof RouteRule => ['route:' . $r->pattern],
+            $r instanceof AndRule, $r instanceof OrRule => ['n:' . count($r->children)],
+            default => ['custom'],
+        };
+    }
+}
+$f = new F();
+echo implode(',', $f->toStrings(new RouteRule("home"))), "|";
+echo implode(',', $f->toStrings(new AndRule([new RouteRule("a"), new RouteRule("b")])));
+"#,
+    );
+    assert_eq!(out, "route:home|n:2");
+}

@@ -174,11 +174,31 @@ impl Checker {
                     for condition in conditions {
                         self.infer_type_with_assignment_effects(condition, &mut arm_env)?;
                     }
-                    // `match (true)` guard arms narrow their result like an
-                    // `if` then-branch (mirrors the plain inference walker).
-                    if guard_style && conditions.len() == 1 {
-                        if let Some(guard) = self.guard_narrowing(&conditions[0], &arm_env)? {
-                            arm_env.insert(guard.var, guard.then_ty);
+                    // `match (true)` guard arms narrow their result like an `if`
+                    // then-branch (mirrors the plain inference walker). A
+                    // multi-condition arm (`$x instanceof A, $x instanceof B`) narrows
+                    // $x to the UNION A|B when every condition narrows the same variable.
+                    if guard_style && !conditions.is_empty() {
+                        let mut guards = Vec::with_capacity(conditions.len());
+                        let mut all_narrowed = true;
+                        for condition in conditions {
+                            match self.guard_narrowing(condition, &arm_env)? {
+                                Some(guard) => guards.push(guard),
+                                None => {
+                                    all_narrowed = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if all_narrowed
+                            && !guards.is_empty()
+                            && guards.iter().all(|g| g.var == guards[0].var)
+                        {
+                            let var = guards[0].var.clone();
+                            let narrowed = self.normalize_union_type(
+                                guards.into_iter().map(|g| g.then_ty).collect(),
+                            );
+                            arm_env.insert(var, narrowed);
                         }
                     }
                     let arm_ty = self.infer_type_with_assignment_effects(result, &mut arm_env)?;

@@ -50,15 +50,30 @@ impl Checker {
             if let Ok(Some((class_name, nullable))) =
                 self.nullsafe_object_receiver(&obj_ty, expr, "property access")
             {
-                let property_ty = self.infer_property_on_class_type(&class_name, property, expr)?;
-                return if nullable {
-                    Ok(self.normalize_union_type(vec![property_ty, PhpType::Void]))
-                } else {
-                    Ok(property_ty)
-                };
+                if let Ok(property_ty) =
+                    self.infer_property_on_class_type(&class_name, property, expr)
+                {
+                    return if nullable {
+                        Ok(self.normalize_union_type(vec![property_ty, PhpType::Void]))
+                    } else {
+                        Ok(property_ty)
+                    };
+                }
+                // The collapsed receiver class is a shared supertype/interface that does
+                // not declare the property; fall through to per-member union resolution
+                // below (each concrete member is checked independently).
             }
             if let Some(class_name) = self.union_single_object_class(&obj_ty) {
-                return self.infer_property_on_class_type(&class_name, property, expr);
+                if let Ok(property_ty) =
+                    self.infer_property_on_class_type(&class_name, property, expr)
+                {
+                    return Ok(property_ty);
+                }
+                // The collapsed single class is a shared supertype/interface that does
+                // not declare the property (`AndRule|OrRule` collapses to their common
+                // interface `Rule`, which has no `->children`). Fall through to the
+                // per-member resolution below, where each concrete union member is
+                // checked — both members declaring the property is valid PHP.
             }
             // Union of two or more distinct object classes (`A|B`): the property
             // must exist on every object member; codegen dispatches on the runtime

@@ -161,21 +161,42 @@ impl Checker {
                 self.infer_type(subject, env)?;
                 // `match (true)` guard arms narrow their result expression the
                 // way an `if` then-branch does: `$x instanceof Y => $x->prop`
-                // must see $x as Y (the AIC PlacementRule evaluate/describe
-                // idiom). Single-condition arms only; the complement is not
-                // threaded to later arms (conservative).
+                // must see $x as Y (the AIC PlacementRule describe idiom). A
+                // MULTI-condition arm (`$x instanceof A, $x instanceof B => ...`)
+                // narrows $x to the UNION A|B so a shared member is accessible —
+                // only when every condition narrows the SAME variable. The
+                // complement is not threaded to later arms (conservative).
                 let guard_style = matches!(subject.kind, ExprKind::BoolLiteral(true));
                 let mut result_ty = None;
                 for (conditions, result) in arms {
                     for c in conditions {
                         self.infer_type(c, env)?;
                     }
-                    let narrowed_env = if guard_style && conditions.len() == 1 {
-                        self.guard_narrowing(&conditions[0], env)?.map(|guard| {
+                    let narrowed_env = if guard_style && !conditions.is_empty() {
+                        let mut guards = Vec::with_capacity(conditions.len());
+                        let mut all_narrowed = true;
+                        for c in conditions {
+                            match self.guard_narrowing(c, env)? {
+                                Some(guard) => guards.push(guard),
+                                None => {
+                                    all_narrowed = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if all_narrowed
+                            && !guards.is_empty()
+                            && guards.iter().all(|g| g.var == guards[0].var)
+                        {
+                            let var = guards[0].var.clone();
+                            let narrowed = self
+                                .normalize_union_type(guards.into_iter().map(|g| g.then_ty).collect());
                             let mut arm_env = env.clone();
-                            arm_env.insert(guard.var, guard.then_ty);
-                            arm_env
-                        })
+                            arm_env.insert(var, narrowed);
+                            Some(arm_env)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
