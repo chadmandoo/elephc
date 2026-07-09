@@ -60,7 +60,7 @@ sidebar:
 | [`call_user_func()`](./builtins/array/call_user_func.md) | `(callable $callback, ...$args): mixed` | `mixed` |
 | [`call_user_func_array()`](./builtins/array/call_user_func_array.md) | `(callable $callback, array $args): mixed` | `mixed` |
 | [`count()`](./builtins/array/count.md) | `(array $value, int $mode = 0): int` | `int` |
-| [`in_array()`](./builtins/array/in_array.md) | `(mixed $needle, array $haystack, bool $strict = false): mixed` | `mixed` |
+| [`in_array()`](./builtins/array/in_array.md) | `(mixed $needle, array $haystack, bool $strict = false): bool` | `bool` |
 | [`krsort()`](./builtins/array/krsort.md) | `(array $array): bool` | `bool` |
 | [`ksort()`](./builtins/array/ksort.md) | `(array $array): bool` | `bool` |
 | [`natcasesort()`](./builtins/array/natcasesort.md) | `(array $array): bool` | `bool` |
@@ -288,11 +288,11 @@ sidebar:
 | [`isset()`](./builtins/misc/isset.md) | `(mixed $var, ...$vars): bool` | `bool` |
 | [`php_uname()`](./builtins/misc/php_uname.md) | `(string $mode = 'a'): string` | `string` |
 | [`phpversion()`](./builtins/misc/phpversion.md) | `(): string` | `string` |
-| [`print_r()`](./builtins/misc/print_r.md) | `(mixed $value): void` | `void` |
+| [`print_r()`](./builtins/misc/print_r.md) | `(mixed $value, bool $return = false): mixed` | `mixed` |
 | [`serialize()`](./builtins/misc/serialize.md) | `(mixed $value): string` | `string` |
 | [`unserialize()`](./builtins/misc/unserialize.md) | `(string $data, mixed $options = []): mixed` | `mixed` |
 | [`unset()`](./builtins/misc/unset.md) | `(mixed $var, ...$vars): void` | `void` |
-| [`var_dump()`](./builtins/misc/var_dump.md) | `(mixed $value): void` | `void` |
+| [`var_dump()`](./builtins/misc/var_dump.md) | `(mixed $value, ...$values): void` | `void` |
 | [`ptr()`](./builtins/pointer/ptr.md) | `(mixed $value): mixed` | `mixed` |
 | [`ptr_get()`](./builtins/pointer/ptr_get.md) | `(pointer $pointer): int` | `int` |
 | [`ptr_is_null()`](./builtins/pointer/ptr_is_null.md) | `(pointer $pointer): bool` | `bool` |
@@ -308,6 +308,10 @@ sidebar:
 | [`ptr_write32()`](./builtins/pointer/ptr_write32.md) | `(pointer $pointer, int $value): void` | `void` |
 | [`ptr_write8()`](./builtins/pointer/ptr_write8.md) | `(pointer $pointer, int $value): void` | `void` |
 | [`ptr_write_string()`](./builtins/pointer/ptr_write_string.md) | `(pointer $pointer, string $string): int` | `int` |
+| [`zval_free()`](./builtins/pointer/zval_free.md) | `(pointer $zval): void` | `void` |
+| [`zval_pack()`](./builtins/pointer/zval_pack.md) | `(mixed $value): pointer` | `pointer` |
+| [`zval_type()`](./builtins/pointer/zval_type.md) | `(pointer $zval): int` | `int` |
+| [`zval_unpack()`](./builtins/pointer/zval_unpack.md) | `(pointer $zval): mixed` | `mixed` |
 | [`die()`](./builtins/process/die.md) | `(int $status): void` | `void` |
 | [`exec()`](./builtins/process/exec.md) | `(string $command): string` | `string` |
 | [`exit()`](./builtins/process/exit.md) | `(int $status): void` | `void` |
