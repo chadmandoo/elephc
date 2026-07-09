@@ -118,6 +118,30 @@ fn test_user_function_by_ref_params_collected() {
     });
 }
 
+/// A user function's by-ref variadic parameter is exposed as the trailing
+/// by-ref slot used by targeted call invalidation.
+#[test]
+fn test_user_function_by_ref_variadic_param_collected() {
+    let mut function = function_with_params("f", Vec::new());
+    if let StmtKind::FunctionDecl {
+        variadic,
+        variadic_by_ref,
+        ..
+    } = &mut function.kind
+    {
+        *variadic = Some("items".to_string());
+        *variadic_by_ref = true;
+    }
+    let sigs = collect_by_ref_signatures(&[function]);
+
+    with_by_ref_signatures(sigs, || {
+        assert_eq!(
+            function_by_ref_params("f"),
+            Some(vec![("items".to_string(), true)])
+        );
+    });
+}
+
 /// Same-named methods union their by-ref positions across classes and traits
 /// (dynamic dispatch cannot tell them apart).
 #[test]

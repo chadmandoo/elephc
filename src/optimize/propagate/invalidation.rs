@@ -16,9 +16,11 @@
 //! - By-ref arguments to user-defined callees are also marked volatile: the
 //!   callee may retain the reference (e.g. in a by-ref closure capture) and
 //!   write it during any later call. Builtins never retain their arguments.
-//! - `Invalidation::All` remains for genuinely unknowable writes: `include`,
-//!   `yield`, spreads into by-ref callees, and global-writing (or unknown)
-//!   callees invoked from top-level scope.
+//! - `Invalidation::All` remains for genuinely unknowable writes: `eval`,
+//!   `include`, `yield`, spreads into by-ref callees, and global-writing (or
+//!   unknown) callees invoked from top-level scope.
+
+use crate::names::php_symbol_key;
 
 use super::*;
 
@@ -212,6 +214,11 @@ pub(crate) fn expr_invalidation(expr: &Expr) -> Invalidation {
                 acc.union(unset_target_invalidation(arg))
             })
         }
+        ExprKind::FunctionCall { name, .. }
+            if php_symbol_key(name.as_str().trim_start_matches('\\')) == "eval" =>
+        {
+            Invalidation::All
+        }
         // `ptr($x)` (elephc pointer extension) takes the address of a local:
         // from this point on, `ptr_set`/`ptr_write*` through any alias of the
         // pointer rewrites the variable outside the PHP reference model, so
@@ -396,7 +403,7 @@ fn call_args_invalidation(
                 if spread_seen && has_by_ref {
                     return Invalidation::All;
                 }
-                if sig.get(position).is_some_and(|(_, is_ref)| *is_ref) {
+                if positional_param_is_by_ref(sig, position) {
                     expose_argument_root(arg, retain, &mut inv);
                 }
                 position += 1;
@@ -404,6 +411,14 @@ fn call_args_invalidation(
         }
     }
     inv
+}
+
+/// Returns whether a positional argument lands on a by-ref parameter.
+fn positional_param_is_by_ref(sig: &[(String, bool)], position: usize) -> bool {
+    if let Some((_, is_ref)) = sig.get(position) {
+        return *is_ref;
+    }
+    sig.last().is_some_and(|(_, is_ref)| *is_ref)
 }
 
 /// Records an argument's lvalue root as writable (and volatile when the callee
