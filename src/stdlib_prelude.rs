@@ -66,7 +66,7 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 36] = [
+const STDLIB_PRELUDE_NAMES: [&str; 38] = [
     "in_array",
     "substr_count",
     "addcslashes",
@@ -101,6 +101,8 @@ const STDLIB_PRELUDE_NAMES: [&str; 36] = [
     "array_values",
     "array_key_exists",
     "strspn",
+    "strcspn",
+    "substr_compare",
     "mb_substr_count",
     "strncmp",
     // `end` is a 3-letter substring that occurs unquoted inside unrelated AST
@@ -703,6 +705,93 @@ function strspn(string $string, string $characters, int $offset = 0, int $length
         $i = $i + 1;
     }
     return $n;
+}
+
+function strcspn(string $string, string $characters, int $offset = 0, int $length = PHP_INT_MAX): int {
+    // Length of the initial run of $string (from $offset) made of bytes NOT in
+    // $characters — the exact complement of strspn (only the membership test is
+    // inverted). Negative offset/length follow PHP's substr conventions; the
+    // PHP_INT_MAX sentinel means "to the end". An empty mask never matches, so the
+    // run spans the whole remaining string (str_contains('', $c) is false).
+    $len = strlen($string);
+    $start = $offset;
+    if ($start < 0) {
+        $start = $len + $start;
+        if ($start < 0) {
+            $start = 0;
+        }
+    }
+    if ($start > $len) {
+        return 0;
+    }
+    $end = $len;
+    if ($length !== PHP_INT_MAX) {
+        if ($length < 0) {
+            $end = $len + $length;
+        } else {
+            $end = $start + $length;
+        }
+        if ($end > $len) {
+            $end = $len;
+        }
+    }
+    $n = 0;
+    $i = $start;
+    while ($i < $end) {
+        if (str_contains($characters, $string[$i])) {
+            break;
+        }
+        $n = $n + 1;
+        $i = $i + 1;
+    }
+    return $n;
+}
+
+function substr_compare(string $main_str, string $str, int $offset, ?int $length = null, bool $case_insensitive = false): int {
+    // Compare a slice of $main_str (from $offset) against $str, PHP-exact: at the first
+    // differing byte return ord($a[k]) - ord($b[k]) (byte magnitude, e.g. 32 / -32); when
+    // one operand is a prefix of the other within the compared window, return the
+    // NORMALIZED sign of the length difference (-1/0/1). Done byte-by-byte rather than via
+    // elephc `strcmp`, whose prefix/length-difference case is not sign-normalized (EC-70).
+    // Negative offset counts from the end; a null length compares $main_str-from-offset
+    // against the full $str.
+    $mainLen = strlen($main_str);
+    if ($offset < 0) {
+        $offset = $mainLen + $offset;
+        if ($offset < 0) {
+            $offset = 0;
+        }
+    }
+    if ($offset > $mainLen) {
+        $offset = $mainLen;
+    }
+    if ($length === null) {
+        $a = substr($main_str, $offset);
+        $b = $str;
+    } else {
+        $a = substr($main_str, $offset, $length);
+        $b = substr($str, 0, $length);
+    }
+    if ($case_insensitive) {
+        $a = strtolower($a);
+        $b = strtolower($b);
+    }
+    $la = strlen($a);
+    $lb = strlen($b);
+    $min = $la < $lb ? $la : $lb;
+    $i = 0;
+    while ($i < $min) {
+        $ca = ord($a[$i]);
+        $cb = ord($b[$i]);
+        if ($ca !== $cb) {
+            return $ca - $cb;
+        }
+        $i = $i + 1;
+    }
+    if ($la === $lb) {
+        return 0;
+    }
+    return $la < $lb ? -1 : 1;
 }
 
 function mb_substr_count(string $haystack, string $needle): int {

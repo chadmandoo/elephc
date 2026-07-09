@@ -105,6 +105,48 @@ echo strpos($h, "world");
     assert_eq!(out, "4|7|F|9|4|2|6");
 }
 
+/// EC-68 (#562): strcspn() — length of the initial run NOT containing any mask char (the
+/// complement of strspn). 2-arg, 3-arg offset, 4-arg length, empty mask (→ full remaining
+/// length), immediate-hit (→ 0). Byte-parity vs PHP 8.5. Backs ward-components
+/// CssTokenScanner (the CSS/manifest build-tooling chain).
+#[test]
+fn test_strcspn_complement_of_strspn() {
+    let out = compile_and_run(
+        r#"<?php
+echo strcspn("hello", "l"), "|";
+echo strcspn("abcabc", "cx"), "|";
+echo strcspn("hello", "o", 1), "|";
+echo strcspn("hello world", " ", 0, 3), "|";
+echo strcspn("abc", ""), "|";
+echo strcspn("abc", "a"), "|";
+echo strcspn("field=value", "=");
+"#,
+    );
+    assert_eq!(out, "2|2|3|3|3|0|5");
+}
+
+/// EC-69 (#563): substr_compare() — compare a slice of the first string (from offset,
+/// optional length, optional case-insensitivity) against the second. PHP-exact byte
+/// magnitude at the first differing byte (e.g. -32, 25) and NORMALIZED sign (-1/0/1) for a
+/// prefix/length-difference. Byte-parity vs PHP 8.5. With EC-68 this flips the 4
+/// CssTokenScanner/Manifest*/ScopedCssIsolator build classes to compile-clean.
+#[test]
+fn test_substr_compare_slice_and_case_forms() {
+    let out = compile_and_run(
+        r#"<?php
+echo substr_compare("abcde", "bc", 1, 2), "|";
+echo substr_compare("abcde", "bc", 1), "|";
+echo substr_compare("Hello", "hello", 0, null, true), "|";
+echo substr_compare("Hello", "hello", 0), "|";
+echo substr_compare("test", "testing", 0), "|";
+echo substr_compare("selector{", "selector", 0, 8), "|";
+echo substr_compare("zzz", "aaa", 0, 3), "|";
+echo substr_compare("prefix-x", "prefix", 0, 6);
+"#,
+    );
+    assert_eq!(out, "0|1|0|-32|-1|0|25|0");
+}
+
 /// EC-40 (#533): mb_substr_count counts non-overlapping needles (byte-wise
 /// counting is exact for well-formed UTF-8 — needles cannot straddle
 /// codepoints), and strncmp honors PHP's sign-only contract
