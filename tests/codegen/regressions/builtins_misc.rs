@@ -571,3 +571,32 @@ echo implode(",", array_keys($renum)), "=", implode(",", $renum);
     );
     assert_eq!(out, "made|16|2,1|yn|0,1=5,7");
 }
+
+/// List destructuring accepts a union right-hand side that carries an array member — a
+/// `?array` method return narrowed by `=== null` leaves `Union[Array, Void]`, whose elements
+/// bind as Mixed (adaptive) and run byte-parity.
+#[test]
+fn test_list_unpack_null_narrowed_array_return() {
+    let out = compile_and_run(
+        r#"<?php
+final class R {
+    private function mk(int $n): ?array {
+        if ($n < 0) { return null; }
+        return ["k" . $n, "v" . $n];
+    }
+    public function run(): string {
+        $out = "";
+        foreach ([1, -1, 2] as $n) {
+            $entry = $this->mk($n);
+            if ($entry === null) { continue; }
+            [$key, $value] = $entry;
+            $out .= $key . "=" . $value . ";";
+        }
+        return $out;
+    }
+}
+echo (new R())->run();
+"#,
+    );
+    assert_eq!(out, "k1=v1;k2=v2;");
+}

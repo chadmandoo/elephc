@@ -39,6 +39,13 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let val_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
     let key_elem = match keys_ty {
         PhpType::Array(elem) => *elem,
+        // The new keys are drawn from an assoc array's VALUES.
+        PhpType::AssocArray { value, .. } => *value,
+        // A Mixed/Union keys argument (a json_decode result, an adaptive local,
+        // an array_keys()-on-Mixed result) is an array at runtime in well-typed
+        // code — same trust posture as the array-argument boundary. The new key
+        // type is unknown, so widen to Mixed.
+        PhpType::Mixed | PhpType::Union(_) => PhpType::Mixed,
         _ => {
             return Err(CompileError::new(
                 cx.span,

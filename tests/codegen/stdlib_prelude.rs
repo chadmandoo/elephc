@@ -140,3 +140,20 @@ echo explode('.', PHP_VERSION)[0];
     assert_eq!(out, "8.5.7|/usr/bin/php8.5|16|8");
 }
 
+/// EC-54 builtins batch: substr_count (2-arg occurrence count), addcslashes (literal-set
+/// backslash escaping), pack('H*') (hex→binary), and array_fill_keys over a Mixed keys
+/// argument (adaptive prelude) — each byte-identical to PHP 8.5.
+#[test]
+fn test_ec54_builtins_batch() {
+    let out = compile_and_run(
+        r#"<?php
+echo substr_count("banana split banana", "banana"), "|";
+echo addcslashes("50%_off", '%_'), "|";
+echo bin2hex(pack('H*', 'deadbeef')), "|";
+$filled = array_fill_keys(json_decode('["a","b"]', true), 7);
+echo $filled['a'], $filled['b'];
+"#,
+    );
+    assert_eq!(out, "2|50\\%\\_off|deadbeef|77");
+}
+

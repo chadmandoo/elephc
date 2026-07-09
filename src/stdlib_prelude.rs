@@ -66,7 +66,14 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 31] = [
+const STDLIB_PRELUDE_NAMES: [&str; 35] = [
+    "substr_count",
+    "addcslashes",
+    "array_fill_keys",
+    // `pack` is a 4-letter substring (matches unrelated identifiers like
+    // `unpack`/`package` unquoted); match the quoted Name-render form so only a
+    // genuine `pack(...)` call triggers injection (mirrors the "end" precedent).
+    "\"pack\"",
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -718,6 +725,99 @@ function mb_substr_count(string $haystack, string $needle): int {
         $pos = $pos + $found + $step;
     }
     return $count;
+}
+function substr_count(string $haystack, string $needle): int {
+    // Count of non-overlapping needle occurrences (byte-wise; the AIC sites use
+    // the 2-argument form). Same walk as mb_substr_count.
+    if ($needle === '') {
+        return 0;
+    }
+    $count = 0;
+    $pos = 0;
+    $step = strlen($needle);
+    while (true) {
+        $rest = substr($haystack, $pos);
+        $found = strpos($rest, $needle);
+        if ($found === false) {
+            break;
+        }
+        $count = $count + 1;
+        $pos = $pos + $found + $step;
+    }
+    return $count;
+}
+function addcslashes(string $str, string $characters): string {
+    // Backslash-escape each character in the $characters SET (the literal-set
+    // form AIC uses to build LIKE patterns — addcslashes($x, '%_\\')). The
+    // C-style range syntax ("A..Z") and octal escaping of non-printables are
+    // NOT modeled — out of scope for the corpus.
+    $set = [];
+    $clen = strlen($characters);
+    $i = 0;
+    while ($i < $clen) {
+        $set[$characters[$i]] = true;
+        $i = $i + 1;
+    }
+    $out = '';
+    $slen = strlen($str);
+    $j = 0;
+    while ($j < $slen) {
+        $ch = $str[$j];
+        if (isset($set[$ch])) {
+            $out = $out . '\\';
+        }
+        $out = $out . $ch;
+        $j = $j + 1;
+    }
+    return $out;
+}
+function __elephc_hex_nibble(string $c): int {
+    // Single hex digit → 0..15 (case-insensitive); non-hex → 0. Compares the
+    // byte value (ord) rather than the char (elephc relational operators require
+    // numeric operands).
+    $o = ord($c);
+    if ($o >= 48 && $o <= 57) {
+        return $o - 48;
+    }
+    if ($o >= 97 && $o <= 102) {
+        return $o - 87;
+    }
+    if ($o >= 65 && $o <= 70) {
+        return $o - 55;
+    }
+    return 0;
+}
+function pack(string $format, string $data): string {
+    // The AIC corpus uses only pack('H*', $hex) — a hex string packed to raw
+    // bytes (high nibble first). The full pack() format language is NOT modeled;
+    // any other format returns the empty string.
+    if ($format !== 'H*') {
+        return '';
+    }
+    $out = '';
+    $len = strlen($data);
+    $i = 0;
+    while ($i + 1 < $len) {
+        $hi = __elephc_hex_nibble($data[$i]);
+        $lo = __elephc_hex_nibble($data[$i + 1]);
+        $out = $out . chr($hi * 16 + $lo);
+        $i = $i + 2;
+    }
+    if ($i < $len) {
+        // Odd-length hex: the trailing digit is the high nibble of a zero-low byte.
+        $out = $out . chr(__elephc_hex_nibble($data[$i]) * 16);
+    }
+    return $out;
+}
+function __elephc_array_fill_keys_any(mixed $keys, mixed $value): array {
+    // array_fill_keys over an adaptive/Mixed keys argument: each element of
+    // $keys becomes a key mapped to $value (adaptive foreach preserves the
+    // packed-vs-hash runtime shape of $keys).
+    $out = [];
+    foreach ($keys as $key) {
+        $out[$key] = $value;
+    }
+    return $out;
 }
 
 function strncmp(string $string1, string $string2, int $length): int {

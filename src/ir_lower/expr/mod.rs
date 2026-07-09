@@ -1825,6 +1825,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_key_exists_any(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_fill_keys_any(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_array_merge_single(ctx, canonical, args, expr) {
         return value;
     }
@@ -4714,6 +4717,39 @@ fn lower_static_array_key_exists_any(
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
             name: Name::from("__elephc_array_key_exists_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_array_fill_keys_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_fill_keys" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    // The KEYS argument (args[0]) is what the native lowering rejects when Mixed;
+    // route those through the adaptive prelude foreach.
+    let keys_ty = desugar_call_arg_static_type(ctx, &args[0]);
+    if !matches!(keys_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_))
+        || !prelude_impl_available(ctx, "__elephc_array_fill_keys_any")
+    {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_fill_keys_any"),
             args: vec![args[0].clone(), args[1].clone()],
         },
         span: expr.span,
