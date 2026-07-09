@@ -87,6 +87,9 @@ impl Checker {
         ] {
             constants.insert(upload_or_filter.to_string(), PhpType::Int);
         }
+        constants.insert("FILEINFO_MIME_TYPE".to_string(), PhpType::Int);
+        constants.insert("PHP_VERSION".to_string(), PhpType::Str);
+        constants.insert("PHP_BINARY".to_string(), PhpType::Str);
         constants.insert("FNM_NOESCAPE".to_string(), PhpType::Int);
         constants.insert("FNM_PATHNAME".to_string(), PhpType::Int);
         constants.insert("FNM_PERIOD".to_string(), PhpType::Int);

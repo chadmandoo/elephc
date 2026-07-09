@@ -127,3 +127,16 @@ echo end($nums);
     assert_eq!(out, "words|only|30");
 }
 
+/// PHP_VERSION / PHP_BINARY (interpreter-identity string constants) and FILEINFO_MIME_TYPE
+/// (ext/fileinfo int flag) resolve to their compile-time PHP 8.5 target values.
+#[test]
+fn test_php_version_binary_fileinfo_constants() {
+    let out = compile_and_run(
+        r#"<?php
+echo PHP_VERSION, "|", PHP_BINARY, "|", FILEINFO_MIME_TYPE, "|";
+echo explode('.', PHP_VERSION)[0];
+"#,
+    );
+    assert_eq!(out, "8.5.7|/usr/bin/php8.5|16|8");
+}
+

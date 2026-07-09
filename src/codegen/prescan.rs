@@ -122,6 +122,25 @@ pub(crate) fn collect_constants(
             (ExprKind::IntLiteral(filter_value), PhpType::Int),
         );
     }
+    // ext/fileinfo return-flag: FILEINFO_MIME_TYPE (the only flag the AIC sites use).
+    constants.insert(
+        "FILEINFO_MIME_TYPE".to_string(),
+        (ExprKind::IntLiteral(16), PhpType::Int),
+    );
+    // Interpreter-identity string constants. A native binary has no separate PHP
+    // interpreter, so these carry the compile-time PHP 8.5 target the runtime is
+    // byte-parity-verified against (SystemStatusReport reads PHP_VERSION; the
+    // gate/tooling sites read PHP_BINARY). Environment-specific — tracks the
+    // oracle `php` on the build host.
+    for (name, value) in [
+        ("PHP_VERSION", "8.5.7"),
+        ("PHP_BINARY", "/usr/bin/php8.5"),
+    ] {
+        constants.insert(
+            name.to_string(),
+            (ExprKind::StringLiteral(value.to_string()), PhpType::Str),
+        );
+    }
     let (fnm_noescape, fnm_pathname) = match target_platform {
         Platform::MacOS => (1, 2),
         Platform::Linux => (2, 1),

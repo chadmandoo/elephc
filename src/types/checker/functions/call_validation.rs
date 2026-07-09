@@ -206,6 +206,24 @@ impl Checker {
                 PhpType::AssocArray { key, value },
                 PhpType::Array(_) | PhpType::AssocArray { .. },
             ) if **key == PhpType::Mixed && **value == PhpType::Mixed => true,
+            // Array element covariance for a declared `Array(T)` param. The PHP
+            // param is a bare `array` and PHP does NOT enforce the `@param
+            // array<T>` element type at runtime, so the declared element type is
+            // a hint, not a hard bound. Accept an `Array(Mixed)` (a spread
+            // literal `[...$list, $x]` or an adaptive local — the codegen boxes
+            // the elements adaptively, run-clean) or an element-compatible array
+            // in either covariance direction. Mirrors the `(_, Mixed) => true`
+            // whole-value trust posture, one container level down. NOTE a raw
+            // sibling-object array (`Array(Object(B))` for a declared
+            // `Array(Object(A))`, A != B, both implementing a common interface a
+            // `list<A|B>` docblock collapsed to one member) is deliberately NOT
+            // accepted here: it check-passes but the array-literal element store
+            // int-casts the object at codegen (build failure, not a silent
+            // miscompile). Tracked as EC-52's codegen remainder.
+            (PhpType::Array(expected_elem), PhpType::Array(actual_elem)) => {
+                Self::types_compatible(expected_elem, actual_elem)
+                    || Self::types_compatible(actual_elem, expected_elem)
+            }
             (PhpType::Float, PhpType::Int | PhpType::Bool | PhpType::Void) => true,
             (PhpType::Int, PhpType::Bool | PhpType::Void) => true,
             (PhpType::Bool, PhpType::Int | PhpType::Void) => true,

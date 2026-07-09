@@ -732,3 +732,28 @@ try {
     );
     assert_eq!(out, "envelope tampered|7|plain:0");
 }
+
+/// UnhandledMatchError is a registered builtin Error subclass: newable with a message,
+/// throwable from a `match` default arm, catchable by its fully-qualified name, and its
+/// getMessage() round-trips — matching PHP 8's unhandled-match error type.
+#[test]
+fn test_unhandled_match_error_throw_and_catch() {
+    let out = compile_and_run(
+        r#"<?php
+function classify(int $n): string {
+    return match (true) {
+        $n < 0 => "neg",
+        $n === 0 => "zero",
+        default => throw new UnhandledMatchError("no arm for " . $n),
+    };
+}
+echo classify(-1), "|", classify(0), "|";
+try {
+    classify(5);
+} catch (\UnhandledMatchError $e) {
+    echo "caught:", $e->getMessage();
+}
+"#,
+    );
+    assert_eq!(out, "neg|zero|caught:no arm for 5");
+}
