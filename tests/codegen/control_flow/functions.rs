@@ -112,6 +112,18 @@ fn test_function_no_args() {
     assert_eq!(out, "42");
 }
 
+/// PHP `array` parameters do not enforce element types, so an `array` param whose element
+/// type is inferred as one concrete object accepts a call passing an array of a SIBLING
+/// concrete object (each implements a different interface, neither a subtype of the other).
+/// Byte-parity vs PHP 8.5.
+#[test]
+fn test_array_element_object_sibling_covariance_at_param() {
+    let out = compile_and_run(
+        "<?php interface CondA {} interface CondB {} final readonly class QCond implements CondA { public function __construct(public string $sql) {} } final readonly class CCond implements CondB { public function __construct(public string $sql) {} } final class QB { /** @var list<QCond|CCond> */ private array $conditions; public function __construct() { $this->conditions = []; } private function withConditions(array $conditions): self { $c = new QB(); $c->conditions = $conditions; return $c; } public function where(string $s): self { return $this->withConditions([new QCond($s)]); } public function compound(string $s): self { return $this->withConditions([new CCond($s)]); } public function size(): int { return count($this->conditions); } public function firstSql(): string { $c = $this->conditions[0]; return $c->sql; } } function main(): void { $qb = new QB(); $a = $qb->where('a = 1'); $b = $qb->compound('b = 2'); echo $a->size(), ':', $a->firstSql(), '|', $b->size(), ':', $b->firstSql(); } main();",
+    );
+    assert_eq!(out, "1:a = 1|1:b = 2");
+}
+
 // --- Logical operators ---
 
 /// EC-8 (#491): `if ($x === false) { throw; } return $x;` narrows an `int|false` value to `int`
