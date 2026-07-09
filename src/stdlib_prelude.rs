@@ -66,7 +66,8 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 35] = [
+const STDLIB_PRELUDE_NAMES: [&str; 36] = [
+    "in_array",
     "substr_count",
     "addcslashes",
     "array_fill_keys",
@@ -818,6 +819,19 @@ function __elephc_array_fill_keys_any(mixed $keys, mixed $value): array {
         $out[$key] = $value;
     }
     return $out;
+}
+function __elephc_in_array_strict(mixed $needle, mixed $haystack): bool {
+    // STRICT in_array over an adaptive/Mixed haystack: `===` per element. Strict
+    // comparison of Mixed values is byte-exact (__rt_mixed_strict_eq), so this is
+    // correct without the loose `==` path (loose Mixed==Mixed is a separate
+    // backend gap, #544). Only the 3-argument `in_array($x, $h, true)` form
+    // desugars here — the AIC sites are all strict.
+    foreach ($haystack as $value) {
+        if ($value === $needle) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function strncmp(string $string1, string $string2, int $length): int {

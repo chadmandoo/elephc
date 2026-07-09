@@ -322,7 +322,22 @@ impl Checker {
             .filter(|a| !matches!(a.kind, ExprKind::Spread(_)))
             .count();
         let has_spread = args.iter().any(|a| matches!(a.kind, ExprKind::Spread(_)));
-        let required = sig.defaults.iter().filter(|d| d.is_none()).count();
+        // The trailing variadic param never contributes to the minimum arity (it
+        // accepts zero arguments). `callable_wrapper_sig` appends the variadic
+        // container with a `None` default (e.g. the synthesized
+        // ReflectionMethod::invoke(object, ...args)), which would otherwise be
+        // miscounted as required — so count non-default REGULAR params only.
+        let regular_param_count = if sig.variadic.is_some() {
+            sig.params.len().saturating_sub(1)
+        } else {
+            sig.params.len()
+        };
+        let required = sig
+            .defaults
+            .iter()
+            .take(regular_param_count)
+            .filter(|d| d.is_none())
+            .count();
 
         if sig.ref_params.iter().any(|is_ref| *is_ref) && has_spread && !allow_by_ref_spread {
             return Err(CompileError::new(

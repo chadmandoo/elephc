@@ -157,3 +157,21 @@ echo $filled['a'], $filled['b'];
     assert_eq!(out, "2|50\\%\\_off|deadbeef|77");
 }
 
+/// STRICT in_array over a Mixed haystack (the Kernel/Routing `in_array($x, $seen, true)`
+/// pattern) desugars to the __elephc_in_array_strict prelude (=== per element, correct for
+/// Mixed via strict eq). String and int haystacks both match byte-parity for hit and miss.
+#[test]
+fn test_in_array_strict_over_mixed_haystack() {
+    let out = compile_and_run(
+        r#"<?php
+$seen = json_decode('["mod-a","mod-b","mod-c"]', true);
+echo in_array("mod-b", $seen, true) ? "1" : "0";
+echo in_array("mod-z", $seen, true) ? "1" : "0";
+$ints = json_decode('[10,20,30]', true);
+echo in_array(20, $ints, true) ? "1" : "0";
+echo in_array(99, $ints, true) ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "1010");
+}
+

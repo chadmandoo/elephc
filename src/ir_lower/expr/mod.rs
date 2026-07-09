@@ -1825,6 +1825,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_key_exists_any(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_in_array_strict(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_array_fill_keys_any(ctx, canonical, args, expr) {
         return value;
     }
@@ -4717,6 +4720,46 @@ fn lower_static_array_key_exists_any(
     let impl_call = Expr {
         kind: ExprKind::FunctionCall {
             name: Name::from("__elephc_array_key_exists_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
+}
+
+fn lower_static_in_array_strict(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "in_array" {
+        return None;
+    }
+    // Only the STRICT 3-argument form `in_array($needle, $haystack, true)` over a
+    // Mixed/Union haystack routes to the prelude — the strict `===` path is
+    // correct for Mixed (loose `==` on Mixed is the separate #544 gap). A literal
+    // `true` third argument is required; anything else stays on the native path
+    // (which handles concrete-array haystacks, e.g. a sig-Mixed builtin whose
+    // checker-inferred type is a concrete array).
+    if args.len() != 3 {
+        return None;
+    }
+    if !matches!(args[2].kind, ExprKind::BoolLiteral(true)) {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let haystack_ty = desugar_call_arg_static_type(ctx, &args[1]);
+    if !matches!(haystack_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_))
+        || !prelude_impl_available(ctx, "__elephc_in_array_strict")
+    {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_in_array_strict"),
             args: vec![args[0].clone(), args[1].clone()],
         },
         span: expr.span,

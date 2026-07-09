@@ -40,7 +40,19 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.infer_type(&cx.args[0], cx.env)?;
     let arr_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
-    if !matches!(arr_ty, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+    // A Mixed haystack (json_decode result, adaptive local) is accepted ONLY in
+    // the strict 3-argument form `in_array($needle, $mixed, true)`, which the EIR
+    // frontend desugars to the __elephc_in_array_strict prelude (=== comparison,
+    // correct for Mixed via __rt_mixed_strict_eq). The 2-argument (loose) form
+    // over a Mixed haystack stays rejected: loose `Mixed == Mixed` is a separate
+    // backend gap (#544), so accepting it here would be check-clean-but-wrong.
+    let strict_mixed_ok = matches!(arr_ty, PhpType::Mixed | PhpType::Union(_))
+        && cx.args.len() == 3
+        && matches!(
+            cx.args[2].kind,
+            crate::parser::ast::ExprKind::BoolLiteral(true)
+        );
+    if !matches!(arr_ty, PhpType::Array(_) | PhpType::AssocArray { .. }) && !strict_mixed_ok {
         return Err(CompileError::new(
             cx.span,
             "in_array() second argument must be array",

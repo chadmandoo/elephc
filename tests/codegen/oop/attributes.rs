@@ -1799,6 +1799,27 @@ echo $acc->count(7, "z", true);
     assert_eq!(out, "z7|3");
 }
 
+/// EC-61 (#555): ReflectionMethod::invoke(?object, mixed ...$args) accepts the 1-argument
+/// (object only) form for a no-parameter method — the synthesized invoke sig appends its
+/// variadic container as a param, which must NOT be counted toward the minimum arity
+/// ("expects at least 2 arguments, got 1").
+#[test]
+fn test_reflection_method_invoke_object_only_arity() {
+    let out = compile_and_run(
+        r#"<?php
+final class Svc {
+    public function ping(): string { return "pong"; }
+    public function add(int $a, int $b): int { return $a + $b; }
+}
+$s = new Svc();
+$ping = new ReflectionMethod("Svc", "ping");
+$add = new ReflectionMethod("Svc", "add");
+echo $ping->invoke($s), "|", $add->invoke($s, 3, 4);
+"#,
+    );
+    assert_eq!(out, "pong|7");
+}
+
 /// EC-43 (#537): ReflectionMethod::getDeclaringClass is inheritance-aware —
 /// an inherited method's declaring class is the ANCESTOR (baked at
 /// construction from the checker's method-declaring metadata for
