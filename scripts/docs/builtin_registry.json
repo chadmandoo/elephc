@@ -8,7 +8,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_gmmktime",
       "codegen_line": 151,
       "notes": [
@@ -85,7 +85,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_mktime",
       "codegen_line": 140,
       "notes": [
@@ -162,7 +162,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_bzip2_archive",
       "codegen_line": 4120,
       "notes": [
@@ -200,7 +200,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_decompress_archive",
       "codegen_line": 4135,
       "notes": [
@@ -238,7 +238,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_get_file_metadata",
       "codegen_line": 4074,
       "notes": [
@@ -275,7 +275,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_get_metadata",
       "codegen_line": 3859,
       "notes": [
@@ -312,7 +312,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_get_signature_hash",
       "codegen_line": 4192,
       "notes": [
@@ -349,7 +349,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_get_signature_type",
       "codegen_line": 4206,
       "notes": [
@@ -386,7 +386,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_get_stub",
       "codegen_line": 3873,
       "notes": [
@@ -423,7 +423,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_gzip_archive",
       "codegen_line": 4105,
       "notes": [
@@ -461,7 +461,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_list_entries",
       "codegen_line": 4277,
       "notes": [
@@ -499,7 +499,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_set_compression",
       "codegen_line": 3801,
       "notes": [
@@ -544,7 +544,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_set_file_metadata",
       "codegen_line": 4090,
       "notes": [
@@ -590,7 +590,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_set_metadata",
       "codegen_line": 3882,
       "notes": [
@@ -634,7 +634,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_set_stub",
       "codegen_line": 3896,
       "notes": [
@@ -678,7 +678,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_set_zip_password",
       "codegen_line": 4178,
       "notes": [
@@ -716,7 +716,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_sign_hash",
       "codegen_line": 4163,
       "notes": [
@@ -760,7 +760,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_elephc_phar_sign_openssl",
       "codegen_line": 4149,
       "notes": [
@@ -804,7 +804,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_elephc_strtotime_raw",
       "codegen_line": 543,
       "notes": [
@@ -851,7 +851,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_abs",
       "codegen_line": 43,
       "notes": [
@@ -890,7 +890,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -927,7 +927,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -967,9 +967,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_all",
-      "codegen_line": 1536,
+      "codegen_line": 1578,
       "notes": [
         "Lowers `array_all()`: returns true when every element satisfies the predicate."
       ],
@@ -1014,9 +1014,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_any",
-      "codegen_line": 1531,
+      "codegen_line": 1573,
       "notes": [
         "Lowers `array_any()`: returns true when some element satisfies the predicate."
       ],
@@ -1060,9 +1060,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_chunk",
-      "codegen_line": 81,
+      "codegen_line": 80,
       "notes": [
         "Lowers `array_chunk()` by splitting an indexed array into nested indexed arrays."
       ],
@@ -1104,7 +1104,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/column.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/column.rs",
       "codegen_function": "lower_array_column",
       "codegen_line": 23,
       "notes": [
@@ -1148,11 +1148,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_combine",
-      "codegen_line": 152,
+      "codegen_line": 160,
       "notes": [
-        "Lowers `array_combine()` through the legacy hash-building runtime helpers."
+        "Lowers `array_combine()` through the hash-building runtime helpers."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -1192,9 +1192,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_diff",
-      "codegen_line": 874,
+      "codegen_line": 870,
       "notes": [
         "Lowers `array_diff()` for two compatible indexed arrays with pointer-sized payload slots."
       ],
@@ -1203,7 +1203,6 @@
         "__rt_array_diff_key",
         "__rt_array_diff_refcounted",
         "__rt_array_intersect",
-        "__rt_array_intersect_key",
         "__rt_array_intersect_refcounted"
       ],
       "sig_arm": null,
@@ -1236,14 +1235,13 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_diff_assoc",
-      "codegen_line": 1347,
+      "codegen_line": 1359,
       "notes": [
         "Lowers `array_diff_assoc()` via the shared associative diff/intersect helper (mode 0 = diff)."
       ],
       "runtime_helpers": [
-        "__rt_array_merge_recursive",
         "__rt_assoc_diff_intersect"
       ],
       "sig_arm": null,
@@ -1276,9 +1274,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_diff_key",
-      "codegen_line": 896,
+      "codegen_line": 895,
       "notes": [
         "Lowers `array_diff_key()` for two associative arrays by filtering first-operand keys."
       ],
@@ -1316,9 +1314,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_fill",
-      "codegen_line": 115,
+      "codegen_line": 116,
       "notes": [
         "Lowers `array_fill()` for pointer-sized scalar and refcounted payloads."
       ],
@@ -1367,11 +1365,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_fill_keys",
-      "codegen_line": 138,
+      "codegen_line": 139,
       "notes": [
-        "Lowers `array_fill_keys()` through the legacy hash-building runtime helpers."
+        "Lowers `array_fill_keys()` through the hash-building runtime helpers."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -1411,9 +1409,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_filter",
-      "codegen_line": 211,
+      "codegen_line": 221,
       "notes": [
         "Lowers `array_filter()` for static and first-class callbacks through the runtime helper."
       ],
@@ -1465,9 +1463,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_find",
-      "codegen_line": 1526,
+      "codegen_line": 1568,
       "notes": [
         "Lowers `array_find()`: returns the first element satisfying the predicate, boxed as Mixed (or null)."
       ],
@@ -1511,11 +1509,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_flip",
-      "codegen_line": 171,
+      "codegen_line": 179,
       "notes": [
-        "Lowers `array_flip()` through the legacy hash-building runtime helpers."
+        "Lowers `array_flip()` through the hash-building runtime helpers."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -1548,9 +1546,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_intersect",
-      "codegen_line": 885,
+      "codegen_line": 881,
       "notes": [
         "Lowers `array_intersect()` for two compatible indexed arrays with pointer-sized payload slots."
       ],
@@ -1590,9 +1588,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_intersect_assoc",
-      "codegen_line": 1352,
+      "codegen_line": 1373,
       "notes": [
         "Lowers `array_intersect_assoc()` via the shared associative diff/intersect helper (mode 1 = intersect)."
       ],
@@ -1632,9 +1630,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_intersect_key",
-      "codegen_line": 901,
+      "codegen_line": 903,
       "notes": [
         "Lowers `array_intersect_key()` for two associative arrays by keeping shared first-operand keys."
       ],
@@ -1671,9 +1669,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_is_list",
-      "codegen_line": 1144,
+      "codegen_line": 1150,
       "notes": [
         "Lowers `array_is_list()` to the `__rt_array_is_list` runtime predicate, returning a bool.",
         "The runtime helper accepts any array kind (indexed, associative hash, or boxed mixed cell) and",
@@ -1714,7 +1712,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/key_exists.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/key_exists.rs",
       "codegen_function": "lower_array_key_exists",
       "codegen_line": 22,
       "notes": [
@@ -1758,9 +1756,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_key_first",
-      "codegen_line": 1155,
+      "codegen_line": 1161,
       "notes": [
         "Lowers `array_key_first()` through the shared edge-key helper with selector `0`."
       ],
@@ -1798,9 +1796,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_key_last",
-      "codegen_line": 1160,
+      "codegen_line": 1169,
       "notes": [
         "Lowers `array_key_last()` through the shared edge-key helper with selector `1`."
       ],
@@ -1838,7 +1836,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/keys.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/keys.rs",
       "codegen_function": "lower_array_keys",
       "codegen_line": 23,
       "notes": [
@@ -1875,9 +1873,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_map",
-      "codegen_line": 312,
+      "codegen_line": 326,
       "notes": [
         "Lowers `array_map()` through the callback runtime helper matching the callback result type."
       ],
@@ -1919,9 +1917,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_merge",
-      "codegen_line": 850,
+      "codegen_line": 846,
       "notes": [
         "Lowers `array_merge()` for two compatible indexed arrays with 8-byte payload slots."
       ],
@@ -1951,9 +1949,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_merge_recursive",
-      "codegen_line": 1366,
+      "codegen_line": 1387,
       "notes": [
         "Lowers `array_merge_recursive()` (recursive merge with scalar collisions combined into lists)."
       ],
@@ -1984,18 +1982,16 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_multisort",
-      "codegen_line": 1671,
+      "codegen_line": 1719,
       "notes": [
         "Lowers `array_multisort()`: stable-sorts the first indexed array ascending and reorders the second",
         "in tandem, both in place. Both arguments are by-reference, so each is copy-on-write split with",
         "`ensure_unique_sort_source` and the (possibly relocated) pointer is written back to its local",
         "before the runtime mutates the storage. Returns `true`. Supports 8-byte scalar indexed arrays."
       ],
-      "runtime_helpers": [
-        "__rt_array_multisort"
-      ],
+      "runtime_helpers": [],
       "sig_arm": null,
       "sig_file": "src/builtins/array/array_multisort.rs",
       "sig_line": null
@@ -2033,7 +2029,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_pad",
       "codegen_line": 99,
       "notes": [
@@ -2084,9 +2080,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_pop",
-      "codegen_line": 1048,
+      "codegen_line": 1051,
       "notes": [
         "Lowers `array_pop()` for indexed arrays by mutating length and boxing `T|null` as Mixed."
       ],
@@ -2124,9 +2120,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_product",
-      "codegen_line": 56,
+      "codegen_line": 55,
       "notes": [
         "Lowers `array_product()` over supported indexed-array payloads."
       ],
@@ -2163,9 +2159,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_push",
-      "codegen_line": 61,
+      "codegen_line": 60,
       "notes": [
         "Lowers `array_push()` by appending one value and publishing the mutated array."
       ],
@@ -2200,9 +2196,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_rand",
-      "codegen_line": 1007,
+      "codegen_line": 1010,
       "notes": [
         "Lowers `array_rand()` for indexed arrays."
       ],
@@ -2240,9 +2236,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_reduce",
-      "codegen_line": 701,
+      "codegen_line": 695,
       "notes": [
         "Lowers `array_reduce()` through the callback-driven runtime helper."
       ],
@@ -2293,9 +2289,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_replace",
-      "codegen_line": 1328,
+      "codegen_line": 1340,
       "notes": [
         "Lowers `array_replace()` (right-wins hash merge of two hashes)."
       ],
@@ -2341,9 +2337,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_replace_recursive",
-      "codegen_line": 1333,
+      "codegen_line": 1345,
       "notes": [
         "Lowers `array_replace_recursive()` (recursive right-wins hash merge)."
       ],
@@ -2388,9 +2384,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_reverse",
-      "codegen_line": 185,
+      "codegen_line": 193,
       "notes": [
         "Lowers `array_reverse()` for indexed arrays with 8-byte payload slots."
       ],
@@ -2425,9 +2421,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_search",
-      "codegen_line": 1710,
+      "codegen_line": 1761,
       "notes": [
         "Lowers `array_search()` for indexed arrays with integer-like payloads."
       ],
@@ -2476,7 +2472,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/shift.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/shift.rs",
       "codegen_function": "lower_array_shift",
       "codegen_line": 23,
       "notes": [
@@ -2513,9 +2509,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_slice",
-      "codegen_line": 906,
+      "codegen_line": 911,
       "notes": [
         "Lowers `array_slice()` for indexed arrays with pointer-sized payload slots."
       ],
@@ -2564,9 +2560,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_splice",
-      "codegen_line": 949,
+      "codegen_line": 956,
       "notes": [
         "Lowers `array_splice()` by mutating an indexed source array and returning removed elements."
       ],
@@ -2615,9 +2611,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_sum",
-      "codegen_line": 51,
+      "codegen_line": 50,
       "notes": [
         "Lowers `array_sum()` over supported indexed-array payloads."
       ],
@@ -2655,9 +2651,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_udiff",
-      "codegen_line": 1658,
+      "codegen_line": 1703,
       "notes": [
         "Lowers `array_udiff()`: keeps first-array elements not equal (per comparator) to any second-array element."
       ],
@@ -2706,9 +2702,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_uintersect",
-      "codegen_line": 1663,
+      "codegen_line": 1708,
       "notes": [
         "Lowers `array_uintersect()`: keeps first-array elements equal (per comparator) to some second-array element."
       ],
@@ -2757,9 +2753,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_unique",
-      "codegen_line": 198,
+      "codegen_line": 207,
       "notes": [
         "Lowers `array_unique()` for indexed arrays with 8-byte payload slots."
       ],
@@ -2797,7 +2793,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/unshift.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/unshift.rs",
       "codegen_function": "lower_array_unshift",
       "codegen_line": 23,
       "notes": [
@@ -2834,7 +2830,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays/values.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays/values.rs",
       "codegen_function": "lower_array_values",
       "codegen_line": 22,
       "notes": [
@@ -2871,9 +2867,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_walk",
-      "codegen_line": 783,
+      "codegen_line": 779,
       "notes": [
         "Lowers `array_walk()` through the callback-driven runtime helper."
       ],
@@ -2917,9 +2913,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_array_walk_recursive",
-      "codegen_line": 1542,
+      "codegen_line": 1584,
       "notes": [
         "Lowers `array_walk_recursive()`: invokes the callback on each scalar leaf of a (possibly nested)",
         "array, descending into array-valued elements. Returns void; leaves are passed as 8-byte scalars."
@@ -2965,9 +2961,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_arsort",
-      "codegen_line": 1091,
+      "codegen_line": 1094,
       "notes": [
         "Lowers `arsort()` for indexed integer arrays through the descending value-sort wrapper."
       ],
@@ -3008,7 +3004,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -3045,9 +3041,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_asort",
-      "codegen_line": 1086,
+      "codegen_line": 1089,
       "notes": [
         "Lowers `asort()` for indexed integer arrays through the value-sort runtime wrapper."
       ],
@@ -3089,7 +3085,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -3126,7 +3122,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_atan2",
       "codegen_line": 35,
       "notes": [
@@ -3170,7 +3166,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -3210,7 +3206,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -3250,7 +3246,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_basename",
       "codegen_line": 4536,
       "notes": [
@@ -3294,7 +3290,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -3334,9 +3330,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_boolval",
-      "codegen_line": 587,
+      "codegen_line": 586,
       "notes": [
         "Lowers `boolval()` using the same concrete scalar PHP truthiness rules as `IsTruthy`."
       ],
@@ -3371,7 +3367,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/buffers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/buffers.rs",
       "codegen_function": "lower_buffer_free",
       "codegen_line": 24,
       "notes": [
@@ -3408,7 +3404,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/buffers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/buffers.rs",
       "codegen_function": "lower_buffer_len",
       "codegen_line": 19,
       "notes": [
@@ -3480,9 +3476,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_call_user_func_builtin_escape",
-      "codegen_line": 38,
+      "codegen_line": 37,
       "notes": [
         "Rejects `call_user_func*` calls that escaped the dedicated EIR callback lowering path."
       ],
@@ -3520,9 +3516,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_call_user_func_builtin_escape",
-      "codegen_line": 38,
+      "codegen_line": 37,
       "notes": [
         "Rejects `call_user_func*` calls that escaped the dedicated EIR callback lowering path."
       ],
@@ -3567,7 +3563,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_ceil",
       "codegen_line": 75,
       "notes": [
@@ -3604,7 +3600,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_chdir",
       "codegen_line": 4438,
       "notes": [
@@ -3647,7 +3643,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_checkdate",
       "codegen_line": 163,
       "notes": [
@@ -3704,7 +3700,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_chgrp",
       "codegen_line": 4478,
       "notes": [
@@ -3750,7 +3746,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_chmod",
       "codegen_line": 4468,
       "notes": [
@@ -3794,7 +3790,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_trim_like",
       "codegen_line": 112,
       "notes": [
@@ -3838,7 +3834,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_chown",
       "codegen_line": 4473,
       "notes": [
@@ -3884,7 +3880,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_chr",
       "codegen_line": 858,
       "notes": [
@@ -3923,7 +3919,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_clamp",
       "codegen_line": 80,
       "notes": [
@@ -3974,7 +3970,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_class_alias",
       "codegen_line": 41,
       "notes": [
@@ -4025,7 +4021,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/attributes.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/attributes.rs",
       "codegen_function": "lower_class_attribute_args",
       "codegen_line": 52,
       "notes": [
@@ -4069,7 +4065,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/attributes.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/attributes.rs",
       "codegen_function": "lower_class_attribute_names",
       "codegen_line": 36,
       "notes": [
@@ -4106,9 +4102,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 294,
+      "codegen_line": 293,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal names."
       ],
@@ -4150,7 +4146,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/attributes.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/attributes.rs",
       "codegen_function": "lower_class_get_attributes",
       "codegen_line": 68,
       "notes": [
@@ -4187,7 +4183,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/class_relations.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/class_relations.rs",
       "codegen_function": "lower_class_relation",
       "codegen_line": 32,
       "notes": [
@@ -4231,7 +4227,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/class_relations.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/class_relations.rs",
       "codegen_function": "lower_class_relation",
       "codegen_line": 32,
       "notes": [
@@ -4275,7 +4271,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/class_relations.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/class_relations.rs",
       "codegen_function": "lower_class_relation",
       "codegen_line": 32,
       "notes": [
@@ -4319,7 +4315,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_clearstatcache",
       "codegen_line": 5578,
       "notes": [
@@ -4365,7 +4361,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_closedir",
       "codegen_line": 3572,
       "notes": [
@@ -4407,7 +4403,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_copy",
       "codegen_line": 4443,
       "notes": [
@@ -4456,7 +4452,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -4493,7 +4489,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -4530,9 +4526,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_count",
-      "codegen_line": 440,
+      "codegen_line": 439,
       "notes": [
         "Lowers `count(array)` for concrete array values by reading the runtime length header.",
         "Called from `crate::builtins::array::count` (the registry home) via a thin wrapper.",
@@ -4580,7 +4576,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_crc32",
       "codegen_line": 348,
       "notes": [
@@ -4622,7 +4618,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/ctype.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/ctype.rs",
       "codegen_function": "lower_ctype_alnum",
       "codegen_line": 30,
       "notes": [
@@ -4659,7 +4655,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/ctype.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/ctype.rs",
       "codegen_function": "lower_ctype_alpha",
       "codegen_line": 20,
       "notes": [
@@ -4696,7 +4692,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/ctype.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/ctype.rs",
       "codegen_function": "lower_ctype_digit",
       "codegen_line": 25,
       "notes": [
@@ -4733,7 +4729,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/ctype.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/ctype.rs",
       "codegen_function": "lower_ctype_space",
       "codegen_line": 35,
       "notes": [
@@ -4770,7 +4766,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_date",
       "codegen_line": 22,
       "notes": [
@@ -4817,7 +4813,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_date_default_timezone_get",
       "codegen_line": 70,
       "notes": [
@@ -4851,7 +4847,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_date_default_timezone_set",
       "codegen_line": 84,
       "notes": [
@@ -4896,11 +4892,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_define",
-      "codegen_line": 83,
+      "codegen_line": 82,
       "notes": [
-        "Lowers `define(\"NAME\", value)` with the legacy duplicate-name runtime guard."
+        "Lowers `define(\"NAME\", value)` with the duplicate-name runtime guard."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -4940,9 +4936,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_defined",
-      "codegen_line": 262,
+      "codegen_line": 261,
       "notes": [
         "Lowers `defined(\"NAME\")` for compile-time string constant names."
       ],
@@ -4977,7 +4973,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_deg2rad",
       "codegen_line": 75,
       "notes": [
@@ -5049,7 +5045,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_dirname",
       "codegen_line": 4575,
       "notes": [
@@ -5096,7 +5092,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_disk_free_space",
       "codegen_line": 3370,
       "notes": [
@@ -5135,7 +5131,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_disk_total_space",
       "codegen_line": 3378,
       "notes": [
@@ -5174,9 +5170,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_empty",
-      "codegen_line": 619,
+      "codegen_line": 618,
       "notes": [
         "Lowers `empty()` for concrete scalar and array-like operands."
       ],
@@ -5213,9 +5209,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 294,
+      "codegen_line": 293,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal names."
       ],
@@ -5257,7 +5253,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_exec",
       "codegen_line": 690,
       "notes": [
@@ -5329,7 +5325,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -5366,7 +5362,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_explode",
       "codegen_line": 151,
       "notes": [
@@ -5420,7 +5416,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fclose",
       "codegen_line": 2707,
       "notes": [
@@ -5457,7 +5453,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fdatasync",
       "codegen_line": 3304,
       "notes": [
@@ -5496,7 +5492,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/binary.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/binary.rs",
       "codegen_function": "lower_fdiv",
       "codegen_line": 67,
       "notes": [
@@ -5540,7 +5536,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_feof",
       "codegen_line": 3121,
       "notes": [
@@ -5580,7 +5576,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fflush",
       "codegen_line": 3266,
       "notes": [
@@ -5619,7 +5615,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fgetc",
       "codegen_line": 2980,
       "notes": [
@@ -5659,7 +5655,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fgetcsv",
       "codegen_line": 2993,
       "notes": [
@@ -5713,7 +5709,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fgets",
       "codegen_line": 2967,
       "notes": [
@@ -5753,7 +5749,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_file",
       "codegen_line": 3685,
       "notes": [
@@ -5793,7 +5789,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_file_exists",
       "codegen_line": 4399,
       "notes": [
@@ -5833,7 +5829,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_file_get_contents",
       "codegen_line": 39,
       "notes": [
@@ -5873,7 +5869,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_file_put_contents",
       "codegen_line": 3727,
       "notes": [
@@ -5920,7 +5916,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fileatime",
       "codegen_line": 5468,
       "notes": [
@@ -5962,7 +5958,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_filectime",
       "codegen_line": 5476,
       "notes": [
@@ -6004,7 +6000,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_filegroup",
       "codegen_line": 5500,
       "notes": [
@@ -6046,7 +6042,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fileinode",
       "codegen_line": 5508,
       "notes": [
@@ -6088,7 +6084,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_filemtime",
       "codegen_line": 5432,
       "notes": [
@@ -6131,7 +6127,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fileowner",
       "codegen_line": 5492,
       "notes": [
@@ -6172,7 +6168,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fileperms",
       "codegen_line": 5484,
       "notes": [
@@ -6214,7 +6210,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_filesize",
       "codegen_line": 5424,
       "notes": [
@@ -6256,7 +6252,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_filetype",
       "codegen_line": 5516,
       "notes": [
@@ -6297,9 +6293,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_floatval",
-      "codegen_line": 557,
+      "codegen_line": 556,
       "notes": [
         "Lowers `floatval()` for concrete scalar operands."
       ],
@@ -6336,7 +6332,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_flock",
       "codegen_line": 3309,
       "notes": [
@@ -6387,7 +6383,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_floor",
       "codegen_line": 70,
       "notes": [
@@ -6424,7 +6420,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/binary.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/binary.rs",
       "codegen_function": "lower_fmod",
       "codegen_line": 92,
       "notes": [
@@ -6468,7 +6464,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fnmatch",
       "codegen_line": 4603,
       "notes": [
@@ -6519,7 +6515,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fopen",
       "codegen_line": 340,
       "notes": [
@@ -6579,7 +6575,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fpassthru",
       "codegen_line": 3027,
       "notes": [
@@ -6619,7 +6615,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fprintf",
       "codegen_line": 2862,
       "notes": [
@@ -6665,7 +6661,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fputcsv",
       "codegen_line": 3005,
       "notes": [
@@ -6725,7 +6721,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fread",
       "codegen_line": 2816,
       "notes": [
@@ -6771,7 +6767,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fscanf",
       "codegen_line": 2938,
       "notes": [
@@ -6818,7 +6814,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fseek",
       "codegen_line": 3172,
       "notes": [
@@ -6869,7 +6865,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fsockopen",
       "codegen_line": 3644,
       "notes": [
@@ -6934,7 +6930,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fstat",
       "codegen_line": 5539,
       "notes": [
@@ -6973,7 +6969,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fsync",
       "codegen_line": 3261,
       "notes": [
@@ -7013,7 +7009,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_ftell",
       "codegen_line": 3133,
       "notes": [
@@ -7052,7 +7048,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_ftruncate",
       "codegen_line": 3210,
       "notes": [
@@ -7096,9 +7092,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_function_exists",
-      "codegen_line": 277,
+      "codegen_line": 276,
       "notes": [
         "Lowers `function_exists(\"name\")` for compile-time string names.",
         "Recognizes user functions, externs, catalog builtins, and the date/time procedural aliases",
@@ -7138,7 +7134,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fwrite",
       "codegen_line": 2838,
       "notes": [
@@ -7184,7 +7180,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_class_name_lookup",
       "codegen_line": 331,
       "notes": [
@@ -7221,7 +7217,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_get_declared_names",
       "codegen_line": 388,
       "notes": [
@@ -7250,7 +7246,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_get_declared_names",
       "codegen_line": 388,
       "notes": [
@@ -7279,7 +7275,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_get_declared_names",
       "codegen_line": 388,
       "notes": [
@@ -7308,7 +7304,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_class_name_lookup",
       "codegen_line": 331,
       "notes": [
@@ -7345,7 +7341,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_get_resource_id",
       "codegen_line": 424,
       "notes": [
@@ -7382,7 +7378,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_get_resource_type",
       "codegen_line": 412,
       "notes": [
@@ -7419,7 +7415,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_getcwd",
       "codegen_line": 5396,
       "notes": [
@@ -7451,7 +7447,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_getdate",
       "codegen_line": 183,
       "notes": [
@@ -7495,7 +7491,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_getenv",
       "codegen_line": 645,
       "notes": [
@@ -7534,7 +7530,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_gethostbyaddr",
       "codegen_line": 3431,
       "notes": [
@@ -7574,7 +7570,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_gethostbyname",
       "codegen_line": 3419,
       "notes": [
@@ -7614,7 +7610,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_gethostname",
       "codegen_line": 3409,
       "notes": [
@@ -7647,7 +7643,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_getprotobyname",
       "codegen_line": 3444,
       "notes": [
@@ -7686,7 +7682,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_getprotobynumber",
       "codegen_line": 3467,
       "notes": [
@@ -7725,7 +7721,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_getservbyname",
       "codegen_line": 3486,
       "notes": [
@@ -7771,7 +7767,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_getservbyport",
       "codegen_line": 3517,
       "notes": [
@@ -7817,9 +7813,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_gettype",
-      "codegen_line": 130,
+      "codegen_line": 129,
       "notes": [
         "Lowers `gettype(value)` for statically concrete PHP types."
       ],
@@ -7854,7 +7850,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_glob",
       "codegen_line": 4463,
       "notes": [
@@ -7893,7 +7889,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_gmdate",
       "codegen_line": 33,
       "notes": [
@@ -7942,7 +7938,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_gmmktime",
       "codegen_line": 151,
       "notes": [
@@ -8020,7 +8016,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_grapheme_strrev",
       "codegen_line": 88,
       "notes": [
@@ -8060,7 +8056,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_gzcompress",
       "codegen_line": 402,
       "notes": [
@@ -8104,7 +8100,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_gzdeflate",
       "codegen_line": 418,
       "notes": [
@@ -8148,7 +8144,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_gzinflate",
       "codegen_line": 436,
       "notes": [
@@ -8192,7 +8188,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_gzuncompress",
       "codegen_line": 457,
       "notes": [
@@ -8238,7 +8234,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash",
       "codegen_line": 209,
       "notes": [
@@ -8291,7 +8287,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_algos",
       "codegen_line": 254,
       "notes": [
@@ -8323,7 +8319,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_copy",
       "codegen_line": 333,
       "notes": [
@@ -8365,7 +8361,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_equals",
       "codegen_line": 247,
       "notes": [
@@ -8413,7 +8409,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_hash_file",
       "codegen_line": 287,
       "notes": [
@@ -8464,7 +8460,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_final",
       "codegen_line": 302,
       "notes": [
@@ -8510,7 +8506,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_hmac",
       "codegen_line": 228,
       "notes": [
@@ -8571,7 +8567,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_init",
       "codegen_line": 266,
       "notes": [
@@ -8624,7 +8620,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_hash_update",
       "codegen_line": 277,
       "notes": [
@@ -8670,7 +8666,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_header",
       "codegen_line": 289,
       "notes": [
@@ -8728,7 +8724,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -8768,7 +8764,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_hrtime",
       "codegen_line": 247,
       "notes": [
@@ -8812,7 +8808,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -8852,7 +8848,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -8892,7 +8888,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -8932,7 +8928,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_http_response_code",
       "codegen_line": 264,
       "notes": [
@@ -8975,7 +8971,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_hypot",
       "codegen_line": 43,
       "notes": [
@@ -9019,7 +9015,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_implode",
       "codegen_line": 192,
       "notes": [
@@ -9063,11 +9059,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_in_array",
-      "codegen_line": 1729,
+      "codegen_line": 1786,
       "notes": [
-        "Lowers `in_array()` for indexed arrays with scalar or string payloads."
+        "Lowers `in_array()` for indexed and associative arrays with PHP loose or strict membership."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -9099,7 +9095,7 @@
           "type": "bool"
         }
       ],
-      "return_type": "mixed",
+      "return_type": "bool",
       "variadic": null
     },
     "slug": "in_array",
@@ -9114,7 +9110,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_inet",
       "codegen_line": 497,
       "notes": [
@@ -9153,7 +9149,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_inet",
       "codegen_line": 497,
       "notes": [
@@ -9192,7 +9188,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/binary.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/binary.rs",
       "codegen_function": "lower_intdiv",
       "codegen_line": 23,
       "notes": [
@@ -9236,9 +9232,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 294,
+      "codegen_line": 293,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal names."
       ],
@@ -9280,9 +9276,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_intval",
-      "codegen_line": 524,
+      "codegen_line": 523,
       "notes": [
         "Lowers `intval()` for concrete scalar operands."
       ],
@@ -9320,7 +9316,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_ip2long",
       "codegen_line": 488,
       "notes": [
@@ -9360,7 +9356,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_is_a_relation",
       "codegen_line": 369,
       "notes": [
@@ -9411,9 +9407,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_array",
-      "codegen_line": 1003,
+      "codegen_line": 1002,
       "notes": [
         "Lowers `is_array()`: true for statically-known arrays/hashes, or a boxed Mixed/Union value",
         "whose runtime tag is an indexed (4) or associative (5) array. An `iterable`-typed value is",
@@ -9450,9 +9446,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 737,
+      "codegen_line": 736,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -9487,9 +9483,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_callable",
-      "codegen_line": 320,
+      "codegen_line": 319,
       "notes": [
         "Lowers `is_callable(value)` through static lookup or runtime callable-shape helpers."
       ],
@@ -9528,7 +9524,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_dir",
       "codegen_line": 5600,
       "notes": [
@@ -9569,7 +9565,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_executable",
       "codegen_line": 5632,
       "notes": [
@@ -9611,7 +9607,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_file",
       "codegen_line": 5592,
       "notes": [
@@ -9652,7 +9648,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_is_finite",
       "codegen_line": 169,
       "notes": [
@@ -9689,9 +9685,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 737,
+      "codegen_line": 736,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -9726,7 +9722,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_is_infinite",
       "codegen_line": 132,
       "notes": [
@@ -9763,9 +9759,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 737,
+      "codegen_line": 736,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -9800,9 +9796,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_iterable",
-      "codegen_line": 795,
+      "codegen_line": 794,
       "notes": [
         "Lowers `is_iterable()` for concrete values and boxed Mixed payloads."
       ],
@@ -9837,7 +9833,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_link",
       "codegen_line": 5640,
       "notes": [
@@ -9879,7 +9875,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_is_nan",
       "codegen_line": 113,
       "notes": [
@@ -9916,9 +9912,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_null_builtin",
-      "codegen_line": 993,
+      "codegen_line": 992,
       "notes": [
         "Lowers `is_null()` for concrete scalar values and boxed Mixed payloads."
       ],
@@ -9953,7 +9949,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/is_numeric.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/is_numeric.rs",
       "codegen_function": "lower_is_numeric",
       "codegen_line": 22,
       "notes": [
@@ -9990,9 +9986,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_object",
-      "codegen_line": 1018,
+      "codegen_line": 1017,
       "notes": [
         "Lowers `is_object()`: true for statically-known objects, or a boxed Mixed/Union value whose",
         "runtime tag is an object (6)."
@@ -10028,7 +10024,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_readable",
       "codegen_line": 5608,
       "notes": [
@@ -10069,7 +10065,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_is_resource",
       "codegen_line": 400,
       "notes": [
@@ -10106,9 +10102,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_scalar",
-      "codegen_line": 1034,
+      "codegen_line": 1033,
       "notes": [
         "Lowers `is_scalar()`: true for int/float/string/bool, a non-null tagged scalar, or a boxed",
         "Mixed/Union value whose runtime tag is int (0), string (1), float (2), or bool (3). Null,",
@@ -10145,9 +10141,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 737,
+      "codegen_line": 736,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -10182,7 +10178,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_is_a_relation",
       "codegen_line": 369,
       "notes": [
@@ -10233,7 +10229,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_writable",
       "codegen_line": 5616,
       "notes": [
@@ -10274,7 +10270,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_is_writeable",
       "codegen_line": 5624,
       "notes": [
@@ -10315,7 +10311,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/isset.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/isset.rs",
       "codegen_function": "lower_isset",
       "codegen_line": 24,
       "notes": [
@@ -10352,7 +10348,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_iterator_apply",
       "codegen_line": 290,
       "notes": [
@@ -10403,7 +10399,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_iterator_count",
       "codegen_line": 237,
       "notes": [
@@ -10440,7 +10436,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_iterator_to_array",
       "codegen_line": 266,
       "notes": [
@@ -10484,7 +10480,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/json.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/json.rs",
       "codegen_function": "lower_json_decode",
       "codegen_line": 30,
       "notes": [
@@ -10544,7 +10540,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/json.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/json.rs",
       "codegen_function": "lower_json_encode",
       "codegen_line": 52,
       "notes": [
@@ -10595,7 +10591,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/json.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/json.rs",
       "codegen_function": "lower_json_last_error",
       "codegen_line": 70,
       "notes": [
@@ -10626,7 +10622,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/json.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/json.rs",
       "codegen_function": "lower_json_last_error_msg",
       "codegen_line": 85,
       "notes": [
@@ -10658,7 +10654,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/json.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/json.rs",
       "codegen_function": "lower_json_validate",
       "codegen_line": 95,
       "notes": [
@@ -10711,11 +10707,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_krsort",
-      "codegen_line": 1101,
+      "codegen_line": 1104,
       "notes": [
-        "Lowers `krsort()` through the legacy reverse key-sort helper surface."
+        "Lowers `krsort()` through the reverse key-sort helper surface."
       ],
       "runtime_helpers": [
         "__rt_krsort",
@@ -10752,11 +10748,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_ksort",
-      "codegen_line": 1096,
+      "codegen_line": 1099,
       "notes": [
-        "Lowers `ksort()` through the legacy key-sort helper surface."
+        "Lowers `ksort()` through the key-sort helper surface."
       ],
       "runtime_helpers": [
         "__rt_krsort",
@@ -10794,7 +10790,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_lcfirst",
       "codegen_line": 104,
       "notes": [
@@ -10833,7 +10829,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_lchgrp",
       "codegen_line": 4488,
       "notes": [
@@ -10879,7 +10875,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_lchown",
       "codegen_line": 4483,
       "notes": [
@@ -10925,7 +10921,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_link",
       "codegen_line": 5453,
       "notes": [
@@ -10974,7 +10970,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_linkinfo",
       "codegen_line": 5440,
       "notes": [
@@ -11016,7 +11012,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_localtime",
       "codegen_line": 220,
       "notes": [
@@ -11068,7 +11064,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_log",
       "codegen_line": 51,
       "notes": [
@@ -11112,7 +11108,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -11149,7 +11145,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -11186,7 +11182,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_long2ip",
       "codegen_line": 476,
       "notes": [
@@ -11226,7 +11222,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_lstat",
       "codegen_line": 5534,
       "notes": [
@@ -11266,7 +11262,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_trim_like",
       "codegen_line": 112,
       "notes": [
@@ -11310,7 +11306,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_min_max",
       "codegen_line": 204,
       "notes": [
@@ -11347,7 +11343,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_md5",
       "codegen_line": 355,
       "notes": [
@@ -11395,7 +11391,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_microtime",
       "codegen_line": 111,
       "notes": [
@@ -11443,7 +11439,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_min_max",
       "codegen_line": 204,
       "notes": [
@@ -11480,7 +11476,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_mkdir",
       "codegen_line": 4428,
       "notes": [
@@ -11523,7 +11519,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_mktime",
       "codegen_line": 140,
       "notes": [
@@ -11599,7 +11595,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/random.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/random.rs",
       "codegen_function": "lower_rand",
       "codegen_line": 21,
       "notes": [
@@ -11645,14 +11641,13 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_natcasesort",
-      "codegen_line": 1111,
+      "codegen_line": 1114,
       "notes": [
         "Lowers `natcasesort()` for indexed integer arrays through the case-insensitive wrapper."
       ],
       "runtime_helpers": [
-        "__rt_array_is_list",
         "__rt_natcasesort"
       ],
       "sig_arm": null,
@@ -11685,9 +11680,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_natsort",
-      "codegen_line": 1106,
+      "codegen_line": 1109,
       "notes": [
         "Lowers `natsort()` for indexed integer arrays through the natural-sort runtime wrapper."
       ],
@@ -11725,7 +11720,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -11765,7 +11760,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_number_format",
       "codegen_line": 875,
       "notes": [
@@ -11825,7 +11820,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_opendir",
       "codegen_line": 3547,
       "notes": [
@@ -11866,7 +11861,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_ord",
       "codegen_line": 834,
       "notes": [
@@ -11903,7 +11898,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_passthru",
       "codegen_line": 714,
       "notes": [
@@ -11943,7 +11938,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_pathinfo",
       "codegen_line": 4644,
       "notes": [
@@ -11989,7 +11984,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_pclose",
       "codegen_line": 3630,
       "notes": [
@@ -12028,7 +12023,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_fsockopen",
       "codegen_line": 3644,
       "notes": [
@@ -12093,7 +12088,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_php_uname",
       "codegen_line": 672,
       "notes": [
@@ -12132,9 +12127,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_phpversion",
-      "codegen_line": 252,
+      "codegen_line": 251,
       "notes": [
         "Lowers `phpversion()` as the compiler package version string."
       ],
@@ -12161,11 +12156,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_pi",
       "codegen_line": 240,
       "notes": [
-        "Lowers `pi()` as the same data-section float constant used by the legacy backend."
+        "Lowers `pi()` as a data-section float constant."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -12190,7 +12185,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_popen",
       "codegen_line": 3602,
       "notes": [
@@ -12236,7 +12231,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/binary.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/binary.rs",
       "codegen_function": "lower_pow",
       "codegen_line": 121,
       "notes": [
@@ -12280,7 +12275,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/regex.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/regex.rs",
       "codegen_function": "lower_preg_match",
       "codegen_line": 28,
       "notes": [
@@ -12288,6 +12283,7 @@
       ],
       "runtime_helpers": [
         "__rt_preg_match",
+        "__rt_preg_match_all",
         "__rt_preg_match_capture"
       ],
       "sig_arm": null,
@@ -12334,14 +12330,15 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/regex.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/regex.rs",
       "codegen_function": "lower_preg_match_all",
-      "codegen_line": 52,
+      "codegen_line": 49,
       "notes": [
         "Lowers `preg_match_all(pattern, subject)` through the shared regex runtime helper."
       ],
       "runtime_helpers": [
-        "__rt_preg_match_all"
+        "__rt_preg_match_all",
+        "__rt_preg_replace"
       ],
       "sig_arm": null,
       "sig_file": "src/builtins/system/preg_match_all.rs",
@@ -12380,9 +12377,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/regex.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/regex.rs",
       "codegen_function": "lower_preg_replace",
-      "codegen_line": 65,
+      "codegen_line": 62,
       "notes": [
         "Lowers `preg_replace(pattern, replacement, subject)` through the regex replacement helper."
       ],
@@ -12433,9 +12430,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/regex.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/regex.rs",
       "codegen_function": "lower_preg_replace_callback",
-      "codegen_line": 90,
+      "codegen_line": 84,
       "notes": [
         "Lowers `preg_replace_callback(pattern, callback, subject)` through supported direct callbacks."
       ],
@@ -12486,9 +12483,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/regex.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/regex.rs",
       "codegen_function": "lower_preg_split",
-      "codegen_line": 374,
+      "codegen_line": 388,
       "notes": [
         "Lowers `preg_split(pattern, subject, limit?, flags?)` through the regex split helper."
       ],
@@ -12546,13 +12543,24 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/debug.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/debug.rs",
       "codegen_function": "lower_print_r",
-      "codegen_line": 24,
+      "codegen_line": 34,
       "notes": [
-        "Lowers `print_r(value)` for concrete scalar/resource values and array/hash shells."
+        "Lowers `print_r(value, $return = false)` for concrete scalar/resource values",
+        "and array/hash shells.",
+        "Dispatch follows the call's static result type, which the checker",
+        "(`src/builtins/io/print_r.rs`) and the EIR return-type override",
+        "(`print_r_builtin_return_type_for_args`) derive from the `$return` flag:",
+        "- `Str` (literal `true`): render into the capture buffer and return the owned",
+        "string finalized by `__rt_pr_finish`.",
+        "- `Bool` (flag absent or literal `false`): render to stdout and return `true`.",
+        "- `Mixed` (runtime flag): select the mode at runtime; see",
+        "`lower_print_r_runtime_flag`."
       ],
-      "runtime_helpers": [],
+      "runtime_helpers": [
+        "__rt_pr_finish"
+      ],
       "sig_arm": null,
       "sig_file": "src/builtins/io/print_r.rs",
       "sig_line": null
@@ -12566,9 +12574,16 @@
           "name": "value",
           "optional": false,
           "type": "mixed"
+        },
+        {
+          "by_ref": false,
+          "default": "false",
+          "name": "return",
+          "optional": true,
+          "type": "bool"
         }
       ],
-      "return_type": "void",
+      "return_type": "mixed",
       "variadic": null
     },
     "slug": "print_r",
@@ -12583,7 +12598,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_printf",
       "codegen_line": 517,
       "notes": [
@@ -12622,7 +12637,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr",
       "codegen_line": 25,
       "notes": [
@@ -12659,7 +12674,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_get",
       "codegen_line": 109,
       "notes": [
@@ -12696,7 +12711,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_is_null",
       "codegen_line": 56,
       "notes": [
@@ -12733,7 +12748,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_null",
       "codegen_line": 49,
       "notes": [
@@ -12762,7 +12777,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_offset",
       "codegen_line": 86,
       "notes": [
@@ -12806,7 +12821,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read16",
       "codegen_line": 124,
       "notes": [
@@ -12845,7 +12860,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read32",
       "codegen_line": 129,
       "notes": [
@@ -12884,7 +12899,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read8",
       "codegen_line": 119,
       "notes": [
@@ -12921,7 +12936,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read_string",
       "codegen_line": 134,
       "notes": [
@@ -12967,7 +12982,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_set",
       "codegen_line": 114,
       "notes": [
@@ -13011,7 +13026,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_sizeof",
       "codegen_line": 75,
       "notes": [
@@ -13048,7 +13063,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write16",
       "codegen_line": 161,
       "notes": [
@@ -13094,7 +13109,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write32",
       "codegen_line": 166,
       "notes": [
@@ -13140,7 +13155,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write8",
       "codegen_line": 156,
       "notes": [
@@ -13184,7 +13199,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/pointers.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write_string",
       "codegen_line": 171,
       "notes": [
@@ -13230,7 +13245,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_putenv",
       "codegen_line": 657,
       "notes": [
@@ -13269,7 +13284,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_rad2deg",
       "codegen_line": 83,
       "notes": [
@@ -13306,7 +13321,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/random.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/random.rs",
       "codegen_function": "lower_rand",
       "codegen_line": 21,
       "notes": [
@@ -13352,7 +13367,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/random.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/random.rs",
       "codegen_function": "lower_random_int",
       "codegen_line": 40,
       "notes": [
@@ -13396,9 +13411,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_range",
-      "codegen_line": 1020,
+      "codegen_line": 1023,
       "notes": [
         "Lowers `range()` for integer endpoints through the shared runtime constructor."
       ],
@@ -13443,7 +13458,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -13483,7 +13498,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -13523,7 +13538,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_readdir",
       "codegen_line": 3557,
       "notes": [
@@ -13565,7 +13580,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_readfile",
       "codegen_line": 300,
       "notes": [
@@ -13602,7 +13617,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_readline",
       "codegen_line": 310,
       "notes": [
@@ -13641,7 +13656,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_readlink",
       "codegen_line": 5458,
       "notes": [
@@ -13683,7 +13698,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_realpath",
       "codegen_line": 3690,
       "notes": [
@@ -13722,7 +13737,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_realpath_cache_get",
       "codegen_line": 3700,
       "notes": [
@@ -13751,7 +13766,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_realpath_cache_size",
       "codegen_line": 3710,
       "notes": [
@@ -13780,7 +13795,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_rename",
       "codegen_line": 4448,
       "notes": [
@@ -13828,7 +13843,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_rewind",
       "codegen_line": 3196,
       "notes": [
@@ -13865,7 +13880,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_rewinddir",
       "codegen_line": 3588,
       "notes": [
@@ -13905,7 +13920,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_rmdir",
       "codegen_line": 4433,
       "notes": [
@@ -13948,7 +13963,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_round",
       "codegen_line": 186,
       "notes": [
@@ -13992,9 +14007,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_rsort",
-      "codegen_line": 1081,
+      "codegen_line": 1084,
       "notes": [
         "Lowers `rsort()` for indexed integer arrays by mutating the source array in place."
       ],
@@ -14037,7 +14052,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_trim_like",
       "codegen_line": 112,
       "notes": [
@@ -14081,7 +14096,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_scandir",
       "codegen_line": 4458,
       "notes": [
@@ -14121,7 +14136,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/serialize.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/serialize.rs",
       "codegen_function": "lower_serialize",
       "codegen_line": 33,
       "notes": [
@@ -14165,7 +14180,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_settype",
       "codegen_line": 25,
       "notes": [
@@ -14209,7 +14224,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_sha1",
       "codegen_line": 360,
       "notes": [
@@ -14256,7 +14271,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_shell_exec",
       "codegen_line": 698,
       "notes": [
@@ -14293,9 +14308,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_shuffle",
-      "codegen_line": 1116,
+      "codegen_line": 1119,
       "notes": [
         "Lowers `shuffle()` for indexed arrays with 8-byte slots by mutating the source array in place."
       ],
@@ -14332,7 +14347,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -14369,7 +14384,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -14406,7 +14421,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_sleep",
       "codegen_line": 473,
       "notes": [
@@ -14445,9 +14460,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_sort",
-      "codegen_line": 1076,
+      "codegen_line": 1079,
       "notes": [
         "Lowers `sort()` for indexed integer arrays by mutating the source array in place."
       ],
@@ -14491,7 +14506,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_void",
       "codegen_line": 151,
       "notes": [
@@ -14535,7 +14550,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_void",
       "codegen_line": 151,
       "notes": [
@@ -14572,11 +14587,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_extensions",
       "codegen_line": 178,
       "notes": [
-        "Lowers `spl_autoload_extensions()` against the legacy mutable extension globals."
+        "Lowers `spl_autoload_extensions()` against the mutable extension globals."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -14609,7 +14624,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_functions",
       "codegen_line": 167,
       "notes": [
@@ -14638,7 +14653,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_bool",
       "codegen_line": 135,
       "notes": [
@@ -14689,7 +14704,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_autoload_bool",
       "codegen_line": 135,
       "notes": [
@@ -14726,7 +14741,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_classes",
       "codegen_line": 206,
       "notes": [
@@ -14757,7 +14772,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_object_hash",
       "codegen_line": 226,
       "notes": [
@@ -14796,7 +14811,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/spl.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/spl.rs",
       "codegen_function": "lower_spl_object_id",
       "codegen_line": 216,
       "notes": [
@@ -14835,7 +14850,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_sprintf",
       "codegen_line": 511,
       "notes": [
@@ -14874,7 +14889,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math.rs",
       "codegen_function": "lower_sqrt",
       "codegen_line": 97,
       "notes": [
@@ -14911,7 +14926,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_sscanf",
       "codegen_line": 163,
       "notes": [
@@ -14958,7 +14973,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stat",
       "codegen_line": 5529,
       "notes": [
@@ -14999,7 +15014,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_str_contains",
       "codegen_line": 682,
       "notes": [
@@ -15045,7 +15060,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_binary_string_runtime",
       "codegen_line": 139,
       "notes": [
@@ -15091,7 +15106,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_string_replace",
       "codegen_line": 780,
       "notes": [
@@ -15149,7 +15164,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_str_pad",
       "codegen_line": 818,
       "notes": [
@@ -15209,7 +15224,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_str_repeat",
       "codegen_line": 746,
       "notes": [
@@ -15255,7 +15270,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_string_replace",
       "codegen_line": 780,
       "notes": [
@@ -15313,7 +15328,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_str_split",
       "codegen_line": 176,
       "notes": [
@@ -15359,7 +15374,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_binary_string_runtime",
       "codegen_line": 139,
       "notes": [
@@ -15405,7 +15420,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_binary_string_runtime",
       "codegen_line": 139,
       "notes": [
@@ -15451,7 +15466,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_binary_string_runtime",
       "codegen_line": 139,
       "notes": [
@@ -15497,7 +15512,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_bucket_append_or_prepend",
       "codegen_line": 2064,
       "notes": [
@@ -15541,7 +15556,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_bucket_make_writeable",
       "codegen_line": 1987,
       "notes": [
@@ -15580,7 +15595,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_bucket_new",
       "codegen_line": 1970,
       "notes": [
@@ -15624,7 +15639,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_bucket_append_or_prepend",
       "codegen_line": 2064,
       "notes": [
@@ -15668,7 +15683,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_create",
       "codegen_line": 1064,
       "notes": [
@@ -15712,7 +15727,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_get_default",
       "codegen_line": 1078,
       "notes": [
@@ -15749,7 +15764,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_get_options",
       "codegen_line": 1252,
       "notes": [
@@ -15789,7 +15804,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_get_params",
       "codegen_line": 1291,
       "notes": [
@@ -15826,7 +15841,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_set_default",
       "codegen_line": 1088,
       "notes": [
@@ -15863,7 +15878,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_set_option",
       "codegen_line": 1098,
       "notes": [
@@ -15921,7 +15936,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_context_set_params",
       "codegen_line": 1118,
       "notes": [
@@ -15965,7 +15980,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_copy_to_stream",
       "codegen_line": 1360,
       "notes": [
@@ -16023,7 +16038,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_filter_attach",
       "codegen_line": 1550,
       "notes": [
@@ -16081,7 +16096,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_filter_attach",
       "codegen_line": 1550,
       "notes": [
@@ -16139,7 +16154,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_filter_register",
       "codegen_line": 1521,
       "notes": [
@@ -16185,7 +16200,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_filter_remove",
       "codegen_line": 1939,
       "notes": [
@@ -16224,7 +16239,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_contents",
       "codegen_line": 1301,
       "notes": [
@@ -16275,7 +16290,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_filters",
       "codegen_line": 1493,
       "notes": [
@@ -16304,7 +16319,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_line",
       "codegen_line": 1393,
       "notes": [
@@ -16355,7 +16370,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_meta_data",
       "codegen_line": 1446,
       "notes": [
@@ -16394,7 +16409,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_transports",
       "codegen_line": 1477,
       "notes": [
@@ -16423,7 +16438,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_get_wrappers",
       "codegen_line": 1461,
       "notes": [
@@ -16452,7 +16467,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_is_local",
       "codegen_line": 2103,
       "notes": [
@@ -16489,7 +16504,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_isatty",
       "codegen_line": 2127,
       "notes": [
@@ -16528,7 +16543,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_resolve_include_path",
       "codegen_line": 2361,
       "notes": [
@@ -16568,7 +16583,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_select",
       "codegen_line": 2316,
       "notes": [
@@ -16633,7 +16648,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_set_blocking",
       "codegen_line": 2142,
       "notes": [
@@ -16680,7 +16695,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_set_chunk_size",
       "codegen_line": 2194,
       "notes": [
@@ -16724,7 +16739,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_set_buffer",
       "codegen_line": 2254,
       "notes": [
@@ -16768,7 +16783,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_set_timeout",
       "codegen_line": 2267,
       "notes": [
@@ -16819,7 +16834,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_set_buffer",
       "codegen_line": 2254,
       "notes": [
@@ -16863,7 +16878,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_accept",
       "codegen_line": 2436,
       "notes": [
@@ -16916,7 +16931,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_client",
       "codegen_line": 2397,
       "notes": [
@@ -16956,7 +16971,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_enable_crypto",
       "codegen_line": 2547,
       "notes": [
@@ -17014,7 +17029,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_get_name",
       "codegen_line": 2496,
       "notes": [
@@ -17060,7 +17075,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_pair",
       "codegen_line": 2465,
       "notes": [
@@ -17113,7 +17128,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_recvfrom",
       "codegen_line": 2599,
       "notes": [
@@ -17171,7 +17186,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_sendto",
       "codegen_line": 2641,
       "notes": [
@@ -17229,7 +17244,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_server",
       "codegen_line": 2374,
       "notes": [
@@ -17268,7 +17283,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_socket_shutdown",
       "codegen_line": 2522,
       "notes": [
@@ -17314,7 +17329,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_supports_lock",
       "codegen_line": 2115,
       "notes": [
@@ -17353,7 +17368,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_wrapper_register",
       "codegen_line": 1000,
       "notes": [
@@ -17406,7 +17421,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_wrapper_restore",
       "codegen_line": 1052,
       "notes": [
@@ -17443,7 +17458,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_stream_wrapper_unregister",
       "codegen_line": 1030,
       "notes": [
@@ -17482,7 +17497,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -17522,9 +17537,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_strlen",
-      "codegen_line": 494,
+      "codegen_line": 493,
       "notes": [
         "Lowers `strlen()` by coercing string-like values and returning the byte length."
       ],
@@ -17561,7 +17576,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_string_position",
       "codegen_line": 700,
       "notes": [
@@ -17612,7 +17627,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -17652,7 +17667,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_string_position",
       "codegen_line": 700,
       "notes": [
@@ -17703,7 +17718,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_strstr",
       "codegen_line": 762,
       "notes": [
@@ -17754,7 +17769,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -17794,7 +17809,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_strtotime",
       "codegen_line": 487,
       "notes": [
@@ -17846,7 +17861,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -17886,7 +17901,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_substr",
       "codegen_line": 713,
       "notes": [
@@ -17939,7 +17954,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_substr_replace",
       "codegen_line": 730,
       "notes": [
@@ -18000,7 +18015,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_symlink",
       "codegen_line": 5448,
       "notes": [
@@ -18049,7 +18064,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_sys_get_temp_dir",
       "codegen_line": 5403,
       "notes": [
@@ -18080,11 +18095,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_system",
       "codegen_line": 706,
       "notes": [
-        "Lowers `system(command)` through libc `system()` and returns the legacy empty string result."
+        "Lowers `system(command)` through libc `system()` and returns the compiler's empty string result."
       ],
       "runtime_helpers": [
         "__rt_shell_exec"
@@ -18119,7 +18134,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -18156,7 +18171,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/math/libm.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/math/libm.rs",
       "codegen_function": "lower_unary_libm",
       "codegen_line": 22,
       "notes": [
@@ -18193,7 +18208,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_tempnam",
       "codegen_line": 4453,
       "notes": [
@@ -18241,7 +18256,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_time",
       "codegen_line": 615,
       "notes": [
@@ -18272,7 +18287,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_tmpfile",
       "codegen_line": 5416,
       "notes": [
@@ -18305,7 +18320,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_touch",
       "codegen_line": 4523,
       "notes": [
@@ -18356,9 +18371,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 294,
+      "codegen_line": 293,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal names."
       ],
@@ -18400,7 +18415,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_trim_like",
       "codegen_line": 112,
       "notes": [
@@ -18444,11 +18459,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_uasort",
-      "codegen_line": 1131,
+      "codegen_line": 1134,
       "notes": [
-        "Lowers `uasort()` through the legacy user-sort helper for static comparators."
+        "Lowers `uasort()` through the user-sort helper for static comparators."
       ],
       "runtime_helpers": [
         "__rt_array_is_list"
@@ -18490,7 +18505,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_ucfirst",
       "codegen_line": 96,
       "notes": [
@@ -18529,7 +18544,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -18576,11 +18591,11 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_uksort",
-      "codegen_line": 1126,
+      "codegen_line": 1129,
       "notes": [
-        "Lowers `uksort()` through the legacy user-sort helper for static comparators."
+        "Lowers `uksort()` through the user-sort helper for static comparators."
       ],
       "runtime_helpers": [
         "__rt_array_is_list"
@@ -18622,7 +18637,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_umask",
       "codegen_line": 4493,
       "notes": [
@@ -18661,7 +18676,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_unlink",
       "codegen_line": 4407,
       "notes": [
@@ -18702,7 +18717,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/serialize.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/serialize.rs",
       "codegen_function": "lower_unserialize",
       "codegen_line": 164,
       "notes": [
@@ -18753,7 +18768,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/types.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/types.rs",
       "codegen_function": "lower_unset_builtin",
       "codegen_line": 48,
       "notes": [
@@ -18790,7 +18805,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -18830,7 +18845,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_unary_string_runtime",
       "codegen_line": 76,
       "notes": [
@@ -18870,7 +18885,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/system.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/system.rs",
       "codegen_function": "lower_usleep",
       "codegen_line": 625,
       "notes": [
@@ -18909,9 +18924,9 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/arrays.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/arrays.rs",
       "codegen_function": "lower_usort",
-      "codegen_line": 1121,
+      "codegen_line": 1124,
       "notes": [
         "Lowers `usort()` for indexed integer arrays with a static user comparator."
       ],
@@ -18955,11 +18970,12 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/debug.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/debug.rs",
       "codegen_function": "lower_var_dump",
-      "codegen_line": 35,
+      "codegen_line": 152,
       "notes": [
-        "Lowers `var_dump(value)` for concrete scalar/resource values and array/hash shells."
+        "Lowers `var_dump(value, ...values)` for concrete scalar/resource values and array/hash shells.",
+        "Each operand is dumped independently in source order, matching PHP's variadic var_dump."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -18978,7 +18994,7 @@
         }
       ],
       "return_type": "void",
-      "variadic": null
+      "variadic": "values"
     },
     "slug": "var_dump",
     "sub_area": "Variable"
@@ -18992,7 +19008,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/io.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/io.rs",
       "codegen_function": "lower_vfprintf",
       "codegen_line": 2898,
       "notes": [
@@ -19046,7 +19062,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_vprintf",
       "codegen_line": 530,
       "notes": [
@@ -19092,7 +19108,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_vsprintf",
       "codegen_line": 524,
       "notes": [
@@ -19138,7 +19154,7 @@
     "lowering": {
       "checker_file": null,
       "checker_line": null,
-      "codegen_file": "src/codegen_ir/lower_inst/builtins/strings.rs",
+      "codegen_file": "src/codegen/lower_inst/builtins/strings.rs",
       "codegen_function": "lower_wordwrap",
       "codegen_line": 802,
       "notes": [
@@ -19189,5 +19205,173 @@
     },
     "slug": "wordwrap",
     "sub_area": "String"
+  },
+  {
+    "area": "Pointer",
+    "canonical_name": "zval_free",
+    "description": "Frees a PHP zval pointer allocated by `zval_pack`.",
+    "in_catalog": true,
+    "is_internal": false,
+    "lowering": {
+      "checker_file": null,
+      "checker_line": null,
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
+      "codegen_function": "lower_zval_free",
+      "codegen_line": 606,
+      "notes": [
+        "Lowers `zval_free(zval_ptr)` by releasing the zval block and owned children."
+      ],
+      "runtime_helpers": [
+        "__rt_zval_free"
+      ],
+      "sig_arm": null,
+      "sig_file": "src/builtins/pointers/zval_free.rs",
+      "sig_line": null
+    },
+    "name": "zval_free",
+    "sig": {
+      "params": [
+        {
+          "by_ref": false,
+          "default": null,
+          "name": "zval",
+          "optional": false,
+          "type": "pointer"
+        }
+      ],
+      "return_type": "void",
+      "variadic": null
+    },
+    "slug": "zval_free",
+    "sub_area": "Pointer"
+  },
+  {
+    "area": "Pointer",
+    "canonical_name": "zval_pack",
+    "description": "Packs an elephc runtime value into a heap-allocated PHP zval pointer.",
+    "in_catalog": true,
+    "is_internal": false,
+    "lowering": {
+      "checker_file": null,
+      "checker_line": null,
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
+      "codegen_function": "lower_zval_pack",
+      "codegen_line": 541,
+      "notes": [
+        "Lowers `zval_pack(value)` by boxing the operand as a Mixed cell and invoking",
+        "`__rt_zval_pack`, which returns a pointer to a freshly allocated 16-byte zval.",
+        "`__rt_zval_pack` only reads the `(tag, lo, hi)` triple out of the boxed Mixed",
+        "cell; it never retains or frees that cell. When the operand was not already",
+        "Mixed/Union, `emit_box_current_value_as_mixed` allocated a fresh owned box",
+        "(persisting strings, increfing array/object/mixed children), so that box is a",
+        "throwaway temporary that must be deep-released after the pack call or it leaks",
+        "one Mixed cell per call. When the operand is already Mixed/Union no box was",
+        "created, so the operand's own live cell must not be freed here."
+      ],
+      "runtime_helpers": [
+        "__rt_mixed_free_deep",
+        "__rt_zval_pack"
+      ],
+      "sig_arm": null,
+      "sig_file": "src/builtins/pointers/zval_pack.rs",
+      "sig_line": null
+    },
+    "name": "zval_pack",
+    "sig": {
+      "params": [
+        {
+          "by_ref": false,
+          "default": null,
+          "name": "value",
+          "optional": false,
+          "type": "mixed"
+        }
+      ],
+      "return_type": "pointer",
+      "variadic": null
+    },
+    "slug": "zval_pack",
+    "sub_area": "Pointer"
+  },
+  {
+    "area": "Pointer",
+    "canonical_name": "zval_type",
+    "description": "Returns the PHP zval type byte for a zval pointer.",
+    "in_catalog": true,
+    "is_internal": false,
+    "lowering": {
+      "checker_file": null,
+      "checker_line": null,
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
+      "codegen_function": "lower_zval_type",
+      "codegen_line": 597,
+      "notes": [
+        "Lowers `zval_type(zval_ptr)` by returning the PHP `IS_*` type byte."
+      ],
+      "runtime_helpers": [
+        "__rt_zval_free",
+        "__rt_zval_type"
+      ],
+      "sig_arm": null,
+      "sig_file": "src/builtins/pointers/zval_type.rs",
+      "sig_line": null
+    },
+    "name": "zval_type",
+    "sig": {
+      "params": [
+        {
+          "by_ref": false,
+          "default": null,
+          "name": "zval",
+          "optional": false,
+          "type": "pointer"
+        }
+      ],
+      "return_type": "int",
+      "variadic": null
+    },
+    "slug": "zval_type",
+    "sub_area": "Pointer"
+  },
+  {
+    "area": "Pointer",
+    "canonical_name": "zval_unpack",
+    "description": "Unpacks a PHP zval pointer into an owned elephc Mixed value.",
+    "in_catalog": true,
+    "is_internal": false,
+    "lowering": {
+      "checker_file": null,
+      "checker_line": null,
+      "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
+      "codegen_function": "lower_zval_unpack",
+      "codegen_line": 588,
+      "notes": [
+        "Lowers `zval_unpack(zval_ptr)` by invoking `__rt_zval_unpack`."
+      ],
+      "runtime_helpers": [
+        "__rt_zval_free",
+        "__rt_zval_type",
+        "__rt_zval_unpack"
+      ],
+      "sig_arm": null,
+      "sig_file": "src/builtins/pointers/zval_unpack.rs",
+      "sig_line": null
+    },
+    "name": "zval_unpack",
+    "sig": {
+      "params": [
+        {
+          "by_ref": false,
+          "default": null,
+          "name": "zval",
+          "optional": false,
+          "type": "pointer"
+        }
+      ],
+      "return_type": "mixed",
+      "variadic": null
+    },
+    "slug": "zval_unpack",
+    "sub_area": "Pointer"
   }
 ]
