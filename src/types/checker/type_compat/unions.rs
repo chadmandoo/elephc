@@ -65,6 +65,19 @@ impl Checker {
                 }
                 PhpType::Array(actual_elem) => {
                     self.type_accepts(expected_elem.as_ref(), actual_elem.as_ref())
+                        // PHP `array` params carry no element-type enforcement (no
+                        // generics), so a declared `array<Object>` accepts an array of
+                        // ANY object — a sibling or a subtype alike. Both sides carry
+                        // the identical run representation (a boxed object pointer), so
+                        // no element re-typing is needed and the callee reads them via
+                        // the class table regardless of the static element name. This is
+                        // strictly tighter than the already-landed `Array(Mixed)→
+                        // Array(Object)` acceptance (#546), sharing that trust posture.
+                        // Unblocks withConditions ×10 (QueryCondition vs CompoundCondition).
+                        || matches!(
+                            (expected_elem.as_ref(), actual_elem.as_ref()),
+                            (PhpType::Object(_), PhpType::Object(_))
+                        )
                 }
                 PhpType::AssocArray { .. } => matches!(expected_elem.as_ref(), PhpType::Mixed),
                 _ => false,

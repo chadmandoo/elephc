@@ -83,6 +83,28 @@ echo strspn("xxaayy", "a", 2);
     assert_eq!(out, "3|3|2|0|2");
 }
 
+/// EC-64 (#558): strpos() 3-arg offset form desugars to __elephc_strpos_offset (native
+/// substr + native 2-arg strpos). Covers positive offset, an offset skipping an earlier
+/// match, past-all-matches (→ false), negative-from-end, a mid-string needle, and the
+/// 2-arg form (unchanged native path). Byte-parity vs PHP 8.5.
+#[test]
+fn test_strpos_three_arg_offset_form() {
+    let out = compile_and_run(
+        r#"<?php
+$h = "hello world";
+echo strpos($h, "o", 0), "|";
+echo strpos($h, "o", 5), "|";
+$miss = strpos($h, "o", 8);
+echo ($miss === false ? "F" : $miss), "|";
+echo strpos($h, "l", -3), "|";
+echo strpos("abcabc", "bc", 3), "|";
+echo strpos("aaa", "a", 2), "|";
+echo strpos($h, "world");
+"#,
+    );
+    assert_eq!(out, "4|7|F|9|4|2|6");
+}
+
 /// EC-40 (#533): mb_substr_count counts non-overlapping needles (byte-wise
 /// counting is exact for well-formed UTF-8 — needles cannot straddle
 /// codepoints), and strncmp honors PHP's sign-only contract

@@ -690,18 +690,22 @@ impl Checker {
             }
             ExprKind::YieldFrom(inner) => {
                 let inner_ty = self.infer_type(inner, env)?;
-                let supported = match &inner.kind {
-                    ExprKind::ArrayLiteral(_) => true,
-                    ExprKind::FunctionCall { .. } | ExprKind::Variable(_) => {
-                        self.type_accepts(&PhpType::Object("Generator".to_string()), &inner_ty)
-                    }
-                    _ => false,
-                };
+                // `yield from` delegates to any Traversable. Accept an array literal
+                // (by form), a Generator/Traversable-typed operand, or an `iterable`-typed
+                // operand — an `iterable` param/return such as ward-http GeneratorStream's
+                // `$chunks` or ward-layout `getPreprocessors(): iterable` (EC-65 #558).
+                // The decision is type-driven, not form-gated, so `yield from $x->m()`
+                // (a MethodCall returning `iterable`) is accepted too. ir_lower routes the
+                // array + iterable cases through the foreach iterator loop and a statically
+                // known Generator through `__rt_gen_delegate`.
+                let supported = matches!(&inner.kind, ExprKind::ArrayLiteral(_))
+                    || self.type_accepts(&PhpType::Object("Generator".to_string()), &inner_ty)
+                    || self.type_accepts(&PhpType::Iterable, &inner_ty);
                 if !supported {
                     return Err(CompileError::new(
                         inner.span,
                         &format!(
-                            "yield from expects an array literal or Generator, got {:?}",
+                            "yield from expects an array, Generator, or iterable, got {:?}",
                             inner_ty
                         ),
                     ));

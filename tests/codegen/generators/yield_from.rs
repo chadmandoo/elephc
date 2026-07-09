@@ -323,3 +323,29 @@ foreach (combined() as $v) { echo $v; echo " "; }
     );
     assert_eq!(out, "0 1 2 10 11 ");
 }
+
+/// EC-65 (#559): `yield from` over an `iterable`-typed source — neither an array literal
+/// nor a statically-known Generator, but a param typed `iterable` (ward-http
+/// GeneratorStream's `$chunks`, ward-layout `getPreprocessors(): iterable`). The checker
+/// accepts the iterable operand (type-driven, not form-gated) and ir_lower routes it
+/// through the foreach iterator loop — which dispatches on the runtime kind exactly like
+/// `foreach` — rather than `__rt_gen_delegate` (which drives only a true Generator and
+/// would misread a runtime array). Here the iterable arrives as Mixed (json_decode) and is
+/// an array at runtime. Byte-parity vs PHP 8.5.
+#[test]
+fn test_generator_yield_from_iterable_typed_source() {
+    let out = compile_and_run(
+        r#"<?php
+function reyield(iterable $items): Generator {
+    yield from $items;
+}
+$r = '';
+foreach (reyield(json_decode('["a","b","c"]', true)) as $v) { $r .= $v; }
+echo $r, '|';
+$r = '';
+foreach (reyield(json_decode('["x","y"]', true)) as $v) { $r .= $v; }
+echo $r;
+"#,
+    );
+    assert_eq!(out, "abc|xy");
+}

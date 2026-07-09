@@ -215,6 +215,20 @@ fn test_mixed_array_element_into_typed_params() {
     assert_eq!(out, "ok:b:R+");
 }
 
+/// EC-63 (#557): array-element object covariance at a param boundary — a `withConditions`
+/// method whose `array` param elephc infers as `array<QCond>` (from the first call site)
+/// accepts a second call passing `array<CCond>`, where QCond and CCond are SIBLING concrete
+/// types (each implements a different interface, neither ISA the other). PHP `array` params
+/// carry no element-type enforcement, so this is valid — the ward-dbal
+/// QueryBuilder::withConditions pattern (QueryCondition vs CompoundCondition). Byte-parity.
+#[test]
+fn test_array_element_object_sibling_covariance_at_param() {
+    let out = compile_and_run(
+        "<?php declare(strict_types=1); interface CondA {} interface CondB {} final readonly class QCond implements CondA { public function __construct(public string $sql) {} } final readonly class CCond implements CondB { public function __construct(public string $sql) {} } final class QB { /** @var list<QCond|CCond> */ private array $conditions; public function __construct() { $this->conditions = []; } private function withConditions(array $conditions): self { $c = new QB(); $c->conditions = $conditions; return $c; } public function where(string $s): self { return $this->withConditions([new QCond($s)]); } public function compound(string $s): self { return $this->withConditions([new CCond($s)]); } public function size(): int { return count($this->conditions); } public function firstSql(): string { $c = $this->conditions[0]; return $c->sql; } } function main(): void { $qb = new QB(); $a = $qb->where('a = 1'); $b = $qb->compound('b = 2'); echo $a->size(), ':', $a->firstSql(), '|', $b->size(), ':', $b->firstSql(); } main();",
+    );
+    assert_eq!(out, "1:a = 1|1:b = 2");
+}
+
 /// EC-10 follow-on (#493): foreach KEYS over an unknown-element array (an `array`-hinted
 /// param — elements known only to phpdoc) are Mixed, not Int: the value may be associative
 /// at runtime (ward-http `foreach ($headers as $name => $values)` with string keys into a

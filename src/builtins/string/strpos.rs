@@ -7,8 +7,9 @@
 //!
 //! Key details:
 //! - The declared signature carries the full golden param list (`haystack`, `needle`,
-//!   `offset`), but `max_args: 2` caps `check_arity` so a third argument is rejected,
-//!   matching the legacy CHECK arm which enforced exactly two arguments.
+//!   `offset`); `max_args: 3` admits the optional 3-arg offset form (EC-64 #558). A 3-arg
+//!   call is desugared by ir_lower to the `__elephc_strpos_offset` prelude (native
+//!   `substr` + native 2-arg `strpos`); the 2-arg form stays on the native runtime helper.
 //! - `check` returns `PhpType::Union([Int, Bool])` (position, or `false` on no match).
 //!   A check hook is required because the `builtin!` macro `returns:` field only accepts
 //!   a simple type identifier and cannot express a union inline. Argument types are
@@ -27,7 +28,7 @@ builtin! {
     name: "strpos",
     area: String,
     params: [haystack: Str, needle: Str, offset: Int = DefaultSpec::Int(0)],
-    max_args: 2,
+    max_args: 3,
     returns: Mixed,
     check: check,
     lower: lower,
@@ -39,7 +40,7 @@ builtin! {
 ///
 /// A check hook is required because the `builtin!` macro cannot express a union return
 /// type inline. Argument types are inferred by the common registry dispatch path before
-/// this hook fires; arity (capped to 2 via `max_args`) is validated by the registry.
+/// this hook fires; arity (2 or 3 via `max_args`) is validated by the registry.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Union(vec![PhpType::Int, PhpType::Bool]))
 }

@@ -923,6 +923,35 @@ fn lower_mixed_loose_eq_desugar(
     Some(lower_expr(ctx, &desugared))
 }
 
+/// Desugars a 3-argument `strpos($haystack, $needle, $offset)` to the
+/// `__elephc_strpos_offset` prelude (EC-64 #558). The native `lower_string_position` path
+/// loads only two string operands and silently drops a third, so a 3-arg call is rewritten
+/// to the prelude that composes native `substr` + native 2-arg `strpos` (byte-parity over
+/// the offset truth table). Returns `None` for the 2-arg form (native lowering applies) or
+/// when the prelude was not injected (only reachable for synthesized programs — a real
+/// `strpos` call always triggers injection).
+fn lower_static_strpos_offset(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "strpos" || args.len() != 3 {
+        return None;
+    }
+    if !prelude_impl_available(ctx, "__elephc_strpos_offset") {
+        return None;
+    }
+    let call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_strpos_offset"),
+            args: args.to_vec(),
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &call))
+}
+
 /// Releases an owning binary-operator operand once the consuming opcode has read it.
 fn release_binary_operand_temporary(
     ctx: &mut LoweringContext<'_, '_>,
@@ -1853,6 +1882,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         }
     }
     if let Some(value) = lower_static_settype(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_static_strpos_offset(ctx, canonical, args, expr) {
         return value;
     }
     if let Some(value) = lower_static_array_push(ctx, canonical, args, expr) {
@@ -11321,7 +11353,15 @@ fn lower_yield(ctx: &mut LoweringContext<'_, '_>, key: Option<&Expr>, value: Opt
 fn lower_yield_from(ctx: &mut LoweringContext<'_, '_>, inner: &Expr, expr: &Expr) -> LoweredValue {
     let value = lower_expr(ctx, inner);
     let source_ty = ctx.builder.value_php_type(value.value).codegen_repr();
-    if matches!(source_ty, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+    // An `iterable`-typed source may be an array OR a Traversable object at runtime, so
+    // route it through the foreach iterator loop (which dispatches on the runtime kind,
+    // exactly like `foreach`) rather than `__rt_gen_delegate`, which drives only a true
+    // Generator and would misread a runtime array (EC-65 #558). A statically-known
+    // Generator keeps full send/return delegation via `GeneratorYieldFrom` below.
+    if matches!(
+        source_ty,
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable
+    ) {
         return lower_yield_from_array(ctx, value, expr);
     }
     let result = ctx.emit_value(

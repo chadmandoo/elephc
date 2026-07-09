@@ -1116,6 +1116,30 @@ function __elephc_loose_eq(mixed $a, mixed $b): bool {
 }
 "#;
 
+/// EC-64 (#558): the 3-arg `strpos($haystack, $needle, $offset)` form, desugared from a
+/// 3-argument `strpos` call (the native builtin's `lower_string_position` handles only the
+/// 2-arg form and silently drops a third operand). Byte-parity-verified vs PHP 8.5 over the
+/// offset truth table (positive, negative-from-end, at-a-later-match, past-end→false, empty
+/// needle). Composes native `substr` + native 2-arg `strpos`, so it contains no 3-arg
+/// `strpos` and cannot re-enter the desugar. An out-of-range POSITIVE offset returns `false`
+/// (PHP 8 raises a ValueError there; elephc does not model that fatal — the in-range cursor
+/// pattern AIC uses is exact).
+const STRPOS_OFFSET_PRELUDE_SRC: &str = r#"<?php
+function __elephc_strpos_offset(string $haystack, string $needle, int $offset): int|false {
+    $len = strlen($haystack);
+    $start = $offset < 0 ? $len + $offset : $offset;
+    if ($start < 0) {
+        $start = 0;
+    }
+    if ($start > $len) {
+        return false;
+    }
+    $sub = substr($haystack, $start);
+    $p = strpos($sub, $needle);
+    return $p === false ? false : $p + $start;
+}
+"#;
+
 /// Injects the stdlib prelude when the program references any of its names and filters
 /// out functions the program declares itself. The loose-eq prelude is injected
 /// separately, gated on the presence of a loose `==`/`!=` (the `Debug` rendering of
@@ -1131,6 +1155,13 @@ pub fn inject_if_used(program: Program) -> Program {
     }
     if rendered.contains("op: Eq") || rendered.contains("op: NotEq") {
         sources.push(LOOSE_EQ_PRELUDE_SRC);
+    }
+    // A 3-arg `strpos` desugars to `__elephc_strpos_offset`; inject it whenever any
+    // `strpos` appears (the arg count is not cheaply visible in the Debug rendering).
+    // Over-injection for a 2-arg-only program is harmless: the unused prelude function
+    // is stripped by link-GC, at compile-time parse cost only — same posture as loose-eq.
+    if rendered.contains("strpos") {
+        sources.push(STRPOS_OFFSET_PRELUDE_SRC);
     }
     if sources.is_empty() {
         return program;
