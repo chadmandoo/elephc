@@ -807,6 +807,17 @@ fn lower_compare(
     right: &Expr,
     expr: &Expr,
 ) -> LoweredValue {
+    // #544: a loose `==`/`!=` whose native scalar lowering is broken for a Mixed
+    // operand desugars to the byte-parity `__elephc_loose_eq` prelude. The native
+    // path int-casts both operands (two non-numeric strings both decode to 0 and
+    // compare wrongly EQUAL; `Mixed == null` likewise), and `Mixed == Str` is an
+    // outright unsupported error. Mixed-vs-Int/Float (emit_mixed_numeric_compare)
+    // and Mixed-vs-Bool (truthiness) already lower correctly, so those stay native.
+    if matches!(op, BinOp::Eq | BinOp::NotEq) {
+        if let Some(result) = lower_mixed_loose_eq_desugar(ctx, left, op, right, expr) {
+            return result;
+        }
+    }
     let mut lhs = lower_expr(ctx, left);
     let mut rhs = lower_expr(ctx, right);
     // DateTime-family value comparison: PHP orders `DateTime`/`DateTimeImmutable` by their absolute
@@ -864,6 +875,52 @@ fn lower_compare(
         release_binary_operand_temporary(ctx, rhs, expr.span);
     }
     result
+}
+
+/// Rewrites a Mixed-involving loose `==`/`!=` to the `__elephc_loose_eq` prelude when
+/// the native scalar path would miscompile it (#544). Returns `None` (native lowering
+/// applies) for pairs the native path already handles: neither operand is `Mixed`, or
+/// the non-Mixed operand is `Int`/`Float` (numeric compare) / `Bool` (truthiness).
+/// Falls through when the prelude was not injected (`op: Eq`/`op: NotEq` always trigger
+/// it, so this only guards synthesized programs).
+fn lower_mixed_loose_eq_desugar(
+    ctx: &mut LoweringContext<'_, '_>,
+    left: &Expr,
+    op: &BinOp,
+    right: &Expr,
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if !prelude_impl_available(ctx, "__elephc_loose_eq") {
+        return None;
+    }
+    let lhs_ty = desugar_call_arg_static_type(ctx, left).codegen_repr();
+    let rhs_ty = desugar_call_arg_static_type(ctx, right).codegen_repr();
+    let is_mixed = |ty: &PhpType| matches!(ty, PhpType::Mixed);
+    // The native path already compares Mixed against a numeric or bool operand
+    // correctly, so only route the genuinely-broken combinations (Mixed vs
+    // Mixed/Str/null/other) through the prelude.
+    let native_handles = |ty: &PhpType| matches!(ty, PhpType::Int | PhpType::Float | PhpType::Bool);
+    let broken = (is_mixed(&lhs_ty) && !native_handles(&rhs_ty))
+        || (is_mixed(&rhs_ty) && !native_handles(&lhs_ty));
+    if !broken {
+        return None;
+    }
+    let call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_loose_eq"),
+            args: vec![left.clone(), right.clone()],
+        },
+        span: expr.span,
+    };
+    let desugared = if matches!(op, BinOp::NotEq) {
+        Expr {
+            kind: ExprKind::Not(Box::new(call)),
+            span: expr.span,
+        }
+    } else {
+        call
+    };
+    Some(lower_expr(ctx, &desugared))
 }
 
 /// Releases an owning binary-operator operand once the consuming opcode has read it.

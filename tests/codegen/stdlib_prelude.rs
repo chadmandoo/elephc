@@ -175,3 +175,38 @@ echo in_array(99, $ints, true) ? "1" : "0";
     assert_eq!(out, "1010");
 }
 
+/// EC-51 (#544): loose `==`/`!=` over Mixed operands desugars to the __elephc_loose_eq
+/// prelude (byte-parity with PHP 8.5). The native scalar path int-casts both operands, so
+/// two non-numeric strings (`"foo" == "bar"`) both decode to 0 and compare wrongly EQUAL;
+/// `Mixed == null` is type-adopting (null vs string → `=== ''`, null vs int → `=== 0`,
+/// null vs array → `count === 0`); `Mixed == Str` was previously an unsupported error.
+/// Mixed-vs-Int/Bool stay on the (correct) native path.
+#[test]
+fn test_loose_eq_over_mixed_operands() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function m(string $j): mixed { return json_decode($j, true); }
+function b(bool $x): string { return $x ? "1" : "0"; }
+$r = "";
+$r .= b(m('"foo"') == m('"bar"'));   // 0 (the core bug)
+$r .= b(m('"foo"') == m('"foo"'));   // 1
+$r .= b(m('"5"')   == m('"5.0"'));   // 1 numeric strings
+$r .= b(m('5')     == m('"foo"'));   // 0 PHP8 int vs non-numeric string
+$r .= b(m('5')     == m('5.0'));     // 1
+$r .= "|";
+$r .= b(m('""')    == null);         // 1 null vs empty string
+$r .= b(m('"foo"') == null);         // 0
+$r .= b(m('0')     == null);         // 1
+$r .= b(m('[]')    == null);         // 1 empty array
+$r .= b(m('[1]')   == null);         // 0
+$r .= "|";
+$r .= b(m('"hi"')  == "hi");         // 1 Mixed == Str
+$r .= b(m('"hi"')  != "ho");         // 1 Mixed != Str (negation)
+$r .= b(m('true')  == m('"0"'));     // 0 bool rule: true vs (bool)"0"=false
+echo $r;
+"#,
+    );
+    assert_eq!(out, "01101|10110|110");
+}
+

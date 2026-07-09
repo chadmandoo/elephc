@@ -1050,29 +1050,103 @@ function __elephc_var_dump_value(mixed $v, string $pad): void {
 }
 "#;
 
+/// The loose-equality prelude (EC-51 #544). Backs the ir_lower desugar of a loose
+/// `==`/`!=` whose operands are `Mixed`-involving (the native scalar path int-casts
+/// both operands, so two non-numeric strings both decode to 0 and compare wrongly
+/// equal; `Mixed == Str`/`Mixed == null` are likewise broken). Injected on its own
+/// (NOT via the all-36 `STDLIB_PRELUDE_SRC`) so a program that merely uses `==`
+/// doesn't pull the whole prelude.
+///
+/// The body is byte-parity with PHP 8.5 (verified over the full scalar+null+array
+/// truth table). It contains ZERO loose `==` — only `gettype` dispatch, typed casts,
+/// and strict `===` — so it can never re-enter the desugar (no recursion) regardless
+/// of how casts narrow. Array/object payloads fall to the `$a === $b` tail: correct
+/// for same-instance and cross-category, a documented approximation for two DISTINCT
+/// but content-equal arrays/objects (rare; the native path could not compare them at
+/// all). Null-vs-array emptiness uses `count()` because elephc's `===` on arrays is
+/// pointer identity, not content.
+const LOOSE_EQ_PRELUDE_SRC: &str = r#"<?php
+function __elephc_loose_eq(mixed $a, mixed $b): bool {
+    $ta = gettype($a);
+    $tb = gettype($b);
+    if ($ta === 'boolean' || $tb === 'boolean') {
+        return (bool) $a === (bool) $b;
+    }
+    if ($ta === 'NULL' || $tb === 'NULL') {
+        if ($ta === 'NULL' && $tb === 'NULL') {
+            return true;
+        }
+        $other = ($ta === 'NULL') ? $b : $a;
+        $otherType = ($ta === 'NULL') ? $tb : $ta;
+        if ($otherType === 'string') {
+            return $other === '';
+        }
+        if ($otherType === 'integer' || $otherType === 'double') {
+            return (float) $other === 0.0;
+        }
+        if ($otherType === 'array') {
+            return count($other) === 0;
+        }
+        return false;
+    }
+    $aNumeric = ($ta === 'integer' || $ta === 'double');
+    $bNumeric = ($tb === 'integer' || $tb === 'double');
+    if ($aNumeric && $bNumeric) {
+        return (float) $a === (float) $b;
+    }
+    if ($ta === 'string' && $tb === 'string') {
+        if (is_numeric($a) && is_numeric($b)) {
+            return (float) $a === (float) $b;
+        }
+        return $a === $b;
+    }
+    if ($aNumeric && $tb === 'string') {
+        if (is_numeric($b)) {
+            return (float) $a === (float) $b;
+        }
+        return (string) $a === $b;
+    }
+    if ($bNumeric && $ta === 'string') {
+        if (is_numeric($a)) {
+            return (float) $a === (float) $b;
+        }
+        return $a === (string) $b;
+    }
+    return $a === $b;
+}
+"#;
+
 /// Injects the stdlib prelude when the program references any of its names and filters
-/// out functions the program declares itself.
+/// out functions the program declares itself. The loose-eq prelude is injected
+/// separately, gated on the presence of a loose `==`/`!=` (the `Debug` rendering of
+/// `BinOp::Eq`/`BinOp::NotEq`), so it does not drag in the whole prelude.
 pub fn inject_if_used(program: Program) -> Program {
     let rendered = format!("{:?}", program);
-    if !STDLIB_PRELUDE_NAMES
+    let mut sources: Vec<&str> = Vec::new();
+    if STDLIB_PRELUDE_NAMES
         .iter()
         .any(|name| rendered.contains(name))
     {
+        sources.push(STDLIB_PRELUDE_SRC);
+    }
+    if rendered.contains("op: Eq") || rendered.contains("op: NotEq") {
+        sources.push(LOOSE_EQ_PRELUDE_SRC);
+    }
+    if sources.is_empty() {
         return program;
     }
     let declared = declared_function_names(&program);
-    let tokens =
-        crate::lexer::tokenize(STDLIB_PRELUDE_SRC).expect("stdlib prelude must tokenize");
-    let prelude = crate::parser::parse(&tokens).expect("stdlib prelude must parse");
-    let mut combined: Program = prelude
-        .into_iter()
-        .filter(|stmt| match &stmt.kind {
+    let mut combined: Program = Vec::new();
+    for src in sources {
+        let tokens = crate::lexer::tokenize(src).expect("stdlib prelude must tokenize");
+        let prelude = crate::parser::parse(&tokens).expect("stdlib prelude must parse");
+        combined.extend(prelude.into_iter().filter(|stmt| match &stmt.kind {
             StmtKind::FunctionDecl { name, .. } => {
                 !declared.contains(&name.to_ascii_lowercase())
             }
             _ => true,
-        })
-        .collect();
+        }));
+    }
     combined.extend(program);
     combined
 }

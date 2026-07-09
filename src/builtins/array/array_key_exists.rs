@@ -34,11 +34,13 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.infer_type(&cx.args[0], cx.env)?;
     let arr_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
-    // Mixed receivers desugar to the prelude `__elephc_array_key_exists_any`
-    // impl (adaptive key walk).
+    // Mixed and Union receivers desugar to the prelude
+    // `__elephc_array_key_exists_any` impl (adaptive key walk) — the desugar's
+    // gate (`lower_static_array_key_exists_any`) accepts Mixed | Union alike, e.g.
+    // a null-narrowed `?array` (Union[Array, Void]) or an adaptive local.
     if !matches!(
         arr_ty,
-        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
+        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed | PhpType::Union(_)
     ) {
         return Err(CompileError::new(
             cx.span,
