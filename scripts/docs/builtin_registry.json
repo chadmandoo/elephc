@@ -12545,11 +12545,22 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/debug.rs",
       "codegen_function": "lower_print_r",
-      "codegen_line": 24,
+      "codegen_line": 34,
       "notes": [
-        "Lowers `print_r(value)` for concrete scalar/resource values and array/hash shells."
+        "Lowers `print_r(value, $return = false)` for concrete scalar/resource values",
+        "and array/hash shells.",
+        "Dispatch follows the call's static result type, which the checker",
+        "(`src/builtins/io/print_r.rs`) and the EIR return-type override",
+        "(`print_r_builtin_return_type_for_args`) derive from the `$return` flag:",
+        "- `Str` (literal `true`): render into the capture buffer and return the owned",
+        "string finalized by `__rt_pr_finish`.",
+        "- `Bool` (flag absent or literal `false`): render to stdout and return `true`.",
+        "- `Mixed` (runtime flag): select the mode at runtime; see",
+        "`lower_print_r_runtime_flag`."
       ],
-      "runtime_helpers": [],
+      "runtime_helpers": [
+        "__rt_pr_finish"
+      ],
       "sig_arm": null,
       "sig_file": "src/builtins/io/print_r.rs",
       "sig_line": null
@@ -12563,9 +12574,16 @@
           "name": "value",
           "optional": false,
           "type": "mixed"
+        },
+        {
+          "by_ref": false,
+          "default": "false",
+          "name": "return",
+          "optional": true,
+          "type": "bool"
         }
       ],
-      "return_type": "void",
+      "return_type": "mixed",
       "variadic": null
     },
     "slug": "print_r",
@@ -18954,9 +18972,10 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/debug.rs",
       "codegen_function": "lower_var_dump",
-      "codegen_line": 35,
+      "codegen_line": 152,
       "notes": [
-        "Lowers `var_dump(value)` for concrete scalar/resource values and array/hash shells."
+        "Lowers `var_dump(value, ...values)` for concrete scalar/resource values and array/hash shells.",
+        "Each operand is dumped independently in source order, matching PHP's variadic var_dump."
       ],
       "runtime_helpers": [],
       "sig_arm": null,
@@ -18975,7 +18994,7 @@
         }
       ],
       "return_type": "void",
-      "variadic": null
+      "variadic": "values"
     },
     "slug": "var_dump",
     "sub_area": "Variable"
