@@ -68,7 +68,7 @@ pub struct Module {
     pub declared_class_names: Vec<String>,
     pub declared_interface_names: Vec<String>,
     pub declared_trait_names: Vec<String>,
-    pub declared_trait_source_lines: HashMap<String, usize>,
+    pub declared_trait_source_lines: HashMap<String, u32>,
     pub declared_trait_uses: HashMap<String, Vec<String>>,
     pub declared_trait_method_names: HashMap<String, Vec<String>>,
     pub declared_trait_methods: HashMap<String, HashMap<String, TraitMethodInfo>>,

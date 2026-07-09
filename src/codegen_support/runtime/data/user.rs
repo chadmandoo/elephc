@@ -57,7 +57,7 @@ pub(crate) fn emit_runtime_data_user(
     interface_names: &[String],
     trait_names: &[String],
     declared_trait_uses: &HashMap<String, Vec<String>>,
-    declared_trait_source_lines: &HashMap<String, usize>,
+    declared_trait_source_lines: &HashMap<String, u32>,
     classes: &HashMap<String, ClassInfo>,
     enums: &HashMap<String, EnumInfo>,
     allowed_class_names: Option<&HashSet<String>>,
@@ -1201,9 +1201,7 @@ fn eval_reflection_method_flags_with_source_lines(
     else {
         return flags;
     };
-    let Ok(start_line) = u64::try_from(method.span.line) else {
-        return flags;
-    };
+    let start_line = u64::from(method.span.line);
     if start_line == 0 || start_line > EVAL_REFLECTION_METHOD_SOURCE_LINE_MASK {
         return flags;
     }
@@ -1447,7 +1445,7 @@ fn emit_eval_reflection_class_lookup_data(
     out: &mut String,
     sorted_classes: &[(&String, &ClassInfo)],
     sorted_interfaces: &[(&String, &InterfaceInfo)],
-    declared_trait_source_lines: &HashMap<String, usize>,
+    declared_trait_source_lines: &HashMap<String, u32>,
 ) {
     let mut entries = Vec::new();
     let mut index = 0usize;
@@ -1530,15 +1528,13 @@ fn eval_reflection_interface_flags(interface_info: &InterfaceInfo) -> u64 {
 }
 
 /// Returns eval ReflectionClass source-location bits retained for one generated/AOT trait.
-fn eval_reflection_trait_flags(line: usize) -> u64 {
+fn eval_reflection_trait_flags(line: u32) -> u64 {
     eval_reflection_source_line_flags(line)
 }
 
 /// Encodes declaration line metadata into high ReflectionClass flag bits.
-fn eval_reflection_source_line_flags(line: usize) -> u64 {
-    let Ok(start_line) = u64::try_from(line) else {
-        return 0;
-    };
+fn eval_reflection_source_line_flags(line: u32) -> u64 {
+    let start_line = u64::from(line);
     if start_line == 0 || start_line > EVAL_REFLECTION_CLASS_SOURCE_LINE_MASK {
         return 0;
     }

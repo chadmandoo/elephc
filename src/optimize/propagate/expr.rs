@@ -331,7 +331,7 @@ pub(crate) fn propagate_expr(expr: Expr, env: &ConstantEnv) -> Expr {
             ExprKind::NullsafeDynamicMethodCall {
                 object: Box::new(object),
                 method: Box::new(method),
-                args: propagate_args(args, None),
+                args: propagate_args(args, None, None),
             }
         }
         ExprKind::StaticMethodCall {

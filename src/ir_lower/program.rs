@@ -1143,7 +1143,7 @@ fn collect_declared_trait_names(program: &Program) -> Vec<String> {
 }
 
 /// Collects source line metadata for user-declared traits, keyed by trait name.
-fn collect_declared_trait_source_lines(program: &Program) -> HashMap<String, usize> {
+fn collect_declared_trait_source_lines(program: &Program) -> HashMap<String, u32> {
     let mut lines = HashMap::new();
     for stmt in program {
         match &stmt.kind {
