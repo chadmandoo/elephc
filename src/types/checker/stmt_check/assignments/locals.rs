@@ -738,6 +738,29 @@ pub(super) fn check_list_unpack(
                 update_list_unpack_callable_metadata(checker, var, value, &unpack_ty);
             }
         }
+        // An associative-array RHS, or a union that carries an array-like member
+        // (a null-narrowed `?array` return leaves `Union[Array, Void]`; a Mixed
+        // union), is an array at runtime in well-typed code. Its elements bind as
+        // Mixed (adaptive access), the same trust posture PHP applies at runtime.
+        PhpType::AssocArray { .. } => {
+            for var in vars {
+                env.insert(var.clone(), PhpType::Mixed);
+                update_list_unpack_callable_metadata(checker, var, value, &PhpType::Mixed);
+            }
+        }
+        PhpType::Union(members)
+            if members.iter().any(|member| {
+                matches!(
+                    member.codegen_repr(),
+                    PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
+                )
+            }) =>
+        {
+            for var in vars {
+                env.insert(var.clone(), PhpType::Mixed);
+                update_list_unpack_callable_metadata(checker, var, value, &PhpType::Mixed);
+            }
+        }
         _ => {
             return Err(CompileError::new(
                 span,
