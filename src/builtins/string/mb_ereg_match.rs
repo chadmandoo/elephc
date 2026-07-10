@@ -44,8 +44,15 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
 
+    // Accept Str, Mixed, and Union types — PHP coerces the subject to a string
+    // (an array-key from array_keys() is int|string; a number becomes its decimal
+    // form). Mirrors strlen()'s acceptance; the runtime coerces the value at the
+    // call site.
     let subject_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
-    if subject_ty != PhpType::Str {
+    if !matches!(
+        subject_ty,
+        PhpType::Str | PhpType::Mixed | PhpType::Union(_) | PhpType::Int | PhpType::Float | PhpType::Bool
+    ) {
         return Err(CompileError::new(
             cx.args[1].span,
             "mb_ereg_match() subject argument must be string",
