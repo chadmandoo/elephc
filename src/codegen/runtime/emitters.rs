@@ -121,6 +121,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     system::emit_build_argv(emitter);
     system::emit_time(emitter);
     system::emit_getmypid(emitter);
+    system::emit_memory_get_usage(emitter);
+    system::emit_memory_get_peak_usage(emitter);
     system::emit_microtime(emitter);
     system::emit_microtime_build_into(emitter);
     system::emit_microtime_str(emitter);

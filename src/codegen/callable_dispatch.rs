@@ -616,6 +616,7 @@ fn runtime_builtin_wrapper_excluded(name: &str) -> bool {
             // _fn_strtr / _fn_random_bytes / _fn_assert / _fn_getmypid the linker cannot
             // satisfy. Direct EIR calls still work.
             | "strtr" | "random_bytes" | "assert" | "getmypid"
+            | "memory_get_usage" | "memory_get_peak_usage"
             // array_merge / array_merge_recursive have a registry sig of
             // variadic(&[], "arrays") — 0 regular params, 1 variadic.  The wrapper
             // body emitted by function_wrapper_body() is therefore
