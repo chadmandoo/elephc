@@ -3921,7 +3921,21 @@ fn reflection_parameter_members_with_declaring_function(
     let mut parameters = Vec::new();
     for (index, (name, ty)) in sig.params.iter().enumerate() {
         let is_variadic = sig.variadic.as_deref() == Some(name.as_str());
-        let has_type = sig.declared_params.get(index).copied().unwrap_or(false);
+        // `declared_params` doubles as the runtime invoker's boxed-ABI marker
+        // (see `eir_runtime_metadata_signature`), so untyped params widened to
+        // Mixed carry a true flag. The source type hint disambiguates: a
+        // parameter only hasType() when the source actually declared one.
+        let declared = sig.declared_params.get(index).copied().unwrap_or(false);
+        let has_type = if sig.param_type_exprs.len() == sig.params.len() {
+            declared
+                && sig
+                    .param_type_exprs
+                    .get(index)
+                    .and_then(Option::as_ref)
+                    .is_some()
+        } else {
+            declared
+        };
         let type_metadata = reflection_parameter_type_metadata(
             sig.param_type_exprs.get(index).and_then(Option::as_ref),
             ty,
