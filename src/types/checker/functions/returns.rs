@@ -48,22 +48,38 @@ impl Checker {
                 });
             }
             StmtKind::If {
+                condition,
                 then_body,
                 elseif_clauses,
                 else_body,
-                ..
             } => {
-                for s in then_body {
-                    self.collect_return_infos(s, env, returns);
-                }
-                for (_, body) in elseif_clauses {
-                    for s in body {
-                        self.collect_return_infos(s, env, returns);
+                // Mirror `check_stmt`'s flow narrowing (control_flow.rs): statement checking
+                // narrows each guarded clause body with a save/restore that never persists, so
+                // a `return $value;` inside `if ($value instanceof Message)` must re-apply the
+                // guard here or its ReturnInfo reports the un-narrowed type. Each clause body
+                // sees its guard's then-type; later clauses and the else see the accumulated
+                // complement.
+                let mut chain_env = env.clone();
+                let mut clauses: Vec<(&crate::parser::ast::Expr, &Vec<Stmt>)> =
+                    vec![(condition, then_body)];
+                clauses.extend(elseif_clauses.iter().map(|(c, b)| (c, b)));
+                for (cond, body) in clauses {
+                    if let Ok(Some(guard)) = self.guard_narrowing(cond, &chain_env) {
+                        let mut body_env = chain_env.clone();
+                        body_env.insert(guard.var.clone(), guard.then_ty);
+                        for s in body {
+                            self.collect_return_infos(s, &body_env, returns);
+                        }
+                        chain_env.insert(guard.var, guard.else_ty);
+                    } else {
+                        for s in body {
+                            self.collect_return_infos(s, &chain_env, returns);
+                        }
                     }
                 }
                 if let Some(body) = else_body {
                     for s in body {
-                        self.collect_return_infos(s, env, returns);
+                        self.collect_return_infos(s, &chain_env, returns);
                     }
                 }
             }

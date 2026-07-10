@@ -32,6 +32,15 @@ impl Checker {
             .classes
             .keys()
             .filter(|name| self.class_is_same_or_descends_from(name, base_class))
+            // A late-bound `new static()` can only ever instantiate a CONCRETE class at
+            // runtime (PHP throws if `static` resolves to an abstract one), so abstract
+            // candidates — including an abstract base declaring the `new static()` itself —
+            // are not constructor targets to validate.
+            .filter(|name| {
+                self.classes
+                    .get(*name)
+                    .is_none_or(|info| !info.is_abstract)
+            })
             .cloned()
             .collect();
         class_names.sort();

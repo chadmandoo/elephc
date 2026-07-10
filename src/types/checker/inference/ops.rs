@@ -112,11 +112,15 @@ impl Checker {
                 Ok(PhpType::Bool)
             }
             BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq => {
-                let numeric_ok =
-                    is_numeric_operand_type(self, &lt) && is_numeric_operand_type(self, &rt);
+                // PHP relational comparison accepts any scalar operands: numbers
+                // compare numerically, strings lexicographically (numeric strings
+                // numerically), Mixed/Union coerce at runtime. DateTime objects
+                // compare by instant.
+                let scalar_ok = (is_numeric_operand_type(self, &lt) || matches!(lt, PhpType::Str | PhpType::Union(_)))
+                    && (is_numeric_operand_type(self, &rt) || matches!(rt, PhpType::Str | PhpType::Union(_)));
                 let datetime_ok =
                     is_datetime_family_object(&lt) && is_datetime_family_object(&rt);
-                if !numeric_ok && !datetime_ok {
+                if !scalar_ok && !datetime_ok {
                     return Err(CompileError::new(
                         expr.span,
                         "Comparison operators require numeric operands",
@@ -142,11 +146,13 @@ impl Checker {
                 Ok(PhpType::Int)
             }
             BinOp::Spaceship => {
-                let numeric_ok =
-                    is_numeric_operand_type(self, &lt) && is_numeric_operand_type(self, &rt);
+                // `<=>` orders any scalar operands (strings lexicographically), the
+                // same rule as the relational operators above; DateTime by instant.
+                let scalar_ok = (is_numeric_operand_type(self, &lt) || matches!(lt, PhpType::Str | PhpType::Union(_)))
+                    && (is_numeric_operand_type(self, &rt) || matches!(rt, PhpType::Str | PhpType::Union(_)));
                 let datetime_ok =
                     is_datetime_family_object(&lt) && is_datetime_family_object(&rt);
-                if !numeric_ok && !datetime_ok {
+                if !scalar_ok && !datetime_ok {
                     return Err(CompileError::new(
                         expr.span,
                         "Spaceship operator requires numeric operands",
