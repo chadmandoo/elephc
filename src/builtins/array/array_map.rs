@@ -48,19 +48,34 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let arr_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
     match arr_ty {
         PhpType::Array(elem_ty) => {
-            let arr_ty = PhpType::Array(elem_ty.clone());
-            let dummy_args = vec![
-                crate::types::checker::builtins::dummy_arg_for_array_scalar_elem(
-                    &arr_ty, cx.span,
-                ),
-            ];
+            // Build the dummy callback argument from the element type. Object elements
+            // have no literal form, so `comparator_dummy_arg_for_elem` returns a synthetic
+            // variable plus an `(name, type)` binding the caller must insert into the
+            // validation env — the same object-aware path usort/uasort use, so a typed
+            // callback (`fn (FieldDescriptor $f) => ...`) is checked against the real
+            // element type instead of a fabricated Int (EC-28b #519).
+            let (dummy_arg, elem_binding) =
+                crate::types::checker::builtins::comparator_dummy_arg_for_elem(
+                    elem_ty.as_ref(),
+                    cx.span,
+                );
+            let dummy_args = vec![dummy_arg];
+            let mut env_with_elem;
+            let cb_env: &crate::types::TypeEnv = match &elem_binding {
+                Some((binding_name, binding_ty)) => {
+                    env_with_elem = cx.env.clone();
+                    env_with_elem.insert(binding_name.clone(), binding_ty.clone());
+                    &env_with_elem
+                }
+                None => cx.env,
+            };
             let callback_ret_ty =
                 crate::types::checker::builtins::check_callback_builtin_call(
                     cx.checker,
                     &cx.args[0],
                     &dummy_args,
                     cx.span,
-                    cx.env,
+                    cb_env,
                     "array_map() callback",
                 )?;
             let result_elem_ty = if callback_ret_ty == PhpType::Mixed {

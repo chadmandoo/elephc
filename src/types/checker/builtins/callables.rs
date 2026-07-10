@@ -168,7 +168,13 @@ pub(crate) fn comparator_dummy_arg_for_elem(
         PhpType::Bool | PhpType::False => {
             (Expr::new(ExprKind::BoolLiteral(false), span), None)
         }
-        PhpType::Object(_) => (
+        // Object and Mixed elements have no scalar literal form. Bind a reserved synthetic
+        // variable to the real element type so a typed callback parameter (`FieldDescriptor
+        // $f`) validates against it rather than a fabricated Int. A bare `array` (its element
+        // infers as Mixed, phpdoc generics not being enforced on the PHP `array` type) accepts
+        // any declared parameter type at the runtime-enforced boundary — the same trust posture
+        // as the `mixed`→narrower type-compat relaxation.
+        PhpType::Object(_) | PhpType::Mixed => (
             Expr::new(ExprKind::Variable(COMPARATOR_ELEM_PLACEHOLDER.to_string()), span),
             Some((COMPARATOR_ELEM_PLACEHOLDER.to_string(), elem_ty.clone())),
         ),

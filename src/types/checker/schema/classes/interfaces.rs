@@ -362,7 +362,28 @@ fn validate_interface_method(
             )?;
         }
     }
+    // Covariant self-return: PHP accepts an implementation returning a NARROWER type than the
+    // interface declares. The common shape — `withX(): static`/`self`/the class itself against
+    // an interface-typed return (PSR-7's immutability methods) — cannot go through
+    // `type_accepts`, because the class under validation is not registered in
+    // `checker.classes` yet (its interface list is invisible mid-construction). Accept it from
+    // the facts at hand: this function IS the proof that `class` implements `interface_name`,
+    // so a self-typed return conforms when the declared return is that interface (or one it
+    // extends), or any interface the class itself declares (or one those extend).
+    let self_return_conforms = match (&required_sig.return_type, &actual_sig.return_type) {
+        (PhpType::Object(expected_name), PhpType::Object(actual_name)) => {
+            actual_name == &class.name
+                && (expected_name == interface_name
+                    || checker.interface_extends_interface(interface_name, expected_name)
+                    || class.implements.iter().any(|declared| {
+                        declared == expected_name
+                            || checker.interface_extends_interface(declared, expected_name)
+                    }))
+        }
+        _ => false,
+    };
     if required_sig.declared_return
+        && !self_return_conforms
         && !declared_return_type_compatible(
             checker,
             &required_sig.return_type,

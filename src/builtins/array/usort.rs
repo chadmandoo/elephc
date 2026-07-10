@@ -44,7 +44,11 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let arr_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
     let cmp_ty = crate::types::checker::builtins::array_element_type(&arr_ty);
     let label = format!("{}() callback", cx.name);
-    if let PhpType::Object(_) = cmp_ty {
+    // Object AND Mixed elements route through the typed-hint / synthetic-binding path: a bare
+    // `array` yields a Mixed element (phpdoc generics are not enforced on the PHP `array` type),
+    // and a typed comparator (`fn (FieldDescriptor $a, FieldDescriptor $b)`) must validate against
+    // the real element type rather than a fabricated Int — Mixed accepts any declared parameter.
+    if let PhpType::Object(_) | PhpType::Mixed = cmp_ty {
         if let ExprKind::Closure {
             params,
             variadic,
