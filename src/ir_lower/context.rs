@@ -149,6 +149,7 @@ pub(crate) struct LoweringContext<'m, 'f> {
     closure_counter: usize,
     hidden_temp_counter: usize,
     eval_barrier_active: bool,
+    eval_executed: bool,
     eval_scope_read_param: Option<String>,
     eval_scope_read_names: HashSet<String>,
     eval_scope_write_names: HashSet<String>,
@@ -225,6 +226,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             closure_counter: 0,
             hidden_temp_counter: 0,
             eval_barrier_active: false,
+            eval_executed: false,
             eval_scope_read_param: None,
             eval_scope_read_names: HashSet::new(),
             eval_scope_write_names: HashSet::new(),
@@ -612,6 +614,19 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     /// Returns true after this function has lowered an `eval()` call.
     pub(crate) const fn has_eval_barrier(&self) -> bool {
         self.eval_barrier_active
+    }
+
+    /// Records that an `eval()` call was lowered, even when its fragment
+    /// compiled through a barrier-free AOT path.
+    pub(crate) fn mark_eval_executed(&mut self) {
+        self.eval_executed = true;
+    }
+
+    /// Returns true when any `eval()` call was lowered in this function.
+    /// Unlike `has_eval_barrier`, this also covers barrier-free AOT evals:
+    /// dynamic constant probes must consult the eval registry either way.
+    pub(crate) const fn eval_executed(&self) -> bool {
+        self.eval_executed
     }
 
     /// Declares a hidden owner slot for a promoted local ref-cell pointer.

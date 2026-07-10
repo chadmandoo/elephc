@@ -1939,6 +1939,7 @@ fn emit_builtin_call_value(
         None => true,
     };
     if php_symbol_key(name.trim_start_matches('\\')) == "eval" {
+        ctx.mark_eval_executed();
         if eval_needs_barrier {
             ctx.apply_eval_barrier();
         } else if eval_literal

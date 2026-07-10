@@ -48,7 +48,10 @@ pub(super) fn lower_static_defined_call(
         return None;
     };
     let exists = ctx.constant_value(constant_name).is_some();
-    if !exists && ctx.has_eval_barrier() {
+    if !exists && (ctx.has_eval_barrier() || ctx.eval_executed()) {
+        // Barrier-free AOT evals can still define constants dynamically; the
+        // probe needs the eval context, so make sure its slot exists.
+        ctx.declare_eval_context_local();
         let data = ctx.intern_global_name(constant_name);
         return Some(ctx.emit_value(
             Op::EvalConstantExists,
@@ -77,7 +80,10 @@ pub(super) fn lower_const_ref(
     if let Some((value, php_type)) = ctx.constant_value(name.as_str()) {
         return lower_constant_value(ctx, value, php_type, expr);
     }
-    if ctx.has_eval_barrier() {
+    if ctx.has_eval_barrier() || ctx.eval_executed() {
+        // Barrier-free AOT evals can still define constants dynamically; the
+        // fetch needs the eval context, so make sure its slot exists.
+        ctx.declare_eval_context_local();
         let data = ctx.intern_global_name(name.as_str());
         return ctx.emit_value(
             Op::EvalConstantFetch,
