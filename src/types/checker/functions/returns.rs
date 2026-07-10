@@ -355,6 +355,17 @@ impl Checker {
         // enclosing class. Resolve the actual type's self/static to the current class so the
         // two agree (PHP: `self` at a return boundary IS the enclosing class).
         let actual = self.resolve_self_static_object(actual);
+        // A `static`-declared wither called on `$this` (`return $this->with(...)`) has its
+        // return widened by the checker to the DEFINING class — a strict ancestor of the
+        // receiver — because the callee's `static` resolves to where it is declared, not the
+        // late-bound runtime class. When the declared return (the receiver's own `static`,
+        // resolved to this class) is a subclass of that widened actual, the runtime value IS
+        // the declared subtype, so accept it (ward-forms Field::with()/accept() chains).
+        if let (PhpType::Object(exp), PhpType::Object(act)) = (expected, &actual) {
+            if self.is_subclass_of(exp, act) {
+                return Ok(());
+            }
+        }
         self.require_compatible_arg_type(expected, &actual, span, context)
     }
 

@@ -46,6 +46,7 @@ struct TraitDeclInfo {
     trait_uses: Vec<TraitUse>,
     properties: Vec<ClassProperty>,
     methods: Vec<ClassMethod>,
+    constants: Vec<ClassConst>,
     span: Span,
 }
 
@@ -56,6 +57,7 @@ struct TraitDeclInfo {
 struct ExpandedTrait {
     properties: Vec<ClassProperty>,
     methods: Vec<ClassMethod>,
+    constants: Vec<ClassConst>,
 }
 
 #[derive(Clone)]
@@ -88,7 +90,7 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
                 trait_uses,
                 properties,
                 methods,
-                constants: _,
+                constants,
             } => {
                 let trait_key = php_symbol_key(name);
                 if class_like_keys.contains(&trait_key) || !trait_keys.insert(trait_key) {
@@ -104,6 +106,7 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
                         trait_uses: trait_uses.clone(),
                         properties: properties.clone(),
                         methods: methods.clone(),
+                        constants: constants.clone(),
                         span: stmt.span,
                     },
                 );
@@ -146,7 +149,8 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
                 errors.extend(error.flatten());
                 continue;
             }
-            let (imported_props, imported_methods) = match expand::resolve_trait_uses(
+            let (imported_props, imported_methods, imported_constants) =
+                match expand::resolve_trait_uses(
                 trait_uses,
                 &trait_map,
                 &mut cache,
@@ -201,7 +205,19 @@ pub fn flatten_classes(program: &Program) -> (Vec<FlattenedClass>, Vec<CompileEr
                 properties: merged_props,
                 methods: merged_methods,
                 attributes: stmt.attributes.clone(),
-                constants: constants.clone(),
+                // PHP 8.2 trait constants flatten into the using class; a class-declared
+                // constant of the same name wins (PHP requires the redefinition to be
+                // compatible, which strict-typed code satisfies).
+                constants: {
+                    let mut merged: Vec<ClassConst> = imported_constants
+                        .into_iter()
+                        .filter(|imported| {
+                            !constants.iter().any(|own| own.name == imported.name)
+                        })
+                        .collect();
+                    merged.extend(constants.clone());
+                    merged
+                },
                 used_traits: trait_uses
                     .iter()
                     .flat_map(|use_decl| {
