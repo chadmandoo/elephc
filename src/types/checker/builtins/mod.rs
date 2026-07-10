@@ -84,9 +84,13 @@ impl Checker {
         };
 
         if name == "eval" {
-            if let Some(arg) = args.first() {
-                self.infer_type(arg, env)?;
+            // eval is not registry-backed, and argument normalization tolerates
+            // zero-arg calls (trailing defaults are trimmed), so arity must be
+            // enforced here before the fast-path return.
+            if args.len() != 1 {
+                return Err(CompileError::new(span, "eval() takes exactly 1 argument"));
             }
+            self.infer_type(&args[0], env)?;
             return Ok(Some(PhpType::Mixed));
         }
 
