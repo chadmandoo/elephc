@@ -24,6 +24,7 @@ pub(crate) mod fibers;
 pub(crate) mod date_constants;
 /// `ENT_*` HTML-escaping flag constants shared by checker and codegen.
 pub(crate) mod ent_constants;
+pub(crate) mod filter_constants;
 /// C FFI type mapping utilities.
 mod ffi;
 /// JSON literal constant type inference.

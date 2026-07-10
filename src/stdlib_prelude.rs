@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use crate::parser::ast::{Program, StmtKind};
 
 /// The function names whose presence in a program triggers prelude injection.
-const STDLIB_PRELUDE_NAMES: [&str; 9] = [
+const STDLIB_PRELUDE_NAMES: [&str; 14] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -31,6 +31,11 @@ const STDLIB_PRELUDE_NAMES: [&str; 9] = [
     "array_count_values",
     "array_last",
     "http_build_query",
+    "get_debug_type",
+    "filter_var",
+    "set_error_handler",
+    "restore_error_handler",
+    "parse_url",
 ];
 
 /// The elephc-PHP source for the injected functions. `__elephc_mb_byte_index` is the shared
@@ -158,6 +163,122 @@ function http_build_query(mixed $data): string {
         $parts[] = urlencode((string) $key) . '=' . urlencode($rendered);
     }
     return implode('&', $parts);
+}
+function get_debug_type(mixed $value): string {
+    if (is_object($value)) {
+        return get_class($value);
+    }
+    if ($value === null) {
+        return 'null';
+    }
+    if (is_bool($value)) {
+        return 'bool';
+    }
+    if (is_int($value)) {
+        return 'int';
+    }
+    if (is_float($value)) {
+        return 'float';
+    }
+    if (is_string($value)) {
+        return 'string';
+    }
+    if (is_array($value)) {
+        return 'array';
+    }
+    return 'unknown';
+}
+function filter_var(mixed $value, int $filter = 516, mixed $options = null): mixed {
+    $s = (string) $value;
+    if ($filter === 274) {
+        if (preg_match('/^[^@\s"\'\\\\]+@([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$/', $s) === 1) {
+            return $s;
+        }
+        return false;
+    }
+    if ($filter === 273) {
+        if (preg_match('/^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s\/?#]+[^\s]*$/', $s) === 1) {
+            return $s;
+        }
+        return false;
+    }
+    if ($filter === 516) {
+        return $s;
+    }
+    return false;
+}
+function set_error_handler(mixed $callback, int $error_levels = 32767): mixed {
+    return null;
+}
+function restore_error_handler(): bool {
+    return true;
+}
+function parse_url(string $url, int $component = -1): mixed {
+    $scheme = '';
+    $afterScheme = $url;
+    $colon = strpos($url, ':');
+    $slash = strpos($url, '/');
+    if ($colon !== false && ($slash === false || $colon < $slash)) {
+        $scheme = substr($url, 0, $colon);
+        $afterScheme = substr($url, $colon + 1);
+    }
+    $fragment = '';
+    $beforeFragment = $afterScheme;
+    $hashAt = strpos($afterScheme, '#');
+    if ($hashAt !== false) {
+        $fragment = substr($afterScheme, $hashAt + 1);
+        $beforeFragment = substr($afterScheme, 0, $hashAt);
+    }
+    $query = '';
+    $beforeQuery = $beforeFragment;
+    $questionAt = strpos($beforeFragment, '?');
+    if ($questionAt !== false) {
+        $query = substr($beforeFragment, $questionAt + 1);
+        $beforeQuery = substr($beforeFragment, 0, $questionAt);
+    }
+    $host = '';
+    $port = '';
+    $path = $beforeQuery;
+    if (str_starts_with($beforeQuery, '//')) {
+        $fullAuthority = substr($beforeQuery, 2);
+        $path = '';
+        $authority = $fullAuthority;
+        $pathAt = strpos($fullAuthority, '/');
+        if ($pathAt !== false) {
+            $path = substr($fullAuthority, $pathAt);
+            $authority = substr($fullAuthority, 0, $pathAt);
+        }
+        $hostWithPort = $authority;
+        $at = strrpos($authority, '@');
+        if ($at !== false) {
+            $hostWithPort = substr($authority, $at + 1);
+        }
+        $host = $hostWithPort;
+        $portColon = strrpos($hostWithPort, ':');
+        if ($portColon !== false) {
+            $port = substr($hostWithPort, $portColon + 1);
+            $host = substr($hostWithPort, 0, $portColon);
+        }
+    }
+    if ($component === 0) {
+        return $scheme !== '' ? $scheme : null;
+    }
+    if ($component === 1) {
+        return $host !== '' ? $host : null;
+    }
+    if ($component === 2) {
+        return $port !== '' ? (int) $port : null;
+    }
+    if ($component === 5) {
+        return $path !== '' ? $path : null;
+    }
+    if ($component === 6) {
+        return $query !== '' ? $query : null;
+    }
+    if ($component === 7) {
+        return $fragment !== '' ? $fragment : null;
+    }
+    return false;
 }
 "#;
 
