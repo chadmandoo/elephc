@@ -890,6 +890,17 @@ fn emit_mixed_array_get_deref_invoker_ref_cell(
     let ref_label = ctx.next_label("array_get_mixed_ref_cell");
     let done_label = ctx.next_label("array_get_mixed_done");
     let tag_reg = abi::secondary_scratch_reg(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter
+                .instruction(&format!("cbz {}, {}", mixed_reg, done_label)); // null gap cells read as PHP null and carry no tag word to inspect
+        }
+        Arch::X86_64 => {
+            ctx.emitter
+                .instruction(&format!("test {}, {}", mixed_reg, mixed_reg)); // null gap cells read as PHP null and carry no tag word to inspect
+            ctx.emitter.instruction(&format!("jz {}", done_label)); // skip marker detection for null gap cells
+        }
+    }
     abi::emit_load_from_address(ctx.emitter, tag_reg, mixed_reg, 0);
     emit_branch_if_invoker_ref_cell_tag(ctx, tag_reg, &ref_label);
     abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Mixed);
