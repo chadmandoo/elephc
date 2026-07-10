@@ -42,6 +42,29 @@ fn test_declare_block_runs_body() {
     assert_eq!(out, "ok");
 }
 
+/// Verifies PHP's alternative declare syntax compiles and executes its body.
+#[test]
+fn test_declare_alternative_syntax_runs_body() {
+    let out = compile_and_run("<?php declare(ticks=1): echo \"alternative\"; enddeclare;");
+    assert_eq!(out, "alternative");
+}
+
+/// Verifies PHP's single-statement declare form compiles and executes that statement.
+#[test]
+fn test_declare_single_statement_runs_body() {
+    let out = compile_and_run("<?php declare(ticks=1) echo \"single\";");
+    assert_eq!(out, "single");
+}
+
+/// Verifies empty and nested declare bodies preserve normal enclosing-scope execution.
+#[test]
+fn test_declare_empty_and_nested_bodies() {
+    let out = compile_and_run(
+        "<?php declare(ticks=1) {} declare(ticks=1): declare(ticks=1) echo \"nested\"; enddeclare;",
+    );
+    assert_eq!(out, "nested");
+}
+
 // --- IIFE (Immediately Invoked Function Expression) ---
 
 /// Compiles an IIFE that returns a string literal and verifies the value is echoed correctly.

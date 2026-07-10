@@ -87,6 +87,7 @@ pub enum Token {
     Const,          // const
     Global,         // global
     Declare,        // declare (strict_types/ticks/encoding directive)
+    EndDeclare,     // enddeclare (alternative declare block terminator)
     Static,         // static
     Self_,          // self
     Trait,          // trait

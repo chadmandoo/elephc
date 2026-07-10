@@ -398,6 +398,15 @@ fn test_declare_keyword() {
     );
 }
 
+/// Verifies the alternative `declare` syntax recognizes `enddeclare` as its closing keyword.
+#[test]
+fn test_enddeclare_keyword() {
+    let t = tokens("<?php declare(ticks=1): echo 1; enddeclare;");
+    assert!(t.contains(&Token::Declare));
+    assert!(t.contains(&Token::Colon));
+    assert!(t.contains(&Token::EndDeclare));
+}
+
 // --- Reference parameter ---
 
 /// Verifies `extern` compiler extension keyword tokenizes alongside `function`.
