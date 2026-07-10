@@ -46,7 +46,11 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let ty1 = cx.checker.infer_type(&cx.args[0], cx.env)?;
     let ty2 = cx.checker.infer_type(&cx.args[1], cx.env)?;
-    if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. }) {
+    // A Mixed first argument (e.g. an indexed read `$this->headers[$k]` on an `array`-hinted
+    // property, or any value the checker knows only as Mixed) is coerced/enforced at runtime,
+    // the same trust posture as the Mixed→narrower type-compat boundary. Its merged result is
+    // Mixed. A statically non-array, non-Mixed first argument is still rejected.
+    if !matches!(ty1, PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed) {
         return Err(CompileError::new(
             cx.span,
             "array_merge() first argument must be array",

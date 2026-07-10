@@ -65,7 +65,16 @@ impl Checker {
                 let arr_ty = self.infer_type_with_assignment_effects(array, env)?;
                 if let PhpType::Array(elem_ty) = &arr_ty {
                     if let Some(k) = key_var {
-                        env.insert(k.clone(), PhpType::Int);
+                        // A genuinely packed array has int keys; an UNKNOWN-element array (an
+                        // `array`-hinted param/property, elements known only to phpdoc) may be
+                        // associative at runtime, so its keys are Mixed (ward-http's
+                        // `foreach ($headers as $name => $values)` with string keys).
+                        let key_ty = if matches!(elem_ty.as_ref(), PhpType::Mixed) {
+                            PhpType::Mixed
+                        } else {
+                            PhpType::Int
+                        };
+                        env.insert(k.clone(), key_ty);
                         self.clear_foreach_callable_metadata(k);
                     }
                     let value_ty = *elem_ty.clone();
