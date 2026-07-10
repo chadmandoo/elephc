@@ -618,6 +618,15 @@ pub(super) fn parse_named_expr(
     span: Span,
 ) -> Result<Expr, CompileError> {
     let name = parse_name(tokens, pos, span, "Expected name")?;
+    // PHP's legacy `array(...)` construct is an array literal, not a call:
+    // its elements may use `key => value` pairs that call arguments reject.
+    if name.parts.len() == 1
+        && name.parts[0].eq_ignore_ascii_case("array")
+        && *pos < tokens.len()
+        && tokens[*pos].0 == Token::LParen
+    {
+        return super::prefix::parse_legacy_array_literal(tokens, pos, span);
+    }
     if name.parts.len() == 1
         && name.parts[0] == "buffer_new"
         && *pos < tokens.len()

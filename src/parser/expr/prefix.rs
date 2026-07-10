@@ -462,13 +462,33 @@ fn parse_array_literal(
     pos: &mut usize,
     span: Span,
 ) -> Result<Expr, CompileError> {
+    parse_array_literal_with_terminator(tokens, pos, span, &Token::RBracket, "']'")
+}
+
+/// Parses the legacy `array(...)` literal form after its opening parenthesis.
+pub(super) fn parse_legacy_array_literal(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    span: Span,
+) -> Result<Expr, CompileError> {
+    parse_array_literal_with_terminator(tokens, pos, span, &Token::RParen, "')'")
+}
+
+/// Parses an array literal body up to `closing`, starting at the opening token.
+fn parse_array_literal_with_terminator(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    span: Span,
+    closing: &Token,
+    closing_desc: &str,
+) -> Result<Expr, CompileError> {
     *pos += 1;
     let mut elems = Vec::new();
     let mut assoc_elems = Vec::new();
     let mut is_assoc = false;
     let mut first = true;
     let mut next_auto_key = 0i64;
-    while *pos < tokens.len() && tokens[*pos].0 != Token::RBracket {
+    while *pos < tokens.len() && tokens[*pos].0 != *closing {
         if !first {
             if tokens[*pos].0 != Token::Comma {
                 return Err(CompileError::new(
@@ -477,7 +497,7 @@ fn parse_array_literal(
                 ));
             }
             *pos += 1;
-            if *pos < tokens.len() && tokens[*pos].0 == Token::RBracket {
+            if *pos < tokens.len() && tokens[*pos].0 == *closing {
                 break;
             }
         }
@@ -511,8 +531,11 @@ fn parse_array_literal(
         }
         first = false;
     }
-    if *pos >= tokens.len() || tokens[*pos].0 != Token::RBracket {
-        return Err(CompileError::new(span, "Expected ']'"));
+    if *pos >= tokens.len() || tokens[*pos].0 != *closing {
+        return Err(CompileError::new(
+            span,
+            &format!("Expected {closing_desc}"),
+        ));
     }
     *pos += 1;
     if is_assoc {
