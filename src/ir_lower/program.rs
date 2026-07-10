@@ -350,8 +350,10 @@ fn include_lowered_runtime_features(module: &mut Module) {
 fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
     let mut features = RuntimeFeatures::none();
     for function in all_lowered_functions(module) {
-        if function_contains_eval_state(function) {
+        if function_contains_eval_scope_state(function) {
             features.eval_scope = true;
+        }
+        if function_contains_eval_context_state(function) {
             features.eval_bridge = true;
         }
         for (inst_index, inst) in function.instructions.iter().enumerate() {
@@ -397,14 +399,25 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
     features
 }
 
-/// Returns true when a lowered function owns hidden eval scope/context state.
-fn function_contains_eval_state(function: &Function) -> bool {
+/// Returns true when a lowered function owns hidden eval scope handle slots.
+/// Scope-only functions use the native scope helpers and must not force the
+/// magician bridge staticlib into the link.
+fn function_contains_eval_scope_state(function: &Function) -> bool {
     function.locals.iter().any(|local| {
         matches!(
             local.kind,
-            LocalKind::EvalContext | LocalKind::EvalScope | LocalKind::EvalGlobalScope
+            LocalKind::EvalScope | LocalKind::EvalGlobalScope
         )
     })
+}
+
+/// Returns true when a lowered function owns an interpreter context handle,
+/// which requires the full magician eval bridge runtime.
+fn function_contains_eval_context_state(function: &Function) -> bool {
+    function
+        .locals
+        .iter()
+        .any(|local| matches!(local.kind, LocalKind::EvalContext))
 }
 
 /// Returns true when a literal eval call still needs the magician bridge runtime.

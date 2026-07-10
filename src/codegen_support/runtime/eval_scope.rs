@@ -31,13 +31,13 @@ pub(crate) fn emit_eval_scope_runtime(emitter: &mut Emitter) {
     }
 }
 
-/// Emits ARM64 eval-scope helpers.
+/// Emits ARM64 eval-scope helpers. `__elephc_eval_value_null` comes from the
+/// eval bridge value wrappers, which scope-only programs also emit.
 fn emit_aarch64_eval_scope_runtime(emitter: &mut Emitter) {
     emit_aarch64_eval_scope_new(emitter);
     emit_aarch64_eval_scope_free(emitter);
     emit_aarch64_eval_scope_set(emitter);
     emit_aarch64_eval_scope_get(emitter);
-    emit_aarch64_eval_value_null(emitter);
 }
 
 /// Emits the ARM64 scope allocator.
@@ -221,22 +221,13 @@ fn emit_aarch64_eval_scope_get(emitter: &mut Emitter) {
     emitter.instruction("ret"); // return the fatal eval status
 }
 
-/// Emits the ARM64 helper used by missing Mixed reload fallbacks.
-fn emit_aarch64_eval_value_null(emitter: &mut Emitter) {
-    label_c_global(emitter, "__elephc_eval_value_null");
-    emitter.instruction("mov x0, #8"); // runtime tag 8 represents PHP null
-    emitter.instruction("mov x1, xzr"); // null has no low payload word
-    emitter.instruction("mov x2, xzr"); // null has no high payload word
-    emitter.instruction("b __rt_mixed_from_value"); // box null in a Mixed cell for eval-scope reloads
-}
-
-/// Emits x86_64 eval-scope helpers.
+/// Emits x86_64 eval-scope helpers. `__elephc_eval_value_null` comes from the
+/// eval bridge value wrappers, which scope-only programs also emit.
 fn emit_x86_64_eval_scope_runtime(emitter: &mut Emitter) {
     emit_x86_64_eval_scope_new(emitter);
     emit_x86_64_eval_scope_free(emitter);
     emit_x86_64_eval_scope_set(emitter);
     emit_x86_64_eval_scope_get(emitter);
-    emit_x86_64_eval_value_null(emitter);
 }
 
 /// Emits the x86_64 scope allocator.
@@ -434,15 +425,6 @@ fn emit_x86_64_eval_scope_get(emitter: &mut Emitter) {
     emitter.label("__elephc_eval_scope_get_fatal");
     emitter.instruction(&format!("mov eax, {}", EVAL_STATUS_RUNTIME_FATAL)); // report invalid scope/name inputs
     emitter.instruction("ret"); // return the fatal eval status
-}
-
-/// Emits the x86_64 helper used by missing Mixed reload fallbacks.
-fn emit_x86_64_eval_value_null(emitter: &mut Emitter) {
-    label_c_global(emitter, "__elephc_eval_value_null");
-    emitter.instruction("mov rax, 8"); // runtime tag 8 represents PHP null
-    emitter.instruction("xor rdi, rdi"); // null has no low payload word
-    emitter.instruction("xor rsi, rsi"); // null has no high payload word
-    emitter.instruction("jmp __rt_mixed_from_value"); // box null in a Mixed cell for eval-scope reloads
 }
 
 /// Emits a global label with platform C-symbol mangling.

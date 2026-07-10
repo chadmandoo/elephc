@@ -593,6 +593,9 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     pub(crate) fn apply_eval_scope_barrier(&mut self) {
         self.eval_barrier_active = true;
         self.declare_eval_scope_local();
+        // Scope-sync codegen paths flush program globals into the local scope,
+        // so the global-scope handle slot must exist alongside the scope slot.
+        self.declare_eval_global_scope_local();
     }
 
     /// Ensures top-level eval fragments can see `$argc` and `$argv` by name.

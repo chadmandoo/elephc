@@ -1401,9 +1401,49 @@ fn parse_eval_local_scalar_expr_stmt(
             ))
         }
         _ => {
-            let _ = eval_local_scalar_value_expr(expr, analysis, assigned)?;
+            let parsed = eval_local_scalar_value_expr(expr, analysis, assigned)?;
+            // A bare expression statement lowers to Noop, discarding the value.
+            // Calls and prints inside it would lose their side effects (e.g. a
+            // dropped `define(...)`), so those fragments must fall back to the
+            // bridge instead of the local scalar AOT subset.
+            if eval_local_scalar_expr_has_side_effects(&parsed) {
+                return None;
+            }
             Some((EvalLocalScalarStmt::Noop, false))
         }
+    }
+}
+
+/// Returns true when a parsed local-scalar expression carries side effects
+/// that a discarded expression statement would lose.
+fn eval_local_scalar_expr_has_side_effects(expr: &EvalLocalScalarExpr) -> bool {
+    match &expr.kind {
+        EvalLocalScalarExprKind::Null
+        | EvalLocalScalarExprKind::Int(_)
+        | EvalLocalScalarExprKind::Float(_)
+        | EvalLocalScalarExprKind::Bool(_)
+        | EvalLocalScalarExprKind::String(_)
+        | EvalLocalScalarExprKind::LoadVar(_)
+        | EvalLocalScalarExprKind::Isset(_)
+        | EvalLocalScalarExprKind::EmptyVar(_) => false,
+        EvalLocalScalarExprKind::Negate(inner)
+        | EvalLocalScalarExprKind::BitNot(inner)
+        | EvalLocalScalarExprKind::Not(inner) => eval_local_scalar_expr_has_side_effects(inner),
+        EvalLocalScalarExprKind::Print(_) => true,
+        EvalLocalScalarExprKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            eval_local_scalar_expr_has_side_effects(condition)
+                || eval_local_scalar_expr_has_side_effects(then_expr)
+                || eval_local_scalar_expr_has_side_effects(else_expr)
+        }
+        EvalLocalScalarExprKind::Binary { left, right, .. } => {
+            eval_local_scalar_expr_has_side_effects(left)
+                || eval_local_scalar_expr_has_side_effects(right)
+        }
+        EvalLocalScalarExprKind::StaticFunctionCall { .. } => true,
     }
 }
 
@@ -10158,6 +10198,7 @@ fn push_eval_process_superglobal(globals: &mut Vec<EvalSyncGlobal>, name: &str, 
 
 /// Returns one unambiguous codegen type used for a program global, if available.
 fn eval_sync_global_type(ctx: &FunctionContext<'_>, name: &str) -> Option<PhpType> {
+    let is_superglobal = crate::superglobals::is_superglobal(name);
     let mut inferred = None;
     for function in ctx
         .module
@@ -10168,6 +10209,19 @@ fn eval_sync_global_type(ctx: &FunctionContext<'_>, name: &str) -> Option<PhpTyp
         for inst in &function.instructions {
             if global_instruction_name(ctx, inst) != Some(name) {
                 continue;
+            }
+            // Only real global storage instructions make a name a program
+            // global; eval scope ops reference names through the same data
+            // pool without any global storage behind them.
+            if !matches!(inst.op, Op::LoadGlobal | Op::StoreGlobal) {
+                continue;
+            }
+            if !is_superglobal {
+                // Regular globals always hold one boxed Mixed word (see
+                // `lower_store_global`); store operands carry narrower source
+                // types, so per-instruction inference would reject globals
+                // written as scalars and read back as Mixed after a barrier.
+                return Some(PhpType::Mixed);
             }
             let candidate = global_instruction_value_type(function, inst)?;
             let candidate = candidate.codegen_repr();

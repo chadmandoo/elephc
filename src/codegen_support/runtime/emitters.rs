@@ -325,6 +325,11 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     if features.eval_bridge {
         eval_bridge::emit_eval_bridge_runtime(emitter);
     } else if features.eval_scope {
+        // Scope-only programs run compiled eval fragments natively: they need
+        // the self-contained value wrappers plus the native scope helpers
+        // (the magician staticlib supplies the scope symbols only in the full
+        // bridge configuration).
+        eval_bridge::emit_eval_bridge_runtime(emitter);
         eval_scope::emit_eval_scope_runtime(emitter);
     }
 

@@ -1952,14 +1952,17 @@ fn emit_builtin_call_value(
 
 /// Returns true when a literal `eval` call may still need runtime scope/interpreter state.
 fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
+    // Fragments fully handled by the direct-local AOT paths never touch runtime
+    // eval state; applying the barrier would declare eval locals and drag the
+    // whole bridge runtime (and magician staticlib) into native-only programs.
     if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
-        return true;
+        return false;
     }
     if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
-        return true;
+        return false;
     }
     if eval_literal_local_scalar_direct_sync_supported_by_lowering(ctx, fragment) {
-        return true;
+        return false;
     }
     let static_call_supported = |name: &str, args: &[Expr]| {
         eval_literal_static_function_supported_by_lowering(ctx, name, args)
@@ -2001,14 +2004,16 @@ fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> 
 
 /// Returns true when a literal `eval` only needs materialized eval-scope state.
 fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
+    // Direct-local AOT fragments also skip the materialized scope: their reads
+    // and writes go straight to caller locals.
     if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
-        return true;
+        return false;
     }
     if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
-        return true;
+        return false;
     }
     if eval_literal_local_scalar_direct_sync_supported_by_lowering(ctx, fragment) {
-        return true;
+        return false;
     }
     let static_call_supported = |name: &str, args: &[Expr]| {
         eval_literal_static_function_supported_by_lowering(ctx, name, args)
