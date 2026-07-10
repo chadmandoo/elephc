@@ -5198,6 +5198,7 @@ fn lower_builtin_call_args(
         return Vec::new();
     }
     match php_symbol_key(name.trim_start_matches('\\')).as_str() {
+        "count" => lower_count_args(ctx, sig, args),
         "date" => lower_date_args(ctx, sig, args),
         "eval" => lower_eval_args(ctx, sig, args),
         "json_decode" => lower_json_decode_args(ctx, sig, args),
@@ -5220,6 +5221,52 @@ fn lower_builtin_call_args(
             lower_user_value_sort_args(ctx, sig, args)
         }
         _ => lower_args_with_signature(ctx, sig, args),
+    }
+}
+
+/// Lowers `count()` arguments, dropping a statically-default mode argument.
+///
+/// The EIR backend implements only `COUNT_NORMAL`; a literal `0` mode (named
+/// or positional) is semantically a no-op and would otherwise trip the unary
+/// count contract in codegen.
+fn lower_count_args(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: Option<&FunctionSig>,
+    args: &[Expr],
+) -> Vec<crate::ir::ValueId> {
+    let pruned: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .filter(|(index, arg)| !count_arg_is_static_default_mode(*index, arg))
+        .map(|(_, arg)| arg.clone())
+        .collect();
+    let mut operands = lower_args_with_signature(ctx, sig, &pruned);
+    // Named and spread plans re-materialize the optional `mode` default even
+    // after the AST prune; a trailing constant-zero mode stays a no-op for
+    // the unary count contract, so drop the operand (DCE reclaims the const).
+    if operands.len() == 2 {
+        let trailing_zero_mode = ctx
+            .builder
+            .value_defining_instruction(operands[1])
+            .is_some_and(|inst| {
+                inst.op == Op::ConstI64
+                    && matches!(inst.immediate, Some(crate::ir::Immediate::I64(0)))
+            });
+        if trailing_zero_mode {
+            operands.pop();
+        }
+    }
+    operands
+}
+
+/// Returns true when a `count()` argument is a statically-zero mode.
+fn count_arg_is_static_default_mode(index: usize, arg: &Expr) -> bool {
+    match &arg.kind {
+        ExprKind::NamedArg { name, value } => {
+            name == "mode" && matches!(value.kind, ExprKind::IntLiteral(0))
+        }
+        ExprKind::IntLiteral(0) => index == 1,
+        _ => false,
     }
 }
 
