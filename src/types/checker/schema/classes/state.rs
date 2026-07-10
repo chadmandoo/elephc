@@ -297,6 +297,12 @@ fn fold_attr_value(expr: &crate::parser::ast::Expr) -> Option<crate::types::Attr
             scoped_receiver_type_name(receiver)
                 .map(|type_name| AttrArgValue::ScopedConst(type_name, name.clone()))
         }
+        // `Foo::class` folds to the class-name string, mirroring the
+        // module-level attribute capture in `src/types/schema.rs`.
+        ExprKind::ClassConstant {
+            receiver: crate::parser::ast::StaticReceiver::Named(name),
+        } => Some(AttrArgValue::Str(name.as_str().to_string())),
+        ExprKind::ClassConstant { .. } => None,
         ExprKind::Negate(inner) => match &inner.kind {
             ExprKind::IntLiteral(n) => Some(AttrArgValue::Int(n.wrapping_neg())),
             ExprKind::FloatLiteral(n) => Some(AttrArgValue::Float((-n).to_bits())),

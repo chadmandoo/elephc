@@ -152,7 +152,18 @@ pub(crate) fn build_attribute_new_instance_body_with_extra(
                     args: factory
                         .args
                         .iter()
-                        .map(|entry| attr_arg_expr(&entry.value))
+                        .map(|entry| match &entry.key {
+                            // Named attribute arguments must construct with
+                            // named-argument semantics, not positionally.
+                            Some(crate::types::AttrKey::Str(name)) => Expr::new(
+                                ExprKind::NamedArg {
+                                    name: name.clone(),
+                                    value: Box::new(attr_arg_expr(&entry.value)),
+                                },
+                                span,
+                            ),
+                            _ => attr_arg_expr(&entry.value),
+                        })
                         .collect(),
                 },
                 span,
