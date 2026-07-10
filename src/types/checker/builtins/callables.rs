@@ -127,7 +127,7 @@ pub(crate) fn dummy_arg_for_array_scalar_elem(arr_ty: &PhpType, span: crate::spa
     match elem_ty {
         PhpType::Str => Expr::new(ExprKind::StringLiteral(String::new()), span),
         PhpType::Float => Expr::new(ExprKind::FloatLiteral(0.0), span),
-        PhpType::Bool => Expr::new(ExprKind::BoolLiteral(false), span),
+        PhpType::Bool | PhpType::False => Expr::new(ExprKind::BoolLiteral(false), span),
         _ => Expr::new(ExprKind::IntLiteral(0), span),
     }
 }
@@ -165,7 +165,9 @@ pub(crate) fn comparator_dummy_arg_for_elem(
     match elem_ty {
         PhpType::Str => (Expr::new(ExprKind::StringLiteral(String::new()), span), None),
         PhpType::Float => (Expr::new(ExprKind::FloatLiteral(0.0), span), None),
-        PhpType::Bool => (Expr::new(ExprKind::BoolLiteral(false), span), None),
+        PhpType::Bool | PhpType::False => {
+            (Expr::new(ExprKind::BoolLiteral(false), span), None)
+        }
         PhpType::Object(_) => (
             Expr::new(ExprKind::Variable(COMPARATOR_ELEM_PLACEHOLDER.to_string()), span),
             Some((COMPARATOR_ELEM_PLACEHOLDER.to_string(), elem_ty.clone())),

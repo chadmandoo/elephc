@@ -76,7 +76,7 @@ fn coerce_to_string_inner(
             // -- convert float in d0 to string in x1/x2 --
             abi::emit_call_label(emitter, "__rt_ftoa");                         // runtime: float-to-ASCII string conversion
         }
-        PhpType::Bool => {
+        PhpType::Bool | PhpType::False => {
             // true -> "1" (via itoa), false -> "" (len=0)
             // -- convert bool to string: true="1", false="" --
             match emitter.target.arch {
@@ -246,7 +246,7 @@ pub fn coerce_null_to_zero(emitter: &mut Emitter, ty: &PhpType) {
                 emitter.instruction("mov rax, 0");                              // null is zero in arithmetic/comparison context
             }
         }
-    } else if *ty == PhpType::Bool {
+    } else if matches!(ty, PhpType::Bool | PhpType::False) {
         // Bool is already 0/1 in x0, compatible with Int arithmetic
     } else if *ty == PhpType::Float {
         // Float is already in d0, no null sentinel to check
@@ -369,6 +369,7 @@ pub fn coerce_to_truthiness(emitter: &mut Emitter, ctx: &mut Context, ty: &PhpTy
         ty,
         PhpType::Int
             | PhpType::Bool
+            | PhpType::False
             | PhpType::Void
             | PhpType::Callable
             | PhpType::Object(_)

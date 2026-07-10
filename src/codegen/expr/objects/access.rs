@@ -128,7 +128,12 @@ pub(super) fn emit_property_access(
             PhpType::Float => {
                 abi::emit_load_from_address(emitter, abi::float_result_reg(emitter), pointer_reg, 0);
             }
-            PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never | PhpType::Resource(_) => {
+            PhpType::Bool
+            | PhpType::False
+            | PhpType::Int
+            | PhpType::Void
+            | PhpType::Never
+            | PhpType::Resource(_) => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
             }
             PhpType::TaggedScalar => {
@@ -161,7 +166,12 @@ pub(super) fn emit_property_access(
         PhpType::Float => {
             abi::emit_load_from_address(emitter, abi::float_result_reg(emitter), object_reg, offset);
         }
-        PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never | PhpType::Resource(_) => {
+        PhpType::Bool
+        | PhpType::False
+        | PhpType::Int
+        | PhpType::Void
+        | PhpType::Never
+        | PhpType::Resource(_) => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
         }
         PhpType::TaggedScalar => {
@@ -776,7 +786,12 @@ fn emit_loaded_object_property_value(
             PhpType::Float => {
                 abi::emit_load_from_address(emitter, abi::float_result_reg(emitter), pointer_reg, 0);
             }
-            PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never | PhpType::Resource(_) => {
+            PhpType::Bool
+            | PhpType::False
+            | PhpType::Int
+            | PhpType::Void
+            | PhpType::Never
+            | PhpType::Resource(_) => {
                 abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), pointer_reg, 0);
             }
             PhpType::TaggedScalar => {
@@ -809,7 +824,12 @@ fn emit_loaded_object_property_value(
         PhpType::Float => {
             abi::emit_load_from_address(emitter, abi::float_result_reg(emitter), object_reg, offset);
         }
-        PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never | PhpType::Resource(_) => {
+        PhpType::Bool
+        | PhpType::False
+        | PhpType::Int
+        | PhpType::Void
+        | PhpType::Never
+        | PhpType::Resource(_) => {
             abi::emit_load_from_address(emitter, abi::int_result_reg(emitter), object_reg, offset);
         }
         PhpType::TaggedScalar => {

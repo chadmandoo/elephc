@@ -176,6 +176,7 @@ fn coerce_branch_result(
 fn pop_saved_result_value(emitter: &mut Emitter, ty: &PhpType) {
     match ty.codegen_repr() {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Resource(_)
         | PhpType::Iterable

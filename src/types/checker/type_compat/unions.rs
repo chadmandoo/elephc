@@ -27,6 +27,14 @@ impl Checker {
 
         let mut deduped = Vec::new();
         for member in flat {
+            // `bool` already contains the literal `false` subtype. Keep `False` only when the
+            // declaration is specifically false-only (for example `int|false`).
+            if member == PhpType::False && deduped.iter().any(|existing| existing == &PhpType::Bool) {
+                continue;
+            }
+            if member == PhpType::Bool {
+                deduped.retain(|existing| existing != &PhpType::False);
+            }
             if !deduped.iter().any(|existing| existing == &member) {
                 deduped.push(member);
             }
@@ -50,6 +58,7 @@ impl Checker {
 
         match expected {
             PhpType::Mixed => true,
+            PhpType::Bool => matches!(actual, PhpType::False),
             PhpType::Union(members) => members
                 .iter()
                 .any(|member| self.type_accepts(member, actual)),
@@ -129,7 +138,7 @@ impl Checker {
     pub(crate) fn type_supports_mixed_int_dispatch(&self, ty: &PhpType) -> bool {
         let _ = self;
         match ty {
-            PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Str => true,
+            PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void | PhpType::Str => true,
             PhpType::Union(members) => members
                 .iter()
                 .all(|member| self.type_supports_mixed_int_dispatch(member)),
@@ -178,8 +187,8 @@ impl Checker {
         if *existing == PhpType::Void {
             return Some(new_ty.clone());
         }
-        if matches!(existing, PhpType::Int | PhpType::Bool | PhpType::Float)
-            && matches!(new_ty, PhpType::Int | PhpType::Bool | PhpType::Float)
+        if matches!(existing, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Float)
+            && matches!(new_ty, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Float)
         {
             return Some(existing.clone());
         }

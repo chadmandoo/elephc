@@ -80,6 +80,7 @@ fn type_refs_pdo(type_expr: &TypeExpr) -> bool {
         TypeExpr::Int
         | TypeExpr::Float
         | TypeExpr::Bool
+        | TypeExpr::False
         | TypeExpr::Str
         | TypeExpr::Void
         | TypeExpr::Never

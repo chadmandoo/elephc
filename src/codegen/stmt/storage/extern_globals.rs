@@ -25,6 +25,7 @@ pub(super) fn emit_extern_global_store(emitter: &mut Emitter, name: &str, ty: &P
     let sym = emitter.target.extern_symbol(name);
     match ty {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Resource(_)
         | PhpType::Pointer(_)
@@ -71,6 +72,7 @@ pub(super) fn emit_extern_global_load(emitter: &mut Emitter, name: &str, ty: &Ph
     let sym = emitter.target.extern_symbol(name);
     match ty {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Resource(_)
         | PhpType::Pointer(_)

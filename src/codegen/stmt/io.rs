@@ -52,7 +52,7 @@ pub(crate) fn emit_expr_to_stdout(
     stabilize_x86_64_echo_result(emitter, &ty);
     match &ty {
         PhpType::Void => {}
-        PhpType::Bool => {
+        PhpType::Bool | PhpType::False => {
             let skip_label = ctx.next_label("echo_skip_false");
             abi::emit_branch_if_int_result_zero(emitter, &skip_label);
             abi::emit_write_stdout(emitter, &ty);
@@ -148,6 +148,7 @@ fn stabilize_x86_64_echo_result(emitter: &mut Emitter, ty: &PhpType) {
 
     match ty.codegen_repr() {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Resource(_)
         | PhpType::Iterable

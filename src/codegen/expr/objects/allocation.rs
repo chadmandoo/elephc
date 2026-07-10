@@ -231,6 +231,7 @@ pub(super) fn emit_new_object_core(
             match &prop_ty {
                 PhpType::Int
                 | PhpType::Bool
+                | PhpType::False
                 | PhpType::Callable
                 | PhpType::Pointer(_)
                 | PhpType::Buffer(_)

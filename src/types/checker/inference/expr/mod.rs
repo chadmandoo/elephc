@@ -37,7 +37,8 @@ impl Checker {
             ExprKind::IncludeValue { .. } => unreachable!(
                 "ExprKind::IncludeValue must be expanded by the resolver"
             ),
-            ExprKind::BoolLiteral(_) => Ok(PhpType::Bool),
+            ExprKind::BoolLiteral(false) => Ok(PhpType::False),
+            ExprKind::BoolLiteral(true) => Ok(PhpType::Bool),
             ExprKind::Null => Ok(PhpType::Void),
             ExprKind::StringLiteral(_) => Ok(PhpType::Str),
             ExprKind::IntLiteral(_) => Ok(PhpType::Int),
@@ -69,7 +70,10 @@ impl Checker {
             | ExprKind::PostIncrement(name)
             | ExprKind::PreDecrement(name)
             | ExprKind::PostDecrement(name) => match env.get(name) {
-                Some(PhpType::Int) | Some(PhpType::Bool) | Some(PhpType::Void) => Ok(PhpType::Int),
+                Some(PhpType::Int)
+                | Some(PhpType::Bool)
+                | Some(PhpType::False)
+                | Some(PhpType::Void) => Ok(PhpType::Int),
                 Some(other) => Err(CompileError::new(
                     expr.span,
                     &format!("Cannot increment/decrement ${} of type {:?}", name, other),
@@ -399,7 +403,7 @@ impl Checker {
             }
             ExprKind::BitNot(inner) => {
                 let ty = self.infer_type(inner, env)?;
-                if !matches!(ty, PhpType::Int | PhpType::Bool | PhpType::Void) {
+                if !matches!(ty, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void) {
                     return Err(CompileError::new(
                         expr.span,
                         "Bitwise NOT requires integer operand",

@@ -1189,7 +1189,12 @@ fn is_array_like_type(ty: &PhpType) -> bool {
 fn is_numeric_operand_type(checker: &Checker, ty: &PhpType) -> bool {
     matches!(
         ty,
-        PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Void | PhpType::Mixed
+        PhpType::Int
+            | PhpType::Float
+            | PhpType::Bool
+            | PhpType::False
+            | PhpType::Void
+            | PhpType::Mixed
     ) || checker.is_union_with_mixed_int_dispatch(ty)
 }
 
@@ -1209,7 +1214,7 @@ fn is_datetime_family_object(ty: &PhpType) -> bool {
 fn is_integer_operand_type(checker: &Checker, ty: &PhpType) -> bool {
     matches!(
         ty,
-        PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Mixed
+        PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void | PhpType::Mixed
     ) || checker.is_union_with_mixed_int_dispatch(ty)
 }
 

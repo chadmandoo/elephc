@@ -73,7 +73,7 @@ pub fn emit(
                 }
             }
         }
-        PhpType::Bool => {
+        PhpType::Bool | PhpType::False => {
             // -- bool is empty if false (0) --
             match emitter.target.arch {
                 Arch::AArch64 => {

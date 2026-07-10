@@ -22,6 +22,7 @@ pub(super) fn resolve_buffer_element_type(type_expr: &TypeExpr, ctx: &Context) -
         TypeExpr::Int => PhpType::Int,
         TypeExpr::Float => PhpType::Float,
         TypeExpr::Bool => PhpType::Bool,
+        TypeExpr::False => PhpType::Bool,
         TypeExpr::Ptr(target) => {
             PhpType::Pointer(target.as_ref().map(|name| name.as_str().to_string()))
         }
@@ -56,6 +57,7 @@ pub(crate) fn codegen_declared_type(type_expr: &TypeExpr, ctx: &Context) -> PhpT
         TypeExpr::Int => PhpType::Int,
         TypeExpr::Float => PhpType::Float,
         TypeExpr::Bool => PhpType::Bool,
+        TypeExpr::False => PhpType::Bool,
         TypeExpr::Str => PhpType::Str,
         TypeExpr::Void => PhpType::Void,
         TypeExpr::Never => PhpType::Never,

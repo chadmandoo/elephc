@@ -272,7 +272,12 @@ pub(in crate::codegen::expr) fn emit_strict_compare(
             PhpType::TaggedScalar => {
                 unreachable!("TaggedScalar strict comparison is routed through the mixed boxing path")
             }
-            PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never | PhpType::Resource(_) => {
+            PhpType::Int
+            | PhpType::Bool
+            | PhpType::False
+            | PhpType::Void
+            | PhpType::Never
+            | PhpType::Resource(_) => {
                 let left_reg = abi::symbol_scratch_reg(emitter);
                 abi::emit_pop_reg(emitter, left_reg);                           // pop the saved left scalar or pointer-like value from the temporary comparison stack
                 emitter.instruction(&format!("cmp {}, {}", left_reg, abi::int_result_reg(emitter))); // compare the left and right scalar values
@@ -375,7 +380,8 @@ fn peek_expr_type(expr: &Expr, ctx: &Context) -> Option<PhpType> {
         ExprKind::IntLiteral(_) => Some(PhpType::Int),
         ExprKind::FloatLiteral(_) => Some(PhpType::Float),
         ExprKind::StringLiteral(_) => Some(PhpType::Str),
-        ExprKind::BoolLiteral(_) => Some(PhpType::Bool),
+        ExprKind::BoolLiteral(false) => Some(PhpType::False),
+        ExprKind::BoolLiteral(true) => Some(PhpType::Bool),
         ExprKind::Null => Some(PhpType::Void),
         ExprKind::Variable(name) => ctx.variables.get(name).map(|v| v.ty.clone()),
         _ => None,

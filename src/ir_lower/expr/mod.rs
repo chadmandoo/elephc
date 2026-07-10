@@ -225,7 +225,7 @@ fn lower_bool_literal(ctx: &mut LoweringContext<'_, '_>, value: bool, expr: &Exp
             Vec::new(),
             Some(Immediate::Bool(value)),
             IrType::I64,
-            PhpType::Bool,
+            if value { PhpType::Bool } else { PhpType::False },
             Ownership::NonHeap,
             Op::ConstBool.default_effects(),
             Some(expr.span),
@@ -6235,7 +6235,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         // or boolean false when the string cannot be parsed. The backend boxes the result so
         // `=== false` and `echo` observe the distinct false; `__elephc_strtotime_raw` (the DateTime
         // internal alias above) stays a plain Int that maps the failure sentinel to -1.
-        "strtotime" => Some(PhpType::Union(vec![PhpType::Int, PhpType::Bool])),
+        "strtotime" => Some(PhpType::Union(vec![PhpType::Int, PhpType::False])),
         // microtime() with a non-literal `as_float` flag yields `string|float` (boxed `Mixed`):
         // the runtime branches on the flag and boxes either the "0.NNNNNNNN sec" string or the
         // float. Literal-true / literal-false / omitted cases are resolved earlier by

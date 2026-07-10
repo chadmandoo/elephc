@@ -168,6 +168,7 @@ impl Checker {
         match (expected, actual) {
             (PhpType::Mixed, _) => true,
             (_, PhpType::Never) => true, // never is the bottom type — compatible with any expected type
+            (PhpType::Bool, PhpType::False) => true,
             (PhpType::Iterable, PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable) => true,
             (PhpType::Union(members), _) => {
                 members.iter().any(|m| Self::types_compatible(m, actual))
@@ -176,8 +177,8 @@ impl Checker {
                 PhpType::AssocArray { key, value },
                 PhpType::Array(_) | PhpType::AssocArray { .. },
             ) if **key == PhpType::Mixed && **value == PhpType::Mixed => true,
-            (PhpType::Float, PhpType::Int | PhpType::Bool | PhpType::Void) => true,
-            (PhpType::Int, PhpType::Bool | PhpType::Void) => true,
+            (PhpType::Float, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void) => true,
+            (PhpType::Int, PhpType::Bool | PhpType::False | PhpType::Void) => true,
             (PhpType::Bool, PhpType::Int | PhpType::Void) => true,
             (PhpType::Pointer(_), PhpType::Pointer(_) | PhpType::Void) => true,
             (PhpType::Resource(_), PhpType::Resource(_)) => {

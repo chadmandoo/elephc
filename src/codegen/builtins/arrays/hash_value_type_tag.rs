@@ -26,7 +26,7 @@ pub(super) fn hash_value_type_tag(ty: &PhpType) -> u8 {
         PhpType::Int => 0,
         PhpType::Str => 1,
         PhpType::Float => 2,
-        PhpType::Bool => 3,
+        PhpType::Bool | PhpType::False => 3,
         PhpType::Array(_) => 4,
         PhpType::AssocArray { .. } => 5,
         PhpType::Object(_) => 6,

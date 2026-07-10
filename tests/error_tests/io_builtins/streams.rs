@@ -177,7 +177,7 @@ function read_char(): string {
     return fgetc(STDIN);
 }
 "#,
-        "Function 'read_char' return type expects Str, got Union([Str, Bool])",
+        "Function 'read_char' return type expects Str, got Union([Str, False])",
     );
 }
 

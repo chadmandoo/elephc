@@ -149,7 +149,8 @@ fn constant_expr_type(kind: &ExprKind) -> PhpType {
         ExprKind::IntLiteral(_) => PhpType::Int,
         ExprKind::FloatLiteral(_) => PhpType::Float,
         ExprKind::StringLiteral(_) => PhpType::Str,
-        ExprKind::BoolLiteral(_) => PhpType::Bool,
+        ExprKind::BoolLiteral(false) => PhpType::False,
+        ExprKind::BoolLiteral(true) => PhpType::Bool,
         ExprKind::Null => PhpType::Void,
         _ => PhpType::Int,
     }

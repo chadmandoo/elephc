@@ -1401,6 +1401,7 @@ pub(crate) fn type_expr_to_php_type(type_expr: &TypeExpr) -> PhpType {
         TypeExpr::Int => PhpType::Int,
         TypeExpr::Float => PhpType::Float,
         TypeExpr::Bool => PhpType::Bool,
+        TypeExpr::False => PhpType::False,
         TypeExpr::Str => PhpType::Str,
         TypeExpr::Void => PhpType::Void,
         TypeExpr::Never => PhpType::Never,

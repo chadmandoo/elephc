@@ -38,7 +38,7 @@ pub(crate) const INVOKER_ARG_REF_CELL_TAG: i64 = 11;
 fn emit_array_value_type_stamp(emitter: &mut Emitter, array_reg: &str, elem_ty: &PhpType) {
     let value_type_tag = match elem_ty {
         PhpType::Float => 2,
-        PhpType::Bool => 3,
+        PhpType::Bool | PhpType::False => 3,
         PhpType::Str => 1,
         PhpType::Array(_) => 4,
         PhpType::AssocArray { .. } => 5,
@@ -1207,6 +1207,7 @@ pub(crate) fn emit_loaded_array_callback_call(
             }
             PhpType::Int
             | PhpType::Bool
+            | PhpType::False
             | PhpType::Resource(_)
             | PhpType::Callable
             | PhpType::Iterable

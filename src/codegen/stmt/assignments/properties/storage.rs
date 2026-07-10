@@ -55,6 +55,7 @@ pub(super) fn store_property_value(emitter: &mut Emitter, object_reg: &str, val_
     let temp_reg = abi::temp_int_reg(emitter.target);
     match val_ty {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Callable
         | PhpType::Pointer(_)
@@ -201,6 +202,7 @@ pub(super) fn store_referenced_value(
     // guaranteed second word in both local slots and default heap ref cells.
     match val_ty {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Callable
         | PhpType::Pointer(_)

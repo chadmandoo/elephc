@@ -321,7 +321,7 @@ fn emit_var_dump_array_with_elem(
     let walker = match elem_ty {
         PhpType::Int => Some("__rt_var_dump_array_int"),
         PhpType::Str => Some("__rt_var_dump_array_str"),
-        PhpType::Bool => Some("__rt_var_dump_array_bool"),
+        PhpType::Bool | PhpType::False => Some("__rt_var_dump_array_bool"),
         PhpType::Float => Some("__rt_var_dump_array_float"),
         // Mixed-element arrays need a per-element tag dispatch at runtime,
         // but the static type `Array(Mixed)` reaches here both for arrays
@@ -468,7 +468,7 @@ pub fn emit(
         PhpType::TaggedScalar => emit_var_dump_tagged_scalar(emitter, ctx, data),
         PhpType::Float => emit_var_dump_float(emitter, data),
         PhpType::Str => emit_var_dump_string(emitter, data),
-        PhpType::Bool => emit_var_dump_bool(emitter, ctx, data),
+        PhpType::Bool | PhpType::False => emit_var_dump_bool(emitter, ctx, data),
         PhpType::Resource(_) => emit_var_dump_resource(emitter, data),
         PhpType::Void | PhpType::Never => emit_var_dump_null(emitter, data),
         PhpType::Iterable => {

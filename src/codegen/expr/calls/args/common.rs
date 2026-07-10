@@ -213,6 +213,7 @@ fn store_pushed_value_to_ref_cell(emitter: &mut Emitter, cell_reg: &str, val_ty:
     let temp_reg = abi::temp_int_reg(emitter.target);
     match val_ty.codegen_repr() {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Callable
         | PhpType::Pointer(_)

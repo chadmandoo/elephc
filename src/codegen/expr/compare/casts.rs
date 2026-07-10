@@ -54,7 +54,7 @@ pub(in crate::codegen::expr) fn emit_cast(
                 PhpType::Float => {
                     abi::emit_float_result_to_int_result(emitter);              // convert double to signed 64-bit int (toward zero)
                 }
-                PhpType::Bool => {}
+                PhpType::Bool | PhpType::False => {}
                 PhpType::Void | PhpType::Never => {
                     abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 0);
                 }
@@ -96,7 +96,7 @@ pub(in crate::codegen::expr) fn emit_cast(
                     crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(emitter);
                     abi::emit_int_result_to_float_result(emitter);              // signed int to double conversion
                 }
-                PhpType::Int | PhpType::Bool => {
+                PhpType::Int | PhpType::Bool | PhpType::False => {
                     abi::emit_int_result_to_float_result(emitter);              // signed int to double conversion
                 }
                 PhpType::Resource(_) => {
@@ -162,6 +162,7 @@ pub(in crate::codegen::expr) fn emit_cast(
                 }
                 PhpType::Int
                 | PhpType::Bool
+                | PhpType::False
                 | PhpType::Resource(_)
                 | PhpType::Callable
                 | PhpType::Buffer(_)
