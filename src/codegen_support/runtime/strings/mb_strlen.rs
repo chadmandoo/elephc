@@ -4,7 +4,7 @@
 //! Called from:
 //! - `crate::codegen::runtime::emitters::emit_runtime()`.
 //! - The `mb_strlen()` builtin lowering
-//!   (`crate::codegen_ir::lower_inst::builtins::strings::lower_mb_strlen`).
+//!   (`crate::codegen::lower_inst::builtins::strings::lower_mb_strlen`).
 //!
 //! Key details:
 //! - Input string ptr/len arrive in x1/x2 (AArch64) or rax/edx (x86_64); the result is

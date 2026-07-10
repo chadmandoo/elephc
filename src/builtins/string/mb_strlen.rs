@@ -11,8 +11,8 @@
 //!   encoding); the optional encoding argument is not supported.
 //! - Arity (exactly 1 arg) is validated by the registry.
 
-use crate::codegen_ir::context::FunctionContext;
-use crate::codegen_ir::CodegenIrError;
+use crate::codegen::context::FunctionContext;
+use crate::codegen::CodegenIrError;
 use crate::ir::Instruction;
 
 builtin! {
@@ -27,5 +27,5 @@ builtin! {
 
 /// Lowers an `mb_strlen` call by dispatching to the shared `lower_mb_strlen` emitter.
 fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen_ir::lower_inst::builtins::strings::lower_mb_strlen(ctx, inst)
+    crate::codegen::lower_inst::builtins::strings::lower_mb_strlen(ctx, inst)
 }
