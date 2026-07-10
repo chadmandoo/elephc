@@ -66,11 +66,12 @@ use crate::parser::ast::{Program, StmtKind};
 /// triggers only: the prelude ships `__elephc_*` impls and the EIR lowering
 /// desugars the matching call shapes into calls of those impls (unused impls
 /// are dead-stripped).
-const STDLIB_PRELUDE_NAMES: [&str; 38] = [
+const STDLIB_PRELUDE_NAMES: [&str; 39] = [
     "in_array",
     "substr_count",
     "addcslashes",
     "array_fill_keys",
+    "array_column",
     // `pack` is a 4-letter substring (matches unrelated identifiers like
     // `unpack`/`package` unquoted); match the quoted Name-render form so only a
     // genuine `pack(...)` call triggers injection (mirrors the "end" precedent).
@@ -936,6 +937,21 @@ function __elephc_array_values_any(mixed $h): mixed {
     $out = [];
     foreach ($h as $v) {
         $out[] = $v;
+    }
+    return $out;
+}
+
+function __elephc_array_column_any(mixed $rows, string $column): mixed {
+    // array_column over an adaptive/Mixed source (e.g. a json_decode()'d list of
+    // associative rows): collect each array row's $column value into a fresh packed
+    // list, skipping rows that are not arrays or lack the key — PHP's behavior for
+    // the string-column form. Object rows and the null-column whole-row form are not
+    // reached from the Mixed-source desugar (the typed native path handles those).
+    $out = [];
+    foreach ($rows as $row) {
+        if (is_array($row) && array_key_exists($column, $row)) {
+            $out[] = $row[$column];
+        }
     }
     return $out;
 }

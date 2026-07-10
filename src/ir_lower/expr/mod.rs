@@ -1911,6 +1911,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     if let Some(value) = lower_static_array_values_any(ctx, canonical, args, expr) {
         return value;
     }
+    if let Some(value) = lower_static_array_column_any(ctx, canonical, args, expr) {
+        return value;
+    }
     if let Some(value) = lower_static_array_key_exists_any(ctx, canonical, args, expr) {
         return value;
     }
@@ -4748,6 +4751,41 @@ fn lower_static_sort_mixed(
         Op::ConstBool.default_effects(),
         Some(expr.span),
     ))
+}
+
+/// Rewrites `array_column($rows, $column)` over a Mixed/Union source (e.g. a `json_decode()`
+/// result) to the adaptive `__elephc_array_column_any` prelude, which walks the boxed source
+/// row-by-row. The typed native path (`Array(AssocArray)` sources) is unaffected — this only
+/// fires when the checker could not prove the first argument is an array.
+fn lower_static_array_column_any(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "array_column" {
+        return None;
+    }
+    if args.len() != 2 {
+        return None;
+    }
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let receiver_ty = desugar_call_arg_static_type(ctx, &args[0]);
+    if !matches!(receiver_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_))
+        || !prelude_impl_available(ctx, "__elephc_array_column_any")
+    {
+        return None;
+    }
+    let impl_call = Expr {
+        kind: ExprKind::FunctionCall {
+            name: Name::from("__elephc_array_column_any"),
+            args: vec![args[0].clone(), args[1].clone()],
+        },
+        span: expr.span,
+    };
+    Some(lower_expr(ctx, &impl_call))
 }
 
 fn lower_static_array_values_any(

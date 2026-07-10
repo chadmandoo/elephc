@@ -49,6 +49,10 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
                 "array_column() requires an array of associative arrays",
             )),
         },
+        // Mixed/Union receivers (json_decode results, adaptive locals) desugar to the
+        // prelude `__elephc_array_column_any` impl, which walks the boxed source
+        // row-by-row; the rebuilt list holds boxed cells, so the result shape stays Mixed.
+        PhpType::Mixed | PhpType::Union(_) => Ok(PhpType::Mixed),
         _ => Err(CompileError::new(
             cx.span,
             "array_column() first argument must be array",

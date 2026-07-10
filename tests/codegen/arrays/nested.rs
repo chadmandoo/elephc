@@ -171,3 +171,32 @@ echo $first[1] . "|" . $second[0];
     );
     assert_eq!(out, "5|6");
 }
+
+/// Verifies `array_column()` over a Mixed source — a `json_decode()`'d list of associative
+/// rows — extracts the named column, skipping rows that lack it, byte-parity with PHP 8.5.
+/// Mirrors StatusAdmin\SystemStatusReport::readWardCount. Forge EC-71 / #555.
+#[test]
+fn test_array_column_over_json_decoded_mixed_source() {
+    let out = compile_and_run(
+        r#"<?php
+$decoded = json_decode('[{"name":"a"},{"name":"b"},{"x":1}]', true);
+echo implode(",", array_column($decoded, 'name'));
+"#,
+    );
+    assert_eq!(out, "a,b");
+}
+
+/// Verifies the full readWardCount composition: array_column over a Mixed source feeding
+/// array_filter(is_string(...)) then a str_starts_with count, byte-parity with PHP 8.5.
+/// Forge EC-71 / #555.
+#[test]
+fn test_array_column_mixed_feeds_filter_pipeline() {
+    let out = compile_and_run(
+        r#"<?php
+$decoded = json_decode('[{"name":"aic/ward-http"},{"name":"aic/ward-kernel"},{"y":2},{"name":"other/pkg"}]', true);
+$names = array_filter(array_column($decoded, 'name'), is_string(...));
+echo count(array_filter($names, static fn (string $n): bool => str_starts_with($n, 'aic/ward-')));
+"#,
+    );
+    assert_eq!(out, "2");
+}
