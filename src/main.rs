@@ -44,6 +44,7 @@ mod superglobals;
 mod termination;
 mod timings;
 mod types;
+mod stdlib_prelude;
 mod tz_prelude;
 mod var_export_prelude;
 mod web_prelude;

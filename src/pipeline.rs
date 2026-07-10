@@ -20,7 +20,8 @@ use crate::timings::CompileTimings;
 use crate::{
     autoload, codegen, conditional, debug_info, errors, exports, ir, ir_lower, ir_passes, lexer,
     linker, list_id_prelude, magic_constants, name_resolver, optimize, parser, pdo_prelude,
-    resolver, runtime_cache, source_map, tz_prelude, types, var_export_prelude, web_prelude,
+    resolver, runtime_cache, source_map, stdlib_prelude, tz_prelude, types, var_export_prelude,
+    web_prelude,
 };
 
 /// Holds the paths for all compilation output files (assembly, object, binary, source map).
@@ -153,6 +154,13 @@ pub(crate) fn compile(config: CliConfig) {
     let phase_started = Instant::now();
     let ast = var_export_prelude::inject_if_used(ast);
     timings.record_since("var-export-prelude", phase_started);
+
+    // Inject the standard-library prelude (mb_* / array_* / http_build_query in elephc-PHP)
+    // only when the program references one of those functions and does not declare its own,
+    // so other binaries carry nothing. Same ordering rationale as the var_export prelude.
+    let phase_started = Instant::now();
+    let ast = stdlib_prelude::inject_if_used(ast);
+    timings.record_since("stdlib-prelude", phase_started);
 
     // Inject the image standard-library prelude (elephc_image externs + GD/Exif/
     // Imagick/Gmagick/Cairo surface, written in elephc-PHP) only when the program
