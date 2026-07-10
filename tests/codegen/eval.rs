@@ -4635,7 +4635,7 @@ echo ":" . ($call ? "call" : "bad") . ":" . ($spread ? "spread" : "bad") . ":";
 echo function_exists("print_r");');
 "#,
     );
-    assert_eq!(out, "x::Array\n:1z:call:spread:1");
+    assert_eq!(out, "x::Array\n(\n    [0] => 1\n    [1] => 2\n)\n:1z:call:spread:1");
 }
 
 /// Verifies eval `var_dump()` writes PHP-style diagnostics and returns null.
@@ -4690,7 +4690,26 @@ var_dump(new EvalDynamicDumpBox());
 var_dump(new EvalAotDumpBox());');
 "#,
     );
-    assert_eq!(out, "object(EvalDynamicDumpBox)\nobject(EvalAotDumpBox)\n");
+    // Object ids are runtime handles and vary per run; normalize them before
+    // comparing the PHP-style dump shape.
+    let normalized: String = {
+        let mut result = String::new();
+        let mut chars = out.chars().peekable();
+        while let Some(ch) = chars.next() {
+            result.push(ch);
+            if ch == '#' {
+                while chars.peek().is_some_and(char::is_ascii_digit) {
+                    chars.next();
+                }
+                result.push('N');
+            }
+        }
+        result
+    };
+    assert_eq!(
+        normalized,
+        "object(EvalDynamicDumpBox)#N (0) {\n}\nobject(EvalAotDumpBox)#N (0) {\n}\n"
+    );
 }
 
 /// Verifies eval fragments with comments and parser-lowered `__LINE__` use EIR AOT.
