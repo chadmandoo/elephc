@@ -1130,6 +1130,24 @@ fn eval_native_object_method_call_user_func_result_for_class(
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<Option<RuntimeCellHandle>, EvalStatus> {
+    if let Some(shadow_scope) =
+        eval_private_scope_shadow_bridge_scope(class_name, method_name, context, values)?
+    {
+        // The calling scope's own private method shadows any override on the
+        // receiver's class (PHP private-method shadowing); dispatch with the
+        // scope string so the native shadow slot selects it directly.
+        return eval_native_method_with_evaluated_args_for_call_user_func_unchecked_bridge_scope(
+            object,
+            class_name,
+            method_name,
+            evaluated_args,
+            Some(&shadow_scope),
+            called_class_scope,
+            context,
+            values,
+        )
+        .map(Some);
+    }
     let Some((declaring_class, visibility, is_static, is_abstract)) =
         eval_aot_method_dispatch_metadata_in_hierarchy(class_name, method_name, context, values)?
     else {

@@ -10241,6 +10241,42 @@ fn native_class_is_a(class_name: &str, target: &str, context: &ElephcEvalContext
     }
 }
 
+/// Returns the calling-scope class when PHP's private-method shadowing rule
+/// selects it as the dispatch scope: `$obj->m()` from class scope S calls S's
+/// own private instance method `m` — never the receiver's override — when S
+/// declares one and the receiver is an instance of S. The returned scope
+/// string drives the native bridge's hidden private shadow slot directly.
+pub(in crate::interpreter) fn eval_private_scope_shadow_bridge_scope(
+    receiver_class: &str,
+    method_name: &str,
+    context: &ElephcEvalContext,
+    values: &mut impl RuntimeValueOps,
+) -> Result<Option<String>, EvalStatus> {
+    let Some(scope_class) = context.current_class_scope() else {
+        return Ok(None);
+    };
+    let scope_class = scope_class.to_string();
+    if !same_eval_class_name(receiver_class, &scope_class)
+        && !native_class_is_a(receiver_class, &scope_class, context)
+    {
+        return Ok(None);
+    }
+    let Some((declaring_class, visibility, is_static, is_abstract)) =
+        eval_aot_method_dispatch_metadata(&scope_class, method_name, values)?
+    else {
+        return Ok(None);
+    };
+    if visibility == EvalVisibility::Private
+        && !is_static
+        && !is_abstract
+        && same_eval_class_name(&declaring_class, &scope_class)
+    {
+        Ok(Some(declaring_class))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Binds method parameters into a fresh method scope and marks by-reference params as aliases.
 pub(in crate::interpreter) fn bind_method_scope_args(
     method_scope: &mut ElephcEvalScope,
@@ -11420,6 +11456,25 @@ fn eval_native_method_with_evaluated_args_bridge_scope(
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
     let mut resolved_bridge_scope = bridge_scope.map(str::to_string);
+    if resolved_bridge_scope.is_none() {
+        if let Some(shadow_scope) =
+            eval_private_scope_shadow_bridge_scope(class_name, method_name, context, values)?
+        {
+            // The calling scope's own private method shadows any override on
+            // the receiver's class; access is inherently allowed, so skip the
+            // hierarchy resolution (it would find the override instead).
+            return eval_native_method_with_evaluated_args_unchecked_bridge_scope(
+                object,
+                class_name,
+                method_name,
+                evaluated_args,
+                Some(&shadow_scope),
+                called_class_scope,
+                context,
+                values,
+            );
+        }
+    }
     let metadata =
         eval_aot_method_dispatch_metadata_in_hierarchy(class_name, method_name, context, values)?;
     if let Some((declaring_class, visibility, _, is_abstract)) = metadata {
