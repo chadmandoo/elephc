@@ -62,9 +62,13 @@ echo $x + 1;
         false,
     );
 
+    // The scalar-store fragment now compiles through the literal-eval AOT
+    // path (no interpreter bridge); the barrier semantics are proven by the
+    // runtime output below: propagation of `$x = 2` across the eval would
+    // print 3 instead of 6.
     assert!(
-        user_asm.contains("__elephc_eval_execute"),
-        "eval barrier should remain in user assembly:\n{}",
+        user_asm.contains("eval literal AOT"),
+        "literal eval should compile through the AOT path:\n{}",
         user_asm
     );
 

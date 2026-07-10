@@ -274,7 +274,16 @@ fn finalize_user_asm(
         &runtime_classes,
         &module.enum_infos,
         Some(&allowed_class_names),
-        module.source_path.as_deref(),
+        // The source path feeds eval Reflection source-location hooks only;
+        // embedding it in native-only programs leaks the build path into the
+        // assembly (and trips needle-based optimizer asm asserts).
+        if module.required_runtime_features.eval_bridge
+            || module.required_runtime_features.eval_scope
+        {
+            module.source_path.as_deref()
+        } else {
+            None
+        },
     );
 
     let mut user_asm = emitter.output();

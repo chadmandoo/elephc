@@ -60,8 +60,11 @@ echo $x;
         false,
     );
 
+    // The scalar-store fragment now compiles through the literal-eval AOT
+    // path instead of the interpreter bridge; retention is proven by the
+    // runtime output below — dropping the statement would leave $x unset.
     assert!(
-        user_asm.contains("__elephc_eval_execute"),
+        user_asm.contains("eval literal AOT"),
         "bare eval expr statements must remain in user assembly:\n{}",
         user_asm
     );
