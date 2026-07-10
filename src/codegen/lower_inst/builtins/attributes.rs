@@ -557,12 +557,17 @@ fn allocate_mixed_hash(ctx: &mut FunctionContext<'_>, capacity: usize) {
 fn emit_box_arg(ctx: &mut FunctionContext<'_>, arg: &AttrArgValue) -> Result<()> {
     if let AttrArgValue::Array(entries) = arg {
         // Build the nested array (leaves it in the result reg), then box the
-        // array pointer as a Mixed cell with the array runtime tag. The parent
-        // array being filled stays parked on the temporary stack across this.
+        // pointer as a Mixed cell. emit_mixed_array allocates a hash, so the
+        // cell must carry the assoc tag or Mixed readers dispatch the payload
+        // to the indexed-array helpers. The parent array being filled stays
+        // parked on the temporary stack across this.
         emit_mixed_array(ctx, entries)?;
         crate::codegen::emit_box_current_value_as_mixed(
             ctx.emitter,
-            &PhpType::Array(Box::new(PhpType::Mixed)),
+            &PhpType::AssocArray {
+                key: Box::new(PhpType::Mixed),
+                value: Box::new(PhpType::Mixed),
+            },
         );
         return Ok(());
     }
