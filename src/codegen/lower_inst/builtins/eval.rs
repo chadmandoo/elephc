@@ -6166,7 +6166,7 @@ fn emit_eval_result_as_type(ctx: &mut FunctionContext<'_>, result_ty: &PhpType) 
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
             Ok(())
         }
-        PhpType::Bool => {
+        PhpType::Bool | PhpType::False => {
             abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool");
             Ok(())
         }
@@ -7328,6 +7328,7 @@ fn eval_native_type_expr_spec(type_expr: &TypeExpr) -> Option<String> {
         TypeExpr::Int => Some("int".to_string()),
         TypeExpr::Float => Some("float".to_string()),
         TypeExpr::Bool => Some("bool".to_string()),
+        TypeExpr::False => Some("false".to_string()),
         TypeExpr::Str => Some("string".to_string()),
         TypeExpr::Void => Some("null".to_string()),
         TypeExpr::Never => None,
@@ -7360,6 +7361,7 @@ fn eval_native_php_type_spec(php_type: &PhpType, allow_return_atoms: bool) -> Op
         PhpType::Float => Some("float".to_string()),
         PhpType::Str => Some("string".to_string()),
         PhpType::Bool => Some("bool".to_string()),
+        PhpType::False => Some("false".to_string()),
         PhpType::Void if allow_return_atoms => Some("void".to_string()),
         PhpType::Void => Some("null".to_string()),
         PhpType::Never if allow_return_atoms => Some("never".to_string()),
