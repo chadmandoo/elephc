@@ -1955,7 +1955,7 @@ fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> 
     // Fragments fully handled by the direct-local AOT paths never touch runtime
     // eval state; applying the barrier would declare eval locals and drag the
     // whole bridge runtime (and magician staticlib) into native-only programs.
-    if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
+    if eval_literal_direct_store_supported_by_lowering(ctx, fragment) {
         return false;
     }
     if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
@@ -2006,7 +2006,7 @@ fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> 
 fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
     // Direct-local AOT fragments also skip the materialized scope: their reads
     // and writes go straight to caller locals.
-    if crate::eval_aot::literal_fragment_direct_local_store_writes(fragment).is_some() {
+    if eval_literal_direct_store_supported_by_lowering(ctx, fragment) {
         return false;
     }
     if eval_literal_direct_read_write_supported_by_lowering(ctx, fragment) {
@@ -2033,6 +2033,57 @@ fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &st
             plan.assoc_array_read_constraints(),
             plan.float_predicate_read_constraints(),
         )
+}
+
+/// Returns true when a direct-store eval fragment fits every caller slot type.
+/// Mirrors codegen's per-target checks: a store that changes an existing
+/// slot's scalar type (e.g. Int -> Str) needs the barrier and a wider path.
+fn eval_literal_direct_store_supported_by_lowering(
+    ctx: &LoweringContext<'_, '_>,
+    fragment: &str,
+) -> bool {
+    let Some(writes) = crate::eval_aot::literal_fragment_direct_local_store_writes(fragment)
+    else {
+        return false;
+    };
+    writes.iter().all(|(name, kind)| {
+        if crate::superglobals::is_superglobal(name)
+            || (ctx.in_main && ctx.all_global_var_names.contains(name))
+        {
+            return false;
+        }
+        if ctx.local_slots.get(name).is_none() {
+            return true;
+        }
+        if ctx.is_ref_bound_local(name)
+            || ctx.local_kinds.get(name).copied() != Some(LocalKind::PhpLocal)
+        {
+            return false;
+        }
+        ctx.local_types
+            .get(name)
+            .is_some_and(|ty| eval_literal_direct_store_type_supported(ty, *kind))
+    })
+}
+
+/// Returns true when a static scalar store kind fits an existing caller slot type.
+fn eval_literal_direct_store_type_supported(
+    ty: &PhpType,
+    kind: crate::eval_aot::DirectLocalStoreScalarKind,
+) -> bool {
+    match ty.codegen_repr() {
+        PhpType::Mixed | PhpType::Union(_) => true,
+        PhpType::Int => kind == crate::eval_aot::DirectLocalStoreScalarKind::Int,
+        PhpType::Float => kind == crate::eval_aot::DirectLocalStoreScalarKind::Float,
+        PhpType::Bool => kind == crate::eval_aot::DirectLocalStoreScalarKind::Bool,
+        PhpType::Str => kind == crate::eval_aot::DirectLocalStoreScalarKind::String,
+        PhpType::TaggedScalar => matches!(
+            kind,
+            crate::eval_aot::DirectLocalStoreScalarKind::Int
+                | crate::eval_aot::DirectLocalStoreScalarKind::Null
+        ),
+        _ => false,
+    }
 }
 
 /// Returns true when a boxed read/write eval can use direct caller locals.

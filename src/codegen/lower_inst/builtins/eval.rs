@@ -2449,7 +2449,10 @@ fn eval_literal_direct_read_write_local_slot(
             ctx.local_php_type(slot)?.codegen_repr(),
             PhpType::Int | PhpType::Float | PhpType::Mixed | PhpType::Union(_)
         )
-        || !eval_literal_local_slot_has_eir_write(ctx, slot)
+        // Slots initialized by function parameters (including by-value closure
+        // captures) hold a defined value without an EIR store instruction.
+        || !(eval_literal_local_slot_has_eir_write(ctx, slot)
+            || ctx.function.params.iter().any(|param| param.name == name))
     {
         return Ok(None);
     }
@@ -2811,12 +2814,11 @@ fn eval_literal_direct_store_local_slot(
     let Some(slot) = ctx.local_slot_by_name(name) else {
         return Ok(None);
     };
-    if ctx.local_kind(slot)? != LocalKind::PhpLocal
-        || ctx.local_stores_ref_cell_pointer(slot)
-        || eval_literal_local_slot_has_eir_write(ctx, slot)
-    {
+    if ctx.local_kind(slot)? != LocalKind::PhpLocal || ctx.local_stores_ref_cell_pointer(slot) {
         return Ok(None);
     }
+    // Slots the native code already writes are fine: the store emitter
+    // releases the previous refcounted value before overwriting.
     Ok(Some(slot))
 }
 
@@ -2880,11 +2882,17 @@ fn emit_eval_literal_aot_direct_local_store(
         ));
     };
     match ctx.local_php_type(slot)?.codegen_repr() {
-        PhpType::Mixed | PhpType::Union(_) => {
+        target_ty @ (PhpType::Mixed | PhpType::Union(_)) => {
             emit_eval_literal_aot_core_mixed_scalar(ctx, value);
+            abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+            emit_eval_literal_release_old_direct_local_value(ctx, slot, &target_ty)?;
+            abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
             ctx.store_current_result_to_local(slot)
         }
         PhpType::Str => {
+            // Static scalar strings live in the data section; the old value
+            // may be a heap string and must be released before overwriting.
+            emit_eval_literal_release_old_direct_local_value(ctx, slot, &PhpType::Str)?;
             emit_eval_literal_aot_scalar_native_result(ctx, value);
             ctx.store_current_result_to_local(slot)
         }
@@ -3070,11 +3078,12 @@ fn eval_local_scalar_direct_sync_targets(
         };
         if ctx.local_kind(slot)? != LocalKind::PhpLocal
             || ctx.local_stores_ref_cell_pointer(slot)
-            || eval_literal_local_slot_has_eir_write(ctx, slot)
             || !eval_local_scalar_direct_sync_type_supported(ctx.local_php_type(slot)?, *local_type)
         {
             return Ok(None);
         }
+        // Slots the native code already writes are fine: the sync store
+        // releases the previous refcounted value before overwriting.
         targets.insert(name.clone(), Some(slot));
     }
     Ok(Some(targets))
@@ -4668,12 +4677,17 @@ fn emit_eval_local_scalar_store_current_result_to_direct_local(
     local_type: EvalLocalScalarType,
 ) -> Result<()> {
     match ctx.local_php_type(slot)?.codegen_repr() {
-        PhpType::Mixed | PhpType::Union(_) => {
+        target_ty @ (PhpType::Mixed | PhpType::Union(_)) => {
             emit_eval_local_scalar_box_current_result(
                 ctx,
                 local_type,
                 EvalLocalScalarBoxing::CoreRuntime,
             );
+            // The caller slot may already hold a refcounted value written by
+            // native code before the eval; release it before overwriting.
+            abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+            emit_eval_literal_release_old_direct_local_value(ctx, slot, &target_ty)?;
+            abi::emit_pop_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
             ctx.store_current_result_to_local(slot)
         }
         PhpType::TaggedScalar => match local_type {
