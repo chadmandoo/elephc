@@ -349,7 +349,33 @@ impl Checker {
             ));
         }
 
-        self.require_compatible_arg_type(expected, actual, span, context)
+        // A returned value narrowed to `self`/`static` (e.g. `return $x;` inside
+        // `if ($x instanceof self)`, or a `self::tryFrom()` result) carries the literal
+        // Object("self") name, while the declared return type was already rewritten to the
+        // enclosing class. Resolve the actual type's self/static to the current class so the
+        // two agree (PHP: `self` at a return boundary IS the enclosing class).
+        let actual = self.resolve_self_static_object(actual);
+        self.require_compatible_arg_type(expected, &actual, span, context)
+    }
+
+    /// Resolves `Object("self")` / `Object("static")` to `Object(<enclosing class>)`, recursing
+    /// through unions. Any other type is returned unchanged. A no-op outside a class context.
+    fn resolve_self_static_object(&self, ty: &PhpType) -> PhpType {
+        match ty {
+            PhpType::Object(name) if name == "self" || name == "static" => {
+                match &self.current_class {
+                    Some(class) => PhpType::Object(class.clone()),
+                    None => ty.clone(),
+                }
+            }
+            PhpType::Union(members) => PhpType::Union(
+                members
+                    .iter()
+                    .map(|member| self.resolve_self_static_object(member))
+                    .collect(),
+            ),
+            _ => ty.clone(),
+        }
     }
 
     /// Returns true if `ty` can accept a null/void value — covers PhpType::Mixed,
