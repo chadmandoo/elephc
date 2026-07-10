@@ -1344,6 +1344,12 @@ fn builtin_reflection_union_type() -> FlattenedClass {
                 Some(TypeExpr::Bool),
                 bool_lit(false),
             ),
+            builtin_property(
+                "__is_builtin",
+                Visibility::Private,
+                Some(TypeExpr::Bool),
+                bool_lit(false),
+            ),
         ],
         methods: vec![
             builtin_reflection_private_constructor_method(),
@@ -1355,6 +1361,7 @@ fn builtin_reflection_union_type() -> FlattenedClass {
             builtin_reflection_composite_type_string_method("__toString", "|", true),
             builtin_reflection_composite_type_string_method("getName", "|", true),
             builtin_reflection_class_bool_method("allowsNull", "__allows_null"),
+            builtin_reflection_class_bool_method("isBuiltin", "__is_builtin"),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -1387,6 +1394,12 @@ fn builtin_reflection_intersection_type() -> FlattenedClass {
                 Some(TypeExpr::Bool),
                 bool_lit(false),
             ),
+            builtin_property(
+                "__is_builtin",
+                Visibility::Private,
+                Some(TypeExpr::Bool),
+                bool_lit(false),
+            ),
         ],
         methods: vec![
             builtin_reflection_private_constructor_method(),
@@ -1398,6 +1411,7 @@ fn builtin_reflection_intersection_type() -> FlattenedClass {
             builtin_reflection_composite_type_string_method("__toString", "&", false),
             builtin_reflection_composite_type_string_method("getName", "&", false),
             builtin_reflection_class_bool_method("allowsNull", "__allows_null"),
+            builtin_reflection_class_bool_method("isBuiltin", "__is_builtin"),
         ],
         attributes: Vec::new(),
         constants: Vec::new(),
@@ -5201,8 +5215,10 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
                         "ReflectionNamedType".to_string(),
                     )));
                 }
-                if let Some(sig) = class_info.methods.get_mut("allowsnull") {
-                    sig.return_type = PhpType::Bool;
+                for method_name in ["allowsnull", "isbuiltin"] {
+                    if let Some(sig) = class_info.methods.get_mut(method_name) {
+                        sig.return_type = PhpType::Bool;
+                    }
                 }
                 if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("__toString")) {
                     sig.return_type = PhpType::Str;
@@ -5214,8 +5230,10 @@ pub(crate) fn patch_builtin_reflection_signatures(checker: &mut Checker) {
                         "ReflectionNamedType".to_string(),
                     )));
                 }
-                if let Some(sig) = class_info.methods.get_mut("allowsnull") {
-                    sig.return_type = PhpType::Bool;
+                for method_name in ["allowsnull", "isbuiltin"] {
+                    if let Some(sig) = class_info.methods.get_mut(method_name) {
+                        sig.return_type = PhpType::Bool;
+                    }
                 }
                 if let Some(sig) = class_info.methods.get_mut(&php_symbol_key("__toString")) {
                     sig.return_type = PhpType::Str;

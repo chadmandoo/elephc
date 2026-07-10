@@ -6851,6 +6851,12 @@ fn emit_reflection_union_type_object(
         "__allows_null",
         type_metadata.allows_null,
     )?;
+    emit_reflection_owner_bool_property(
+        ctx,
+        "ReflectionUnionType",
+        "__is_builtin",
+        type_metadata.types.iter().all(|member| member.is_builtin),
+    )?;
     Ok(())
 }
 
@@ -6913,6 +6919,12 @@ fn emit_reflection_intersection_type_object(
     )?;
     emit_reflection_intersection_type_types_property(ctx, &type_metadata.types)?;
     emit_reflection_owner_bool_property(ctx, "ReflectionIntersectionType", "__allows_null", false)?;
+    emit_reflection_owner_bool_property(
+        ctx,
+        "ReflectionIntersectionType",
+        "__is_builtin",
+        type_metadata.types.iter().all(|member| member.is_builtin),
+    )?;
     Ok(())
 }
 
