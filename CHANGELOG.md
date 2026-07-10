@@ -4,6 +4,7 @@ All notable changes to elephc, a PHP-to-native compiler written in Rust.
 Releases are listed newest first.
 
 ## [Unreleased]
+- Object-subtype declaration defaults are now validated after class and interface schemas are complete: parameters, methods, and constructor-promoted properties may use an implementing class or subclass instance as the default for an interface/base-class type, while unrelated object defaults are still rejected with a type error.
 - `htmlspecialchars()` / `htmlentities()` now accept the optional `$flags` and `$encoding` arguments (issue #506), and the `ENT_*` constants (`ENT_QUOTES`, `ENT_COMPAT`, `ENT_NOQUOTES`, `ENT_HTML401`, `ENT_HTML5`, `ENT_XHTML`, `ENT_XML1`, `ENT_SUBSTITUTE`, `ENT_IGNORE`) are defined with PHP's values. The escaper currently always applies `ENT_QUOTES` behavior.
 - Static interface methods (PHP 8.3+): an interface may declare `public static function` signatures; a concrete implementing class must provide a compatible public static method (abstract classes may defer to a concrete child), dispatched by class with no vtable slot. `#[\Override]` is accepted on the static implementation, including when the interface is implemented by an abstract parent class.
 - Deprecated `${var}` / `${expr}` string interpolation is now accepted by the lexer (issue #340), matching PHP 8.x's deprecated-but-working behavior.
