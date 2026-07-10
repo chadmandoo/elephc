@@ -997,3 +997,53 @@ echo implode(",", $plain);
     );
     assert_eq!(out, "a/y,b/x,c/z|1,2,3|a,b");
 }
+
+/// Verifies a nested array-element append `$this->prop[$k][] = $v` auto-vivifies a missing
+/// inner array (PHP semantics) and accumulates across calls, byte-parity with PHP 8.5. The
+/// desugar reads the element coalesced to `[]` before pushing, so a first append to an absent
+/// key yields a one-element list rather than a corrupt value. Forge EC-58 / #552.
+#[test]
+fn test_nested_array_element_append_autovivifies() {
+    let out = compile_and_run(
+        r#"<?php
+class B {
+    private array $routeIndex = [];
+    public function add(string $p, string $c): void { $this->routeIndex[$p][] = $c; }
+    public function get(string $p): array { return $this->routeIndex[$p] ?? []; }
+}
+$b = new B();
+$b->add("home", "HomeBlock");
+$b->add("home", "HeroBlock");
+echo implode(",", $b->get("home"));
+"#,
+    );
+    assert_eq!(out, "HomeBlock,HeroBlock");
+}
+
+/// Verifies an array-append assignment in EXPRESSION position (a match-arm body):
+/// `match (true) { $x instanceof R => $this->index[$k][] = $v }` parses, appends, and the
+/// match yields the appended value — byte-parity with PHP 8.5. Mirrors
+/// BlockRegistryBuilder::register. Forge EC-58 / #552.
+#[test]
+fn test_array_append_expression_in_match_arm() {
+    let out = compile_and_run(
+        r#"<?php
+interface Rule {}
+final class RouteRule implements Rule { public function __construct(public string $pattern) {} }
+final class B {
+    private array $index = [];
+    public function add(Rule $rule, string $class): string {
+        return match (true) {
+            $rule instanceof RouteRule => $this->index[$rule->pattern][] = $class,
+            default => "none",
+        };
+    }
+    public function get(string $p): array { return $this->index[$p] ?? []; }
+}
+$b = new B();
+$r = new RouteRule("home");
+echo $b->add($r, "A") . "|" . $b->add($r, "B") . "|" . implode(",", $b->get("home"));
+"#,
+    );
+    assert_eq!(out, "A|B|A,B");
+}

@@ -161,6 +161,15 @@ impl Checker {
                 stmt.span,
                 env,
             ),
+            // A nested array-element append (`$a[$k][] = $v`) desugars to a synthetic block of
+            // assignment-like statements (read → push → write-back); recurse into it so an
+            // append-assignment carried in an assignment prelude type-checks (#552).
+            StmtKind::Synthetic(body) => {
+                for inner in body {
+                    self.check_assignment_like_stmt(inner, env)?;
+                }
+                Ok(())
+            }
             _ => unreachable!("non-assignment statement routed to assignment checker"),
         }
     }

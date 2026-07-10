@@ -26,6 +26,7 @@ pub(super) use locals::{
     parse_typed_assign,
 };
 pub(crate) use postfix::{
+    build_append_statement,
     can_replay_assignment_target,
 };
 pub(super) use postfix::{
