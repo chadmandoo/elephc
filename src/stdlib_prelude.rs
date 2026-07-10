@@ -1230,6 +1230,47 @@ function __elephc_strpos_offset(string $haystack, string $needle, int $offset): 
 }
 "#;
 
+/// EC-78 (#572): the ext-fileinfo `finfo` class for content MIME sniffing. AIC's
+/// FilesystemManagedFileStore does `(new finfo(FILEINFO_MIME_TYPE))->buffer($bytes)` and
+/// matches the result against an allow-list of image/{jpeg,png,gif,webp} + application/pdf.
+/// Magic-byte detection of exactly those types is byte-parity with PHP's libmagic for real
+/// (complete) uploads; unrecognized content returns `application/octet-stream` (which matches
+/// no allow-list entry, exactly like a disallowed type). The constructor flags are accepted
+/// and ignored — AIC only ever passes FILEINFO_MIME_TYPE, whose result IS the MIME type.
+/// Composes only native string builtins (str_starts_with/substr), so it cannot re-enter any
+/// desugar.
+const FINFO_PRELUDE_SRC: &str = r#"<?php
+class finfo {
+    public function __construct(int $flags = 0, string $magic_database = "") {
+    }
+    public function buffer(string $string, int $flags = 0): string|false {
+        if (\str_starts_with($string, "\xFF\xD8\xFF")) {
+            return "image/jpeg";
+        }
+        if (\str_starts_with($string, "\x89PNG\r\n\x1A\n")) {
+            return "image/png";
+        }
+        if (\str_starts_with($string, "GIF87a") || \str_starts_with($string, "GIF89a")) {
+            return "image/gif";
+        }
+        if (\str_starts_with($string, "RIFF") && \substr($string, 8, 4) === "WEBP") {
+            return "image/webp";
+        }
+        if (\str_starts_with($string, "%PDF")) {
+            return "application/pdf";
+        }
+        return "application/octet-stream";
+    }
+    public function file(string $filename, int $flags = 0): string|false {
+        $contents = \file_get_contents($filename);
+        if ($contents === false) {
+            return false;
+        }
+        return $this->buffer($contents);
+    }
+}
+"#;
+
 /// Injects the stdlib prelude when the program references any of its names and filters
 /// out functions the program declares itself. The loose-eq prelude is injected
 /// separately, gated on the presence of a loose `==`/`!=` (the `Debug` rendering of
@@ -1252,6 +1293,11 @@ pub fn inject_if_used(program: Program) -> Program {
     // is stripped by link-GC, at compile-time parse cost only — same posture as loose-eq.
     if rendered.contains("strpos") {
         sources.push(STRPOS_OFFSET_PRELUDE_SRC);
+    }
+    // The ext-fileinfo `finfo` class is injected whenever the program references it
+    // (`new finfo`, `use finfo`); an unused injection is stripped by link-GC.
+    if rendered.contains("finfo") {
+        sources.push(FINFO_PRELUDE_SRC);
     }
     if sources.is_empty() {
         return program;

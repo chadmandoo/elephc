@@ -37,3 +37,28 @@ fn test_string_control_escape_sequences() {
 }
 
 // --- md5 / sha1 ---
+
+/// Verifies the ext-fileinfo `finfo` prelude class sniffs the MIME types AIC's
+/// FilesystemManagedFileStore accepts (image/jpeg, image/png, image/gif, image/webp,
+/// application/pdf) by magic bytes, byte-parity with PHP 8.5 for real headers. Unrecognized
+/// content returns `application/octet-stream` (a documented approximation of libmagic's
+/// text/plain — both match no allow-list entry, so AIC rejects such uploads identically).
+/// Forge EC-78 / #572.
+#[test]
+fn test_finfo_buffer_mime_detection() {
+    let out = compile_and_run(
+        r#"<?php
+$fi = new finfo(FILEINFO_MIME_TYPE);
+echo $fi->buffer("\xFF\xD8\xFF\xE0\x00\x10JFIF") . "|";
+echo $fi->buffer("\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR") . "|";
+echo $fi->buffer("GIF89a\x01\x00") . "|";
+echo $fi->buffer("RIFF\x24\x00\x00\x00WEBPVP8 ") . "|";
+echo $fi->buffer("%PDF-1.7\n") . "|";
+echo $fi->buffer("just plain text");
+"#,
+    );
+    assert_eq!(
+        out,
+        "image/jpeg|image/png|image/gif|image/webp|application/pdf|application/octet-stream"
+    );
+}
