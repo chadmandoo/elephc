@@ -58,7 +58,13 @@ impl Checker {
 
         match expected {
             PhpType::Mixed => true,
-            PhpType::Bool => matches!(actual, PhpType::False),
+            PhpType::Bool if matches!(actual, PhpType::False) => true,
+            // PHP coercive mode: scalars accept Mixed with runtime narrowing.
+            PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Str
+                if matches!(actual, PhpType::Mixed) =>
+            {
+                true
+            }
             PhpType::Union(members) => members
                 .iter()
                 .any(|member| self.type_accepts(member, actual)),

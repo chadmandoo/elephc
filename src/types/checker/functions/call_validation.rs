@@ -105,6 +105,24 @@ fn is_assoc_spread_source(expr: &Expr, env: &TypeEnv) -> bool {
 }
 
 impl Checker {
+    /// Returns true when an argument expression is an l-value supported by by-reference calls.
+    pub(crate) fn is_by_ref_argument_lvalue(
+        &mut self,
+        arg: &Expr,
+        env: &TypeEnv,
+    ) -> Result<bool, CompileError> {
+        match &arg.kind {
+            ExprKind::Variable(_) => Ok(true),
+            ExprKind::ArrayAccess { array, .. } if matches!(array.kind, ExprKind::Variable(_)) => {
+                Ok(matches!(
+                    self.infer_type(array, env)?.codegen_repr(),
+                    PhpType::Array(_)
+                ))
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// Normalizes arguments for a user-defined function call, allowing unknown named arguments
     /// to be collected into the variadic parameter.
     pub(crate) fn normalize_named_call_args(
@@ -169,6 +187,11 @@ impl Checker {
             (PhpType::Mixed, _) => true,
             (_, PhpType::Never) => true, // never is the bottom type — compatible with any expected type
             (PhpType::Bool, PhpType::False) => true,
+            // PHP coercive mode: scalar parameters accept Mixed values with a
+            // runtime narrowing cast.
+            // This is needed because non-constant `int + int` overflows to float,
+            // making the result Mixed even when both operands are statically Int.
+            (PhpType::Int | PhpType::Float | PhpType::Bool | PhpType::Str, PhpType::Mixed) => true,
             (PhpType::Iterable, PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable) => true,
             (PhpType::Union(members), _) => {
                 members.iter().any(|m| Self::types_compatible(m, actual))
@@ -331,7 +354,7 @@ impl Checker {
             }
             if param_idx < regular_param_count {
                 if sig.ref_params.get(param_idx).copied().unwrap_or(false)
-                    && !matches!(arg.kind, ExprKind::Variable(_))
+                    && !self.is_by_ref_argument_lvalue(arg, caller_env)?
                 {
                     let param_name = sig
                         .params
