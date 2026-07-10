@@ -797,7 +797,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         "grapheme_strrev" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Str],
-            PhpType::Union(vec![PhpType::Str, PhpType::Bool]),
+            PhpType::Union(vec![PhpType::Str, PhpType::False]),
         )),
         "strtolower" | "strtoupper" | "ucfirst" | "lcfirst" | "strrev"
         | "addslashes" | "stripslashes" | "nl2br" | "bin2hex" | "hex2bin"
@@ -957,7 +957,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         }
         "strtotime" => {
             let mut sig = builtin_call_sig(name)?;
-            sig.return_type = PhpType::Union(vec![PhpType::Int, PhpType::Bool]);
+            sig.return_type = PhpType::Union(vec![PhpType::Int, PhpType::False]);
             sig.declared_return = true;
             Some(sig)
         }
@@ -979,7 +979,7 @@ fn general_first_class_callable_builtin_sig(name: &str) -> Option<FunctionSig> {
         "json_encode" => Some(typed_first_class_builtin_sig(
             name,
             &[PhpType::Mixed, PhpType::Int, PhpType::Int],
-            PhpType::Union(vec![PhpType::Str, PhpType::Bool]),
+            PhpType::Union(vec![PhpType::Str, PhpType::False]),
         )),
         "json_decode" => Some(typed_first_class_builtin_sig(
             name,

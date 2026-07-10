@@ -142,6 +142,7 @@ fn type_refs_image(type_expr: &TypeExpr) -> bool {
         TypeExpr::Int
         | TypeExpr::Float
         | TypeExpr::Bool
+        | TypeExpr::False
         | TypeExpr::Str
         | TypeExpr::Void
         | TypeExpr::Never

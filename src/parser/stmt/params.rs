@@ -290,9 +290,14 @@ fn parse_atomic_type_expr(
             *pos += 1;
             Ok(TypeExpr::Void)
         }
-        // `false` and `true` are literal bool subtypes. elephc does not track literal-bool
-        // precision, so both widen to `bool`; the runtime representation is identical.
-        Some(Token::False) | Some(Token::True) => {
+        // Preserve `false` as a literal subtype so `$x === false` can remove only the false
+        // member from `T|false` without incorrectly removing a full `bool` member. Its runtime
+        // representation remains identical to bool. `true` is conservatively widened to bool.
+        Some(Token::False) => {
+            *pos += 1;
+            Ok(TypeExpr::False)
+        }
+        Some(Token::True) => {
             *pos += 1;
             Ok(TypeExpr::Bool)
         }

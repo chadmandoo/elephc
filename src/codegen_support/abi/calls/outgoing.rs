@@ -185,6 +185,7 @@ pub fn materialize_outgoing_args(
         let src_offset = base_shift + temp_offsets[i];
         match &assignment.ty {
             PhpType::Bool
+            | PhpType::False
             | PhpType::Int
             | PhpType::Resource(_)
             | PhpType::Iterable

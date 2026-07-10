@@ -554,7 +554,7 @@ fn test_parse_union_and_nullable_function_types() {
 }
 
 /// Verifies that union return types containing the literal types `false`/`true`/`null` parse:
-/// `false`/`true` map to `Bool`, and a `null` member makes the whole type nullable
+/// `false` remains precise, `true` maps to `Bool`, and a `null` member makes the whole type nullable
 /// (`T|null` is equivalent to `?T`). Covers `int|false`, `A|null`, and `string|false|null`.
 #[test]
 fn test_parse_union_return_types_with_literal_types() {
@@ -564,7 +564,7 @@ fn test_parse_union_return_types_with_literal_types() {
     };
     assert_eq!(
         ret("<?php function f(): int|false { return 1; }"),
-        Some(TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Bool]))
+        Some(TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::False]))
     );
     assert_eq!(
         ret("<?php function f(): A|null { return null; }"),
@@ -579,7 +579,7 @@ fn test_parse_union_return_types_with_literal_types() {
         // nullable downstream. A single non-null member instead folds to `Nullable` (see `A|null`).
         Some(TypeExpr::Union(vec![
             TypeExpr::Str,
-            TypeExpr::Bool,
+            TypeExpr::False,
             TypeExpr::Void
         ]))
     );
@@ -615,16 +615,16 @@ fn test_parse_null_first_union_folds_to_nullable() {
     }
 }
 
+/// Verifies that the `false` literal type remains precise in a union, so `int|false`
+/// can later narrow independently from a full `bool` member.
 #[test]
-/// Verifies that the `false` literal type widens to `bool` in a union, so `int|false`
-/// (PHP's classic `strpos`-style return) parses as `Union([Int, Bool])`.
-fn test_parse_t_or_false_widens_to_bool_union() {
+fn test_parse_t_or_false_preserves_literal_union_member() {
     let stmts = parse_source("<?php function f(): int|false { return 1; }");
     match &stmts[0].kind {
         StmtKind::FunctionDecl { return_type, .. } => {
             assert_eq!(
                 return_type.as_ref(),
-                Some(&TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Bool]))
+                Some(&TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::False]))
             );
         }
         other => panic!("Expected FunctionDecl, got {:?}", other),

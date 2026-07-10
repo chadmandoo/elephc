@@ -224,7 +224,7 @@ fn static_gettype_name(ty: &PhpType) -> Option<&'static [u8]> {
         PhpType::Int => Some(b"integer".as_slice()),
         PhpType::Float => Some(b"double".as_slice()),
         PhpType::Str => Some(b"string".as_slice()),
-        PhpType::Bool => Some(b"boolean".as_slice()),
+        PhpType::Bool | PhpType::False => Some(b"boolean".as_slice()),
         PhpType::Void | PhpType::Never => Some(b"NULL".as_slice()),
         PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
             Some(b"array".as_slice())
@@ -355,6 +355,7 @@ pub(crate) fn lower_is_callable(ctx: &mut FunctionContext<'_>, inst: &Instructio
         }
         PhpType::Int
         | PhpType::Bool
+        | PhpType::False
         | PhpType::Float
         | PhpType::Void
         | PhpType::Never
@@ -524,7 +525,7 @@ pub(crate) fn lower_intval(ctx: &mut FunctionContext<'_>, inst: &Instruction) ->
     ensure_arg_count(inst, "intval", 1)?;
     let value = expect_operand(inst, 0)?;
     match ctx.value_php_type(value)? {
-        PhpType::Int | PhpType::Bool => {
+        PhpType::Int | PhpType::Bool | PhpType::False => {
             ctx.load_value_to_result(value)?;
         }
         PhpType::Void | PhpType::Never => {
@@ -560,7 +561,7 @@ pub(crate) fn lower_floatval(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
         PhpType::Float => {
             ctx.load_value_to_result(value)?;
         }
-        PhpType::Int | PhpType::Bool => {
+        PhpType::Int | PhpType::Bool | PhpType::False => {
             ctx.load_value_to_result(value)?;
             abi::emit_int_result_to_float_result(ctx.emitter);
         }
@@ -587,7 +588,7 @@ pub(crate) fn lower_boolval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     ensure_arg_count(inst, "boolval", 1)?;
     let value = expect_operand(inst, 0)?;
     match ctx.value_php_type(value)? {
-        PhpType::Bool | PhpType::Int => {
+        PhpType::Bool | PhpType::False | PhpType::Int => {
             ctx.load_value_to_result(value)?;
             predicates::emit_int_result_nonzero_bool(ctx);
         }
@@ -619,7 +620,7 @@ fn lower_empty(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> 
     ensure_arg_count(inst, "empty", 1)?;
     let value = expect_operand(inst, 0)?;
     match ctx.raw_value_php_type(value)? {
-        PhpType::Int | PhpType::Bool | PhpType::Pointer(_) => {
+        PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Pointer(_) => {
             ctx.load_value_to_result(value)?;
             emit_int_result_zero_bool(ctx);
         }
@@ -802,6 +803,7 @@ pub(crate) fn lower_is_iterable(ctx: &mut FunctionContext<'_>, inst: &Instructio
         | PhpType::Float
         | PhpType::Str
         | PhpType::Bool
+        | PhpType::False
         | PhpType::Void
         | PhpType::Never
         | PhpType::Callable
@@ -1034,7 +1036,7 @@ pub(crate) fn lower_is_scalar(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     ensure_arg_count(inst, "is_scalar", 1)?;
     let value = expect_operand(inst, 0)?;
     match ctx.value_php_type(value)? {
-        PhpType::Int | PhpType::Float | PhpType::Str | PhpType::Bool => {
+        PhpType::Int | PhpType::Float | PhpType::Str | PhpType::Bool | PhpType::False => {
             emit_static_bool(ctx, true)
         }
         PhpType::TaggedScalar => emit_tagged_scalar_int_predicate(ctx, value)?,
@@ -1052,7 +1054,7 @@ fn mixed_type_predicate_tag(expected: &PhpType) -> Option<u8> {
         PhpType::Int => Some(0),
         PhpType::Str => Some(1),
         PhpType::Float => Some(2),
-        PhpType::Bool => Some(3),
+        PhpType::Bool | PhpType::False => Some(3),
         _ => None,
     }
 }

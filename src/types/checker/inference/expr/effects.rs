@@ -52,14 +52,26 @@ impl Checker {
                 prelude,
                 ..
             } => {
-                self.check_assignment_expression(
+                let ty = self.check_assignment_expression(
                     target,
                     value,
                     result_target.as_deref(),
                     prelude,
                     expr.span,
                     env,
-                )
+                )?;
+                // A write through to a property (directly or via one of its elements)
+                // invalidates every property narrowing.
+                match &target.kind {
+                    ExprKind::Variable(name) => {
+                        Self::purge_property_narrowings_for_root(env, name)
+                    }
+                    _ if assignment_may_write_property(target) => {
+                        Self::purge_property_narrowings(env)
+                    }
+                    _ => {}
+                }
+                Ok(ty)
             }
             ExprKind::PreIncrement(name) | ExprKind::PreDecrement(name) => {
                 let old_ty = env.get(name).cloned();
@@ -121,9 +133,17 @@ impl Checker {
                 else_expr,
             } => {
                 self.infer_type_with_assignment_effects(condition, env)?;
+                // Flow-narrowing across the branches (see guard_narrowing): `$x instanceof X`
+                // and simple `$x->prop instanceof X` guards narrow the branch envs. A ternary is a
+                // single expression, so branch narrowing is write-invalidation-safe.
+                let guard = self.guard_narrowing(condition, env)?;
                 let mut then_env = env.clone();
-                let then_ty = self.infer_type_with_assignment_effects(then_expr, &mut then_env)?;
                 let mut else_env = env.clone();
+                if let Some(guard) = guard {
+                    then_env.insert(guard.var.clone(), guard.then_ty);
+                    else_env.insert(guard.var, guard.else_ty);
+                }
+                let then_ty = self.infer_type_with_assignment_effects(then_expr, &mut then_env)?;
                 let else_ty = self.infer_type_with_assignment_effects(else_expr, &mut else_env)?;
                 Ok(wider_type_syntactic(&then_ty, &else_ty))
             }
@@ -221,6 +241,9 @@ impl Checker {
                     }
                 }
                 let ty = self.infer_type(expr, env)?;
+                // The callee may mutate any reachable object; drop property narrowings. (The
+                // call's own argument checking above still saw them.)
+                Self::purge_property_narrowings(env);
                 if builtin_name.eq_ignore_ascii_case("preg_match") {
                     if let Some(arg) = expanded_args.get(2) {
                         if let Some(name) = preg_match_output_var(arg) {
@@ -240,7 +263,9 @@ impl Checker {
                 for arg in &expanded_args {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
-                self.infer_type(expr, env)
+                let ty = self.infer_type(expr, env)?;
+                Self::purge_property_narrowings(env);
+                Ok(ty)
             }
             ExprKind::ClosureCall { var, args } => {
                 let expanded_args = crate::types::call_args::expand_static_assoc_spread_args(args);
@@ -252,7 +277,9 @@ impl Checker {
                     }
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
-                self.infer_type(expr, env)
+                let ty = self.infer_type(expr, env)?;
+                Self::purge_property_narrowings(env);
+                Ok(ty)
             }
             ExprKind::ExprCall { callee, args } => {
                 self.infer_type_with_assignment_effects(callee, env)?;
@@ -265,7 +292,9 @@ impl Checker {
                     }
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
-                self.infer_type(expr, env)
+                let ty = self.infer_type(expr, env)?;
+                Self::purge_property_narrowings(env);
+                Ok(ty)
             }
             ExprKind::NamedArg { value, .. } => {
                 self.infer_type_with_assignment_effects(value, env)?;
@@ -289,7 +318,9 @@ impl Checker {
                 for arg in &expanded_args {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
-                self.infer_type(expr, env)
+                let ty = self.infer_type(expr, env)?;
+                Self::purge_property_narrowings(env);
+                Ok(ty)
             }
             ExprKind::BufferNew { len, .. } => {
                 self.infer_type_with_assignment_effects(len, env)?;
@@ -300,7 +331,9 @@ impl Checker {
                 for arg in &expanded_args {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
-                self.infer_type(expr, env)
+                let ty = self.infer_type(expr, env)?;
+                Self::purge_property_narrowings(env);
+                Ok(ty)
             }
             _ => self.infer_type(expr, env),
         }
@@ -331,6 +364,17 @@ fn callable_target_is_preg_replace_callback(target: &CallableTarget) -> bool {
         target,
         CallableTarget::Function(name) if php_symbol_key(name.as_str()) == "preg_replace_callback"
     )
+}
+
+/// Returns true when an assignment target can write through to an object property — directly
+/// (`$obj->p = …`) or via an element of one (`$obj->p[0] = …`) — invalidating property
+/// narrowings. Plain variables (and elements of plain variables) cannot.
+fn assignment_may_write_property(target: &Expr) -> bool {
+    match &target.kind {
+        ExprKind::Variable(_) => false,
+        ExprKind::ArrayAccess { array, .. } => assignment_may_write_property(array),
+        _ => true,
+    }
 }
 
 /// Returns the variable name used as `preg_match()`'s output `$matches` argument.

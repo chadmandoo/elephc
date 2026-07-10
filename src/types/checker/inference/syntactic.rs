@@ -132,6 +132,9 @@ pub(crate) fn wider_type_syntactic(a: &PhpType, b: &PhpType) -> PhpType {
     if *b == PhpType::Never {
         return a.clone();
     }
+    if matches!((a, b), (PhpType::Bool, PhpType::False) | (PhpType::False, PhpType::Bool)) {
+        return PhpType::Bool;
+    }
     if *a == PhpType::Str || *b == PhpType::Str {
         return PhpType::Str;
     }
@@ -232,7 +235,8 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
         ExprKind::StringLiteral(_) => PhpType::Str,
         ExprKind::IntLiteral(_) => PhpType::Int,
         ExprKind::FloatLiteral(_) => PhpType::Float,
-        ExprKind::BoolLiteral(_) => PhpType::Bool,
+        ExprKind::BoolLiteral(false) => PhpType::False,
+        ExprKind::BoolLiteral(true) => PhpType::Bool,
         ExprKind::Null => PhpType::Void,
         ExprKind::Cast {
             target: CastType::String,
@@ -265,7 +269,7 @@ pub fn infer_expr_type_syntactic(expr: &Expr) -> PhpType {
             | "readlink" | "stream_get_contents" | "stream_copy_to_stream" | "clamp" => {
                 PhpType::Mixed
             }
-            "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::Bool]),
+            "fopen" | "tmpfile" => PhpType::Union(vec![PhpType::stream_resource(), PhpType::False]),
             "strlen" | "ord" | "count" | "intval" | "abs" | "intdiv" | "printf"
             | "rand" | "time" | "fpassthru" | "linkinfo" => PhpType::Int,
             "floatval" | "floor" | "ceil" | "round" | "sqrt" | "pow" | "fmod" | "sin" | "cos"

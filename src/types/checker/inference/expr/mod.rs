@@ -37,7 +37,8 @@ impl Checker {
             ExprKind::IncludeValue { .. } => unreachable!(
                 "ExprKind::IncludeValue must be expanded by the resolver"
             ),
-            ExprKind::BoolLiteral(_) => Ok(PhpType::Bool),
+            ExprKind::BoolLiteral(false) => Ok(PhpType::False),
+            ExprKind::BoolLiteral(true) => Ok(PhpType::Bool),
             ExprKind::Null => Ok(PhpType::Void),
             ExprKind::StringLiteral(_) => Ok(PhpType::Str),
             ExprKind::IntLiteral(_) => Ok(PhpType::Int),
@@ -56,7 +57,9 @@ impl Checker {
                         }
                     }
                     PhpType::Float => Ok(PhpType::Float),
-                    PhpType::Mixed | PhpType::Bool | PhpType::Void => Ok(PhpType::Mixed),
+                    PhpType::Mixed | PhpType::Bool | PhpType::False | PhpType::Void => {
+                        Ok(PhpType::Mixed)
+                    }
                     _ => Err(CompileError::new(
                         expr.span,
                         "Cannot negate a non-numeric value",
@@ -75,7 +78,9 @@ impl Checker {
             ExprKind::PreIncrement(name) | ExprKind::PreDecrement(name) => match env.get(name) {
                 Some(PhpType::Int) => Ok(PhpType::Mixed),
                 Some(PhpType::Mixed) => Ok(PhpType::Mixed),
-                Some(PhpType::Bool) | Some(PhpType::Void) => Ok(PhpType::Int),
+                Some(PhpType::Bool) | Some(PhpType::False) | Some(PhpType::Void) => {
+                    Ok(PhpType::Int)
+                }
                 Some(other) => Err(CompileError::new(
                     expr.span,
                     &format!("Cannot increment/decrement ${} of type {:?}", name, other),
@@ -86,7 +91,10 @@ impl Checker {
                 )),
             },
             ExprKind::PostIncrement(name) | ExprKind::PostDecrement(name) => match env.get(name) {
-                Some(PhpType::Int) | Some(PhpType::Bool) | Some(PhpType::Void) => Ok(PhpType::Int),
+                Some(PhpType::Int)
+                | Some(PhpType::Bool)
+                | Some(PhpType::False)
+                | Some(PhpType::Void) => Ok(PhpType::Int),
                 Some(PhpType::Mixed) => Ok(PhpType::Mixed),
                 Some(other) => Err(CompileError::new(
                     expr.span,
@@ -315,8 +323,24 @@ impl Checker {
                 else_expr,
             } => {
                 self.infer_type(condition, env)?;
-                let then_ty = self.infer_type(then_expr, env)?;
-                let else_ty = self.infer_type(else_expr, env)?;
+                // Flow-narrowing across the branches: `$x instanceof X ? ... : ...` (and the other
+                // recognized guards) narrow `$x` — or a simple `$x->prop` — in the then/else
+                // branches. A ternary is a single expression (no intervening writes), so the
+                // narrowing is safe to scope to each branch's inference.
+                let (then_ty, else_ty) = if let Some(guard) =
+                    self.guard_narrowing(condition, env)?
+                {
+                    let mut then_env = env.clone();
+                    then_env.insert(guard.var.clone(), guard.then_ty);
+                    let mut else_env = env.clone();
+                    else_env.insert(guard.var, guard.else_ty);
+                    (
+                        self.infer_type(then_expr, &then_env)?,
+                        self.infer_type(else_expr, &else_env)?,
+                    )
+                } else {
+                    (self.infer_type(then_expr, env)?, self.infer_type(else_expr, env)?)
+                };
                 let result_ty = if then_ty == else_ty {
                     then_ty
                 } else if then_ty == PhpType::Str || else_ty == PhpType::Str {
@@ -401,7 +425,7 @@ impl Checker {
             }
             ExprKind::BitNot(inner) => {
                 let ty = self.infer_type(inner, env)?;
-                if !matches!(ty, PhpType::Int | PhpType::Bool | PhpType::Void) {
+                if !matches!(ty, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void) {
                     return Err(CompileError::new(
                         expr.span,
                         "Bitwise NOT requires integer operand",
