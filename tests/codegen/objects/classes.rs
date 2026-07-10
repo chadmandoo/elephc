@@ -616,3 +616,25 @@ echo handle(new User());
     );
     assert_eq!(out, "id=7,rules=name");
 }
+
+/// Verifies property access on an intersection-typed receiver (`Field&AcceptsUploadedFile`,
+/// a class intersected with an interface): `$field->name` reads the property declared on the
+/// class member while `validateUpload()` dispatches to the interface member. Mirrors PHP,
+/// which outputs "avatar:missing". Forge EC-72 / #566.
+#[test]
+fn test_intersection_receiver_property_access() {
+    let out = compile_and_run(
+        r#"<?php
+abstract class Field { public function __construct(public readonly string $name) {} }
+interface AcceptsUploadedFile { public function validateUpload(?string $f): ?string; }
+final class FileField extends Field implements AcceptsUploadedFile {
+    public function validateUpload(?string $f): ?string { return $f === null ? 'missing' : null; }
+}
+function resolve(Field&AcceptsUploadedFile $field): string {
+    return $field->name . ':' . ($field->validateUpload(null) ?? 'ok');
+}
+echo resolve(new FileField('avatar'));
+"#,
+    );
+    assert_eq!(out, "avatar:missing");
+}

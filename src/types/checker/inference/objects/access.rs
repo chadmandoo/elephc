@@ -39,6 +39,26 @@ impl Checker {
         if let PhpType::Object(class_name) = &obj_ty {
             return self.infer_property_on_class_type(class_name, property, expr);
         }
+        // A property access on an intersection receiver (A&B) resolves against whichever
+        // member declares the property (the intersection widens the property surface).
+        // Falls back to the first object member so an undeclared property still yields the
+        // standard diagnostic naming a concrete member class.
+        if let PhpType::Intersection(members) = &obj_ty {
+            for member in members {
+                if let PhpType::Object(class_name) = member {
+                    if let Ok(property_ty) =
+                        self.infer_property_on_class_type(class_name, property, expr)
+                    {
+                        return Ok(property_ty);
+                    }
+                }
+            }
+            if let Some(PhpType::Object(class_name)) =
+                members.iter().find(|member| matches!(member, PhpType::Object(_)))
+            {
+                return self.infer_property_on_class_type(class_name, property, expr);
+            }
+        }
         // Non-nullsafe property access on a nullable / union object type is
         // allowed when the union resolves to a single object class.
         //   - `?Foo` / `Foo|null`: a null receiver emits a PHP-style warning and
