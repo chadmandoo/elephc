@@ -6,7 +6,7 @@
 //! - `crate::types::checker::stmt_check::control_flow` when checking `StmtKind::If`.
 //!
 //! Key details:
-//! - Recognizes `is_int`/`is_float`/`is_string`/`is_bool($var)` (and aliases) and `$var instanceof
+//! - Recognizes `is_int`/`is_float`/`is_string`/`is_bool`/`is_callable($var)` (and aliases) and `$var instanceof
 //!   Class` guards, optionally negated with a leading `!`. Narrowing is applied to each clause in an
 //!   if/elseif*/else chain (each subsequent clause, and the else, see the accumulated complement
 //!   from previous guards). For a chain with no else where *every* clause body always diverges
@@ -225,7 +225,7 @@ impl Checker {
 }
 
 /// Extracts the guarded receiver expression and the target type from a (non-negated) guard
-/// expression. Recognizes the scalar `is_*` predicates, `is_null`, `instanceof <Name>`, and
+/// expression. Recognizes the scalar `is_*` predicates, `is_callable`, `is_null`, `instanceof <Name>`, and
 /// `=== false` / `=== null`. The receiver may be any expression here — `guard_env_key` decides
 /// which receivers narrowing can actually key (variables and simple property accesses).
 fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
@@ -236,6 +236,14 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 "is_float" | "is_double" => PhpType::Float,
                 "is_string" => PhpType::Str,
                 "is_bool" => PhpType::Bool,
+                // `is_callable($x)`: narrow to Callable in the then-branch (and, via the negated
+                // early-return complement, on the fall-through). Sound because every value for which
+                // `is_callable` is true — closure, function-name string, `[obj, method]` /
+                // `[class, staticMethod]` array, or an `__invoke` object — is a PHP callable. Lets
+                // the `if (!is_callable($x)) { continue; } $x(...)` guard (PSR-14 EventDispatcher)
+                // type-check; the boxed-closure runtime (is_callable tag-10 reader + callable-array
+                // value_type stamp) makes the guarded dispatch work natively, not just at --check.
+                "is_callable" => PhpType::Callable,
                 // `is_null($x)`: same narrowing as `$x === null` — elephc models a `?T` value's
                 // null as Void, so the complement strips it (`if (is_null($x)) { throw; }` leaves
                 // ?int as int on the fall-through path).

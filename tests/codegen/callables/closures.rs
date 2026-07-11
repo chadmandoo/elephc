@@ -1454,3 +1454,32 @@ echo probe("strlen");
     );
     assert_eq!(out, "yesyesnoyes");
 }
+
+/// Regression: the PSR-14 dispatch shape — iterate an `iterable` of closures, guard each with
+/// `is_callable()`, and invoke it — must dispatch natively. This exercises three fixes together:
+/// the `is_callable()` checker narrowing (so `$listener($e)` type-checks after the guard), the
+/// tag-10 `__rt_is_callable_mixed` reader, and the callable-array value_type stamp (so a
+/// homogeneous closure array boxes its descriptors as tag-10 Mixed when iterated as `iterable`,
+/// rather than as integers). Before the stamp fix the closures were silently skipped.
+#[test]
+fn test_iterable_of_closures_is_callable_guarded_dispatch() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+/** @param iterable<mixed> $listeners */
+function dispatch(iterable $listeners, int $event): void {
+    foreach ($listeners as $listener) {
+        if (!is_callable($listener)) {
+            continue;
+        }
+        $listener($event);
+    }
+}
+dispatch([
+    static function (int $e): void { echo "A", $e; },
+    static function (int $e): void { echo "B", $e; },
+], 7);
+"#,
+    );
+    assert_eq!(out, "A7B7");
+}

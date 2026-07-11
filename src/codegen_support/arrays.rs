@@ -28,6 +28,13 @@ pub(crate) fn emit_array_value_type_stamp(
         PhpType::Mixed => 7,
         PhpType::Union(_) => 7,
         PhpType::Void => 8,
+        // A homogeneous callable array stores raw closure / first-class-callable descriptors
+        // (pointer-sized, like ints), so without an explicit stamp it would fall through to the
+        // default value_type 0 (integer) and lose its callability: iterating it as `iterable`
+        // would box each descriptor as an int, and the array free/clone helpers (which already
+        // branch on value_type 10 to release descriptors) would never fire. Tag 10 = callable
+        // descriptor, matching `runtime_value_tag(PhpType::Callable)`.
+        PhpType::Callable => 10,
         _ => return,
     };
     match emitter.target.arch {
