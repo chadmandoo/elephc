@@ -417,3 +417,39 @@ fn test_error_enum_method_undefined_variable() {
         "Undefined variable: $missing",
     );
 }
+
+/// Regression: a subclass of a builtin exception that declares `?Throwable $previous = null`
+/// and forwards it through `parent::__construct($message, $code, $previous)` must type-check.
+/// The builtin Exception constructor's `previous` param was untyped, so it inferred `Str` from
+/// its `null` default and re-typed the subclass param `Str`, rejecting a real Throwable at
+/// every `new Subclass($throwable)` call (ward-forms EnvelopeTampered / EnvelopeCodec).
+#[test]
+fn test_exception_subclass_forwards_nullable_throwable_previous() {
+    assert!(
+        check_source(
+            r#"<?php
+declare(strict_types=1);
+use RuntimeException;
+use Throwable;
+final class Tampered extends RuntimeException {
+    public function __construct(?Throwable $previous = null) {
+        parent::__construct("reason", 0, $previous);
+    }
+}
+function make(Throwable $cause): Tampered { return new Tampered($cause); }
+"#
+        )
+        .is_ok(),
+        "a subclass forwarding ?Throwable through parent::__construct should type-check",
+    );
+}
+
+/// Regression: the builtin Exception `previous` (3rd) parameter is `?Throwable`, so a non-Throwable
+/// argument is rejected (it was previously untyped and silently accepted anything).
+#[test]
+fn test_error_exception_previous_rejects_non_throwable() {
+    expect_error(
+        r#"<?php declare(strict_types=1); $e = new Exception("m", 0, 42);"#,
+        "expects Union([Object(\"Throwable\"), Void]), got Int",
+    );
+}

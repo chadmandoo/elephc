@@ -72,10 +72,16 @@ pub(super) fn builtin_exception_constructor_method() -> ClassMethod {
             ),
             // PHP's third parameter, `?Throwable $previous = null`. Accepted (positionally and
             // as the `previous:` named argument) but not stored: the compact throwable payload
-            // has no previous slot and `getPrevious()` is already synthesized as null.
+            // has no previous slot and `getPrevious()` is already synthesized as null. The
+            // `?Throwable` annotation is explicit — without it the param is untyped and infers
+            // from the `null` default as `Str`, which then corrupts a subclass constructor that
+            // forwards its own `?Throwable $previous` through `parent::__construct(...)` (the
+            // subclass param is re-typed `Str`, rejecting a real Throwable at every call site).
             (
                 "previous".to_string(),
-                None,
+                Some(TypeExpr::Nullable(Box::new(TypeExpr::Named(Name::unqualified(
+                    "Throwable",
+                ))))),
                 Some(Expr::new(ExprKind::Null, crate::span::Span::dummy())),
                 false,
             ),
