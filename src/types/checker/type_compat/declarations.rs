@@ -120,11 +120,16 @@ impl Checker {
     /// Returns true if `type_expr` is the built-in `Closure` class name — permitted as a property
     /// type, unlike the bare `callable` pseudo-type that closures resolve to internally.
     fn type_expr_names_closure(type_expr: &TypeExpr) -> bool {
-        matches!(
-            type_expr,
-            TypeExpr::Named(name)
-                if name.as_str().trim_start_matches('\\').eq_ignore_ascii_case("Closure")
-        )
+        match type_expr {
+            TypeExpr::Named(name) => {
+                name.as_str().trim_start_matches('\\').eq_ignore_ascii_case("Closure")
+            }
+            // A nullable Closure (`?Closure`) is still a Closure-typed property, which PHP permits —
+            // only the bare `callable` pseudo-type is forbidden as a property type. Unwrap the `?`
+            // so `?Closure $compare` (ward-dbal-file FileQueryPlan) is not rejected as callable.
+            TypeExpr::Nullable(inner) => Self::type_expr_names_closure(inner),
+            _ => false,
+        }
     }
 
     /// Returns true if `ty` is or contains a `PhpType::Callable` anywhere in its structure.

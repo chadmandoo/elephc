@@ -458,3 +458,25 @@ fn test_example_asymmetric_visibility_compiles_and_runs() {
     let out = compile_and_run(include_str!("../../../examples/asymmetric-visibility/main.php"));
     assert_eq!(out, "balance: 120\ninsufficient funds\nbalance: 120\n");
 }
+
+/// Regression: a `?Closure` (nullable Closure) property must be accepted. PHP permits `Closure`
+/// (and `?Closure`) as a property type even though it forbids the bare `callable` pseudo-type;
+/// the `Closure`-bypass in the property-type check unwraps the `?` so `public ?Closure $compare`
+/// (ward-dbal-file FileQueryPlan) is not rejected as "cannot use type callable".
+#[test]
+fn test_nullable_closure_property_is_allowed() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class Plan {
+    public function __construct(public ?Closure $compare) {}
+    public function hasComparator(): bool {
+        return $this->compare !== null;
+    }
+}
+echo (new Plan(null))->hasComparator() ? "y" : "n";
+echo (new Plan(static fn (): int => 0))->hasComparator() ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "ny");
+}
