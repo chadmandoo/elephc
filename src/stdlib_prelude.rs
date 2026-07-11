@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use crate::parser::ast::{Program, StmtKind};
 
 /// The function names whose presence in a program triggers prelude injection.
-const STDLIB_PRELUDE_NAMES: [&str; 14] = [
+const STDLIB_PRELUDE_NAMES: [&str; 16] = [
     "mb_substr",
     "mb_ltrim",
     "mb_rtrim",
@@ -36,6 +36,8 @@ const STDLIB_PRELUDE_NAMES: [&str; 14] = [
     "set_error_handler",
     "restore_error_handler",
     "parse_url",
+    "strspn",
+    "mb_substr_count",
 ];
 
 /// The elephc-PHP source for the injected functions. `__elephc_mb_byte_index` is the shared
@@ -279,6 +281,58 @@ function parse_url(string $url, int $component = -1): mixed {
         return $fragment !== '' ? $fragment : null;
     }
     return false;
+}
+function strspn(string $string, string $characters, int $offset = 0, int $length = PHP_INT_MAX): int {
+    $len = strlen($string);
+    $start = $offset;
+    if ($start < 0) {
+        $start = $len + $start;
+        if ($start < 0) {
+            $start = 0;
+        }
+    }
+    if ($start > $len) {
+        return 0;
+    }
+    $end = $len;
+    if ($length !== PHP_INT_MAX) {
+        if ($length < 0) {
+            $end = $len + $length;
+        } else {
+            $end = $start + $length;
+        }
+        if ($end > $len) {
+            $end = $len;
+        }
+    }
+    $n = 0;
+    $i = $start;
+    while ($i < $end) {
+        if (!str_contains($characters, $string[$i])) {
+            break;
+        }
+        $n = $n + 1;
+        $i = $i + 1;
+    }
+    return $n;
+}
+function mb_substr_count(string $haystack, string $needle): int {
+    if ($needle === '') {
+        return 0;
+    }
+    $count = 0;
+    $pos = 0;
+    $step = strlen($needle);
+    while (true) {
+        $rest = substr($haystack, $pos);
+        $found = strpos($rest, $needle);
+        if ($found === false) {
+            break;
+        }
+        $count = $count + 1;
+        $pos = $pos + $found + $step;
+    }
+    return $count;
 }
 "#;
 
