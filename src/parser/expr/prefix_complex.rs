@@ -197,10 +197,14 @@ pub(super) fn parse_closure(
                     *pos += 1;
                 }
                 _ => {
+                    // A trailing comma before `)` is legal (PHP 8.0): `use ($a, $b,)`.
+                    if tokens.get(*pos).map(|(token, _)| token) == Some(&Token::RParen) {
+                        break;
+                    }
                     return Err(CompileError::new(
                         span,
                         "Expected variable in use() capture list",
-                    ))
+                    ));
                 }
             }
         }

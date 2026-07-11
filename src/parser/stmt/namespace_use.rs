@@ -365,6 +365,7 @@ fn token_as_import_name(token: &Token) -> Option<String> {
         Token::MLog10e => "M_LOG10E",
         Token::Stdin => "STDIN",
         Token::Stdout => "STDOUT",
+        Token::PhpEol => "PHP_EOL",
         _ => return None,
     };
     Some(name.to_string())
