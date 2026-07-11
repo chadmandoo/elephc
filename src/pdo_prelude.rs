@@ -91,6 +91,7 @@ class PDO {
     const ATTR_ERRMODE = 3;
     const ATTR_PERSISTENT = 12;
     const ATTR_DRIVER_NAME = 16;
+    const ATTR_DEFAULT_FETCH_MODE = 19;
     const ERRMODE_SILENT = 0;
     const ERRMODE_WARNING = 1;
     const ERRMODE_EXCEPTION = 2;
@@ -98,11 +99,13 @@ class PDO {
     private int $conn;
     private int $errMode;
     private bool $persistent;
+    private int $defaultFetchMode;
     private array $attributes;
 
     public function __construct(string $dsn, ?string $username = null, ?string $password = null, ?array $options = null) {
         $this->errMode = 2;
         $this->persistent = false;
+        $this->defaultFetchMode = 4;
         $this->attributes = [];
         // Constructor options affect the connection that is opened below, so
         // apply them before the bridge sees the DSN. In particular,
@@ -114,6 +117,8 @@ class PDO {
                     $this->errMode = (int) $_val;
                 } elseif ($_iattr == 12) {
                     $this->persistent = (bool) $_val;
+                } elseif ($_iattr == 19) {
+                    $this->defaultFetchMode = (int) $_val;
                 }
                 $this->attributes[$_iattr] = $_val;
             }
@@ -154,6 +159,8 @@ class PDO {
             $this->errMode = (int) $value;
         } elseif ($attribute == 12) {
             $this->persistent = (bool) $value;
+        } elseif ($attribute == 19) {
+            $this->defaultFetchMode = (int) $value;
         }
         $this->attributes[$attribute] = $value;
         return true;
@@ -168,6 +175,9 @@ class PDO {
         }
         if ($attribute == 16) {
             return elephc_pdo_driver_name($this->conn);
+        }
+        if ($attribute == 19) {
+            return $this->defaultFetchMode;
         }
         if (isset($this->attributes[$attribute])) {
             return $this->attributes[$attribute];
@@ -190,7 +200,7 @@ class PDO {
             $this->fail(elephc_pdo_errmsg($this->conn));
             return false;
         }
-        return new PDOStatement($_handle, $this->conn, $this->errMode);
+        return new PDOStatement($_handle, $this->conn, $this->errMode, $this->defaultFetchMode);
     }
 
     public function query(string $query): PDOStatement|bool {
@@ -285,11 +295,11 @@ class PDOStatement implements Iterator {
     private $iterRow;
     private int $iterKey;
 
-    public function __construct(int $handle, int $connection, int $errMode = 2) {
+    public function __construct(int $handle, int $connection, int $errMode = 2, int $defaultFetchMode = 4) {
         $this->stmt = $handle;
         $this->conn = $connection;
         $this->errMode = $errMode;
-        $this->fetchMode = 4;
+        $this->fetchMode = $defaultFetchMode;
         $this->fetchTarget = null;
         $this->boundParams = [];
         $this->boundValues = [];
@@ -320,6 +330,17 @@ class PDOStatement implements Iterator {
         } elseif (($mode == 8 || $mode == 9) && $classOrColumn !== null) {
             $this->fetchTarget = $classOrColumn;
         }
+        return true;
+    }
+
+    public function closeCursor(): bool {
+        // Frees the result set so the statement can be re-executed. The bridge
+        // materializes each execute()'s rows rather than holding a live
+        // server-side cursor, so there is nothing to release here; a fresh
+        // execute() re-runs the query cleanly. Reset the local iteration state
+        // (as PHP does) and report success.
+        $this->iterRow = null;
+        $this->iterKey = 0;
         return true;
     }
 
