@@ -64,6 +64,8 @@ pub(crate) fn bareword_name_from_token(token: &Token) -> Option<String> {
         Token::Namespace => Some("namespace".to_string()),
         Token::Const => Some("const".to_string()),
         Token::Global => Some("global".to_string()),
+        Token::Declare => Some("declare".to_string()),
+        Token::EndDeclare => Some("enddeclare".to_string()),
         Token::Static => Some("static".to_string()),
         Token::Self_ => Some("self".to_string()),
         Token::Trait => Some("trait".to_string()),

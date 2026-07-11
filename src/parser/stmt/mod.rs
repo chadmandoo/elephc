@@ -9,6 +9,7 @@
 //! - Recovery stops at PHP statement boundaries so follow-up diagnostics remain useful.
 
 mod assign;
+mod declare;
 mod ffi;
 mod namespace_use;
 mod oop;
@@ -114,6 +115,7 @@ fn parse_stmt_dispatch(
         Token::Function => params::parse_function_decl(tokens, pos, span),
         Token::Namespace => namespace_use::parse_namespace_stmt(tokens, pos, span),
         Token::Use => namespace_use::parse_use_stmt(tokens, pos, span),
+        Token::Declare => declare::parse_declare(tokens, pos, span),
         Token::Return => simple::parse_return(tokens, pos, span),
         Token::Throw => simple::parse_throw(tokens, pos, span),
         Token::Yield => {
@@ -314,6 +316,9 @@ pub(crate) fn recover_to_statement_boundary(tokens: &[(Token, Span)], pos: &mut 
             Token::RBrace if paren_depth == 0 && bracket_depth == 0 => {
                 break;
             }
+            Token::EndDeclare if paren_depth == 0 && bracket_depth == 0 => {
+                break;
+            }
             Token::Eof if paren_depth == 0 && bracket_depth == 0 => {
                 break;
             }
@@ -334,6 +339,7 @@ pub(crate) fn recover_to_statement_boundary(tokens: &[(Token, Span)], pos: &mut 
             | Token::Function
             | Token::Namespace
             | Token::Use
+            | Token::Declare
             | Token::Return
             | Token::Throw
             | Token::Include
