@@ -773,3 +773,25 @@ echo assocStrKeys(42);
     );
     assert_eq!(out, "2-1-1");
 }
+
+/// Regression: the long array-construction syntax `array(...)` — keyed, unkeyed, and nested —
+/// must parse and behave identically to the short `[...]` form. elephc previously only
+/// recognized `[...]`, parsing `array(...)` as a call and rejecting `=>` keys ("Expected ','
+/// between arguments"), which failed every file using the long syntax (composer/semver and
+/// other vendored dependencies lead with `array('=' => self::OP_EQ, ...)`).
+#[test]
+fn test_long_array_syntax_keyed_and_nested() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function build(): array {
+    return array('=' => 5, '<' => 3, 'nested' => array(10, 20, 30));
+}
+$assoc = array("a" => 1, "b" => 2);
+$list = array(7, 8, 9);
+$b = build();
+echo $assoc["a"], $assoc["b"], "|", $list[2], "|", $b['='], "|", $b['nested'][1];
+"#,
+    );
+    assert_eq!(out, "12|9|5|20");
+}

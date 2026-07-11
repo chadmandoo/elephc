@@ -205,13 +205,7 @@ pub fn parse_for(
     *pos += 1;
     expect_token(tokens, pos, &Token::LParen, "Expected '(' after 'for'")?;
 
-    let init = if *pos < tokens.len() && tokens[*pos].0 != Token::Semicolon {
-        let init_span = tokens[*pos].1;
-        let s = parse_assign_inline(tokens, pos, init_span)?;
-        Some(Box::new(s))
-    } else {
-        None
-    };
+    let init = parse_for_clause(tokens, pos, &Token::Semicolon)?;
     expect_semicolon(tokens, pos)?;
 
     let condition = if *pos < tokens.len() && tokens[*pos].0 != Token::Semicolon {
@@ -221,13 +215,7 @@ pub fn parse_for(
     };
     expect_semicolon(tokens, pos)?;
 
-    let update = if *pos < tokens.len() && tokens[*pos].0 != Token::RParen {
-        let update_span = tokens[*pos].1;
-        let s = parse_assign_inline(tokens, pos, update_span)?;
-        Some(Box::new(s))
-    } else {
-        None
-    };
+    let update = parse_for_clause(tokens, pos, &Token::RParen)?;
     expect_token(tokens, pos, &Token::RParen, "Expected ')' after for clauses")?;
 
     let body = parse_body(tokens, pos)?;
@@ -241,6 +229,35 @@ pub fn parse_for(
         },
         span,
     ))
+}
+
+/// Parses a `for` init or update clause: a comma-separated list of inline assignments,
+/// terminated by `terminator` (`Semicolon` for init, `RParen` for update). PHP's comma
+/// operator is legal here — `for ($i = 1, $l = \count($x); $i < $l; $i++)` runs both init
+/// assignments. Multiple clauses are wrapped in a `Synthetic` statement so the loop lowering
+/// executes each in sequence; because PHP has no block scope (and `lower_block` pushes none),
+/// the assigned locals persist into the condition/body. A single clause is returned bare, and
+/// an empty clause (immediate terminator) yields `None`.
+fn parse_for_clause(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    terminator: &Token,
+) -> Result<Option<Box<Stmt>>, CompileError> {
+    if *pos >= tokens.len() || tokens[*pos].0 == *terminator {
+        return Ok(None);
+    }
+    let first_span = tokens[*pos].1;
+    let mut clauses = vec![parse_assign_inline(tokens, pos, first_span)?];
+    while *pos < tokens.len() && tokens[*pos].0 == Token::Comma {
+        *pos += 1;
+        let clause_span = tokens.get(*pos).map(|(_, span)| *span).unwrap_or(first_span);
+        clauses.push(parse_assign_inline(tokens, pos, clause_span)?);
+    }
+    if clauses.len() == 1 {
+        Ok(Some(Box::new(clauses.pop().expect("one for clause present"))))
+    } else {
+        Ok(Some(Box::new(Stmt::new(StmtKind::Synthetic(clauses), first_span))))
+    }
 }
 
 /// Parse: try { stmts } (catch (TypeA|TypeB $e) { stmts })+ (finally { stmts })?

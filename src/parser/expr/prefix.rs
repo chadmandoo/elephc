@@ -201,7 +201,7 @@ pub(super) fn parse_prefix(
         }
         Token::Variable(name) => parse_variable(tokens, pos, span, name.clone()),
         Token::LParen => parse_group_or_cast(tokens, pos, span),
-        Token::LBracket => parse_array_literal(tokens, pos, span),
+        Token::LBracket => parse_array_literal(tokens, pos, span, &Token::RBracket),
         Token::Match => parse_match_expr(tokens, pos, span),
         Token::Function => parse_closure(tokens, pos, span, false),
         Token::Fn => parse_arrow_closure(tokens, pos, span, false),
@@ -214,6 +214,19 @@ pub(super) fn parse_prefix(
             if name.eq_ignore_ascii_case("clone") && clone_operand_follows(tokens, *pos + 1) =>
         {
             parse_unary(tokens, pos, span, ExprKind::Clone, 35)
+        }
+        // `array(...)` — the long array-construction syntax. `array` is not a reserved token
+        // (it stays usable as a type name and in the `(array)` cast), so it is recognized
+        // contextually: an identifier spelled `array` immediately followed by `(` builds an
+        // array literal with paren delimiters, reusing the short-`[...]` element parser (keys,
+        // spreads, and mixed positional/associative entries all behave identically). `array`
+        // is a reserved language construct in PHP, so it can never be a user function here.
+        Token::Identifier(name)
+            if name.eq_ignore_ascii_case("array")
+                && tokens.get(*pos + 1).map(|(token, _)| token) == Some(&Token::LParen) =>
+        {
+            *pos += 1;
+            parse_array_literal(tokens, pos, span, &Token::RParen)
         }
         Token::Identifier(_) | Token::Backslash => parse_named_expr(tokens, pos, span),
         Token::Self_ => {
@@ -489,6 +502,7 @@ fn parse_array_literal(
     tokens: &[(Token, Span)],
     pos: &mut usize,
     span: Span,
+    close: &Token,
 ) -> Result<Expr, CompileError> {
     *pos += 1;
     let mut elems = Vec::new();
@@ -496,7 +510,7 @@ fn parse_array_literal(
     let mut is_assoc = false;
     let mut first = true;
     let mut next_auto_key = 0i64;
-    while *pos < tokens.len() && tokens[*pos].0 != Token::RBracket {
+    while *pos < tokens.len() && tokens[*pos].0 != *close {
         if !first {
             if tokens[*pos].0 != Token::Comma {
                 return Err(CompileError::new(
@@ -505,7 +519,7 @@ fn parse_array_literal(
                 ));
             }
             *pos += 1;
-            if *pos < tokens.len() && tokens[*pos].0 == Token::RBracket {
+            if *pos < tokens.len() && tokens[*pos].0 == *close {
                 break;
             }
         }
@@ -539,8 +553,9 @@ fn parse_array_literal(
         }
         first = false;
     }
-    if *pos >= tokens.len() || tokens[*pos].0 != Token::RBracket {
-        return Err(CompileError::new(span, "Expected ']'"));
+    if *pos >= tokens.len() || tokens[*pos].0 != *close {
+        let expected = if *close == Token::RParen { "Expected ')'" } else { "Expected ']'" };
+        return Err(CompileError::new(span, expected));
     }
     *pos += 1;
     if is_assoc {

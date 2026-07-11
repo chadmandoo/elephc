@@ -299,3 +299,25 @@ echo classify(1), classify(2);
     );
     assert_eq!(out, "onetwo");
 }
+
+/// Regression: PHP's comma operator in a `for` init/update clause —
+/// `for ($i = 1, $l = count($x); $i < $l; $i++, $acc += ...)` — must parse and run every
+/// comma-separated assignment (wrapped in a `Synthetic` statement, which persists locals since
+/// PHP has no block scope). composer/semver's MultiConstraint uses the `$i = 1, $l = count()`
+/// idiom, which previously failed to parse ("Expected ';'").
+#[test]
+fn test_for_loop_comma_separated_init_and_update() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$c = [10, 20, 30, 40];
+$sum = 0;
+$ticks = 0;
+for ($i = 1, $l = count($c); $i < $l; $i++, $ticks += 1) {
+    $sum += $c[$i];
+}
+echo $sum, ":", $ticks;
+"#,
+    );
+    assert_eq!(out, "90:3");
+}
