@@ -188,6 +188,11 @@ impl Checker {
     ///
     /// A body is considered diverging if its last statement is:
     /// - `return` or `throw`
+    /// - `break` or `continue` (of any level) — both skip the statements that follow the enclosing
+    ///   `if` within the current loop body, so reaching them proves the guard was false. This makes
+    ///   the common loop guard `if (!is_callable($x)) { continue; } $x(...)` (PSR-14 dispatch)
+    ///   narrow `$x` on the fall-through, exactly as a `return` guard does. The complement is scoped
+    ///   to the loop body's env, so it never leaks to statements after the loop.
     /// - a call to `exit()` or `die()`
     /// - a call to a user function whose declared return type is `never`
     ///
@@ -199,7 +204,10 @@ impl Checker {
         };
 
         match &last.kind {
-            StmtKind::Return(_) | StmtKind::Throw(_) => true,
+            StmtKind::Return(_)
+            | StmtKind::Throw(_)
+            | StmtKind::Break(_)
+            | StmtKind::Continue(_) => true,
             StmtKind::ExprStmt(expr) => self.expr_always_diverges(expr),
             _ => false,
         }

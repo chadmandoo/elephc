@@ -1483,3 +1483,37 @@ dispatch([
     );
     assert_eq!(out, "A7B7");
 }
+
+/// Regression: the loop guard `if (!is_callable($x)) { continue; } $x(...)` over a genuinely
+/// `mixed`-typed listener must narrow `$x` to Callable on the fall-through and dispatch natively.
+/// Feeding the listeners from a generator-backed `iterable` (rather than an array literal, which
+/// the checker specializes to `array<callable>` and would type-check without any narrowing) keeps
+/// the loop element `mixed`, so the dispatch genuinely depends on the `continue`/`break` divergence
+/// being recognized by the narrowing complement — the exact PSR-14 EventDispatcher shape.
+#[test]
+fn test_is_callable_continue_guard_narrows_generator_iterable_dispatch() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class Dispatcher {
+    /** @param iterable<mixed> $listeners */
+    public function dispatch(iterable $listeners, object $event): object {
+        foreach ($listeners as $listener) {
+            if (!is_callable($listener)) {
+                continue;
+            }
+            $listener($event);
+        }
+        return $event;
+    }
+}
+/** @return iterable<callable> */
+function listeners(): iterable {
+    yield static function (object $e): void { echo "L1"; };
+    yield static function (object $e): void { echo "L2"; };
+}
+(new Dispatcher())->dispatch(listeners(), new stdClass());
+"#,
+    );
+    assert_eq!(out, "L1L2");
+}
