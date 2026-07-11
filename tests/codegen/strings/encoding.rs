@@ -521,3 +521,21 @@ fn test_htmlentities_coercion_error_names_htmlentities() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// Regression: `base64_decode($string, $strict)` — the two-argument form (the native builtin
+/// is 1-arg only) — desugars to the injected `__elephc_base64_decode_strict`, which validates
+/// the base64 alphabet when `$strict` is true (false on an out-of-alphabet byte) before
+/// delegating to native decode. ward-forms' EnvelopeCodec decodes with the strict flag.
+#[test]
+fn test_base64_decode_two_arg_strict() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$ok = base64_decode("aGVsbG8=", true);
+$bad = base64_decode("bad char!", true) === false ? "F" : "?";
+$loose = base64_decode("d29ybGQ=", false);
+echo $ok, "|", $bad, "|", $loose;
+"#,
+    );
+    assert_eq!(out, "hello|F|world");
+}

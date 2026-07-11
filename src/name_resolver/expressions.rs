@@ -683,6 +683,14 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_strcspn".to_string()),
             args: args.to_vec(),
         }),
+        // base64_decode($string, $strict) — the two-argument form. The native builtin is
+        // 1-arg only; the 2-arg call desugars to the injected helper, which validates the
+        // base64 alphabet when $strict is true (returning false on an out-of-alphabet byte)
+        // before delegating to native 1-arg base64_decode. Reserved name, never a user fn.
+        "base64_decode" if args.len() == 2 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_base64_decode_strict".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

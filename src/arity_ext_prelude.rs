@@ -2,8 +2,10 @@
 //! Injects small elephc-PHP helper functions that back builtin forms the backend does not
 //! provide: the extended-arity `array_search($needle, $haystack, $strict)` and
 //! `strpos($haystack, $needle, $offset)` (whose extra argument the runtime does not thread),
-//! and the otherwise-missing `strcspn($subject, $characters)`. The name resolver rewrites the
-//! specific call forms to the injected functions; the shorter native forms are untouched.
+//! the otherwise-missing `strcspn($subject, $characters)`, and the two-argument
+//! `base64_decode($string, $strict)` (the native builtin is 1-arg only). The name resolver
+//! rewrites the specific call forms to the injected functions; the shorter native forms are
+//! untouched.
 //!
 //! Called from:
 //! - `crate::pipeline::compile` (and the codegen test harness) via `inject_if_used`, before
@@ -66,6 +68,20 @@ function __elephc_strcspn(string $subject, string $characters): int {
     }
     return $i;
 }
+function __elephc_base64_decode_strict(string $string, bool $strict): string|false {
+    if ($strict) {
+        $alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+        $n = strlen($string);
+        $i = 0;
+        while ($i < $n) {
+            if (strpos($alphabet, $string[$i]) === false) {
+                return false;
+            }
+            $i = $i + 1;
+        }
+    }
+    return base64_decode($string);
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -78,6 +94,7 @@ pub fn inject_if_used(program: Program) -> Program {
     if !rendered.contains("array_search")
         && !rendered.contains("strpos")
         && !rendered.contains("strcspn")
+        && !rendered.contains("base64_decode")
     {
         return program;
     }
@@ -88,6 +105,7 @@ pub fn inject_if_used(program: Program) -> Program {
                 if name.eq_ignore_ascii_case("__elephc_array_search_strict")
                     || name.eq_ignore_ascii_case("__elephc_strpos_offset")
                     || name.eq_ignore_ascii_case("__elephc_strcspn")
+                    || name.eq_ignore_ascii_case("__elephc_base64_decode_strict")
         )
     });
     if user_declares {
