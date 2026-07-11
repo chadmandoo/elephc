@@ -733,6 +733,17 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_preg_quote".to_string()),
             args: args.to_vec(),
         }),
+        // strncmp/strncasecmp($a, $b, $length) — elephc has strcmp/strcasecmp but not the
+        // length-bounded forms, so these desugar to the injected helpers (compare the first
+        // $length bytes via substr + strcmp/strcasecmp). Reserved names, never user functions.
+        "strncmp" if args.len() == 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_strncmp".to_string()),
+            args: args.to_vec(),
+        }),
+        "strncasecmp" if args.len() == 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_strncasecmp".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

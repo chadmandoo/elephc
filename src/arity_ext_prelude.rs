@@ -130,6 +130,18 @@ function __elephc_preg_quote(string $str, ?string $delimiter = null): string {
     }
     return $result;
 }
+function __elephc_strncmp(string $a, string $b, int $length): int {
+    if ($length < 0) {
+        $length = 0;
+    }
+    return strcmp(substr($a, 0, $length), substr($b, 0, $length));
+}
+function __elephc_strncasecmp(string $a, string $b, int $length): int {
+    if ($length < 0) {
+        $length = 0;
+    }
+    return strcasecmp(substr($a, 0, $length), substr($b, 0, $length));
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -145,6 +157,8 @@ pub fn inject_if_used(program: Program) -> Program {
         && !rendered.contains("base64_decode")
         && !rendered.contains("mkdir")
         && !rendered.contains("preg_quote")
+        && !rendered.contains("strncmp")
+        && !rendered.contains("strncasecmp")
     {
         return program;
     }
@@ -158,6 +172,8 @@ pub fn inject_if_used(program: Program) -> Program {
                     || name.eq_ignore_ascii_case("__elephc_base64_decode_strict")
                     || name.eq_ignore_ascii_case("__elephc_mkdir")
                     || name.eq_ignore_ascii_case("__elephc_preg_quote")
+                    || name.eq_ignore_ascii_case("__elephc_strncmp")
+                    || name.eq_ignore_ascii_case("__elephc_strncasecmp")
         )
     });
     if user_declares {

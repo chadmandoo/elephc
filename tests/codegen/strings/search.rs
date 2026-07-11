@@ -170,6 +170,23 @@ echo substr_compare("ABCdef", "abc", 0, 3, false) === 0 ? "1" : "0";
     assert_eq!(out, "111110");
 }
 
+/// Verifies `strncmp` / `strncasecmp` (length-bounded string compare, absent natively — they
+/// desugar to injected helpers). Equal prefixes compare 0; a difference beyond the length is
+/// ignored; the case-insensitive form ignores case within the compared length.
+#[test]
+fn test_strncmp_and_strncasecmp() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+echo strncmp("abcXYZ", "abcQQQ", 3) === 0 ? "1" : "0";
+echo strncmp("abc", "abd", 3) < 0 ? "1" : "0";
+echo strncasecmp("ABCxyz", "abc", 3) === 0 ? "1" : "0";
+echo strncmp("ABC", "abc", 3) === 0 ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "1110");
+}
+
 /// Verifies str_contains returns 1 when the needle is present in the haystack.
 /// Fixture: "Hello World" contains "World".
 #[test]
