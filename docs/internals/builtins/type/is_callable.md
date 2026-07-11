@@ -2,7 +2,7 @@
 title: "is_callable() — internals"
 description: "Compiler internals for is_callable(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 422
+  order: 426
 ---
 
 ## `is_callable()` — internals
@@ -33,6 +33,12 @@ function is_callable(mixed $value): bool
 ## What the type checker enforces
 
 - **Arity**: takes exactly 1 argument.
+
+## Eval interpreter (magician)
+
+- **Declaration**: [`crates/elephc-magician/src/interpreter/builtins/symbols/is_callable.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/symbols/is_callable.rs) (`eval_builtin!`)
+- **Dispatch hooks**: `direct`, `values`
+- **By-reference parameters**: `$callable_name`.
 
 ## Cross-references
 
