@@ -368,6 +368,8 @@ fn token_as_import_name(token: &Token) -> Option<String> {
         Token::Stderr => "STDERR",
         Token::PhpEol => "PHP_EOL",
         Token::PhpOs => "PHP_OS",
+        Token::PhpVersion => "PHP_VERSION",
+        Token::PhpBinary => "PHP_BINARY",
         Token::DirectorySeparator => "DIRECTORY_SEPARATOR",
         _ => return None,
     };

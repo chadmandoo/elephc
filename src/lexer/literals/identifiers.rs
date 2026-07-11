@@ -124,6 +124,8 @@ pub(in crate::lexer) fn scan_keyword(cursor: &mut Cursor) -> Result<Token, Compi
         "STDERR" => return Ok(Token::Stderr),
         "PHP_EOL" => return Ok(Token::PhpEol),
         "PHP_OS" => return Ok(Token::PhpOs),
+        "PHP_VERSION" => return Ok(Token::PhpVersion),
+        "PHP_BINARY" => return Ok(Token::PhpBinary),
         "DIRECTORY_SEPARATOR" => return Ok(Token::DirectorySeparator),
         _ => {}
     }

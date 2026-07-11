@@ -95,6 +95,8 @@ pub enum Token {
     InstanceOf,     // instanceof
     PhpEol,
     PhpOs,
+    PhpVersion,
+    PhpBinary,
     DirectorySeparator,
     DunderDir,
     DunderFile,

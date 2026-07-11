@@ -131,6 +131,17 @@ pub(super) fn parse_prefix(
             span,
             ExprKind::ConstRef(Name::unqualified("PHP_OS")),
         ),
+        // PHP guarantees `PHP_VERSION === phpversion()`; elephc's `phpversion()` lowers to the
+        // compiler package version (CARGO_PKG_VERSION), so fold PHP_VERSION to the same string.
+        Token::PhpVersion => parse_simple(
+            tokens,
+            pos,
+            span,
+            ExprKind::StringLiteral(env!("CARGO_PKG_VERSION").to_string()),
+        ),
+        // An AOT-compiled binary has no separate PHP interpreter path, so PHP_BINARY folds to an
+        // empty string (a defensible "no interpreter" value) rather than a bogus path.
+        Token::PhpBinary => parse_simple(tokens, pos, span, ExprKind::StringLiteral(String::new())),
         Token::DirectorySeparator => parse_simple(
             tokens,
             pos,

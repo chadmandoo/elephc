@@ -102,6 +102,8 @@ pub(crate) fn bareword_name_from_token(token: &Token) -> Option<String> {
         Token::Stderr => Some("STDERR".to_string()),
         Token::PhpEol => Some("PHP_EOL".to_string()),
         Token::PhpOs => Some("PHP_OS".to_string()),
+        Token::PhpVersion => Some("PHP_VERSION".to_string()),
+        Token::PhpBinary => Some("PHP_BINARY".to_string()),
         Token::DirectorySeparator => Some("DIRECTORY_SEPARATOR".to_string()),
         Token::DunderDir => Some("__DIR__".to_string()),
         Token::DunderFile => Some("__FILE__".to_string()),

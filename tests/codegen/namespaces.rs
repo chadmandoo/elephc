@@ -514,3 +514,39 @@ echo $e->hex(), "|", $e->path("a", "b");
     );
     assert_eq!(out, "415a|a/b");
 }
+
+/// Regression: `PHP_VERSION` and `PHP_BINARY` magic constants — eagerly tokenized like
+/// `PHP_EOL`/`DIRECTORY_SEPARATOR` and folded to string literals at parse time. `PHP_VERSION`
+/// folds to the compiler package version so PHP's `PHP_VERSION === phpversion()` invariant holds;
+/// `PHP_BINARY` folds to `""` (an AOT binary has no separate interpreter path). Both must also be
+/// importable via `use const`. Before this they raised "Undefined constant", failing the whole
+/// file for ward-status-admin `SystemStatusReport` (`use const PHP_VERSION;`) and gate-scripts
+/// `InfectionGate` (`use const PHP_BINARY;`).
+#[test]
+fn test_php_version_and_php_binary_constants() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+namespace App;
+
+use const PHP_VERSION;
+use const PHP_BINARY;
+
+final class Report {
+    public function versionMatchesPhpversion(): bool {
+        return PHP_VERSION === phpversion();
+    }
+    public function binaryIsEmpty(): bool {
+        return PHP_BINARY === "";
+    }
+}
+
+namespace Main;
+
+$r = new \App\Report();
+echo $r->versionMatchesPhpversion() ? "1" : "0";
+echo $r->binaryIsEmpty() ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "11");
+}
