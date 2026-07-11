@@ -1230,3 +1230,74 @@ echo "done";
         "promoting an indexed array literal to hash storage must free the source array (issue #408)"
     );
 }
+
+/// Regression test for issue #527: a by-value `foreach` over an array of arrays
+/// whose body string-coerces an element read (`echo $row[1] . "\n"`) must not
+/// leak. The `$row[1]` read produces an owned boxed Mixed temporary; the
+/// implicit Mixed→string coercion detaches its result, so the source box must
+/// be released after the cast instead of leaking two heap blocks per iteration
+/// (the box plus the string payload it owns).
+#[test]
+fn test_regression_527_foreach_value_element_string_coercion_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 4; $i++) { $a[] = ['kw', 'word' . $i]; }
+foreach ($a as $row) { echo $row[1] . "\n"; }
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "word0\nword1\nword2\nword3\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527 (post-loop semantics): after a by-value
+/// `foreach` ends, the loop variable must still hold the LAST element like PHP,
+/// and string-coercing an element of that surviving copy must release the
+/// element box so the heap stays clean at exit.
+#[test]
+fn test_regression_527_foreach_value_var_survives_loop_and_heap_stays_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 4; $i++) { $a[] = ['kw', 'word' . $i]; }
+foreach ($a as $row) {}
+echo $row[1] . "\n";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "word3\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527 (key + value form): iterating an associative
+/// array of arrays with string keys binds both an owned key copy and an owned
+/// value copy per iteration; string-coercing `$row[1]` inside the body must
+/// release the element box each iteration and end with a clean heap.
+#[test]
+fn test_regression_527_foreach_assoc_key_value_element_coercion_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$m = [];
+$m['alpha'] = ['kw', 'wordA'];
+$m['beta'] = ['kw', 'wordB'];
+$m['gamma'] = ['kw', 'wordC'];
+foreach ($m as $k => $row) { echo $k . '=' . $row[1] . "\n"; }
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "alpha=wordA\nbeta=wordB\ngamma=wordC\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}

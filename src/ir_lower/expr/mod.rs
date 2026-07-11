@@ -7623,7 +7623,19 @@ fn release_stringified_source_if_owned(
         return;
     }
     match ctx.builder.value_php_type(source.value).codegen_repr() {
-        PhpType::Object(_) | PhpType::Array(_) | PhpType::AssocArray { .. } => {
+        // Boxed Mixed sources are safe to release here as well: the backend
+        // lowers `cast Mixed -> Str` through `__rt_mixed_cast_string`, which
+        // detaches the result from the box (string payloads are persisted into
+        // an independent copy; int/float/bool payloads render into fresh
+        // buffers), so the produced string never aliases the released cell.
+        // Skipping Mixed leaked every owned boxed temporary that flowed into a
+        // string coercion — e.g. `echo $row[1] . "\n"` inside a by-value
+        // `foreach` leaked the `$row[1]` element box each iteration (issue
+        // #527). `Union` codegen-reprs to `Mixed`, so this arm covers it too.
+        PhpType::Object(_)
+        | PhpType::Array(_)
+        | PhpType::AssocArray { .. }
+        | PhpType::Mixed => {
             crate::ir_lower::ownership::release_if_owned(ctx, source, span);
         }
         _ => {}
