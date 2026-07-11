@@ -148,6 +148,28 @@ fn test_strcasecmp() {
     assert_eq!(out, "0");
 }
 
+/// Verifies the injected `substr_compare()` prelude (PHP's substr_compare is not a native builtin,
+/// so a call was "Undefined function"). Covers the case-insensitive keyword-match use (content
+/// scanners), a mid-string offset, ordering sign, and case-sensitive match vs mismatch. Reduced
+/// to substr + strcmp/strcasecmp with each argument evaluated once.
+#[test]
+fn test_substr_compare() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$css = "  COLOR: red";
+$keyword = "color";
+echo substr_compare(substr($css, 2), $keyword, 0, strlen($keyword), true) === 0 ? "1" : "0";
+echo substr_compare("Hello", "ell", 1, 3) === 0 ? "1" : "0";
+echo substr_compare("Hello", "world", 0, 5) < 0 ? "1" : "0";
+echo substr_compare("abcABC", "abc", 0, 3, true) === 0 ? "1" : "0";
+echo substr_compare("abcABC", "abc", 0, 3, false) === 0 ? "1" : "0";
+echo substr_compare("ABCdef", "abc", 0, 3, false) === 0 ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "111110");
+}
+
 /// Verifies str_contains returns 1 when the needle is present in the haystack.
 /// Fixture: "Hello World" contains "World".
 #[test]

@@ -21,7 +21,7 @@ use crate::{
     autoload, codegen, conditional, debug_info, errors, exports, ir, ir_lower, ir_passes, lexer,
     linker, list_id_prelude, magic_constants, name_resolver, optimize, parser, pdo_prelude,
     arity_ext_prelude, explode_prelude, resolver, runtime_cache, source_map, stdlib_prelude,
-    strtr_prelude, tz_prelude, types, var_export_prelude, web_prelude,
+    strtr_prelude, substr_compare_prelude, tz_prelude, types, var_export_prelude, web_prelude,
 };
 
 /// Holds the paths for all compilation output files (assembly, object, binary, source map).
@@ -161,6 +161,7 @@ pub(crate) fn compile(config: CliConfig) {
     let phase_started = Instant::now();
     let ast = stdlib_prelude::inject_if_used(ast);
     let ast = strtr_prelude::inject_if_used(ast);
+    let ast = substr_compare_prelude::inject_if_used(ast);
     let ast = explode_prelude::inject_if_used(ast);
     let ast = arity_ext_prelude::inject_if_used(ast);
     timings.record_since("stdlib-prelude", phase_started);

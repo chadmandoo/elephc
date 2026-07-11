@@ -67,6 +67,8 @@ pub mod arity_ext_prelude;
 pub mod explode_prelude;
 pub mod stdlib_prelude;
 pub mod strtr_prelude;
+/// Conditionally-injected `substr_compare` prelude (elephc-PHP reduction to substr + strcmp/strcasecmp).
+pub mod substr_compare_prelude;
 /// Conditionally-injected `var_export` prelude (elephc-PHP rendering function).
 pub mod var_export_prelude;
 /// Conditionally-injected `--web` request prelude (extern declarations for bridge getters).

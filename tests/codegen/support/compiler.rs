@@ -98,6 +98,7 @@ pub(crate) fn compile_source_to_asm_with_defines_repr(
     let resolved = elephc::var_export_prelude::inject_if_used(resolved);
     let resolved = elephc::image_prelude::inject_if_used(resolved, false);
     let resolved = elephc::strtr_prelude::inject_if_used(resolved);
+    let resolved = elephc::substr_compare_prelude::inject_if_used(resolved);
     let resolved = elephc::explode_prelude::inject_if_used(resolved);
     let resolved = elephc::arity_ext_prelude::inject_if_used(resolved);
     let resolved = elephc::name_resolver::resolve(resolved).expect("name resolve failed");
