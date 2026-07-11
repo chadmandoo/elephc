@@ -40,24 +40,35 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         cx.checker.infer_type(arg, cx.env)?;
     }
     let arr_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
-    if !matches!(arr_ty, PhpType::Array(_)) {
+    let PhpType::Array(elem_ty) = &arr_ty else {
         return Err(CompileError::new(
             cx.span,
             &format!("{}() first argument must be array", cx.name),
         ));
-    }
-    let dummy_args = vec![
-        crate::types::checker::builtins::dummy_arg_for_array_scalar_elem(
-            &arr_ty, cx.span,
-        ),
-    ];
+    };
+    // Object/Mixed elements have no scalar literal form — route through the object-aware
+    // comparator_dummy_arg_for_elem (synthetic var + env binding), the same path array_map/
+    // usort use, so a typed predicate (`fn (PlacementRule $r) => ...`) is checked against the
+    // real element type instead of a fabricated Int (mirrors the R5 array_map fix).
+    let (dummy_arg, elem_binding) =
+        crate::types::checker::builtins::comparator_dummy_arg_for_elem(elem_ty.as_ref(), cx.span);
+    let dummy_args = vec![dummy_arg];
+    let mut env_with_elem;
+    let cb_env: &crate::types::TypeEnv = match &elem_binding {
+        Some((binding_name, binding_ty)) => {
+            env_with_elem = cx.env.clone();
+            env_with_elem.insert(binding_name.clone(), binding_ty.clone());
+            &env_with_elem
+        }
+        None => cx.env,
+    };
     let label = format!("{}() callback", cx.name);
     crate::types::checker::builtins::check_callback_builtin_call(
         cx.checker,
         &cx.args[1],
         &dummy_args,
         cx.span,
-        cx.env,
+        cb_env,
         &label,
     )?;
     Ok(PhpType::Bool)

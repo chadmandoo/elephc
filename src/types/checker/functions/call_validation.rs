@@ -207,6 +207,15 @@ impl Checker {
             (PhpType::Union(members), _) => members
                 .iter()
                 .any(|member| Self::types_compatible(member, actual)),
+            // Array element covariance: PHP `array` params carry no runtime element-type
+            // enforcement, so a declared `array<Object>` accepts an `array<Mixed>` (an indexed
+            // read / bare `array` source) — the element recurses through types_compatible, where
+            // the `(_, Mixed) => true` boundary applies. `array<Int>` vs `array<Str>` still fails
+            // (element Int-vs-Str has no coercion arm). Sibling-object element arrays go via
+            // type_accepts (its Object-Object array arm). Clears withConditions(array<Condition>).
+            (PhpType::Array(expected_elem), PhpType::Array(actual_elem)) => {
+                Self::types_compatible(expected_elem, actual_elem)
+            }
             (
                 PhpType::AssocArray { key, value },
                 PhpType::Array(_) | PhpType::AssocArray { .. },

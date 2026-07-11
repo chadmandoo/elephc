@@ -371,7 +371,7 @@ impl Checker {
 
     /// Resolves `Object("self")` / `Object("static")` to `Object(<enclosing class>)`, recursing
     /// through unions. Any other type is returned unchanged. A no-op outside a class context.
-    fn resolve_self_static_object(&self, ty: &PhpType) -> PhpType {
+    pub(crate) fn resolve_self_static_object(&self, ty: &PhpType) -> PhpType {
         match ty {
             PhpType::Object(name) if name == "self" || name == "static" => {
                 match &self.current_class {

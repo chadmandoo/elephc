@@ -285,9 +285,14 @@ fn check_object_property_write(
             ));
         }
         if class_info.declared_properties.contains(property) {
+            // A value narrowed to `self`/`static` (e.g. `$x` after `if ($x instanceof static)`,
+            // then `$this->entity = $x;`) carries the literal Object("static"); resolve it to the
+            // enclosing class so its subtype relationship to the declared property type is seen
+            // (PersistedEntity `static` IS-A Entity — ward-entity/audit `$entity` properties).
+            let resolved_val = checker.resolve_self_static_object(val_ty);
             checker.require_compatible_arg_type(
                 &expected_ty,
-                val_ty,
+                &resolved_val,
                 span,
                 &format!("Property {}::${}", class_name, property),
             )?;
