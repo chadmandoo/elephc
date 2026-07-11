@@ -505,10 +505,11 @@ jobs:
             rust-builtins-docs-
 
       - name: Build the builtin docs exporter
-        # The docs generator reads the single-source `builtin!` registry via the
-        # `gen_builtins` binary (`extract.py` prefers the prebuilt binary at
-        # target/debug/gen_builtins), so it must be built before regeneration.
-        run: cargo build --bin gen_builtins
+        # The docs generator reads the single-source `builtin!` registry plus the
+        # eval interpreter's `eval_builtin!` registry via the `gen_builtins`
+        # example (`extract.py` prefers the prebuilt binary at
+        # target/debug/examples/gen_builtins), so it must be built first.
+        run: cargo build --example gen_builtins
 
       - name: Regenerate builtins documentation
         # Re-run the generator; the committed Markdown pages and JSON registry

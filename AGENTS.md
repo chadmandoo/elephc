@@ -256,7 +256,7 @@ Key invariants:
   PHP-visible builtins); keep the parity gates in `src/builtins/parity_tests.rs` green.
 - Before opening a PR that adds, removes, or changes PHP-visible builtins, run the
   `update-builtin-docs` skill or the equivalent CI sequence:
-  `cargo build --bin gen_builtins`,
+  `cargo build --example gen_builtins`,
   `python3 scripts/docs/extract_builtins.py --render --force`,
   `python3 scripts/docs/audit_builtins.py`, and
   `python3 scripts/docs/elephc_builtins/validate_site_compat.py`. Commit the

@@ -1,6 +1,6 @@
 ---
 name: update-builtin-docs
-description: Regenerate and audit Elephc's generated builtin documentation from the builtin! registry. Use when a change touches src/builtins, builtin signatures, builtin lowering hooks, docs/php/builtins, docs/internals/builtins, scripts/docs/builtin_registry.json, or before opening a PR that changes PHP builtins.
+description: Regenerate and audit Elephc's generated builtin documentation from the builtin! and eval_builtin! registries. Use when a change touches src/builtins, crates/elephc-magician/src/interpreter/builtins, builtin signatures, builtin lowering hooks, docs/php/builtins, docs/internals/builtins, scripts/docs/builtin_registry.json, or before opening a PR that changes PHP builtins.
 ---
 
 # Update Builtin Docs
@@ -10,10 +10,12 @@ Use the repo root as the working directory.
 
 ## Workflow
 
-1. Build the exporter binary that reads the single-source `builtin!` registry:
+1. Build the exporter that reads the single-source `builtin!` registry and the
+   eval interpreter's `eval_builtin!` registry (an example target, so it can
+   link the elephc-magician dev-dependency):
 
 ```bash
-cargo build --bin gen_builtins
+cargo build --example gen_builtins
 ```
 
 2. Regenerate the JSON registry and Markdown pages:
@@ -38,7 +40,7 @@ git diff --check
 
 ## Rules
 
-- Treat `src/builtins/` and the `builtin!` declarations as the source of truth.
+- Treat `src/builtins/` (`builtin!`) and `crates/elephc-magician/src/interpreter/builtins/` (`eval_builtin!`) as the source of truth for the AOT and eval support dimensions respectively.
 - Do not hand-edit generated builtin pages to fix drift; fix the registry, lowering metadata, or `scripts/docs/elephc_builtins/` generator inputs, then rerun the workflow.
 - If the user asked only for a sync check, also run:
 

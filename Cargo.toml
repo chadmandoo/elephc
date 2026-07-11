@@ -29,9 +29,12 @@ resolver = "2"
 name = "elephc"
 path = "src/main.rs"
 
-[[bin]]
+# Documentation exporter: declared as an example so it can read the eval
+# interpreter's metadata (elephc-magician is a dev-dependency) without
+# linking magician into the elephc binary.
+[[example]]
 name = "gen_builtins"
-path = "src/bin/gen_builtins.rs"
+path = "tools/gen_builtins.rs"
 
 [dependencies]
 inventory = "0.3"
