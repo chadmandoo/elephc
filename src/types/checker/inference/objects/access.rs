@@ -275,10 +275,29 @@ impl Checker {
                 &format!("Undefined property: {}::{}", class_name, property),
             ));
         }
+        // Magic properties on the enum marker interfaces (which are not in `self.classes`): a value
+        // narrowed to `BackedEnum` / `UnitEnum` — e.g. `$v instanceof BackedEnum` then `$v->value`
+        // (ward-dbal-file QueryValueEncoder) — reads `->value` (int|string) / `->name` (string),
+        // which PHP exposes on every enum instance. PHP allows only hooked properties on an
+        // interface, so these cannot be declared on the interface itself and are resolved here.
+        if let Some(ty) = Self::enum_marker_magic_property(class_name, property) {
+            return Ok(ty);
+        }
         Err(CompileError::new(
             expr.span,
             &format!("Undefined class: {}", class_name),
         ))
+    }
+
+    /// Resolves the magic `->name` / `->value` properties every enum instance exposes, when the
+    /// receiver is typed as the `UnitEnum` / `BackedEnum` marker interface rather than a concrete
+    /// enum. Returns `None` for any other class/property pair.
+    fn enum_marker_magic_property(class_name: &str, property: &str) -> Option<PhpType> {
+        match (class_name.trim_start_matches('\\'), property) {
+            ("BackedEnum", "value") => Some(PhpType::Union(vec![PhpType::Int, PhpType::Str])),
+            ("UnitEnum" | "BackedEnum", "name") => Some(PhpType::Str),
+            _ => None,
+        }
     }
 
     /// Returns precise SPL runtime storage metadata for callback-filter internals.

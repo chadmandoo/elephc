@@ -856,3 +856,29 @@ echo tag(Suit::Hearts), " ", tag(Direction::North);
     );
     assert_eq!(out, "ub u-");
 }
+
+/// Verifies the magic `->value` / `->name` properties are readable on a value narrowed to the
+/// `BackedEnum` / `UnitEnum` marker interface (not a concrete enum type) — the ward-dbal-file
+/// value-encoder pattern `if ($v instanceof BackedEnum) { return $v->value; }`. `->value` is
+/// int|string, `->name` is string.
+#[test]
+fn test_enum_marker_interface_magic_properties() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+enum Suit: string { case Hearts = "H"; }
+enum Level: int { case High = 3; }
+function encode(mixed $v): string {
+    if ($v instanceof BackedEnum) {
+        return (string) $v->value;
+    }
+    if ($v instanceof UnitEnum) {
+        return $v->name;
+    }
+    return "?";
+}
+echo encode(Suit::Hearts), "|", encode(Level::High), "|", encode(5);
+"#,
+    );
+    assert_eq!(out, "H|3|?");
+}
