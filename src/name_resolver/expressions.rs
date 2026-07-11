@@ -716,6 +716,16 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_base64_decode_strict".to_string()),
             args: args.to_vec(),
         }),
+        // mkdir($dir[, $mode[, $recursive]]) — the native builtin is 1-arg (directory) only, so a
+        // call carrying a mode and/or recursive argument (positional, or the named `mode:` /
+        // `recursive:` forms) desugars to the injected __elephc_mkdir, which layers PHP's recursive
+        // (mkdir -p) semantics over native 1-arg mkdir. The bare mkdir($dir) form stays native.
+        // Args pass through verbatim, incl. named args, which the helper's default params resolve.
+        // Reserved name, never a user function.
+        "mkdir" if args.len() >= 2 && args.len() <= 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_mkdir".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

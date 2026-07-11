@@ -52,6 +52,27 @@ if (!is_dir("testdir")) { echo "gone"; }
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// Verifies the extended-arity `mkdir($dir, $mode, $recursive)` forms — native mkdir is 1-arg
+/// only, so the mode/recursive forms (positional and the named `recursive:` form) desugar to the
+/// injected `__elephc_mkdir`, which creates missing parents (mkdir -p). Covers a 3-positional
+/// recursive create, its idempotent re-run (an existing directory returns true), and the named
+/// `recursive:` form without a mode argument.
+#[test]
+fn test_mkdir_recursive() {
+    let (out, dir) = compile_and_run_in_dir(
+        r#"<?php
+$r1 = mkdir("a/b/c", 0o755, true);
+$r2 = mkdir("a/b/c", 0o755, true);
+$r3 = mkdir("x/y", recursive: true);
+echo ($r1 && is_dir("a/b/c")) ? "1" : "0";
+echo $r2 ? "1" : "0";
+echo ($r3 && is_dir("x/y")) ? "1" : "0";
+"#,
+    );
+    assert_eq!(out, "111");
+    let _ = fs::remove_dir_all(&dir);
+}
+
 /// Verifies copy, unlink, and file existence by creating a file, copying it,
 /// reading through the copy, deleting both files, and confirming removal.
 #[test]

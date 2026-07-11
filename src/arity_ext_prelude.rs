@@ -82,6 +82,33 @@ function __elephc_base64_decode_strict(string $string, bool $strict): string|fal
     }
     return base64_decode($string);
 }
+function __elephc_mkdir(string $directory, int $mode = 0o777, bool $recursive = false): bool {
+    if (!$recursive) {
+        return mkdir($directory);
+    }
+    if (is_dir($directory)) {
+        return true;
+    }
+    $parts = explode('/', $directory);
+    $path = '';
+    foreach ($parts as $part) {
+        if ($part === '') {
+            if ($path === '') {
+                $path = '/';
+            }
+            continue;
+        }
+        if ($path === '' || $path === '/') {
+            $path = $path . $part;
+        } else {
+            $path = $path . '/' . $part;
+        }
+        if (!is_dir($path) && !mkdir($path)) {
+            return false;
+        }
+    }
+    return true;
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -95,6 +122,7 @@ pub fn inject_if_used(program: Program) -> Program {
         && !rendered.contains("strpos")
         && !rendered.contains("strcspn")
         && !rendered.contains("base64_decode")
+        && !rendered.contains("mkdir")
     {
         return program;
     }
@@ -106,6 +134,7 @@ pub fn inject_if_used(program: Program) -> Program {
                     || name.eq_ignore_ascii_case("__elephc_strpos_offset")
                     || name.eq_ignore_ascii_case("__elephc_strcspn")
                     || name.eq_ignore_ascii_case("__elephc_base64_decode_strict")
+                    || name.eq_ignore_ascii_case("__elephc_mkdir")
         )
     });
     if user_declares {
