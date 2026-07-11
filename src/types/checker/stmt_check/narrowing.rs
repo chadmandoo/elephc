@@ -48,6 +48,24 @@ impl Checker {
         condition: &Expr,
         env: &TypeEnv,
     ) -> Result<Option<GuardNarrowing>, CompileError> {
+        // Compound `A || B` guard: `if (A || B) { ... }` leaves the fall-through env with `!A && !B`.
+        // When exactly one operand is a recognized type guard (the common
+        // `!is_array($v) || array_is_list($v)` shape — ward-config Config::getSection), narrow the
+        // fall-through by that operand's complement (its own `else_ty`); the guard-true body keeps
+        // the binding's current (un-narrowed) type, which is sound whether or not the body diverges —
+        // `keep_complement_after_if` in `control_flow` only carries the else type past the `if` when
+        // every clause body diverges. Both-guards / neither-guard fall back to no narrowing.
+        if let ExprKind::BinaryOp { left, op: BinOp::Or, right } = &condition.kind {
+            let left_guard = self.guard_narrowing(left, env)?;
+            let right_guard = self.guard_narrowing(right, env)?;
+            return Ok(match (left_guard, right_guard) {
+                (Some(guard), None) | (None, Some(guard)) => {
+                    let current = env.get(&guard.var).cloned().unwrap_or_else(|| guard.then_ty.clone());
+                    Some(GuardNarrowing { var: guard.var, then_ty: current, else_ty: guard.else_ty })
+                }
+                _ => None,
+            });
+        }
         let (cond, negated) = match &condition.kind {
             ExprKind::Not(inner) => (inner.as_ref(), true),
             _ => (condition, false),

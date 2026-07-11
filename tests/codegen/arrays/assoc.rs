@@ -743,3 +743,33 @@ echo countStrKeys(42);
     );
     assert_eq!(out, "30-1");
 }
+
+/// Regression: a compound `if (!is_array($v) || array_is_list($v)) { return; }` guard must narrow
+/// `$v` to an array on the fall-through (the `A || B` diverging-body complement is `!A && !B`, so
+/// the recognized `is_array` operand narrows), letting the following `array_keys($v)` compile
+/// (ward-config Config::getSection). Only associative arrays reach the body; a list or non-array
+/// takes the guard's early return.
+#[test]
+fn test_compound_or_is_array_guard_narrows() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function assocStrKeys(mixed $v): int {
+    if (!is_array($v) || array_is_list($v)) {
+        return -1;
+    }
+    $n = 0;
+    foreach (array_keys($v) as $k) {
+        if (is_string($k)) {
+            $n++;
+        }
+    }
+    return $n;
+}
+echo assocStrKeys(["a" => 1, "b" => 2]);
+echo assocStrKeys([1, 2, 3]);
+echo assocStrKeys(42);
+"#,
+    );
+    assert_eq!(out, "2-1-1");
+}
