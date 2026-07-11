@@ -172,6 +172,22 @@ fn test_bin2hex_hex2bin_roundtrip() {
     assert_eq!(out, "Hello");
 }
 
+/// Verifies `pack('H*', $hex)` decodes a hex string to binary — the sole `pack()` format the
+/// corpus uses (content-hash fingerprinting, e.g. `AssetHasher`). It is desugared to the
+/// equivalent `hex2bin()`, so the literal and roundtrip forms must produce the same bytes as
+/// `hex2bin`.
+#[test]
+fn test_pack_hex_string() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$hex = bin2hex("Hello");
+echo pack('H*', "4142"), "|", pack('H*', $hex), "|", (pack('H*', $hex) === hex2bin($hex)) ? "eq" : "ne";
+"#,
+    );
+    assert_eq!(out, "AB|Hello|eq");
+}
+
 // --- v0.4 batch 3: encoding, URL, base64, ctype ---
 
 /// Verifies `htmlspecialchars()` converts `<`, `>`, `"`, `&`, and `'` to their HTML entities.

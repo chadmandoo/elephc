@@ -95,6 +95,10 @@ pub(super) fn resolve_expr(
                 rewrite_date_procedural_alias(&function_name, &resolved_args)
             {
                 rewritten
+            } else if let Some(rewritten) =
+                rewrite_pack_hex_string(&function_name, &resolved_args)
+            {
+                rewritten
             } else {
                 ExprKind::FunctionCall {
                     name: resolved_name(function_name),
@@ -406,6 +410,27 @@ fn resolve_instanceof_target(
             imports,
             symbols,
         ))),
+    }
+}
+
+/// Desugars `pack('H*', $data)` — the only `pack()` format the corpus uses (hex string -> binary,
+/// e.g. content-hash fingerprinting) — into the equivalent `hex2bin($data)`, reusing the existing
+/// hex2bin builtin instead of a full `pack()` format engine. Scoped to the compile-time string
+/// literal `'H*'` with exactly the `(format, data)` arity; any other `pack()` call returns `None`
+/// and is left for normal resolution (reported undefined) rather than silently mis-lowered. For the
+/// even-length lowercase digests this path sees, the two are byte-identical (they differ only on
+/// malformed / odd-length hex, which never reaches a content-hash `pack('H*', ...)`).
+fn rewrite_pack_hex_string(name: &str, args: &[Expr]) -> Option<ExprKind> {
+    let bare = name.rsplit('\\').next().unwrap_or("").to_ascii_lowercase();
+    if bare != "pack" || args.len() != 2 {
+        return None;
+    }
+    match &args[0].kind {
+        ExprKind::StringLiteral(format) if format == "H*" => Some(ExprKind::FunctionCall {
+            name: resolved_name("hex2bin".to_string()),
+            args: vec![args[1].clone()],
+        }),
+        _ => None,
     }
 }
 
