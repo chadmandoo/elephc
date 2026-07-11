@@ -79,6 +79,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::PromoteLocalRefCell => lower_promote_local_ref_cell(ctx, &inst),
         Op::AliasLocalRefCell => lower_alias_local_ref_cell(ctx, &inst),
         Op::ReleaseLocalRefCell => lower_release_local_ref_cell(ctx, &inst),
+        Op::ReleaseLocalSlot => lower_release_local_slot(ctx, &inst),
         Op::LoadGlobal => lower_load_global(ctx, &inst),
         Op::StoreGlobal => lower_store_global(ctx, &inst),
         Op::ExternGlobalLoad => lower_extern_global_load(ctx, &inst),
@@ -6358,6 +6359,43 @@ fn release_local_ref_cell_owner(
         }
     }
     ctx.emitter.label(&done);
+    Ok(())
+}
+
+/// Lowers a deferred `release_local_slot`: releases the refcounted value currently
+/// held in a local frame slot, typed by the slot's FINAL storage type.
+///
+/// Lowering emits this op before a retaining loop store when the slot's storage
+/// type still looked untracked at that point but a later store on a back-edge
+/// path could widen it (issue #534: an inner `for` counter widened Int→Mixed by
+/// its checked-add update leaked one Mixed box per outer iteration when the
+/// outer body re-initialized it). Only here, after widening finished, is the
+/// decision sound. The slot is either zero (prologue zero-initializes cleanup
+/// locals, and the null-guarded release helpers skip zero) or an owned value
+/// boxed by a previous retaining store, so releasing it is always balanced.
+fn lower_release_local_slot(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    let slot = expect_local_slot(inst)?;
+    // Slots rewritten to ref-cell pointers hold the cell address, not an owned
+    // value; the ref-cell owner machinery releases those instead.
+    if local_slot_stores_ref_cell_pointer(ctx, slot)
+        || super::frame::promoted_ref_cell_local_slots(ctx.function).contains(&slot)
+    {
+        return Ok(());
+    }
+    let ty = ctx.local_php_type(slot)?.codegen_repr();
+    let offset = ctx.local_offset(slot)?;
+    match ty {
+        // Owned strings are freed through the validating helper, which skips
+        // null/uninitialized slots and non-heap (.rodata) literal pointers.
+        PhpType::Str => super::frame::emit_main_string_cleanup(ctx, offset),
+        PhpType::Callable => super::frame::emit_main_refcounted_cleanup(ctx, offset, &ty),
+        other if other.is_refcounted() => {
+            super::frame::emit_main_refcounted_cleanup(ctx, offset, &other)
+        }
+        // The slot never widened to refcounted storage: nothing can be owned.
+        // Lowering normally prunes these, so this arm is only a safety net.
+        _ => {}
+    }
     Ok(())
 }
 

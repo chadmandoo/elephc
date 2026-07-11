@@ -534,7 +534,7 @@ fn local_slot_has_store(function: &Function, slot: LocalSlotId) -> bool {
 }
 
 /// Returns PHP-visible locals whose slot is rewritten to a ref-cell pointer.
-fn promoted_ref_cell_local_slots(function: &Function) -> HashSet<LocalSlotId> {
+pub(super) fn promoted_ref_cell_local_slots(function: &Function) -> HashSet<LocalSlotId> {
     let mut slots = function
         .instructions
         .iter()
@@ -583,7 +583,7 @@ fn loaded_local_slot(function: &Function, value: ValueId) -> Option<LocalSlotId>
 /// .rodata, out-of-range) and frees plausible live heap blocks, so it safely handles
 /// the zero-length owned strings that `__rt_str_persist` now allocates. The previous
 /// `cbz len` guard skipped them and leaked every owned empty string at scope exit.
-fn emit_main_string_cleanup(ctx: &mut FunctionContext<'_>, offset: usize) {
+pub(super) fn emit_main_string_cleanup(ctx: &mut FunctionContext<'_>, offset: usize) {
     let (ptr_reg, _) = abi::string_result_regs(ctx.emitter);
     let result_reg = abi::int_result_reg(ctx.emitter);
     abi::load_at_offset(ctx.emitter, ptr_reg, offset);
@@ -604,7 +604,7 @@ fn emit_main_string_cleanup(ctx: &mut FunctionContext<'_>, offset: usize) {
 }
 
 /// Releases a refcounted local when the slot contains a non-null heap pointer.
-fn emit_main_refcounted_cleanup(ctx: &mut FunctionContext<'_>, offset: usize, ty: &PhpType) {
+pub(super) fn emit_main_refcounted_cleanup(ctx: &mut FunctionContext<'_>, offset: usize, ty: &PhpType) {
     let result_reg = abi::int_result_reg(ctx.emitter);
     let done = ctx.next_label("main_refcounted_cleanup_done");
     abi::load_at_offset(ctx.emitter, result_reg, offset);

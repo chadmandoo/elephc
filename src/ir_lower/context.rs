@@ -615,6 +615,49 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         crate::ir_lower::ownership::release_if_owned(self, previous, span);
     }
 
+    /// Releases the previous occupant of a slot that a retaining `store_local` is
+    /// about to overwrite, deciding against the FINAL storage type when needed.
+    ///
+    /// When the slot's storage type already needs lifetime tracking this emits the
+    /// eager load+release pair immediately. When it does not, the slot can STILL be
+    /// widened to refcounted storage by a store lowered later that reaches this one
+    /// through a loop back-edge (e.g. an inner `for` counter re-initialized by the
+    /// outer body but widened Int→Mixed by its checked-add update). The storage
+    /// type visible here is stale in that case, so inside loops a deferred
+    /// `release_local_slot` is emitted instead: the backend releases the occupant
+    /// using the final widened storage type, and `prune_untracked_release_local_slot_ops`
+    /// erases the op when the slot never widens (issue #534: without this, the
+    /// previous outer iteration's Mixed box leaked on every re-initialization).
+    fn release_stored_local_value_before_retaining_store(
+        &mut self,
+        name: &str,
+        slot: LocalSlotId,
+        span: Option<Span>,
+    ) {
+        let storage_type = self.builder.local_php_type(slot);
+        if Ownership::php_type_needs_lifetime_tracking(&storage_type) {
+            self.release_stored_local_value(name, slot, span);
+            return;
+        }
+        if self.loop_stack.is_empty() {
+            // Outside loops no back-edge can execute a later widening store before
+            // this one, so the untracked storage type is final for this path.
+            return;
+        }
+        // Ref-bound locals keep a cell pointer in the frame slot and are released
+        // through the ref-cell owner machinery, never through a raw slot release.
+        if self.is_ref_bound_local(name) {
+            return;
+        }
+        self.emit_void(
+            Op::ReleaseLocalSlot,
+            Vec::new(),
+            Some(Immediate::LocalSlot(slot)),
+            Op::ReleaseLocalSlot.default_effects(),
+            span,
+        );
+    }
+
     /// Emits a store to a PHP local slot, updates type facts, and returns the stored value.
     pub(crate) fn store_local(&mut self, name: &str, value: LoweredValue, php_type: PhpType, span: Option<Span>) -> LoweredValue {
         self.clear_static_callable_local(name);
@@ -661,7 +704,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             && local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
         {
-            self.release_stored_local_value(name, slot, span);
+            self.release_stored_local_value_before_retaining_store(name, slot, span);
         }
         // A loop-carried slot can exist globally without being definitely initialized
         // on this CFG path. Release the runtime occupant before overwriting it.
@@ -670,7 +713,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
             && !self.loop_stack.is_empty()
         {
-            self.release_stored_local_value(name, slot, span);
+            self.release_stored_local_value_before_retaining_store(name, slot, span);
         }
         // A first syntactic store inside a loop body (main or function) can still
         // overwrite a prior runtime iteration's value: the slot has no straight-line
@@ -684,7 +727,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             && previous_slot.is_none()
             && !self.loop_stack.is_empty()
         {
-            self.release_stored_local_value(name, slot, span);
+            self.release_stored_local_value_before_retaining_store(name, slot, span);
         }
         let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
             && !transfer_callable_source_to_store

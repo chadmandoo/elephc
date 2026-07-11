@@ -1230,3 +1230,123 @@ echo "done";
         "promoting an indexed array literal to hash storage must free the source array (issue #408)"
     );
 }
+
+/// Regression test for issue #534: a refcounted local assigned inside a NESTED
+/// inner loop must not leak one block per OUTER iteration. The inner counter's
+/// re-initialization (`$k = 0`) is lowered while the slot still looks like an
+/// Int, but the `$k++` update widens the slot to boxed Mixed storage, so the
+/// re-init store must still release the previous outer iteration's box.
+#[test]
+fn test_regression_534_nested_loop_local_does_not_leak_per_outer_iteration() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$acc = 0;
+for ($i = 0; $i < 1000; $i++) {
+    for ($k = 0; $k < 1; $k++) {
+        $s = 'x' . $i;
+        $acc = $acc + strlen($s);
+    }
+}
+echo 'acc=' . $acc;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "acc=3890");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap (issue #534: one leaked block per outer iteration), got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #534 (boxed element variant): the same nested shape
+/// reading a boxed array element into a local leaked the previous outer
+/// iteration's Mixed box on every `$k = 0` re-initialization.
+#[test]
+fn test_regression_534_nested_loop_array_element_does_not_leak() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$arr = ['aa', 'bb'];
+$acc = 0;
+for ($i = 0; $i < 1000; $i++) {
+    for ($k = 0; $k < 1; $k++) {
+        $lc = $arr[$k];
+        $acc = $acc + strlen($lc);
+    }
+}
+echo 'acc=' . $acc;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "acc=2000");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap (issue #534: one leaked block per outer iteration), got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #534 (int-only variant): the leak was the INNER
+/// LOOP COUNTER's Mixed box, not the refcounted body value, so a nested loop
+/// with a purely integer body leaked identically. Also proves that scalar
+/// arithmetic locals in nested loops stay leak-free after the deferred-release
+/// fix.
+#[test]
+fn test_regression_534_nested_loop_int_counter_box_released() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$acc = 0;
+for ($i = 0; $i < 1000; $i++) {
+    for ($k = 0; $k < 3; $k++) {
+        $acc = $acc + $k;
+    }
+}
+echo 'acc=' . $acc;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "acc=3000");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap (issue #534: leaked inner-counter Mixed boxes), got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #534 (function scope + conditional assignment):
+/// inside a function, an inner-loop local conditionally reassigned across
+/// outer iterations must release the carried value without double-freeing on
+/// iterations that skip the assignment, and triple nesting with `while` inner
+/// loops must stay balanced too.
+#[test]
+fn test_regression_534_nested_loop_conditional_and_triple_nesting_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function run(int $outer): int {
+    $acc = 0;
+    $s = 'seed';
+    $i = 0;
+    while ($i < $outer) {
+        for ($j = 0; $j < 2; $j++) {
+            for ($k = 0; $k < 2; $k++) {
+                if ($k == 0) {
+                    $s = 'x' . $i . $j;
+                }
+            }
+        }
+        $acc = $acc + strlen($s);
+        $i++;
+    }
+    return $acc;
+}
+echo 'acc=' . run(300);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "acc=1390");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap for conditional nested-loop reassignment, got: {}",
+        out.stderr
+    );
+}

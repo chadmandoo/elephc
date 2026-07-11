@@ -278,7 +278,7 @@ fn validate_instruction_immediate(inst_id: InstId, inst: &Instruction) -> Result
             require_immediate(inst_id, inst, "data id", |imm| matches!(imm, Imm::Data(_)))
         }
         LoadLocal | StoreLocal | UnsetLocal | LoadRefCell | StoreRefCell | ReleaseLocalRefCell
-        | BindRefCellPtr
+        | ReleaseLocalSlot | BindRefCellPtr
         | LoadStaticLocal | StoreStaticLocal | InitStaticLocal | InvokerRefArg => require_immediate(inst_id, inst, "local slot", |imm| {
             matches!(imm, Imm::LocalSlot(_))
         }),
@@ -395,7 +395,8 @@ fn validate_opcode_rules(function: &Function, inst_id: InstId, inst: &Instructio
         LoadLocal | LoadRefCell | LoadGlobal | LoadStaticLocal | LoadStaticProperty | ExternGlobalLoad => {
             check_count(inst_id, inst, 0, "0")
         }
-        UnsetLocal | PromoteLocalRefCell | AliasLocalRefCell | ReleaseLocalRefCell => {
+        UnsetLocal | PromoteLocalRefCell | AliasLocalRefCell | ReleaseLocalRefCell
+        | ReleaseLocalSlot => {
             check_count(inst_id, inst, 0, "0")
         }
         StoreLocal | StoreGlobal | StoreStaticLocal | InitStaticLocal | StoreStaticProperty | ExternGlobalStore
