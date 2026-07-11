@@ -833,3 +833,26 @@ fn test_backed_int_enum_tryfrom_mixed() {
     );
     assert_eq!(out, "HighnullLow");
 }
+
+/// Regression: every PHP enum implicitly implements `UnitEnum`, and a *backed* enum also implements
+/// `BackedEnum`. So `$case instanceof UnitEnum` is true for any enum case, and `instanceof
+/// BackedEnum` is true only for backed enums. Before enum synthesis added the implicit marker
+/// interfaces, a backed enum reported `false` for `instanceof BackedEnum` (ward-dbal-file
+/// QueryValueEncoder branches on it).
+#[test]
+fn test_enum_implements_marker_interfaces() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+enum Suit: string { case Hearts = "H"; }
+enum Direction { case North; }
+function tag(mixed $v): string {
+    $u = $v instanceof UnitEnum ? "u" : "-";
+    $b = $v instanceof BackedEnum ? "b" : "-";
+    return $u . $b;
+}
+echo tag(Suit::Hearts), " ", tag(Direction::North);
+"#,
+    );
+    assert_eq!(out, "ub u-");
+}

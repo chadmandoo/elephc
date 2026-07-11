@@ -378,10 +378,20 @@ pub(crate) fn insert_enum_metadata(
         constants.insert(constant.name.clone(), constant.value.clone());
     }
 
-    let interfaces: Vec<String> = implements
+    let mut interfaces: Vec<String> = implements
         .iter()
         .map(|interface| interface.as_str().to_string())
         .collect();
+    // Every PHP enum implicitly implements `UnitEnum`; a backed enum additionally implements
+    // `BackedEnum` (which extends UnitEnum). Add them so `$e instanceof UnitEnum` and
+    // `$e instanceof BackedEnum` hold at both type-check and runtime — otherwise a backed enum
+    // reported `false` for `instanceof BackedEnum` (ward-dbal-file QueryValueEncoder relies on it).
+    if !interfaces.iter().any(|interface| interface == "UnitEnum") {
+        interfaces.push("UnitEnum".to_string());
+    }
+    if backing_type.is_some() && !interfaces.iter().any(|interface| interface == "BackedEnum") {
+        interfaces.push("BackedEnum".to_string());
+    }
 
     checker.classes.insert(
         name.to_string(),
