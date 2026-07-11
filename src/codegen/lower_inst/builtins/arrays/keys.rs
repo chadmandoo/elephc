@@ -33,6 +33,9 @@ pub(super) fn lower_array_keys(ctx: &mut FunctionContext<'_>, inst: &Instruction
         PhpType::AssocArray { key, .. } => {
             lower_assoc_array_keys(ctx, inst, array, &key.codegen_repr(), &result_elem_ty)
         }
+        // A `mixed` value guarded by `is_array()` (narrowed to an array by the checker but stored
+        // as a boxed Mixed cell): unbox to the array pointer, then dispatch by runtime heap kind.
+        PhpType::Mixed => lower_boxed_mixed_array_keys(ctx, inst, array, &result_elem_ty),
         other => Err(CodegenIrError::unsupported(format!(
             "array_keys for PHP type {:?}",
             other
@@ -50,6 +53,45 @@ fn lower_dynamic_mixed_array_keys(
     require_supported_indexed_result_type(result_elem_ty)?;
     require_supported_assoc_result_type(&PhpType::Mixed, result_elem_ty)?;
     ctx.load_value_to_result(array)?;
+    emit_dynamic_array_keys_dispatch(ctx, inst, result_elem_ty)
+}
+
+/// Lowers `array_keys()` for a value whose static type is a boxed `Mixed` — e.g. a `mixed`
+/// parameter narrowed to an array by an `is_array()` guard. The runtime value is a boxed Mixed
+/// cell wrapping the array; `__rt_mixed_unbox` peels it to the concrete array pointer (the guard
+/// guarantees an indexed or associative array), after which the shared heap-kind dispatch behaves
+/// exactly like the raw `array<mixed>` path. Non-consuming: the Mixed variable keeps ownership of
+/// the underlying array, so the unboxed pointer is borrowed (no retain/release).
+fn lower_boxed_mixed_array_keys(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    array: ValueId,
+    result_elem_ty: &PhpType,
+) -> Result<()> {
+    require_supported_indexed_result_type(result_elem_ty)?;
+    require_supported_assoc_result_type(&PhpType::Mixed, result_elem_ty)?;
+    ctx.load_value_to_result(array)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox"); // x0=tag, x1=array pointer (value_lo) for a boxed indexed/assoc array
+            ctx.emitter.instruction("mov x0, x1"); // move the unboxed array pointer into the result register
+        }
+        Arch::X86_64 => {
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox"); // rax=tag, rdi=array pointer (value_lo) for a boxed indexed/assoc array
+            ctx.emitter.instruction("mov rax, rdi"); // move the unboxed array pointer into the result register
+        }
+    }
+    emit_dynamic_array_keys_dispatch(ctx, inst, result_elem_ty)
+}
+
+/// Emits the runtime heap-kind dispatch for `array_keys()`, assuming the array pointer is already
+/// in the integer result register. Shared by the raw `array<mixed>` path and the boxed-`Mixed`
+/// path: probes `__rt_heap_kind` and routes to the indexed or associative key materializer.
+fn emit_dynamic_array_keys_dispatch(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    result_elem_ty: &PhpType,
+) -> Result<()> {
     let assoc_label = ctx.next_label("akeys_dynamic_assoc");
     let done_label = ctx.next_label("akeys_dynamic_done");
     match ctx.emitter.target.arch {

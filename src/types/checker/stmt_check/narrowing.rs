@@ -252,6 +252,14 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 // type-check; the boxed-closure runtime (is_callable tag-10 reader + callable-array
                 // value_type stamp) makes the guarded dispatch work natively, not just at --check.
                 "is_callable" => PhpType::Callable,
+                // `is_array($x)`: narrow to `array<mixed>` — the array shape accepted by the widest
+                // set of array builtins (array_filter/array_map take `Array` but reject `AssocArray`;
+                // array_keys handles it at runtime by heap kind). Its codegen repr stays `Mixed`, so
+                // a genuine `mixed` value is served natively by the array-builtin Mixed-unbox path
+                // (array_keys), while `array_keys($x)` still yields mixed keys so a following
+                // `is_string($key)` guard type-checks (ward-config Config::getSection). `guard_matches`
+                // keeps an already-array-typed value at its precise shape rather than widening it.
+                "is_array" => PhpType::Array(Box::new(PhpType::Mixed)),
                 // `is_null($x)`: same narrowing as `$x === null` — elephc models a `?T` value's
                 // null as Void, so the complement strips it (`if (is_null($x)) { throw; }` leaves
                 // ?int as int on the fall-through path).
@@ -299,6 +307,15 @@ fn guard_matches(member: &PhpType, target: &PhpType) -> bool {
     match (member, target) {
         (PhpType::Object(member_class), PhpType::Object(target_class)) => member_class == target_class,
         (PhpType::False, PhpType::Bool) => true,
+        // `is_array` narrows to a generic array target; any concrete array — indexed `Array` or
+        // associative `AssocArray`, with any element/key refinement — already is an array, so it
+        // matches. Narrowing therefore keeps the precise current/member type instead of widening it
+        // to `array<mixed, mixed>` (which would spuriously reject a later `array_filter`/`array_map`
+        // that only accepts a concrete `Array`), while a `mixed` value still widens to the target.
+        (
+            PhpType::Array(_) | PhpType::AssocArray { .. },
+            PhpType::Array(_) | PhpType::AssocArray { .. },
+        ) => true,
         _ => member == target,
     }
 }

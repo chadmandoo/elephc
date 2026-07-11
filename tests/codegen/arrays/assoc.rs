@@ -713,3 +713,33 @@ echo $a[null] ?? "miss";
     );
     assert_eq!(out, "miss");
 }
+
+/// Regression: `array_keys()` on a `mixed` value narrowed to an array by an `is_array()` guard
+/// must unbox the boxed Mixed cell and dispatch by runtime heap kind, returning int keys for an
+/// indexed payload and string keys for an associative payload (ward-config Config::getSection:
+/// `if (!is_array($v)) { throw; } foreach (array_keys($v) as $k) { if (is_string($k)) ... }`).
+/// Before the boxed-Mixed arm this failed native codegen with "array_keys for PHP type Mixed".
+#[test]
+fn test_array_keys_on_is_array_narrowed_mixed() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function countStrKeys(mixed $v): int {
+    if (!is_array($v)) {
+        return -1;
+    }
+    $n = 0;
+    foreach (array_keys($v) as $k) {
+        if (is_string($k)) {
+            $n++;
+        }
+    }
+    return $n;
+}
+echo countStrKeys(["x" => 1, "y" => 2, "z" => 3]);
+echo countStrKeys([10, 20]);
+echo countStrKeys(42);
+"#,
+    );
+    assert_eq!(out, "30-1");
+}
