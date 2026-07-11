@@ -1,9 +1,9 @@
 //! Purpose:
-//! Injects small elephc-PHP helper functions that back the extended-arity forms of a few
-//! native builtins whose extra argument the backend does not thread through its runtime:
-//! `array_search($needle, $haystack, $strict)` and `strpos($haystack, $needle, $offset)`.
-//! The name resolver rewrites those specific arity calls to the injected functions; the
-//! shorter native forms are untouched.
+//! Injects small elephc-PHP helper functions that back builtin forms the backend does not
+//! provide: the extended-arity `array_search($needle, $haystack, $strict)` and
+//! `strpos($haystack, $needle, $offset)` (whose extra argument the runtime does not thread),
+//! and the otherwise-missing `strcspn($subject, $characters)`. The name resolver rewrites the
+//! specific call forms to the injected functions; the shorter native forms are untouched.
 //!
 //! Called from:
 //! - `crate::pipeline::compile` (and the codegen test harness) via `inject_if_used`, before
@@ -55,6 +55,17 @@ function __elephc_strpos_offset(string $haystack, string $needle, int $offset): 
     }
     return $pos + $start;
 }
+function __elephc_strcspn(string $subject, string $characters): int {
+    $n = strlen($subject);
+    $i = 0;
+    while ($i < $n) {
+        if (strpos($characters, $subject[$i]) !== false) {
+            break;
+        }
+        $i = $i + 1;
+    }
+    return $i;
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -64,7 +75,10 @@ function __elephc_strpos_offset(string $haystack, string $needle, int $offset): 
 /// top-level execution order. Tokenize/parse failure is a compiler bug and panics.
 pub fn inject_if_used(program: Program) -> Program {
     let rendered = format!("{program:?}");
-    if !rendered.contains("array_search") && !rendered.contains("strpos") {
+    if !rendered.contains("array_search")
+        && !rendered.contains("strpos")
+        && !rendered.contains("strcspn")
+    {
         return program;
     }
     let user_declares = program.iter().any(|stmt| {
@@ -73,6 +87,7 @@ pub fn inject_if_used(program: Program) -> Program {
             StmtKind::FunctionDecl { name, .. }
                 if name.eq_ignore_ascii_case("__elephc_array_search_strict")
                     || name.eq_ignore_ascii_case("__elephc_strpos_offset")
+                    || name.eq_ignore_ascii_case("__elephc_strcspn")
         )
     });
     if user_declares {

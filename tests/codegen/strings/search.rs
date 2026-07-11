@@ -285,3 +285,20 @@ echo $a, "|", $b, "|", $c;
     );
     assert_eq!(out, "4|F|2");
 }
+
+/// Regression: `strcspn($subject, $characters)` (the length of the initial run of `$subject`
+/// containing none of the bytes in `$characters`) had no native implementation — it desugars
+/// to the injected `__elephc_strcspn`. ward-components' CssTokenScanner scans with it.
+#[test]
+fn test_strcspn_two_arg() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$a = strcspn("header text\n{body}", "\n{");
+$b = strcspn("abc", "xyz");
+$c = strcspn("xabc", "x");
+echo $a, "|", $b, "|", $c;
+"#,
+    );
+    assert_eq!(out, "11|3|0");
+}

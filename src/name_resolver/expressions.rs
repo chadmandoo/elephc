@@ -676,6 +676,13 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_strpos_offset".to_string()),
             args: args.to_vec(),
         }),
+        // strcspn($subject, $characters) — the two-argument form (initial run of $subject
+        // containing none of $characters). elephc has no native strcspn at all, so the 2-arg
+        // call desugars to the injected helper. Reserved name, never a user function.
+        "strcspn" if args.len() == 2 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_strcspn".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked
