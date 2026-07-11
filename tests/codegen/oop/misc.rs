@@ -102,3 +102,14 @@ fn test_example_v017_trio_compiles_and_runs() {
     let out = compile_and_run(include_str!("../../../examples/v017-trio/main.php"));
     assert_eq!(out, "health:[ok]:missing");
 }
+
+/// The `object` built-in pseudo-type and the `Closure` type-hint resolve as types (param,
+/// return, property positions) instead of being treated as namespaced class names.
+/// Byte-parity vs PHP 8.5.
+#[test]
+fn test_object_pseudo_type_and_closure_hint_resolve() {
+    let out = compile_and_run(
+        "<?php final class T { public function __construct(public string $v) {} } function tag(object $o): string { return $o instanceof T ? $o->v : '?'; } function run(Closure $f): string { return $f(); } echo tag(new T('t')), ':', run(function (): string { return 'c'; });",
+    );
+    assert_eq!(out, "t:c");
+}
