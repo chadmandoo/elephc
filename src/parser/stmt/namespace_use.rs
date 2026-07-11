@@ -365,7 +365,10 @@ fn token_as_import_name(token: &Token) -> Option<String> {
         Token::MLog10e => "M_LOG10E",
         Token::Stdin => "STDIN",
         Token::Stdout => "STDOUT",
+        Token::Stderr => "STDERR",
         Token::PhpEol => "PHP_EOL",
+        Token::PhpOs => "PHP_OS",
+        Token::DirectorySeparator => "DIRECTORY_SEPARATOR",
         _ => return None,
     };
     Some(name.to_string())

@@ -92,6 +92,7 @@ class PDO {
     const ATTR_PERSISTENT = 12;
     const ATTR_DRIVER_NAME = 16;
     const ATTR_DEFAULT_FETCH_MODE = 19;
+    const ATTR_EMULATE_PREPARES = 20;
     const ERRMODE_SILENT = 0;
     const ERRMODE_WARNING = 1;
     const ERRMODE_EXCEPTION = 2;

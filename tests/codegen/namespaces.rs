@@ -480,3 +480,37 @@ echo \App\C\K::mk()->t->p;
     );
     assert_eq!(out, "/");
 }
+
+/// Regression: `use const` / `use function` of a name the lexer eagerly tokenizes as a
+/// dedicated constant token — `DIRECTORY_SEPARATOR`, `PHP_OS`, `STDERR` — must parse. These
+/// tokens were missing from `token_as_import_name`, so the import raised "Expected imported
+/// name after 'use'", failing the whole file (the ward-theme/ward-manifest Emitters that lead
+/// their file with `use const DIRECTORY_SEPARATOR;`).
+#[test]
+fn test_use_const_special_token_imports_parse() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+namespace App;
+
+use function bin2hex;
+use const DIRECTORY_SEPARATOR;
+use const PHP_OS;
+
+final class Emitter {
+    public function path(string $dir, string $file): string {
+        return $dir . DIRECTORY_SEPARATOR . $file;
+    }
+    public function hex(): string {
+        return bin2hex("AZ");
+    }
+}
+
+namespace Main;
+
+$e = new \App\Emitter();
+echo $e->hex(), "|", $e->path("a", "b");
+"#,
+    );
+    assert_eq!(out, "415a|a/b");
+}
