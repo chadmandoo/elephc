@@ -63,6 +63,37 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             )?;
             Ok(PhpType::Array(elem_ty))
         }
+        PhpType::Mixed | PhpType::Union(_) => {
+            // A Mixed/Union source (an indexed read on a bare `array` property) is coerced/enforced
+            // at runtime; the filtered result is Array(Mixed). Validate the value-mode callback with
+            // a Mixed element via the object-aware dummy (synthetic var + binding) so a typed
+            // predicate checks against Mixed, not a fabricated Int. Same trust posture as array_merge
+            // (R9); key-mode over a Mixed source is rare and not modelled here.
+            let (dummy_arg, elem_binding) =
+                crate::types::checker::builtins::comparator_dummy_arg_for_elem(
+                    &PhpType::Mixed,
+                    cx.span,
+                );
+            let dummy_args = vec![dummy_arg];
+            let mut env_with_elem;
+            let cb_env: &crate::types::TypeEnv = match &elem_binding {
+                Some((binding_name, binding_ty)) => {
+                    env_with_elem = cx.env.clone();
+                    env_with_elem.insert(binding_name.clone(), binding_ty.clone());
+                    &env_with_elem
+                }
+                None => cx.env,
+            };
+            crate::types::checker::builtins::check_callback_builtin_call(
+                cx.checker,
+                &cx.args[1],
+                &dummy_args,
+                cx.span,
+                cb_env,
+                "array_filter() callback",
+            )?;
+            Ok(PhpType::Array(Box::new(PhpType::Mixed)))
+        }
         _ => Err(CompileError::new(
             cx.span,
             "array_filter() first argument must be array",

@@ -302,6 +302,14 @@ impl Checker {
             return Ok(());
         }
 
+        // A function/method whose body contains `yield`/`yield from` is a GENERATOR: the yields
+        // are its values and it needs no `return` on every path (a bare `return;` is legal). Its
+        // declared `iterable`/`Generator`/`Traversable` return type describes the generator object,
+        // not a returned value. (ward-blocks/ward-dbal `iterate()`/`yieldRows()`.)
+        if crate::types::checker::yield_validation::detect::body_contains_yield(body) {
+            return Ok(());
+        }
+
         if crate::termination::block_guarantees_function_exit(body) {
             Ok(())
         } else {

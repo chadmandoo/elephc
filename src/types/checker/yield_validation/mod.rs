@@ -21,7 +21,7 @@
 //!      emits a `CompileError` for each yield in an illegal context so
 //!      multiple errors can surface in one pass.
 
-mod detect;
+pub(crate) mod detect;
 mod validate;
 
 pub(crate) use detect::body_contains_yield;
