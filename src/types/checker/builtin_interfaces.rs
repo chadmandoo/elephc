@@ -30,6 +30,8 @@ const BUILTIN_INTERFACE_NAMES: &[&str] = &[
     "SplObserver",
     "SplSubject",
     "Stringable",
+    "UnitEnum",
+    "BackedEnum",
 ];
 
 /// Injects PHP SPL builtin interfaces into the type environment.
@@ -68,6 +70,22 @@ pub(crate) fn inject_builtin_interfaces(
     interface_map.insert(
         "Traversable".to_string(),
         marker_interface("Traversable"),
+    );
+
+    // The enum marker interfaces. Every enum implicitly implements UnitEnum; a backed enum also
+    // implements BackedEnum (which extends UnitEnum). Registered so a `BackedEnum`/`UnitEnum`
+    // type-hint or `instanceof` resolves (ward-dbal-file / enum-typed params).
+    interface_map.insert("UnitEnum".to_string(), marker_interface("UnitEnum"));
+    interface_map.insert(
+        "BackedEnum".to_string(),
+        InterfaceDeclInfo {
+            name: "BackedEnum".to_string(),
+            extends: vec!["UnitEnum".to_string()],
+            properties: Vec::new(),
+            methods: Vec::new(),
+            span: crate::span::Span::dummy(),
+            constants: Vec::new(),
+        },
     );
 
     interface_map.insert(
