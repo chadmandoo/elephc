@@ -215,6 +215,14 @@ impl Checker {
             // type_accepts (its Object-Object array arm). Clears withConditions(array<Condition>).
             (PhpType::Array(expected_elem), PhpType::Array(actual_elem)) => {
                 Self::types_compatible(expected_elem, actual_elem)
+                    // A declared `array<Object>` accepts an array of ANY object element (a sibling
+                    // or subtype) — PHP does not runtime-enforce array element types and both sides
+                    // carry the identical boxed-object-pointer representation (the #557 trust
+                    // posture). withConditions(array<Condition>) ← array<CompoundCondition>.
+                    || matches!(
+                        (expected_elem.as_ref(), actual_elem.as_ref()),
+                        (PhpType::Object(_), PhpType::Object(_))
+                    )
             }
             (
                 PhpType::AssocArray { key, value },
