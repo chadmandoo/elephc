@@ -11,12 +11,14 @@
 mod call_destructor;
 mod mixed_array_get;
 mod mixed_array_set;
+mod class_exists;
 mod new_by_name;
 mod stdclass;
 
 pub(crate) use call_destructor::emit_call_object_destructor;
 pub(crate) use mixed_array_get::emit_mixed_array_get;
 pub(crate) use mixed_array_set::emit_mixed_array_set;
+pub(crate) use class_exists::emit_class_exists;
 pub(crate) use new_by_name::emit_new_by_name;
 pub(crate) use stdclass::{
     emit_json_encode_stdclass, emit_mixed_property_get, emit_mixed_property_set,

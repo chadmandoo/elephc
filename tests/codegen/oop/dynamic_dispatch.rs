@@ -183,3 +183,24 @@ fn test_inferred_mixed_receiver_method_in_concat() {
     );
     assert_eq!(out, "hello world");
 }
+
+/// Regression: `class_exists()` with a runtime (non-literal) class name resolves against the
+/// emitted `_classes_by_name` table via `__rt_class_exists`, case-insensitively, and returns false
+/// for unknown names — without requiring any `new $c()` in the program (the dynamic class_exists
+/// itself forces every user class into the table). ward-controller PageLayoutReader and friends
+/// dispatch on `class_exists($runtimeName)` this way.
+#[test]
+fn test_class_exists_dynamic_runtime_name() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class Widget {}
+final class Gadget {}
+function check(string $name): string {
+    return class_exists($name) ? "y" : "n";
+}
+echo check("Widget"), check("widget"), check("Gadget"), check("Nope"), check("");
+"#,
+    );
+    assert_eq!(out, "yyynn");
+}

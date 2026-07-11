@@ -340,6 +340,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     objects::emit_mixed_array_get(emitter);
     objects::emit_mixed_array_set(emitter);
     objects::emit_new_by_name(emitter);
+    objects::emit_class_exists(emitter);
     system::emit_class_name_of(emitter);
     objects::emit_call_object_destructor(emitter);
     objects::emit_json_encode_stdclass(emitter);

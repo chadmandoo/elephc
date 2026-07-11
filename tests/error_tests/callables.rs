@@ -33,12 +33,14 @@ fn test_error_function_exists_wrong_args() {
 
 /// Verifies that error class exists requires literal name.
 #[test]
-fn test_error_class_exists_requires_literal_name() {
-    // Verifies `class_exists()` with a runtime variable as the first argument
-    // produces a diagnostic because AOT mode requires a string literal.
+fn test_error_interface_exists_requires_literal_name() {
+    // `interface_exists()` (and `trait_exists()`/`enum_exists()`) still require a compile-time
+    // string literal — unlike `class_exists()`, they have no runtime `_classes_by_name` table scan.
+    // (`class_exists($runtimeName)` is now supported via `__rt_class_exists`; see the codegen test
+    // `test_class_exists_dynamic_runtime_name`.)
     expect_error(
-        r#"<?php $name = "DateTime"; class_exists($name);"#,
-        "class_exists() first argument must be a string literal in AOT mode",
+        r#"<?php $name = "Countable"; interface_exists($name);"#,
+        "interface_exists() first argument must be a string literal in AOT mode",
     );
 }
 

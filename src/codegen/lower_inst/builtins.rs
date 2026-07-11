@@ -309,7 +309,24 @@ pub(crate) fn lower_class_like_exists(
 ) -> Result<()> {
     ensure_arg_count_between(inst, name, 1, 2)?;
     let value = expect_operand(inst, 0)?;
-    let symbol_name = const_string_operand(ctx, value)?;
+    let Ok(symbol_name) = const_string_operand(ctx, value) else {
+        // Non-constant argument: `class_exists($dynamic)` scans the emitted `_classes_by_name`
+        // table at runtime via `__rt_class_exists` (same string ABI as the unary string builtins;
+        // the autoload flag is a no-op under AOT). The other `*_exists` builtins have no runtime
+        // scan, so a dynamic argument there is unsupported (the checker already rejects it).
+        if name == "class_exists" {
+            return crate::codegen::lower_inst::builtins::strings::lower_unary_string_runtime(
+                ctx,
+                inst,
+                "class_exists",
+                "__rt_class_exists",
+            );
+        }
+        return Err(crate::codegen::CodegenIrError::unsupported(format!(
+            "{}() with a non-constant argument",
+            name
+        )));
+    };
     let exists = match name {
         "class_exists" => contains_folded(
             ctx.module

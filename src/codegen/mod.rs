@@ -197,7 +197,7 @@ fn finalize_user_asm(
     let user_functions = runtime_user_function_sigs(module);
     let function_variant_groups = runtime_function_variant_groups(module);
     let mut allowed_class_names = runtime_referenced_class_names(module);
-    if module_uses_dynamic_callable_lookup(module) {
+    if module_uses_dynamic_callable_lookup(module) || module_uses_dynamic_class_exists(module) {
         allowed_class_names.extend(module.class_infos.keys().cloned());
     }
     let runtime_interfaces = runtime_referenced_interfaces(module, &allowed_class_names);
@@ -344,6 +344,52 @@ fn function_uses_dynamic_callable_lookup(module: &Module, function: &Function) -
 }
 
 /// Returns true for an EIR builtin instruction that calls PHP `is_callable()`.
+/// Returns true when any function in `module` calls `class_exists()` with a non-constant argument.
+/// Such a call scans the emitted `_classes_by_name` table via `__rt_class_exists`, so the table
+/// must contain every user class (not only the ones reachable through `new $c()`). A
+/// string-literal argument is folded at compile time and needs no table, so it does not trigger.
+fn module_uses_dynamic_class_exists(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+        .any(|function| function_uses_dynamic_class_exists(module, function))
+}
+
+/// Returns true when `function` calls `class_exists()` with a first argument that is not a
+/// compile-time `ConstStr` (i.e. a runtime class name resolved via the table scan).
+fn function_uses_dynamic_class_exists(module: &Module, function: &Function) -> bool {
+    function.instructions.iter().any(|inst| {
+        if inst.op != Op::BuiltinCall {
+            return false;
+        }
+        let Some(Immediate::Data(data)) = inst.immediate else {
+            return false;
+        };
+        let Some(name) = module.data.function_names.get(data.as_raw() as usize) else {
+            return false;
+        };
+        if crate::names::php_symbol_key(name.trim_start_matches('\\')) != "class_exists" {
+            return false;
+        }
+        let Some(value) = inst.operands.first().and_then(|op| function.value(*op)) else {
+            return false;
+        };
+        // A `ConstStr`-defining operand is a string literal (folded at compile time); anything else
+        // is a runtime name that scans the table.
+        !matches!(
+            value.def,
+            crate::ir::ValueDef::Instruction { inst: def_inst, .. }
+                if function.instruction(def_inst).map(|i| i.op) == Some(Op::ConstStr)
+        )
+    })
+}
+
 fn is_dynamic_callable_lookup_builtin(module: &Module, inst: &crate::ir::Instruction) -> bool {
     if inst.op != Op::BuiltinCall {
         return false;

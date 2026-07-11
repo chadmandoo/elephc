@@ -26,10 +26,23 @@ use crate::types::PhpType;
 /// Arguments are pre-inferred by the registry common path before this hook runs.
 pub(crate) fn check_class_like_exists(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     if !matches!(cx.args[0].kind, ExprKind::StringLiteral(_)) {
-        return Err(CompileError::new(
-            cx.span,
-            &format!("{}() first argument must be a string literal in AOT mode", cx.name),
-        ));
+        // `class_exists()` accepts a dynamic (runtime) class name: the lowering scans the emitted
+        // `_classes_by_name` table via `__rt_class_exists`. The other `*_exists` builtins still
+        // require a compile-time-constant literal — they have no runtime table scan yet.
+        if cx.name == "class_exists" {
+            let first_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
+            if !matches!(first_ty.codegen_repr(), PhpType::Str) {
+                return Err(CompileError::new(
+                    cx.span,
+                    &format!("{}() first argument must be a string in AOT mode", cx.name),
+                ));
+            }
+        } else {
+            return Err(CompileError::new(
+                cx.span,
+                &format!("{}() first argument must be a string literal in AOT mode", cx.name),
+            ));
+        }
     }
     if let Some(autoload_arg) = cx.args.get(1) {
         if !matches!(
