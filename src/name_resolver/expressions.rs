@@ -644,6 +644,15 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             })
         }
         "timezone_open" if args.len() == 1 => Some(new_object("DateTimeZone")),
+        // strtr($str, $pairs) — the two-argument (replacement-pair map) form. The
+        // three-argument single-character-translation form stays the native builtin; only the
+        // arity-2 call desugars, to the injected `__elephc_strtr_pairs` free function
+        // (longest-match-wins substring replacement), which the builtin runtime does not
+        // implement. `strtr` is never a user function (reserved), so this never hijacks one.
+        "strtr" if args.len() == 2 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_strtr_pairs".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

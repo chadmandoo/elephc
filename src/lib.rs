@@ -64,6 +64,7 @@ pub mod tz_prelude;
 /// Conditionally-injected standard-library prelude (mb_* / array_* / http_build_query in
 /// elephc-PHP).
 pub mod stdlib_prelude;
+pub mod strtr_prelude;
 /// Conditionally-injected `var_export` prelude (elephc-PHP rendering function).
 pub mod var_export_prelude;
 /// Conditionally-injected `--web` request prelude (extern declarations for bridge getters).

@@ -249,3 +249,22 @@ echo strtr("aaa", "a", "b");
     );
     assert_eq!(out, "Hippo|2es2|xyc|1324|bbb");
 }
+
+/// Regression: `strtr($str, $pairs)` — the two-argument replacement-map form — desugars to the
+/// injected `__elephc_strtr_pairs` and applies PHP's longest-match-wins, non-re-scanned,
+/// empty-key-ignored semantics. The three-argument single-character-translation form stays the
+/// native builtin. AIC's Kernel/Scaffold template renderers use the pair-map form for
+/// placeholder substitution.
+#[test]
+fn test_strtr_two_arg_replacement_pairs() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$tpl = strtr("Hello {name}, you are {role}", ["{name}" => "Al", "{role}" => "admin"]);
+$longest = strtr("hell", ["h" => "1", "hell" => "Z"]);
+$native = strtr("abc", "abc", "xyz");
+echo $tpl, "|", $longest, "|", $native;
+"#,
+    );
+    assert_eq!(out, "Hello Al, you are admin|Z|xyz");
+}
