@@ -726,6 +726,13 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_mkdir".to_string()),
             args: args.to_vec(),
         }),
+        // preg_quote($str[, $delimiter]) — elephc has no native preg_quote, so both the 1-arg and
+        // 2-arg forms desugar to the injected helper (backslash-escapes the PCRE metacharacters,
+        // plus the delimiter when supplied). Reserved name, never a user function.
+        "preg_quote" if args.len() == 1 || args.len() == 2 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_preg_quote".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

@@ -109,6 +109,27 @@ function __elephc_mkdir(string $directory, int $mode = 0o777, bool $recursive = 
     }
     return true;
 }
+function __elephc_preg_quote(string $str, ?string $delimiter = null): string {
+    $special = ".\\+*?[^]$(){}=!<>|:-#";
+    if ($delimiter !== null && $delimiter !== "") {
+        $special = $special . $delimiter;
+    }
+    $result = "";
+    $n = strlen($str);
+    $i = 0;
+    while ($i < $n) {
+        $ch = $str[$i];
+        if ($ch === "\0") {
+            $result = $result . "\\000";
+        } elseif (strpos($special, $ch) !== false) {
+            $result = $result . "\\" . $ch;
+        } else {
+            $result = $result . $ch;
+        }
+        $i = $i + 1;
+    }
+    return $result;
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -123,6 +144,7 @@ pub fn inject_if_used(program: Program) -> Program {
         && !rendered.contains("strcspn")
         && !rendered.contains("base64_decode")
         && !rendered.contains("mkdir")
+        && !rendered.contains("preg_quote")
     {
         return program;
     }
@@ -135,6 +157,7 @@ pub fn inject_if_used(program: Program) -> Program {
                     || name.eq_ignore_ascii_case("__elephc_strcspn")
                     || name.eq_ignore_ascii_case("__elephc_base64_decode_strict")
                     || name.eq_ignore_ascii_case("__elephc_mkdir")
+                    || name.eq_ignore_ascii_case("__elephc_preg_quote")
         )
     });
     if user_declares {

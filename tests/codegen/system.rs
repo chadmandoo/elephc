@@ -1736,6 +1736,16 @@ fn test_preg_match_simple() {
     assert_eq!(out, "1");
 }
 
+/// Verifies `preg_quote()` (no native builtin — desugars to the injected helper) backslash-escapes
+/// PCRE metacharacters, and the 2-arg form also escapes the supplied delimiter.
+#[test]
+fn test_preg_quote() {
+    let out = compile_and_run(
+        r#"<?php echo preg_quote("a.b*c"), "|", preg_quote("x/y", "/"), "|", preg_quote("plain");"#,
+    );
+    assert_eq!(out, "a\\.b\\*c|x\\/y|plain");
+}
+
 /// Verifies literal `call_user_func()` dispatch to `preg_match()` includes regex runtime helpers.
 #[test]
 fn test_preg_match_call_user_func_literal() {
