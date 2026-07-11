@@ -1432,3 +1432,25 @@ echo $fib(10);
     );
     assert_eq!(out, "55");
 }
+
+/// Regression: `is_callable()` on a closure or arrow function that has been boxed into a `mixed`
+/// value must return true, while non-callable scalars return false. A boxed callable descriptor
+/// carries runtime value tag 10; before `__rt_is_callable_mixed` grew its tag-10 arm the descriptor
+/// fell through to the "unsupported payload" branch and reported false, so an `is_callable()` guard
+/// over a `mixed`-typed listener (PSR-14 dispatch) silently skipped every closure.
+#[test]
+fn test_is_callable_true_for_closure_boxed_as_mixed() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function probe(mixed $f): string {
+    return is_callable($f) ? "yes" : "no";
+}
+echo probe(static function (): void {});
+echo probe(fn (): int => 1);
+echo probe(42);
+echo probe("strlen");
+"#,
+    );
+    assert_eq!(out, "yesyesnoyes");
+}
