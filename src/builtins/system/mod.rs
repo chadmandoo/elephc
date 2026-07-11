@@ -23,6 +23,7 @@
 //! - `json_support` holds shared helpers for the JSON/serialize check hooks.
 //! - Add `pub mod <name>;` here for every new system builtin home.
 
+pub mod assert;
 pub mod __elephc_gmmktime_raw;
 pub mod __elephc_mktime_raw;
 pub mod __elephc_strtotime_raw;
@@ -39,6 +40,7 @@ pub mod defined;
 pub mod exec;
 pub mod getdate;
 pub mod getenv;
+pub mod getmypid;
 pub mod gmdate;
 pub mod gmmktime;
 pub mod header;

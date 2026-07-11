@@ -44,3 +44,28 @@ fn test_php_float_max() {
     let out = compile_and_run("<?php echo is_float(PHP_FLOAT_MAX);");
     assert_eq!(out, "1");
 }
+
+/// Verifies the `SORT_*` sort-flag integer constants are substituted at compile time
+/// with PHP's canonical values (`SORT_REGULAR`=0 … `SORT_FLAG_CASE`=8).
+/// Fixture echoes each flag joined by `,`.
+#[test]
+fn test_sort_flag_constants() {
+    let out = compile_and_run(
+        "<?php echo SORT_REGULAR, ',', SORT_NUMERIC, ',', SORT_STRING, ',', \
+         SORT_DESC, ',', SORT_ASC, ',', SORT_LOCALE_STRING, ',', SORT_NATURAL, \
+         ',', SORT_FLAG_CASE;",
+    );
+    assert_eq!(out, "0,1,2,3,4,5,6,8");
+}
+
+/// Verifies the `PASSWORD_*` algorithm-identifier constants are substituted as their
+/// PHP 7.4+ string values (`PASSWORD_ARGON2ID` = "argon2id", etc.).
+/// Fixture echoes each identifier joined by `|`.
+#[test]
+fn test_password_algo_constants() {
+    let out = compile_and_run(
+        "<?php echo PASSWORD_DEFAULT, '|', PASSWORD_BCRYPT, '|', \
+         PASSWORD_ARGON2I, '|', PASSWORD_ARGON2ID;",
+    );
+    assert_eq!(out, "2y|2y|argon2i|argon2id");
+}

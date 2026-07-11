@@ -211,3 +211,41 @@ fn test_substr_replace_no_length() {
     let out = compile_and_run(r#"<?php echo substr_replace("hello world", "!", 5);"#);
     assert_eq!(out, "hello!");
 }
+
+/// Verifies `mb_strpos` returns a UTF-8 CODE-POINT index (not a byte offset): the needle
+/// "llo" in "héllo" is at code-point 2 even though "é" occupies two bytes. Also covers a
+/// multibyte needle, an ASCII match at 0, a miss (strict `false`), and an empty needle (0).
+/// Fixture asserts `2|1|0|F|0|2`.
+#[test]
+fn test_mb_strpos_codepoint_offsets() {
+    let out = compile_and_run(
+        r#"<?php
+echo mb_strpos("héllo", "llo"), "|";
+echo mb_strpos("héllo", "é"), "|";
+echo mb_strpos("abc", "a"), "|";
+echo (mb_strpos("abc", "z") === false ? "F" : "X"), "|";
+echo mb_strpos("abc", ""), "|";
+echo mb_strpos("日本語", "語");
+"#,
+    );
+    assert_eq!(out, "2|1|0|F|0|2");
+}
+
+/// Verifies the 3-argument `strtr($str, $from, $to)` byte-map form: equal-length maps,
+/// PHP's "last mapping wins" for a repeated `from` byte (`strtr("test","tt","12")` → "2es2"),
+/// truncation to `min(len($from), len($to))` (extra `from` byte ignored), a mixed-case map,
+/// and single-byte translation.
+/// Fixture asserts `Hippo|2es2|xyc|1324|bbb`.
+#[test]
+fn test_strtr_three_arg_char_map() {
+    let out = compile_and_run(
+        r#"<?php
+echo strtr("Hello", "el", "ip"), "|";
+echo strtr("test", "tt", "12"), "|";
+echo strtr("abc", "abcd", "xy"), "|";
+echo strtr("aAbB", "abAB", "1234"), "|";
+echo strtr("aaa", "a", "b");
+"#,
+    );
+    assert_eq!(out, "Hippo|2es2|xyc|1324|bbb");
+}

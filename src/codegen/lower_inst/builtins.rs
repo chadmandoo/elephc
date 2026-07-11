@@ -289,6 +289,18 @@ pub(crate) fn lower_function_exists(ctx: &mut FunctionContext<'_>, inst: &Instru
     store_if_result(ctx, inst)
 }
 
+/// Lowers `assert(assertion, description?)`.
+///
+/// PHP's production configuration (`zend.assertions=-1`) makes `assert()` a no-op that
+/// always returns `true` without evaluating the assertion or throwing; the reference
+/// runtime this compiler targets returns `true` and never throws. The lowering therefore
+/// materializes a constant `true` and leaves the (already-computed) operands untouched.
+pub(crate) fn lower_assert(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    ensure_arg_count_between(inst, "assert", 1, 2)?;
+    emit_static_bool(ctx, true);
+    store_if_result(ctx, inst)
+}
+
 /// Lowers AOT class/interface/enum existence checks for literal names.
 pub(crate) fn lower_class_like_exists(
     ctx: &mut FunctionContext<'_>,

@@ -93,6 +93,9 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     strings::emit_sha1(emitter);
     strings::emit_crc32(emitter);
     strings::emit_mb_strlen(emitter);
+    strings::emit_mb_strpos(emitter);
+    strings::emit_strtr(emitter);
+    strings::emit_random_bytes(emitter);
     strings::emit_hash(emitter);
     strings::emit_hash_hmac(emitter);
     strings::emit_hash_equals(emitter);
@@ -116,6 +119,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     // System runtime functions
     system::emit_build_argv(emitter);
     system::emit_time(emitter);
+    system::emit_getmypid(emitter);
     system::emit_microtime(emitter);
     system::emit_microtime_build_into(emitter);
     system::emit_microtime_str(emitter);

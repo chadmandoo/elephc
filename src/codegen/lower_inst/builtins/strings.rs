@@ -824,6 +824,21 @@ pub(crate) fn lower_string_replace(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `random_bytes(length)` by materializing the byte count into the integer argument
+/// register and dispatching to the CSPRNG string helper, which returns a fresh owned string.
+pub(crate) fn lower_random_bytes(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if inst.operands.len() != 1 {
+        return Err(CodegenIrError::invalid_module(format!(
+            "random_bytes expected 1 arg, got {}",
+            inst.operands.len()
+        )));
+    }
+    let length = expect_operand(inst, 0)?;
+    load_as_int(ctx, length, "random_bytes length")?;
+    abi::emit_call_label(ctx.emitter, "__rt_random_bytes");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `wordwrap(string, width?, break?, cut?)` through the shared runtime helper.
 pub(crate) fn lower_wordwrap(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if inst.operands.is_empty() || inst.operands.len() > 4 {
