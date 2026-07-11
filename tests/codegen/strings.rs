@@ -21,3 +21,12 @@ mod formatting;
 mod interpolation_and_hashes;
 #[path = "strings/misc.rs"]
 mod misc;
+
+/// mb_strlen(): UTF-8 code-point count, byte-identical to PHP 8.5 (ASCII, multibyte, empty).
+#[test]
+fn test_mb_strlen_codepoint_count() {
+    let out = compile_and_run(
+        "<?php echo mb_strlen('abc'), ':', mb_strlen('héllo wörld'), ':', mb_strlen(''), ':', mb_strlen('日本語');",
+    );
+    assert_eq!(out, "3:11:0:3");
+}
