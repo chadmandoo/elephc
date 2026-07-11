@@ -1746,6 +1746,22 @@ fn test_preg_quote() {
     assert_eq!(out, "a\\.b\\*c|x\\/y|plain");
 }
 
+/// Verifies the injected `Random\Randomizer` class (absent natively — `new Randomizer()` /
+/// `Randomizer $r` reported "Unknown type"): `getBytes($n)` returns `$n` bytes, delegating to the
+/// native `random_bytes` builtin.
+#[test]
+fn test_random_randomizer_get_bytes() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+use Random\Randomizer;
+$r = new Randomizer();
+echo strlen($r->getBytes(16));
+"#,
+    );
+    assert_eq!(out, "16");
+}
+
 /// Verifies literal `call_user_func()` dispatch to `preg_match()` includes regex runtime helpers.
 #[test]
 fn test_preg_match_call_user_func_literal() {

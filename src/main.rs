@@ -48,6 +48,7 @@ mod arity_ext_prelude;
 mod explode_prelude;
 mod stdlib_prelude;
 mod strtr_prelude;
+mod random_randomizer_prelude;
 mod substr_compare_prelude;
 mod tz_prelude;
 mod var_export_prelude;

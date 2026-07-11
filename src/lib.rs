@@ -68,6 +68,8 @@ pub mod explode_prelude;
 pub mod stdlib_prelude;
 pub mod strtr_prelude;
 /// Conditionally-injected `substr_compare` prelude (elephc-PHP reduction to substr + strcmp/strcasecmp).
+/// Conditionally-injected `Random\Randomizer` prelude (elephc-PHP class over `random_bytes`).
+pub mod random_randomizer_prelude;
 pub mod substr_compare_prelude;
 /// Conditionally-injected `var_export` prelude (elephc-PHP rendering function).
 pub mod var_export_prelude;
