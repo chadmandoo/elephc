@@ -46,6 +46,27 @@ pub(in crate::interpreter) enum EvalArea {
     Types,
 }
 
+impl EvalArea {
+    /// Returns the stable lowercase spelling used by documentation metadata.
+    pub(in crate::interpreter) fn name(self) -> &'static str {
+        match self {
+            EvalArea::Array => "array",
+            EvalArea::Core => "core",
+            EvalArea::Filesystem => "filesystem",
+            EvalArea::Formatting => "formatting",
+            EvalArea::Json => "json",
+            EvalArea::Math => "math",
+            EvalArea::NetworkEnv => "network_env",
+            EvalArea::Regex => "regex",
+            EvalArea::RawMemory => "raw_memory",
+            EvalArea::String => "string",
+            EvalArea::Symbols => "symbols",
+            EvalArea::Time => "time",
+            EvalArea::Types => "types",
+        }
+    }
+}
+
 /// Parameter metadata for one eval builtin argument.
 #[derive(Clone, Copy)]
 pub(in crate::interpreter) struct EvalParamSpec {
@@ -77,6 +98,9 @@ pub(in crate::interpreter) struct EvalBuiltinSpec {
     pub(in crate::interpreter) direct: Option<EvalDirectHook>,
     /// Evaluated-argument dispatch hook.
     pub(in crate::interpreter) values: Option<EvalValuesHook>,
+    /// Workspace-relative path of the home file that declared this builtin
+    /// (captured via `file!()` at the `eval_builtin!` invocation site).
+    pub(in crate::interpreter) home_file: &'static str,
 }
 
 impl EvalBuiltinSpec {

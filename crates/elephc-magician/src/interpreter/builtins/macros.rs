@@ -39,6 +39,7 @@ macro_rules! eval_builtin {
                 required_param_count: None,
                 direct: None,
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };
@@ -70,6 +71,7 @@ macro_rules! eval_builtin {
                 required_param_count: None,
                 direct: Some($crate::interpreter::builtins::spec::EvalDirectHook::$direct),
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };
@@ -102,6 +104,7 @@ macro_rules! eval_builtin {
                 required_param_count: None,
                 direct: None,
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };
@@ -133,6 +136,7 @@ macro_rules! eval_builtin {
                 required_param_count: None,
                 direct: Some($crate::interpreter::builtins::spec::EvalDirectHook::$direct),
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };
@@ -164,6 +168,7 @@ macro_rules! eval_builtin {
                 required_param_count: Some($required),
                 direct: Some($crate::interpreter::builtins::spec::EvalDirectHook::$direct),
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };
@@ -194,6 +199,7 @@ macro_rules! eval_builtin {
                 required_param_count: None,
                 direct: Some($crate::interpreter::builtins::spec::EvalDirectHook::$direct),
                 values: Some($crate::interpreter::builtins::spec::EvalValuesHook::$values),
+                home_file: file!(),
             }
         }
     };

@@ -138,6 +138,12 @@ pub(in crate::interpreter) fn eval_function_probe_exists(
             || eval_date_procedural_alias_exists(name))
 }
 
+/// Returns the procedural date/time alias names the eval dispatcher accepts
+/// without declarative registry entries (documentation metadata surface).
+pub(in crate::interpreter) fn eval_date_procedural_alias_names() -> &'static [&'static str] {
+    EVAL_DATE_PROCEDURAL_ALIAS_FUNCTIONS
+}
+
 /// Returns true for DateTime/calendar/timezone aliases that static elephc desugars.
 fn eval_date_procedural_alias_exists(name: &str) -> bool {
     let bare = name.rsplit('\\').next().unwrap_or("");

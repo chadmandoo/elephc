@@ -57,7 +57,9 @@ pub(in crate::interpreter) use class_attribute_names::{
     eval_class_attribute_args_result, eval_reflection_attribute_array_result,
 };
 pub(in crate::interpreter) use class_implements::eval_class_relation_result;
-pub(in crate::interpreter) use function_exists::eval_function_probe_exists;
+pub(in crate::interpreter) use function_exists::{
+    eval_date_procedural_alias_names, eval_function_probe_exists,
+};
 pub(in crate::interpreter) use get_class::eval_get_class_result;
 pub(in crate::interpreter) use get_parent_class::eval_get_parent_class_result;
 pub(in crate::interpreter) use is_a::dynamic_object_is_a;
