@@ -277,3 +277,25 @@ echo dispatch(new ClickEvent()), " ", dispatch(new HoverEvent());
     );
     assert_eq!(out, "C:click H:hover");
 }
+
+/// Regression: a `match` with no `default` arm references the builtin `UnhandledMatchError` class
+/// (thrown at the implicit no-match point), so that class must be a declared builtin subclass of
+/// `Error`. Before it was declared, any default-less `match` failed with
+/// "Undefined class: UnhandledMatchError" (ward-sse DatastarEventSerializer). The happy path
+/// (a matching arm) compiles and runs.
+#[test]
+fn test_match_without_default_compiles() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function classify(int $x): string {
+    return match ($x) {
+        1 => "one",
+        2 => "two",
+    };
+}
+echo classify(1), classify(2);
+"#,
+    );
+    assert_eq!(out, "onetwo");
+}
