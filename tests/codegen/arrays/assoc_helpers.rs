@@ -284,3 +284,22 @@ echo $saved[1];
     );
     assert_eq!(out, "8");
 }
+
+/// Regression: `array_search($needle, $haystack, $strict)` — the three-argument strict-compare
+/// form — desugars to the injected `__elephc_array_search_strict` (the native 2-arg builtin
+/// does not thread the strict flag). The 2-arg loose form stays native. Kernel package
+/// scanners and Theme chain walkers use the strict form.
+#[test]
+fn test_array_search_three_arg_strict() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$h = ["a" => "x", "b" => "y", "c" => "y"];
+$hit = array_search("y", $h, true);
+$miss = array_search("z", $h, true) === false ? "F" : "?";
+$loose = array_search("x", $h);
+echo $hit, "|", $miss, "|", $loose;
+"#,
+    );
+    assert_eq!(out, "b|F|a");
+}

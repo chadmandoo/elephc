@@ -44,6 +44,7 @@ mod superglobals;
 mod termination;
 mod timings;
 mod types;
+mod arity_ext_prelude;
 mod explode_prelude;
 mod stdlib_prelude;
 mod strtr_prelude;

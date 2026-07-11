@@ -662,6 +662,20 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_explode_limit".to_string()),
             args: args.to_vec(),
         }),
+        // array_search($needle, $haystack, $strict) — the three-argument (strict-compare)
+        // form desugars to the injected helper (the backend's 2-arg builtin does not thread
+        // the strict flag); the 2-arg loose form stays native. Reserved name, never a user fn.
+        "array_search" if args.len() == 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_array_search_strict".to_string()),
+            args: args.to_vec(),
+        }),
+        // strpos($haystack, $needle, $offset) — the three-argument (start-offset) form
+        // desugars to the injected helper (offset-slice + native 2-arg strpos, re-based); the
+        // 2-arg form stays native. Reserved name, never a user function.
+        "strpos" if args.len() == 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_strpos_offset".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

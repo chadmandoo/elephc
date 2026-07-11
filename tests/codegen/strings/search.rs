@@ -268,3 +268,20 @@ echo $tpl, "|", $longest, "|", $native;
     );
     assert_eq!(out, "Hello Al, you are admin|Z|xyz");
 }
+
+/// Regression: `strpos($haystack, $needle, $offset)` — the three-argument start-offset form —
+/// desugars to the injected `__elephc_strpos_offset` (offset-slice + native 2-arg strpos,
+/// re-based; negative offsets count from the end). The 2-arg form stays native.
+#[test]
+fn test_strpos_three_arg_offset() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$a = strpos("abcabc", "bc", 2);
+$b = strpos("abcabc", "z", 0) === false ? "F" : "?";
+$c = strpos("hello", "l");
+echo $a, "|", $b, "|", $c;
+"#,
+    );
+    assert_eq!(out, "4|F|2");
+}
