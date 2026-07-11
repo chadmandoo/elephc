@@ -1230,3 +1230,72 @@ echo "done";
         "promoting an indexed array literal to hash storage must free the source array (issue #408)"
     );
 }
+
+/// Regression test for issue #525: a chained subscript read on a `?array`
+/// receiver materializes the intermediate container through the nullable-access
+/// hidden owned temp (`lower_nullable_array_access`), and the consuming read
+/// must release that temp's reference after its last use. Exercises both the
+/// non-null receiver (populated temp) and the null receiver (boxed-null temp)
+/// on every iteration and asserts the heap is clean at exit.
+#[test]
+fn test_regression_525_nullable_chained_read_releases_hidden_temp() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function probe(?array $r): int {
+    $x = $r[0][1];
+    if ($x !== null) {
+        return 1;
+    }
+    return 0;
+}
+$hits = 0;
+for ($k = 0; $k < 50; $k++) {
+    $a = [['a', 'b' . $k]];
+    $hits = $hits + probe($a);
+    $hits = $hits + probe(null);
+}
+echo $hits;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "50");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #525 (multiple reads): each chained read on the
+/// same `?array` receiver creates its own nullable-access hidden temp, and every
+/// temp's reference must be released independently — using the receiver twice
+/// must not leak either intermediate container or double-release one of them.
+#[test]
+fn test_regression_525_nullable_receiver_read_twice_heap_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function probe2(?array $r): int {
+    $a = $r[0][0];
+    $b = $r[0][1];
+    if ($a !== null && $b !== null) {
+        return 1;
+    }
+    return 0;
+}
+$hits = 0;
+for ($k = 0; $k < 50; $k++) {
+    $pair = [['a' . $k, 'b' . $k]];
+    $hits = $hits + probe2($pair);
+    $hits = $hits + probe2(null);
+}
+echo $hits;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "50");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}

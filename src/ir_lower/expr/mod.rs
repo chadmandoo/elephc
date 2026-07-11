@@ -7268,14 +7268,32 @@ fn lower_array_access_from_value(
         _ => Op::RuntimeCall,
     };
     let result_type = array_access_result_type(ctx, array_value.value, op, expr);
-    ctx.emit_value(
+    let result = ctx.emit_value(
         op,
         vec![array_value.value, index_value.value],
         None,
         result_type,
         op.default_effects(),
         Some(expr.span),
-    )
+    );
+    // A receiver materialized through a one-shot hidden owned temp (e.g. the
+    // merge temp `lower_nullable_array_access` uses for a chained `?array`
+    // read) carries an owned reference that nothing else releases anymore:
+    // `take_owned_temp` already cleared the backing slot, so this read is the
+    // temp value's last consuming use. Drop that reference here, exactly once,
+    // on the loaded SSA value itself so both merge results are freed — the
+    // populated container from the non-null path and the boxed Mixed null from
+    // the null path (Release is a no-op on genuinely empty values). This is
+    // restricted to the boxed Mixed runtime read because
+    // `__rt_mixed_array_get` returns an owned, independent cell (string
+    // payloads are persisted and child heap pointers retained), so releasing
+    // the receiver cannot invalidate the result; typed reads (`ArrayGet`,
+    // `StrCharAt`, ...) can return payloads that still borrow from the
+    // receiver's storage and must keep it alive.
+    if op == Op::RuntimeCall && ctx.value_is_owned_temp_load(array_value.value) {
+        crate::ir_lower::ownership::release_if_owned(ctx, array_value, Some(expr.span));
+    }
+    result
 }
 
 /// Lowers nullable receiver indexing without evaluating the index on a null receiver.
