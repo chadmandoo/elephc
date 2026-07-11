@@ -167,12 +167,28 @@ impl Checker {
                 default,
             } => {
                 self.infer_type(subject, env)?;
+                // `match (true) { $x instanceof T => ..., is_string($y) => ... }` uses each arm
+                // condition as a boolean guard (the arm fires when `true === <cond>`), so a single
+                // guard condition narrows that arm's result exactly as an `if (<cond>)` then-branch
+                // would (ward-sse DatastarEventSerializer dispatches on `$e instanceof PatchElementsEvent`).
+                let subject_is_true = matches!(&subject.kind, ExprKind::BoolLiteral(true));
                 let mut result_ty = None;
                 for (conditions, result) in arms {
                     for c in conditions {
                         self.infer_type(c, env)?;
                     }
-                    let ty = self.infer_type(result, env)?;
+                    let ty = if subject_is_true && conditions.len() == 1 {
+                        match self.guard_narrowing(&conditions[0], env)? {
+                            Some(guard) => {
+                                let mut arm_env = env.clone();
+                                arm_env.insert(guard.var, guard.then_ty);
+                                self.infer_type(result, &arm_env)?
+                            }
+                            None => self.infer_type(result, env)?,
+                        }
+                    } else {
+                        self.infer_type(result, env)?
+                    };
                     if result_ty.is_none() {
                         result_ty = Some(ty);
                     }

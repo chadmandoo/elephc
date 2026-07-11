@@ -166,11 +166,21 @@ impl Checker {
                 default,
             } => {
                 self.infer_type_with_assignment_effects(subject, env)?;
+                // `match (true) { $x instanceof T => ... }` uses each arm condition as a boolean
+                // guard (the arm fires when `true === <cond>`), so a single guard condition narrows
+                // that arm's result exactly as an `if (<cond>)` then-branch would (ward-sse
+                // DatastarEventSerializer dispatches on `$e instanceof PatchElementsEvent`).
+                let subject_is_true = matches!(&subject.kind, ExprKind::BoolLiteral(true));
                 let mut result_ty = None;
                 for (conditions, result) in arms {
                     let mut arm_env = env.clone();
                     for condition in conditions {
                         self.infer_type_with_assignment_effects(condition, &mut arm_env)?;
+                    }
+                    if subject_is_true && conditions.len() == 1 {
+                        if let Some(guard) = self.guard_narrowing(&conditions[0], &arm_env)? {
+                            arm_env.insert(guard.var, guard.then_ty);
+                        }
                     }
                     let arm_ty = self.infer_type_with_assignment_effects(result, &mut arm_env)?;
                     result_ty = Some(match result_ty {

@@ -250,3 +250,30 @@ fn test_while_null_no_loop() {
 }
 
 // --- Ternary operator ---
+
+/// Regression: a `match (true)` arm guarded by `$x instanceof T` must narrow `$x` to `T` in that
+/// arm's result, exactly as an `if ($x instanceof T)` then-branch would (ward-sse
+/// DatastarEventSerializer dispatches concrete event handlers this way). Before the match-arm
+/// guard narrowing, `serializeElements($x)` in the arm saw `$x` as the interface type and failed.
+#[test]
+fn test_match_true_instanceof_arm_narrows() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+interface Event {}
+final class ClickEvent implements Event { public function label(): string { return "click"; } }
+final class HoverEvent implements Event { public function label(): string { return "hover"; } }
+function describeClick(ClickEvent $e): string { return "C:" . $e->label(); }
+function describeHover(HoverEvent $e): string { return "H:" . $e->label(); }
+function dispatch(Event $e): string {
+    return match (true) {
+        $e instanceof ClickEvent => describeClick($e),
+        $e instanceof HoverEvent => describeHover($e),
+        default => "unknown",
+    };
+}
+echo dispatch(new ClickEvent()), " ", dispatch(new HoverEvent());
+"#,
+    );
+    assert_eq!(out, "C:click H:hover");
+}
