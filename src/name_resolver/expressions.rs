@@ -653,6 +653,15 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_strtr_pairs".to_string()),
             args: args.to_vec(),
         }),
+        // explode($sep, $str, $limit) — the three-argument (element-cap) form. The
+        // two-argument form stays the native builtin; the arity-3 call desugars to the
+        // injected `__elephc_explode_limit`, which layers PHP's positive/zero/negative
+        // `$limit` semantics over native 2-arg explode. `explode` is reserved (never a user
+        // function), so this never hijacks one.
+        "explode" if args.len() == 3 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_explode_limit".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

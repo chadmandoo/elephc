@@ -292,3 +292,23 @@ fn test_multiarg_string_builtins_of_mixed_argument() {
     );
     assert_eq!(out, "hell0 w0rld|6|hello,world");
 }
+
+/// Regression: `explode($sep, $str, $limit)` — the three-argument element-capping form —
+/// desugars to the injected `__elephc_explode_limit`, which layers PHP's `$limit` semantics
+/// over native 2-arg explode: positive caps with the remainder in the last element, `0`
+/// behaves as `1`, and negative drops trailing elements. The 2-arg form stays the native
+/// builtin. AIC's GateScripts spec parsers and FlashMessenger split with a limit.
+#[test]
+fn test_explode_three_arg_limit() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+$pos = implode(",", explode("-", "a-b-c-d", 2));
+$neg = implode(",", explode("-", "a-b-c-d", -1));
+$two = implode(",", explode("-", "a-b-c-d"));
+$zero = count(explode("-", "a-b-c-d", 0));
+echo $pos, "|", $neg, "|", $two, "|", $zero;
+"#,
+    );
+    assert_eq!(out, "a,b-c-d|a,b,c|a,b,c,d|1");
+}
