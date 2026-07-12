@@ -7166,7 +7166,10 @@ fn lower_match(
     expr: &Expr,
 ) -> LoweredValue {
     let subject = lower_expr(ctx, subject);
-    let result_type = fallback_expr_type(expr);
+    let mut result_type = fallback_expr_type(expr);
+    if match_null_arm_would_lose_nullness(arms, default, &result_type) {
+        result_type = PhpType::Mixed;
+    }
     let temp_name = ctx.declare_owned_hidden_temp(result_type.clone());
     let merge = ctx.builder.create_named_block("match.merge", Vec::new());
 
@@ -7210,6 +7213,37 @@ fn lower_match(
     }
     ctx.builder.position_at_end(merge);
     take_owned_temp(ctx, &temp_name, expr.span)
+}
+
+/// Returns true when a match mixes a null-producing arm with value-producing
+/// arms while the joined result type is a plain value type —
+/// `wider_type_syntactic`'s Str/Float absorption would coerce the null arm's
+/// value into the joined type (e.g. `i_to_str` on the null constant), turning
+/// `'A' => null` into an empty string at runtime. Boxing the whole match
+/// result as Mixed preserves nullness; throw arms (`Never`) produce no value
+/// and are ignored.
+fn match_null_arm_would_lose_nullness(
+    arms: &[(Vec<Expr>, Expr)],
+    default: Option<&Expr>,
+    joined: &PhpType,
+) -> bool {
+    if matches!(joined, PhpType::Mixed | PhpType::Void | PhpType::Union(_)) {
+        return false;
+    }
+    let mut has_null_arm = false;
+    let mut has_value_arm = false;
+    for arm_ty in arms
+        .iter()
+        .map(|(_, arm_expr)| infer_expr_type_syntactic(arm_expr))
+        .chain(default.map(infer_expr_type_syntactic))
+    {
+        match arm_ty {
+            PhpType::Never => {}
+            PhpType::Void => has_null_arm = true,
+            _ => has_value_arm = true,
+        }
+    }
+    has_null_arm && has_value_arm
 }
 
 /// Lowers array, hash, string, or ArrayAccess indexing.
