@@ -47,8 +47,10 @@ echo "0xFF = " . strtol(base: 16, s: "FF", endptr: ptr_null()) . "\n";
 echo "0o77 = " . strtol("77", ptr_null(), 8) . "\n";
 
 // Pass an elephc function to C as a callback.
-// The callback is passed by string name and must use a C-compatible ABI shape.
-function on_signal($sig) {
+// The callback is passed by string name and must use a C-compatible ABI shape:
+// every parameter needs an explicit int/float/bool/ptr hint (an unhinted PHP
+// parameter is `mixed`, which has no C representation).
+function on_signal(int $sig) {
     echo "signal = " . $sig . "\n";
 }
 

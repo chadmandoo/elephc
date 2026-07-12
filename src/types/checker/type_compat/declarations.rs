@@ -273,8 +273,11 @@ impl Checker {
                 param_types.push((param_name.clone(), declared_ty));
             } else if let Some(default_expr) = decl.defaults.get(idx).and_then(|d| d.as_ref()) {
                 param_types.push((param_name.clone(), infer_expr_type_syntactic(default_expr)));
-            } else {
+            } else if decl.ref_params.get(idx).copied().unwrap_or(false) {
+                // Unhinted by-ref: legacy Int slot ABI (see build_method_sig).
                 param_types.push((param_name.clone(), PhpType::Int));
+            } else {
+                param_types.push((param_name.clone(), PhpType::Mixed));
             }
         }
         if let Some(variadic_name) = decl.variadic.as_ref() {

@@ -30,10 +30,11 @@ pub(super) fn apply_methods(
 ) -> Result<(), CompileError> {
     for method in &class.methods {
         validate_method_shape(class, method)?;
+        let method = super::constants::fold_method_param_default_consts(method, class, checker)?;
         if method.is_static {
-            apply_static_method(state, class, checker, method)?;
+            apply_static_method(state, class, checker, &method)?;
         } else {
-            apply_instance_method(state, class, checker, method)?;
+            apply_instance_method(state, class, checker, &method)?;
         }
     }
     Ok(())

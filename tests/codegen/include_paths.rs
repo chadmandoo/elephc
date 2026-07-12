@@ -340,12 +340,14 @@ fn test_include_function_variant_specializes_untyped_string_param_from_call() {
 }
 
 /// Verifies that when an included file defines a function with an untyped
-/// parameter, calling it with an integer argument (which cannot be passed to
-/// strlen) produces a compile error. The specialized variant is not available
-/// for that type, and no valid fallback exists.
+/// parameter, calling it with an integer argument compiles and coerces at
+/// runtime: the unhinted `$input` is `mixed` (#621), so `strlen($input)`
+/// dispatches on the boxed value exactly like PHP's coercive mode
+/// (`strlen(123)` === 3). This replaced the specialization-era contract where
+/// the integer call produced a compile error.
 #[test]
 fn test_include_function_variant_keeps_error_when_call_does_not_respecialize() {
-    assert!(compile_files_fails(
+    let out = compile_and_run_files(
         &[
             (
                 "main.php",
@@ -357,5 +359,6 @@ fn test_include_function_variant_keeps_error_when_call_does_not_respecialize() {
             ),
         ],
         "main.php",
-    ));
+    );
+    assert_eq!(out, "3");
 }

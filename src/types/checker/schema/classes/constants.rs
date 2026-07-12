@@ -12,7 +12,7 @@
 use crate::errors::CompileError;
 use crate::names::{Name, NameKind};
 use crate::parser::ast::{
-    CallableTarget, Expr, ExprKind, InstanceOfTarget, StaticReceiver,
+    CallableTarget, ClassMethod, Expr, ExprKind, InstanceOfTarget, StaticReceiver,
 };
 use crate::span::Span;
 use crate::types::traits::FlattenedClass;
@@ -415,4 +415,79 @@ fn fqn_name(name: &str) -> Name {
         NameKind::FullyQualified,
         name.split('\\').map(str::to_string).collect(),
     )
+}
+
+/// Folds scoped-constant parameter defaults (`self::X`, `parent::X`, `C::X`)
+/// in a class method so call sites can lower them outside the declaring-class
+/// scope: lexical receivers are rewritten to concrete class names (the same
+/// normalization class-constant values get), and a default whose constant
+/// chain resolves to a literal is replaced by that literal. A chain that does
+/// not resolve (unknown class, enum case, non-literal value) keeps the
+/// receiver-rewritten expression.
+pub(super) fn fold_method_param_default_consts(
+    method: &ClassMethod,
+    class: &FlattenedClass,
+    checker: &super::super::super::Checker,
+) -> Result<ClassMethod, CompileError> {
+    let mut folded = method.clone();
+    for (_, _, default, _) in folded.params.iter_mut() {
+        if let Some(expr) = default {
+            let rewritten = rewrite_expr(expr, &class.name, class.extends.as_deref())?;
+            *expr = resolve_const_chain_to_literal(&rewritten, class, checker, 0)
+                .unwrap_or(rewritten);
+        }
+    }
+    Ok(folded)
+}
+
+/// Chases a `ScopedConstantAccess` chain (`C::X` whose value is `D::Y`, …) to a
+/// literal expression, looking constants up in the class currently being built,
+/// already-built classes, and interfaces. Returns `None` when the chain leaves
+/// known constant tables, exceeds the depth bound, or ends in a non-literal.
+fn resolve_const_chain_to_literal(
+    expr: &Expr,
+    class: &FlattenedClass,
+    checker: &super::super::super::Checker,
+    depth: u8,
+) -> Option<Expr> {
+    if depth >= 8 {
+        return None;
+    }
+    let ExprKind::ScopedConstantAccess { receiver, name } = &expr.kind else {
+        return is_constant_literal(expr).then(|| expr.clone());
+    };
+    let StaticReceiver::Named(receiver_name) = receiver else {
+        return None;
+    };
+    let receiver_class = receiver_name.as_canonical();
+    let value = if receiver_class == class.name {
+        let own = class.constants.iter().find(|c| c.name == *name)?;
+        rewrite_expr(&own.value, &class.name, class.extends.as_deref()).ok()?
+    } else if let Some(info) = checker.classes.get(&receiver_class) {
+        info.constants.get(name)?.clone()
+    } else if let Some(info) = checker.interfaces.get(&receiver_class) {
+        info.constants.get(name)?.clone()
+    } else {
+        return None;
+    };
+    resolve_const_chain_to_literal(&value, class, checker, depth + 1)
+}
+
+/// Returns `true` for expressions the call-site default filler can lower with
+/// no class scope: scalar literals, `null`, negated numeric literals, and
+/// array literals built purely from such expressions.
+fn is_constant_literal(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::IntLiteral(_)
+        | ExprKind::FloatLiteral(_)
+        | ExprKind::StringLiteral(_)
+        | ExprKind::BoolLiteral(_)
+        | ExprKind::Null => true,
+        ExprKind::Negate(inner) => is_constant_literal(inner),
+        ExprKind::ArrayLiteral(items) => items.iter().all(is_constant_literal),
+        ExprKind::ArrayLiteralAssoc(pairs) => pairs
+            .iter()
+            .all(|(key, value)| is_constant_literal(key) && is_constant_literal(value)),
+        _ => false,
+    }
 }

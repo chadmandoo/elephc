@@ -137,7 +137,7 @@ fn test_ffi_callback_signal_handler() {
 extern function signal(int $sig, callable $handler): ptr;
 extern function raise(int $sig): int;
 
-function on_signal($sig) {
+function on_signal(int $sig) {
     echo $sig;
 }
 

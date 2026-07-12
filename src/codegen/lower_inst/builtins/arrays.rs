@@ -3187,6 +3187,10 @@ struct StaticMethodCallbackTarget {
     dynamic_slot: Option<usize>,
     env_source: Option<StaticCallbackEnvSource>,
     return_ty: PhpType,
+    /// Codegen reprs of the callee's declared params, in order — the wrapper
+    /// boxes a raw visible arg into a Mixed cell wherever the callee expects
+    /// `Mixed` (unhinted params after #621).
+    param_reprs: Vec<PhpType>,
 }
 
 /// Resolved instance-method callback metadata for sort runtime wrappers.
@@ -3194,6 +3198,8 @@ struct InstanceMethodCallbackTarget {
     entry_label: String,
     receiver: ValueId,
     return_ty: PhpType,
+    /// Codegen reprs of the callee's declared params (see the static twin).
+    param_reprs: Vec<PhpType>,
 }
 
 /// Source used by a callback wrapper to materialize the hidden called-class id.
@@ -3288,6 +3294,7 @@ fn static_method_callback_target_inner(
         dynamic_slot: None,
         env_source: None,
         return_ty: sig.return_type.codegen_repr(),
+        param_reprs: sig.params.iter().map(|(_, ty)| ty.codegen_repr()).collect(),
     }))
 }
 
@@ -3347,6 +3354,7 @@ fn static_late_bound_method_callback_target(
         dynamic_slot: receiver_info.static_vtable_slots.get(&method_key).copied(),
         env_source: Some(static_callback_env_source(ctx)?),
         return_ty: sig.return_type.codegen_repr(),
+        param_reprs: sig.params.iter().map(|(_, ty)| ty.codegen_repr()).collect(),
     }))
 }
 
@@ -3450,6 +3458,7 @@ fn instance_method_sort_callback_target(
         entry_label: method_symbol(impl_class, &method_key),
         receiver,
         return_ty: sig.return_type.codegen_repr(),
+        param_reprs: sig.params.iter().map(|(_, ty)| ty.codegen_repr()).collect(),
     }))
 }
 
@@ -3531,6 +3540,13 @@ fn require_static_method_callback_param_types(
             continue;
         }
         if matches!((&param_ty, &visible_ty), (PhpType::Str, PhpType::Str)) {
+            continue;
+        }
+        // A `Mixed` callee param (unhinted after #621) consumes any raw
+        // visible arg the wrapper can box into a Mixed cell.
+        if matches!(param_ty, PhpType::Mixed)
+            && matches!(visible_ty, PhpType::Int | PhpType::Bool | PhpType::Str)
+        {
             continue;
         }
         return Err(CodegenIrError::unsupported(format!(
@@ -3627,6 +3643,23 @@ fn emit_static_method_callback_wrapper_aarch64(
         ctx.emitter.target,
         callback_arg_abi_slots(visible_arg_types),
     );
+    if callback_params_need_mixed_boxing(&target.param_reprs, visible_arg_types) {
+        match target.called_class {
+            StaticCallbackCalledClass::Immediate(class_id) => {
+                abi::emit_load_int_immediate(ctx.emitter, "x9", class_id as i64);
+            }
+            StaticCallbackCalledClass::Env => {
+                ctx.emitter.instruction(&format!("ldr x9, [{}]", env_reg));     // pre-stage the late-static called-class id for the boxing body
+            }
+        }
+        emit_boxing_callback_body_aarch64(
+            ctx,
+            CallbackDispatch::Static(target),
+            visible_arg_types,
+            &target.param_reprs,
+        );
+        return;
+    }
     ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
     ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the static method call
     match target.called_class {
@@ -3655,6 +3688,24 @@ fn emit_static_method_callback_wrapper_x86_64(
         ctx.emitter.target,
         callback_arg_abi_slots(visible_arg_types),
     );
+    if callback_params_need_mixed_boxing(&target.param_reprs, visible_arg_types) {
+        match target.called_class {
+            StaticCallbackCalledClass::Immediate(class_id) => {
+                abi::emit_load_int_immediate(ctx.emitter, "rcx", class_id as i64);
+            }
+            StaticCallbackCalledClass::Env => {
+                ctx.emitter
+                    .instruction(&format!("mov rcx, QWORD PTR [{}]", env_reg)); // pre-stage the late-static called-class id for the boxing body
+            }
+        }
+        emit_boxing_callback_body_x86_64(
+            ctx,
+            CallbackDispatch::Static(target),
+            visible_arg_types,
+            &target.param_reprs,
+        );
+        return;
+    }
     ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested static method call
     ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
     match target.called_class {
@@ -3705,6 +3756,16 @@ fn emit_instance_method_callback_wrapper_aarch64(
         ctx.emitter.target,
         callback_arg_abi_slots(visible_arg_types),
     );
+    if callback_params_need_mixed_boxing(&target.param_reprs, visible_arg_types) {
+        ctx.emitter.instruction(&format!("ldr x9, [{}]", env_reg));             // pre-stage the captured object receiver for the boxing body
+        emit_boxing_callback_body_aarch64(
+            ctx,
+            CallbackDispatch::Label(&target.entry_label),
+            visible_arg_types,
+            &target.param_reprs,
+        );
+        return;
+    }
     ctx.emitter.instruction("sub sp, sp, #16");                                 // reserve wrapper spill space for the runtime callback return address
     ctx.emitter.instruction("str x30, [sp, #8]");                               // preserve the runtime helper return address across the instance method call
     ctx.emitter.instruction(&format!("ldr x3, [{}]", env_reg));                 // load the captured object receiver from the callback environment
@@ -3726,6 +3787,17 @@ fn emit_instance_method_callback_wrapper_x86_64(
         ctx.emitter.target,
         callback_arg_abi_slots(visible_arg_types),
     );
+    if callback_params_need_mixed_boxing(&target.param_reprs, visible_arg_types) {
+        ctx.emitter
+            .instruction(&format!("mov rcx, QWORD PTR [{}]", env_reg)); // pre-stage the captured object receiver for the boxing body
+        emit_boxing_callback_body_x86_64(
+            ctx,
+            CallbackDispatch::Label(&target.entry_label),
+            visible_arg_types,
+            &target.param_reprs,
+        );
+        return;
+    }
     ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer for the nested instance method call
     ctx.emitter.instruction("mov rbp, rsp");                                    // establish a wrapper frame while shifting callback arguments
     ctx.emitter
@@ -3735,6 +3807,206 @@ fn emit_instance_method_callback_wrapper_x86_64(
     abi::emit_call_label(ctx.emitter, &target.entry_label);
     ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer before returning
     ctx.emitter.instruction("ret");                                             // return the instance method result to the runtime callback helper
+}
+
+/// How a boxing callback body invokes its callee.
+enum CallbackDispatch<'a> {
+    /// Direct call to an emitted method label.
+    Label(&'a str),
+    /// Static-method dispatch (direct or late-static vtable).
+    Static(&'a StaticMethodCallbackTarget),
+}
+
+/// Returns true when any callee param expects a Mixed cell for a raw visible arg.
+fn callback_params_need_mixed_boxing(param_reprs: &[PhpType], visible_arg_types: &[PhpType]) -> bool {
+    param_reprs
+        .iter()
+        .zip(visible_arg_types.iter())
+        .any(|(param, visible)| {
+            matches!(param, PhpType::Mixed)
+                && matches!(
+                    visible.codegen_repr(),
+                    PhpType::Int | PhpType::Bool | PhpType::Str
+                )
+        })
+}
+
+/// Emits the AArch64 boxing callback body: saves the raw visible args, boxes
+/// each arg the callee expects as `Mixed` into a cell via
+/// `__rt_mixed_from_value`, invokes the callee with `hidden` in x0 and one
+/// register per param, then releases the boxed cells while preserving the
+/// callee's result register.
+///
+/// Wrapper entry ABI: visible args occupy x0.. per `callback_arg_abi_slots`
+/// (strings take a ptr/len pair) and the env pointer sits in the next slot.
+fn emit_boxing_callback_body_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    dispatch: CallbackDispatch<'_>,
+    visible_arg_types: &[PhpType],
+    param_reprs: &[PhpType],
+) {
+    let arg_count = param_reprs.len();
+    // Frame: [#0..] cell slots, then raw slots, hidden, result spill, x30.
+    let cells_base = 0usize;
+    let raws_base = cells_base + arg_count * 8;
+    let hidden_off = raws_base + arg_count * 16;
+    let result_off = hidden_off + 8;
+    let ra_off = result_off + 8;
+    let frame = (ra_off + 8 + 15) / 16 * 16;
+    ctx.emitter.instruction(&format!("sub sp, sp, #{}", frame));                // reserve the boxing-wrapper frame
+    ctx.emitter.instruction(&format!("str x30, [sp, #{}]", ra_off));            // preserve the runtime helper return address
+    ctx.emitter.instruction(&format!("str x9, [sp, #{}]", hidden_off));         // spill the pre-staged hidden arg (x9) across the boxing calls
+    // Save every raw visible arg before __rt_mixed_from_value clobbers the arg registers.
+    let mut slot = 0usize;
+    for (index, visible) in visible_arg_types.iter().enumerate() {
+        let raw_off = raws_base + index * 16;
+        if matches!(visible.codegen_repr(), PhpType::Str) {
+            ctx.emitter.instruction(&format!("stp x{}, x{}, [sp, #{}]", slot, slot + 1, raw_off)); // save the raw string ptr/len pair
+            slot += 2;
+        } else {
+            ctx.emitter.instruction(&format!("str x{}, [sp, #{}]", slot, raw_off)); // save the raw scalar payload
+            slot += 1;
+        }
+    }
+    // Box (or pass through) each arg into its cell slot.
+    for (index, (param, visible)) in param_reprs.iter().zip(visible_arg_types.iter()).enumerate() {
+        let raw_off = raws_base + index * 16;
+        let cell_off = cells_base + index * 8;
+        let visible_repr = visible.codegen_repr();
+        if matches!(param, PhpType::Mixed)
+            && matches!(visible_repr, PhpType::Int | PhpType::Bool | PhpType::Str)
+        {
+            if matches!(visible_repr, PhpType::Str) {
+                ctx.emitter.instruction(&format!("ldp x1, x2, [sp, #{}]", raw_off)); // reload the raw string ptr/len payload
+                ctx.emitter.instruction("mov x0, #1");                          // runtime tag 1 = string
+            } else {
+                ctx.emitter.instruction(&format!("ldr x1, [sp, #{}]", raw_off)); // reload the raw scalar payload
+                ctx.emitter.instruction("mov x2, xzr");                          // scalar payloads have no second word
+                ctx.emitter.instruction(&format!(
+                    "mov x0, #{}",
+                    crate::codegen::runtime_value_tag(&visible_repr)
+                ));                                                              // static tag for the raw visible type
+            }
+            abi::emit_call_label(ctx.emitter, "__rt_mixed_from_value");
+            ctx.emitter.instruction(&format!("str x0, [sp, #{}]", cell_off));   // store the boxed Mixed cell
+        } else {
+            ctx.emitter.instruction(&format!("ldr x9, [sp, #{}]", raw_off));    // reload the raw pass-through payload
+            ctx.emitter.instruction(&format!("str x9, [sp, #{}]", cell_off));   // stage it in the call-slot table
+        }
+    }
+    // Place hidden + one register per param and dispatch.
+    for index in (0..arg_count).rev() {
+        let cell_off = cells_base + index * 8;
+        ctx.emitter.instruction(&format!("ldr x{}, [sp, #{}]", index + 1, cell_off)); // load param slot into its arg register
+    }
+    ctx.emitter.instruction(&format!("ldr x0, [sp, #{}]", hidden_off));         // hidden receiver / called-class id first
+    match dispatch {
+        CallbackDispatch::Label(label) => abi::emit_call_label(ctx.emitter, label),
+        CallbackDispatch::Static(target) => emit_static_callback_dispatch(ctx, target),
+    }
+    ctx.emitter.instruction(&format!("str x0, [sp, #{}]", result_off));         // preserve the callee result across cell releases
+    for (index, (param, visible)) in param_reprs.iter().zip(visible_arg_types.iter()).enumerate() {
+        let visible_repr = visible.codegen_repr();
+        if matches!(param, PhpType::Mixed)
+            && matches!(visible_repr, PhpType::Int | PhpType::Bool | PhpType::Str)
+        {
+            let cell_off = cells_base + index * 8;
+            ctx.emitter.instruction(&format!("ldr x0, [sp, #{}]", cell_off));   // reload the boxed cell
+            abi::emit_call_label(ctx.emitter, "__rt_decref_mixed");
+        }
+    }
+    ctx.emitter.instruction(&format!("ldr x0, [sp, #{}]", result_off));         // restore the callee result
+    ctx.emitter.instruction(&format!("ldr x30, [sp, #{}]", ra_off));            // restore the runtime helper return address
+    ctx.emitter.instruction(&format!("add sp, sp, #{}", frame));                // release the boxing-wrapper frame
+    ctx.emitter.instruction("ret");                                             // return the callee result to the runtime helper
+}
+
+/// x86_64 twin of `emit_boxing_callback_body_aarch64` (SysV arg order,
+/// `__rt_mixed_from_value` takes rax=tag rdi=lo rsi=hi, `__rt_decref_mixed`
+/// takes rax).
+fn emit_boxing_callback_body_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    dispatch: CallbackDispatch<'_>,
+    visible_arg_types: &[PhpType],
+    param_reprs: &[PhpType],
+) {
+    let arg_count = param_reprs.len();
+    let cells_base = 8usize;
+    let raws_base = cells_base + arg_count * 8;
+    let hidden_off = raws_base + arg_count * 16;
+    let result_off = hidden_off + 8;
+    let frame = (result_off + 8 + 15) / 16 * 16;
+    ctx.emitter.instruction("push rbp");                                        // preserve the runtime helper frame pointer
+    ctx.emitter.instruction("mov rbp, rsp");                                    // establish the boxing-wrapper frame base
+    ctx.emitter.instruction(&format!("sub rsp, {}", frame));                    // reserve the boxing-wrapper frame
+    ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], rcx", hidden_off)); // spill the pre-staged hidden arg (rcx) across the boxing calls
+    let mut slot = 0usize;
+    for (index, visible) in visible_arg_types.iter().enumerate() {
+        let raw_off = raws_base + index * 16;
+        if matches!(visible.codegen_repr(), PhpType::Str) {
+            let lo = abi::int_arg_reg_name(ctx.emitter.target, slot);
+            let hi = abi::int_arg_reg_name(ctx.emitter.target, slot + 1);
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], {}", raw_off, lo)); // save the raw string pointer
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], {}", raw_off - 8, hi)); // save the raw string length
+            slot += 2;
+        } else {
+            let reg = abi::int_arg_reg_name(ctx.emitter.target, slot);
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], {}", raw_off, reg)); // save the raw scalar payload
+            slot += 1;
+        }
+    }
+    for (index, (param, visible)) in param_reprs.iter().zip(visible_arg_types.iter()).enumerate() {
+        let raw_off = raws_base + index * 16;
+        let cell_off = cells_base + index * 8;
+        let visible_repr = visible.codegen_repr();
+        if matches!(param, PhpType::Mixed)
+            && matches!(visible_repr, PhpType::Int | PhpType::Bool | PhpType::Str)
+        {
+            if matches!(visible_repr, PhpType::Str) {
+                ctx.emitter.instruction(&format!("mov rdi, QWORD PTR [rbp - {}]", raw_off)); // reload the raw string pointer
+                ctx.emitter.instruction(&format!("mov rsi, QWORD PTR [rbp - {}]", raw_off - 8)); // reload the raw string length
+                abi::emit_load_int_immediate(ctx.emitter, "rax", 1);
+            } else {
+                ctx.emitter.instruction(&format!("mov rdi, QWORD PTR [rbp - {}]", raw_off)); // reload the raw scalar payload
+                ctx.emitter.instruction("xor rsi, rsi");                        // scalar payloads have no second word
+                abi::emit_load_int_immediate(
+                    ctx.emitter,
+                    "rax",
+                    crate::codegen::runtime_value_tag(&visible_repr) as i64,
+                );
+            }
+            ctx.emitter.instruction("call __rt_mixed_from_value");              // box the payload into a Mixed cell
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], rax", cell_off)); // store the boxed Mixed cell
+        } else {
+            ctx.emitter.instruction(&format!("mov rax, QWORD PTR [rbp - {}]", raw_off)); // reload the raw pass-through payload
+            ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], rax", cell_off)); // stage it in the call-slot table
+        }
+    }
+    for index in (0..arg_count).rev() {
+        let cell_off = cells_base + index * 8;
+        let reg = abi::int_arg_reg_name(ctx.emitter.target, index + 1);
+        ctx.emitter.instruction(&format!("mov {}, QWORD PTR [rbp - {}]", reg, cell_off)); // load param slot into its arg register
+    }
+    ctx.emitter.instruction(&format!("mov rdi, QWORD PTR [rbp - {}]", hidden_off)); // hidden receiver / called-class id first
+    match dispatch {
+        CallbackDispatch::Label(label) => abi::emit_call_label(ctx.emitter, label),
+        CallbackDispatch::Static(target) => emit_static_callback_dispatch(ctx, target),
+    }
+    ctx.emitter.instruction(&format!("mov QWORD PTR [rbp - {}], rax", result_off)); // preserve the callee result across cell releases
+    for (index, (param, visible)) in param_reprs.iter().zip(visible_arg_types.iter()).enumerate() {
+        let visible_repr = visible.codegen_repr();
+        if matches!(param, PhpType::Mixed)
+            && matches!(visible_repr, PhpType::Int | PhpType::Bool | PhpType::Str)
+        {
+            let cell_off = cells_base + index * 8;
+            ctx.emitter.instruction(&format!("mov rax, QWORD PTR [rbp - {}]", cell_off)); // reload the boxed cell
+            ctx.emitter.instruction("call __rt_decref_mixed");                  // release the boxed argument cell
+        }
+    }
+    ctx.emitter.instruction(&format!("mov rax, QWORD PTR [rbp - {}]", result_off)); // restore the callee result
+    ctx.emitter.instruction("mov rsp, rbp");                                    // release the boxing-wrapper frame
+    ctx.emitter.instruction("pop rbp");                                         // restore the runtime helper frame pointer
+    ctx.emitter.instruction("ret");                                             // return the callee result to the runtime helper
 }
 
 /// Emits either a direct static-method callback call or a late-static vtable call.

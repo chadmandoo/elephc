@@ -16,7 +16,8 @@ use crate::types::{FunctionSig, PhpType};
 use super::super::Checker;
 
 /// Builds a `FunctionSig` from a parsed class method, resolving parameter and return type
-/// annotations through the checker. Parameters without type hints default to `PhpType::Int`.
+/// annotations through the checker. Parameters without type hints default to `PhpType::Mixed`
+/// (PHP semantics: an unhinted parameter accepts any value).
 /// Validates that each declared parameter's default value is compatible with its resolved type.
 /// Infers return type from method body when no return annotation is present.
 pub(crate) fn build_method_sig(
@@ -28,7 +29,7 @@ pub(crate) fn build_method_sig(
         .params
         .iter()
         .enumerate()
-        .map(|(i, (n, type_ann, _, _))| {
+        .map(|(i, (n, type_ann, _, is_ref))| {
             // PHP's __unserialize($data) always receives the associative array
             // produced by __serialize(). A bare `array` hint resolves to an indexed
             // Array(Mixed) (rejecting $data['key']); type the first parameter as a
@@ -45,13 +46,33 @@ pub(crate) fn build_method_sig(
                     },
                 ));
             }
+            // Unhinted parameters of runtime-dispatched protocol methods
+            // (stream wrappers, 4-arg stream filters) take the types the
+            // hand-emitted runtime dispatcher actually passes — the same
+            // ABI-agreement rule as the `__unserialize` case above. All other
+            // unhinted parameters are `mixed`, PHP's actual semantics.
+            if type_ann.is_none() && method.span.line != 0 {
+                if let Some(ty) =
+                    wrapper_protocol_param_type(&method_key, method.params.len(), i)
+                {
+                    return Ok((n.clone(), ty));
+                }
+            }
             let ty = match type_ann {
                 Some(type_ann) => checker.resolve_declared_param_type_hint(
                     type_ann,
                     method.span,
                     &format!("Method parameter ${}", n),
                 )?,
-                None => PhpType::Int,
+                // Unhinted BY-REF parameters keep the legacy Int default:
+                // the by-ref ABI passes the caller's raw local slot address
+                // (tag-11 invoker ref cells, direct-slot markers), and a
+                // Mixed-typed callee would reinterpret that raw slot as a
+                // Mixed cell pointer. Promoting caller storage is the
+                // Mixed-by-ref codegen follow-up (#623-adjacent); value
+                // parameters get PHP's actual `mixed` semantics today.
+                None if *is_ref => PhpType::Int,
+                None => PhpType::Mixed,
             };
             Ok((n.clone(), ty))
         })
@@ -111,6 +132,45 @@ pub(crate) fn build_method_sig(
         }
     }
     Ok(sig)
+}
+
+/// The parameter types the hand-emitted runtime dispatchers pass to
+/// user-defined stream-wrapper / stream-filter protocol methods, keyed by
+/// `(method key, declared arity)`. Consulted only for UNHINTED parameters of
+/// real (user-span) methods: the dispatch ABI is fixed assembly
+/// (`codegen_support::runtime::io`), so an unhinted parameter must be typed
+/// as what that assembly passes, not as `mixed`. Hinted parameters are left
+/// to the user's declaration. Path-mutation names shared with ordinary
+/// classes (`unlink`, `rename`, `mkdir`, `rmdir`) are deliberately absent —
+/// their dispatch tests declare hints, and the collision surface with
+/// non-wrapper classes is too broad.
+fn wrapper_protocol_param_type(
+    method_key: &str,
+    arity: usize,
+    index: usize,
+) -> Option<PhpType> {
+    let table: &[PhpType] = match (method_key, arity) {
+        // fopen dispatch: path ptr/len, mode ptr/len, options int,
+        // &$opened_path as a zeroed 16-byte Mixed scratch cell.
+        ("stream_open", 4) => &[PhpType::Str, PhpType::Str, PhpType::Int, PhpType::Mixed],
+        ("stream_read", 1) => &[PhpType::Int],
+        ("stream_write", 1) => &[PhpType::Str],
+        ("stream_seek", 2) => &[PhpType::Int, PhpType::Int],
+        ("stream_cast", 1) | ("stream_lock", 1) | ("stream_truncate", 1) => &[PhpType::Int],
+        ("stream_set_option", 3) => &[PhpType::Int, PhpType::Int, PhpType::Int],
+        ("stream_metadata", 3) => &[PhpType::Str, PhpType::Int, PhpType::Int],
+        ("url_stat", 2) | ("dir_opendir", 2) => &[PhpType::Str, PhpType::Int],
+        // Brigade dispatch: raw stdClass brigade pointers for $in/$out,
+        // Mixed(int) cells for $consumed/$closing.
+        ("filter", 4) => {
+            return Some(match index {
+                0 | 1 => PhpType::Object("stdClass".to_string()),
+                _ => PhpType::Mixed,
+            });
+        }
+        _ => return None,
+    };
+    table.get(index).cloned()
 }
 
 /// Returns `Some(reason)` when the attribute list contains a `#[\Deprecated]`
