@@ -18,6 +18,7 @@ mod fibers;
 mod function;
 mod ownership;
 mod program;
+mod reflection;
 mod stmt;
 
 #[cfg(test)]

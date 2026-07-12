@@ -54,9 +54,16 @@ pub(crate) fn lower(
         &fiber_return_sigs,
     );
     lower_property_init_thunks(&mut module, check_result, &constants, &fiber_return_sigs);
-    lower_builtin_reflection_methods(&mut module, check_result, &constants, &fiber_return_sigs);
     function::lower_main(
         program,
+        &mut module,
+        check_result,
+        &constants,
+        &fiber_return_sigs,
+    );
+    lower_literal_eval_aot_functions(&mut module, check_result, &constants, &fiber_return_sigs);
+    include_lowered_runtime_features(&mut module);
+    super::reflection::lower_referenced_builtin_methods(
         &mut module,
         check_result,
         &constants,
@@ -69,7 +76,6 @@ pub(crate) fn lower(
         &constants,
         &fiber_return_sigs,
     );
-    lower_literal_eval_aot_functions(&mut module, check_result, &constants, &fiber_return_sigs);
     include_lowered_runtime_features(&mut module);
     validate_module(&module)?;
     Ok(module)
@@ -349,7 +355,7 @@ fn expr_exposes_dynamic_param(expr: &Expr, dynamic_params: &HashSet<String>) -> 
 }
 
 /// Adds optional runtime features referenced by synthetic or lowered EIR functions.
-fn include_lowered_runtime_features(module: &mut Module) {
+pub(super) fn include_lowered_runtime_features(module: &mut Module) {
     let features = lowered_runtime_features(module);
     module.required_runtime_features.regex |= features.regex;
     module.required_runtime_features.phar_archive |= features.phar_archive;
@@ -944,7 +950,7 @@ fn eval_literal_fragment_from_inst(
 }
 
 /// Iterates every function-like body already materialized into the EIR module.
-fn all_lowered_functions(module: &Module) -> impl Iterator<Item = &Function> {
+pub(super) fn all_lowered_functions(module: &Module) -> impl Iterator<Item = &Function> {
     module
         .functions
         .iter()
@@ -1095,6 +1101,9 @@ fn lower_property_init_thunks(
     let mut classes = check_result.classes.iter().collect::<Vec<_>>();
     classes.sort_by_key(|(_, class_info)| class_info.class_id);
     for (class_name, class_info) in classes {
+        if super::reflection::canonical_builtin_reflection_class_name(class_name).is_some() {
+            continue;
+        }
         function::lower_property_init_thunk(
             class_name,
             class_info,
@@ -1847,113 +1856,6 @@ fn lower_methods_for_class_like(
     }
 }
 
-/// Lowers the synthetic reflection methods injected by the checker.
-fn lower_builtin_reflection_methods(
-    module: &mut Module,
-    check_result: &CheckResult,
-    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
-    fiber_return_sigs: &std::collections::HashMap<String, crate::types::FunctionSig>,
-) {
-    for class_name in [
-        "ReflectionAttribute",
-        "ReflectionClass",
-        "ReflectionObject",
-        "ReflectionEnum",
-        "ReflectionClassConstant",
-        "ReflectionEnumBackedCase",
-        "ReflectionEnumUnitCase",
-        "ReflectionFunction",
-        "ReflectionMethod",
-        "ReflectionNamedType",
-        "ReflectionParameter",
-        "ReflectionProperty",
-        "ReflectionUnionType",
-        "ReflectionIntersectionType",
-    ] {
-        lower_builtin_reflection_class_methods(
-            class_name,
-            module,
-            check_result,
-            constants,
-            fiber_return_sigs,
-        );
-    }
-}
-
-/// Lowers all concrete synthetic methods for one builtin reflection class.
-fn lower_builtin_reflection_class_methods(
-    class_name: &str,
-    module: &mut Module,
-    check_result: &CheckResult,
-    constants: &std::collections::HashMap<String, (ExprKind, PhpType)>,
-    fiber_return_sigs: &std::collections::HashMap<String, crate::types::FunctionSig>,
-) {
-    let Some(class_info) = check_result.classes.get(class_name) else {
-        return;
-    };
-    let before = module.class_methods.len();
-    for method in &class_info.method_decls {
-        if !method.has_body {
-            continue;
-        }
-        let generated_body;
-        let method_key = crate::names::php_symbol_key(&method.name);
-        let body = if class_name == "ReflectionAttribute" && method_key == "newinstance" {
-            let function_attrs = function_attribute_sources(module);
-            generated_body =
-                crate::codegen::reflection::build_attribute_new_instance_body_with_extra(
-                    &check_result.classes,
-                    &function_attrs,
-                );
-            generated_body.as_slice()
-        } else if class_name == "ReflectionAttribute" && method_key == "getarguments" {
-            // Materialize captured attribute arguments through the normal array
-            // lowering (named arguments and associative arrays included) rather
-            // than a bespoke codegen path.
-            let function_attrs = function_attribute_sources(module);
-            generated_body = crate::codegen::reflection::build_attribute_get_arguments_body_with_extra(
-                &check_result.classes,
-                &function_attrs,
-            );
-            generated_body.as_slice()
-        } else {
-            &method.body
-        };
-        function::lower_class_method(
-            class_name,
-            &method.name,
-            method.is_static,
-            &method.params,
-            method.return_type.as_ref(),
-            body,
-            module,
-            check_result,
-            constants,
-            fiber_return_sigs,
-        );
-    }
-    for method in module.class_methods.iter_mut().skip(before) {
-        method.flags.is_synthetic = true;
-    }
-}
-
-/// Returns reflection-visible top-level function attribute metadata sources.
-fn function_attribute_sources(
-    module: &Module,
-) -> Vec<crate::codegen::reflection::AttributeMetadataSource<'_>> {
-    module
-        .functions
-        .iter()
-        .filter(|function| !function.attribute_names.is_empty())
-        .map(|function| {
-            (
-                function.attribute_names.as_slice(),
-                function.attribute_args.as_slice(),
-            )
-        })
-        .collect()
-}
-
 /// Lowers the small builtin SPL method slice currently consumed by the EIR backend.
 fn lower_referenced_builtin_spl_methods(
     module: &mut Module,
@@ -2253,7 +2155,10 @@ fn push_supported_builtin_spl_method_for_receiver(
 }
 
 /// Returns the class-name immediate attached to an instruction.
-fn class_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
+pub(super) fn class_data_name<'a>(
+    module: &'a Module,
+    inst: &crate::ir::Instruction,
+) -> Option<&'a str> {
     let Some(Immediate::Data(data)) = inst.immediate else {
         return None;
     };
@@ -2265,7 +2170,7 @@ fn class_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Opt
 }
 
 /// Parses dynamic object factory fallback and required-parent metadata.
-fn dynamic_object_new_metadata_names<'a>(
+pub(super) fn dynamic_object_new_metadata_names<'a>(
     module: &'a Module,
     inst: &crate::ir::Instruction,
 ) -> Option<(&'a str, &'a str)> {
@@ -2273,7 +2178,10 @@ fn dynamic_object_new_metadata_names<'a>(
 }
 
 /// Returns the string immediate attached to an instruction.
-fn string_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Option<&'a str> {
+pub(super) fn string_data_name<'a>(
+    module: &'a Module,
+    inst: &crate::ir::Instruction,
+) -> Option<&'a str> {
     let Some(Immediate::Data(data)) = inst.immediate else {
         return None;
     };
@@ -2285,7 +2193,7 @@ fn string_data_name<'a>(module: &'a Module, inst: &crate::ir::Instruction) -> Op
 }
 
 /// Normalizes a PHP method name for metadata lookups.
-fn php_method_key(method_name: &str) -> String {
+pub(super) fn php_method_key(method_name: &str) -> String {
     crate::names::php_symbol_key(method_name)
 }
 
@@ -3045,7 +2953,7 @@ fn lower_builtin_spl_method(
 }
 
 /// Returns true when `module.class_methods` already contains a class-method body.
-fn class_method_already_lowered(
+pub(super) fn class_method_already_lowered(
     module: &Module,
     class_name: &str,
     method_key: &str,

@@ -61,6 +61,7 @@ pub(crate) fn emit_runtime_data_user(
     classes: &HashMap<String, ClassInfo>,
     enums: &HashMap<String, EnumInfo>,
     allowed_class_names: Option<&HashSet<String>>,
+    emit_eval_reflection_metadata: bool,
     source_path: Option<&str>,
 ) -> String {
     let mut out = String::new();
@@ -508,31 +509,35 @@ pub(crate) fn emit_runtime_data_user(
     }
     out.push_str(".p2align 3\n");
     emit_static_callable_method_data(&mut out, &sorted_classes);
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_source_file_data(&mut out, source_path);
+    if emit_eval_reflection_metadata {
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_source_file_data(&mut out, source_path);
+    }
     out.push_str(".p2align 3\n");
     emit_classes_by_name_table(&mut out, &sorted_classes);
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_method_lookup_data(&mut out, &sorted_classes, &sorted_interfaces);
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_property_lookup_data(&mut out, &sorted_classes);
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_class_lookup_data(
-        &mut out,
-        &sorted_classes,
-        &sorted_interfaces,
-        declared_trait_source_lines,
-    );
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_class_interface_lookup_data(&mut out, &sorted_classes, interfaces);
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_class_trait_lookup_data(
-        &mut out,
-        &sorted_classes,
-        declared_trait_uses,
-    );
-    out.push_str(".p2align 3\n");
-    emit_eval_reflection_class_trait_alias_lookup_data(&mut out, &sorted_classes);
+    if emit_eval_reflection_metadata {
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_method_lookup_data(&mut out, &sorted_classes, &sorted_interfaces);
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_property_lookup_data(&mut out, &sorted_classes);
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_class_lookup_data(
+            &mut out,
+            &sorted_classes,
+            &sorted_interfaces,
+            declared_trait_source_lines,
+        );
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_class_interface_lookup_data(&mut out, &sorted_classes, interfaces);
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_class_trait_lookup_data(
+            &mut out,
+            &sorted_classes,
+            declared_trait_uses,
+        );
+        out.push_str(".p2align 3\n");
+        emit_eval_reflection_class_trait_alias_lookup_data(&mut out, &sorted_classes);
+    }
 
     // -- class-level PHP 8 attribute metadata table --
     // Per-class layout: count followed by (name_ptr, name_len) pairs.
@@ -2450,6 +2455,7 @@ mod tests {
             &classes,
             &HashMap::new(),
             Some(&allowed_class_names),
+            false,
             None,
         );
 
@@ -2480,6 +2486,7 @@ mod tests {
             &classes,
             &HashMap::new(),
             None,
+            false,
             None,
         );
 

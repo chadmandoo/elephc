@@ -274,12 +274,11 @@ fn finalize_user_asm(
         &runtime_classes,
         &module.enum_infos,
         Some(&allowed_class_names),
+        module.required_runtime_features.eval_bridge,
         // The source path feeds eval Reflection source-location hooks only;
         // embedding it in native-only programs leaks the build path into the
         // assembly (and trips needle-based optimizer asm asserts).
-        if module.required_runtime_features.eval_bridge
-            || module.required_runtime_features.eval_scope
-        {
+        if module.required_runtime_features.eval_bridge {
             module.source_path.as_deref()
         } else {
             None
@@ -512,6 +511,12 @@ fn intrinsic_method_wrapper_specs(module: &Module) -> Vec<IntrinsicMethodWrapper
 /// Returns class metadata trimmed to method symbols emitted by the EIR backend.
 fn runtime_class_infos(module: &Module) -> HashMap<String, ClassInfo> {
     let emitted_methods = emitted_class_method_keys(module);
+    let emitted_property_init_thunks = module
+        .functions
+        .iter()
+        .filter(|function| is_property_init_thunk_function(function))
+        .map(|function| function.name.as_str())
+        .collect::<HashSet<_>>();
     let mut classes = module.class_infos.clone();
     for class_info in classes.values_mut() {
         class_info
@@ -524,6 +529,10 @@ fn runtime_class_infos(module: &Module) -> HashMap<String, ClassInfo> {
             .retain(|method_name, impl_class| {
                 emitted_methods.contains(&(impl_class.clone(), method_name.clone(), true))
             });
+        let property_init_thunk = format!("_class_propinit_{}", class_info.class_id);
+        if !emitted_property_init_thunks.contains(property_init_thunk.as_str()) {
+            class_info.defaults.fill(None);
+        }
     }
     classes
 }
@@ -827,6 +836,7 @@ fn seed_builtin_reflection_class_names(module: &Module, names: &mut HashSet<Stri
     for class_name in [
         "ReflectionAttribute",
         "ReflectionClass",
+        "ReflectionObject",
         "ReflectionEnum",
         "ReflectionClassConstant",
         "ReflectionEnumBackedCase",
@@ -836,8 +846,16 @@ fn seed_builtin_reflection_class_names(module: &Module, names: &mut HashSet<Stri
         "ReflectionFunction",
         "ReflectionParameter",
         "ReflectionNamedType",
+        "ReflectionUnionType",
+        "ReflectionIntersectionType",
     ] {
-        if module.class_infos.contains_key(class_name) {
+        let emitted_natively = module.class_methods.iter().any(|function| {
+            current_function_class(function)
+                .is_some_and(|owner| php_symbol_key(owner) == php_symbol_key(class_name))
+        });
+        if module.class_infos.contains_key(class_name)
+            && (module.required_runtime_features.eval_bridge || emitted_natively)
+        {
             names.insert(class_name.to_string());
         }
     }
