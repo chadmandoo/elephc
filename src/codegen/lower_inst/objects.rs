@@ -845,12 +845,25 @@ fn lower_builtin_throwable_new(
     class_name: &str,
     class_id: u64,
 ) -> Result<()> {
-    if inst.operands.len() > 2 {
+    if inst.operands.len() > 3 {
         return Err(CodegenIrError::unsupported(format!(
             "{}::__construct with {} EIR operands",
             class_name,
             inst.operands.len()
         )));
+    }
+    // The IR lowering pads the full builtin signature `(message, code, previous)`,
+    // so a plain `new RuntimeException($msg)` arrives with a third const-null
+    // operand. PHP's own default for `$previous` IS null — nothing to emit for
+    // it. A genuinely chained (non-null) `$previous` stays unsupported until the
+    // compact payload grows a previous slot.
+    if let Some(&previous) = inst.operands.get(2) {
+        if !throwable_previous_operand_is_const_null(ctx, previous)? {
+            return Err(CodegenIrError::unsupported(format!(
+                "{}::__construct with a non-null $previous operand",
+                class_name
+            )));
+        }
     }
     emit_throwable_allocation(ctx, class_id);
     preserve_throwable_for_init(ctx);
@@ -858,6 +871,24 @@ fn lower_builtin_throwable_new(
     emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
     restore_throwable_after_init(ctx);
     store_if_result(ctx, inst)
+}
+
+/// Returns true when the `$previous` constructor operand is a literal PHP null
+/// (the padded default), recognized by its defining `const_null` instruction.
+fn throwable_previous_operand_is_const_null(
+    ctx: &FunctionContext<'_>,
+    value: ValueId,
+) -> Result<bool> {
+    let Some(value_ref) = ctx.function.value(value) else {
+        return Err(CodegenIrError::missing_entry("value", value.as_raw()));
+    };
+    let ValueDef::Instruction { inst, .. } = value_ref.def else {
+        return Ok(false);
+    };
+    let Some(inst_ref) = ctx.function.instruction(inst) else {
+        return Err(CodegenIrError::missing_entry("instruction", inst.as_raw()));
+    };
+    Ok(matches!(inst_ref.op, Op::ConstNull))
 }
 
 /// Returns true for builtin classes that share PHP's compact Throwable payload.
