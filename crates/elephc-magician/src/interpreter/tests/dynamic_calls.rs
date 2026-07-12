@@ -512,6 +512,11 @@ class EvalPrivateCallbackArray {
         return "bad";
     }
 }
+class EvalPrivateInvokeCallbackArray {
+    private function __invoke() {
+        return "bad";
+    }
+}
 class EvalInstanceCallbackArray {
     public function inst() {
         return "bad";
@@ -540,6 +545,13 @@ try {
 }
 echo "|";
 try {
+    call_user_func([new EvalPrivateInvokeCallbackArray(), "__invoke"]);
+    echo "bad";
+} catch (TypeError $e) {
+    echo get_class($e) . ":" . $e->getMessage();
+}
+echo "|";
+try {
     call_user_func(["EvalInstanceCallbackArray", "inst"]);
     echo "bad";
 } catch (TypeError $e) {
@@ -558,6 +570,7 @@ return true;"#,
         "TypeError:call_user_func(): Argument #1 ($callback) must be a valid callback, class EvalMissingCallbackArray does not have a method \"MiSsInG\"|\
 TypeError:call_user_func_array(): Argument #1 ($callback) must be a valid callback, class EvalMissingCallbackArray does not have a method \"missing\"|\
 TypeError:call_user_func(): Argument #1 ($callback) must be a valid callback, cannot access private method EvalPrivateCallbackArray::hidden()|\
+TypeError:call_user_func(): Argument #1 ($callback) must be a valid callback, cannot access private method EvalPrivateInvokeCallbackArray::__invoke()|\
 TypeError:call_user_func(): Argument #1 ($callback) must be a valid callback, non-static method EvalInstanceCallbackArray::inst() cannot be called statically"
     );
     assert_eq!(values.get(result), FakeValue::Bool(true));

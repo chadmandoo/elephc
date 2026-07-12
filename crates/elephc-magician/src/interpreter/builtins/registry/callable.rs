@@ -13,6 +13,15 @@
 
 use super::*;
 
+/// Distinguishes PHP's invokable-object callback form from an explicit method callback.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EvalObjectCallbackKind {
+    /// A bare object callback whose `__invoke` magic method is callable regardless of visibility.
+    InvokableObject,
+    /// An explicit object-method callback that must pass normal visibility validation.
+    Method,
+}
+
 /// Dispatches `call_user_func_array` with optional lexical scope for special class receivers.
 pub(in crate::interpreter) fn eval_call_user_func_array_with_values_from_scope(
     callback: RuntimeCellHandle,
@@ -685,6 +694,7 @@ fn eval_evaluated_callable_with_call_user_func_values(
             None => eval_object_method_with_call_user_func_values(
                 *object,
                 method,
+                EvalObjectCallbackKind::Method,
                 evaluated_args,
                 context,
                 values,
@@ -793,6 +803,7 @@ pub(in crate::interpreter) fn eval_evaluated_callable_with_by_value_call_args(
             None => eval_object_method_with_call_user_func_args(
                 *object,
                 method,
+                EvalObjectCallbackKind::Method,
                 evaluated_args,
                 context,
                 values,
@@ -980,6 +991,7 @@ fn eval_invokable_object_with_call_user_func_values(
     eval_object_method_with_call_user_func_values(
         object,
         "__invoke",
+        EvalObjectCallbackKind::InvokableObject,
         evaluated_args,
         context,
         values,
@@ -993,13 +1005,21 @@ fn eval_invokable_object_with_call_user_func_args(
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
 ) -> Result<RuntimeCellHandle, EvalStatus> {
-    eval_object_method_with_call_user_func_args(object, "__invoke", evaluated_args, context, values)
+    eval_object_method_with_call_user_func_args(
+        object,
+        "__invoke",
+        EvalObjectCallbackKind::InvokableObject,
+        evaluated_args,
+        context,
+        values,
+    )
 }
 
 /// Invokes an object-method callable through `call_user_func()` by-value semantics.
 fn eval_object_method_with_call_user_func_values(
     object: RuntimeCellHandle,
     method: &str,
+    callback_kind: EvalObjectCallbackKind,
     evaluated_args: Vec<RuntimeCellHandle>,
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
@@ -1008,6 +1028,7 @@ fn eval_object_method_with_call_user_func_values(
     if let Some(result) = eval_object_method_call_user_func_result(
         object,
         method,
+        callback_kind,
         evaluated_args.clone(),
         context,
         values,
@@ -1021,6 +1042,7 @@ fn eval_object_method_with_call_user_func_values(
 fn eval_object_method_with_call_user_func_args(
     object: RuntimeCellHandle,
     method: &str,
+    callback_kind: EvalObjectCallbackKind,
     evaluated_args: Vec<EvaluatedCallArg>,
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
@@ -1028,6 +1050,7 @@ fn eval_object_method_with_call_user_func_args(
     if let Some(result) = eval_object_method_call_user_func_result(
         object,
         method,
+        callback_kind,
         evaluated_args.clone(),
         context,
         values,
@@ -1041,6 +1064,7 @@ fn eval_object_method_with_call_user_func_args(
 fn eval_object_method_call_user_func_result(
     object: RuntimeCellHandle,
     method_name: &str,
+    callback_kind: EvalObjectCallbackKind,
     evaluated_args: Vec<EvaluatedCallArg>,
     context: &mut ElephcEvalContext,
     values: &mut impl RuntimeValueOps,
@@ -1070,7 +1094,9 @@ fn eval_object_method_call_user_func_result(
         if method.is_static() || method.is_abstract() {
             return Ok(None);
         }
-        if validate_eval_member_access(&declaring_class, method.visibility(), context).is_err() {
+        if callback_kind == EvalObjectCallbackKind::Method
+            && validate_eval_member_access(&declaring_class, method.visibility(), context).is_err()
+        {
             return eval_magic_instance_method_call(
                 object,
                 &called_class_name,
@@ -1481,6 +1507,7 @@ pub(in crate::interpreter) fn eval_evaluated_callable_with_call_array_args(
             None => eval_object_method_with_call_user_func_args(
                 *object,
                 method,
+                EvalObjectCallbackKind::Method,
                 evaluated_args,
                 context,
                 values,
