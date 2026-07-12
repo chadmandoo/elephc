@@ -6,6 +6,8 @@
 //!
 //! Key details:
 //! - Handles platform-specific linker flags, qemu ARM64 execution, and runtime object caching.
+//! - Archived CI shards trust the bridge staticlibs packaged by the build job,
+//!   avoiding source-mtime rebuilds and network access on test runners.
 //! - Per-test assembly is fed to `as` over stdin so no intermediate `test.s`
 //!   file is written, which shaves ~1/3 of the file-system events the macOS
 //!   `syspolicyd` / on-access AV scans inspect during a full `cargo test`.
@@ -198,12 +200,16 @@ fn ensure_bridge_staticlibs(actual_link_libs: &[&str], bridge_staticlib_dir: &st
 
 /// Reports whether a bridge staticlib is missing or older than its package
 /// sources. This keeps codegen tests from linking stale bridge archives after a
-/// bridge crate changes inside the same worktree.
+/// bridge crate changes inside the same worktree. Archived CI runs can declare
+/// existing build-job artifacts authoritative through `ELEPHC_TEST_PREBUILT_BRIDGES`.
 fn bridge_staticlib_needs_build(archive_path: &Path, package: &str) -> bool {
     let archive_mtime = match archive_path.metadata().and_then(|meta| meta.modified()) {
         Ok(mtime) => mtime,
         Err(_) => return true,
     };
+    if prebuilt_bridge_staticlibs_are_trusted() {
+        return false;
+    }
     let package_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("crates")
         .join(package);
@@ -211,6 +217,13 @@ fn bridge_staticlib_needs_build(archive_path: &Path, package: &str) -> bool {
     source_path_newer_than(&package_dir.join("Cargo.toml"), archive_mtime)
         || source_path_newer_than(&package_dir.join("build.rs"), archive_mtime)
         || source_tree_newer_than(&package_dir.join("src"), archive_mtime)
+}
+
+/// Returns whether this test process should trust existing bridge archives without mtime checks.
+fn prebuilt_bridge_staticlibs_are_trusted() -> bool {
+    std::env::var("ELEPHC_TEST_PREBUILT_BRIDGES").is_ok_and(|value| {
+        value == "1" || value.eq_ignore_ascii_case("true")
+    })
 }
 
 /// Reports whether an existing source path was modified after `archive_mtime`.

@@ -21,6 +21,7 @@ env:
     -p elephc-phar
     -p elephc-tz
     -p elephc-image
+    -p elephc-magician
     -p elephc-web
 
 jobs:
@@ -66,7 +67,8 @@ jobs:
         # staticlibs: libelephc_tls.a (https:// / TLS), libelephc_pdo.a (PDO),
         # libelephc_crypto.a (hash / HMAC family), libelephc_phar.a (PHAR),
         # libelephc_tz.a (DateTimeZone introspection), libelephc_image.a
-        # (GD / Exif / Imagick / Gmagick / Cairo), and libelephc_web.a. Build
+        # (GD / Exif / Imagick / Gmagick / Cairo), libelephc_magician.a (eval),
+        # and libelephc_web.a. Build
         # them before archiving so the archive can capture the .a files (see the
         # archive include list in .config/nextest.toml).
         run: cargo build $BRIDGE_CRATES
@@ -137,7 +139,8 @@ jobs:
         # staticlibs: libelephc_tls.a (https:// / TLS), libelephc_pdo.a (PDO),
         # libelephc_crypto.a (hash / HMAC family), libelephc_phar.a (PHAR),
         # libelephc_tz.a (DateTimeZone introspection), libelephc_image.a
-        # (GD / Exif / Imagick / Gmagick / Cairo), and libelephc_web.a. Build
+        # (GD / Exif / Imagick / Gmagick / Cairo), libelephc_magician.a (eval),
+        # and libelephc_web.a. Build
         # them before archiving so the archive can capture the .a files (see the
         # archive include list in .config/nextest.toml).
         run: cargo build $BRIDGE_CRATES
@@ -208,7 +211,8 @@ jobs:
         # staticlibs: libelephc_tls.a (https:// / TLS), libelephc_pdo.a (PDO),
         # libelephc_crypto.a (hash / HMAC family), libelephc_phar.a (PHAR),
         # libelephc_tz.a (DateTimeZone introspection), libelephc_image.a
-        # (GD / Exif / Imagick / Gmagick / Cairo), and libelephc_web.a. Build
+        # (GD / Exif / Imagick / Gmagick / Cairo), libelephc_magician.a (eval),
+        # and libelephc_web.a. Build
         # them before archiving so the archive can capture the .a files (see the
         # archive include list in .config/nextest.toml).
         run: cargo build $BRIDGE_CRATES
@@ -363,6 +367,9 @@ jobs:
           path: ${{ runner.temp }}
 
       - name: Run codegen test shard
+        env:
+          CARGO_NET_OFFLINE: "true"
+          ELEPHC_TEST_PREBUILT_BRIDGES: "1"
         run: |
           cargo nextest run --profile ci \
             --archive-file "$RUNNER_TEMP/nextest-archive.tar.zst" \
@@ -408,6 +415,9 @@ jobs:
           path: ${{ runner.temp }}
 
       - name: Run codegen test shard
+        env:
+          CARGO_NET_OFFLINE: "true"
+          ELEPHC_TEST_PREBUILT_BRIDGES: "1"
         run: |
           cargo nextest run --profile ci \
             --archive-file "$RUNNER_TEMP/nextest-archive.tar.zst" \
@@ -453,6 +463,9 @@ jobs:
           path: ${{ runner.temp }}
 
       - name: Run codegen test shard
+        env:
+          CARGO_NET_OFFLINE: "true"
+          ELEPHC_TEST_PREBUILT_BRIDGES: "1"
         run: |
           cargo nextest run --profile ci \
             --archive-file "$RUNNER_TEMP/nextest-archive.tar.zst" \
