@@ -744,6 +744,13 @@ fn rewrite_date_procedural_alias(name: &str, args: &[Expr]) -> Option<ExprKind> 
             name: resolved_name("__elephc_strncasecmp".to_string()),
             args: args.to_vec(),
         }),
+        // addcslashes($str, $characters) — elephc has no native addcslashes, so it desugars to
+        // the injected helper (C-style backslash escaping with ".." range expansion and
+        // octal/letter escapes for non-printables). Reserved name, never a user function.
+        "addcslashes" if args.len() == 2 => Some(ExprKind::FunctionCall {
+            name: resolved_name("__elephc_addcslashes".to_string()),
+            args: args.to_vec(),
+        }),
         // timezone_identifiers_list([$group[, $country]]) and the equivalent static
         // DateTimeZone::listIdentifiers (rewritten below) both desugar to the
         // injected free function __elephc_list_identifiers, which filters a baked

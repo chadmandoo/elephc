@@ -142,6 +142,65 @@ function __elephc_strncasecmp(string $a, string $b, int $length): int {
     }
     return strcasecmp(substr($a, 0, $length), substr($b, 0, $length));
 }
+function __elephc_addcslashes_expand(string $characters): string {
+    $expanded = "";
+    $n = strlen($characters);
+    $i = 0;
+    while ($i < $n) {
+        $ch = $characters[$i];
+        if ($i + 3 < $n && $characters[$i + 1] === "." && $characters[$i + 2] === "." && ord($characters[$i + 3]) >= ord($ch)) {
+            $lo = ord($ch);
+            $hi = ord($characters[$i + 3]);
+            $c = $lo;
+            while ($c <= $hi) {
+                $expanded = $expanded . chr($c);
+                $c = $c + 1;
+            }
+            $i = $i + 4;
+        } else {
+            $expanded = $expanded . $ch;
+            $i = $i + 1;
+        }
+    }
+    return $expanded;
+}
+function __elephc_addcslashes(string $str, string $characters): string {
+    $set = __elephc_addcslashes_expand($characters);
+    $result = "";
+    $n = strlen($str);
+    $i = 0;
+    while ($i < $n) {
+        $ch = $str[$i];
+        if (strpos($set, $ch) !== false) {
+            $code = ord($ch);
+            if ($code < 32 || $code > 126) {
+                if ($ch === "\n") {
+                    $result = $result . "\\n";
+                } elseif ($ch === "\t") {
+                    $result = $result . "\\t";
+                } elseif ($ch === "\r") {
+                    $result = $result . "\\r";
+                } elseif ($code === 7) {
+                    $result = $result . "\\a";
+                } elseif ($code === 11) {
+                    $result = $result . "\\v";
+                } elseif ($code === 8) {
+                    $result = $result . "\\b";
+                } elseif ($code === 12) {
+                    $result = $result . "\\f";
+                } else {
+                    $result = $result . "\\" . sprintf("%03o", $code);
+                }
+            } else {
+                $result = $result . "\\" . $ch;
+            }
+        } else {
+            $result = $result . $ch;
+        }
+        $i = $i + 1;
+    }
+    return $result;
+}
 "#;
 
 /// Prepends the extended-arity builtin helpers when the program mentions `array_search` or
@@ -159,6 +218,7 @@ pub fn inject_if_used(program: Program) -> Program {
         && !rendered.contains("preg_quote")
         && !rendered.contains("strncmp")
         && !rendered.contains("strncasecmp")
+        && !rendered.contains("addcslashes")
     {
         return program;
     }
@@ -174,6 +234,7 @@ pub fn inject_if_used(program: Program) -> Program {
                     || name.eq_ignore_ascii_case("__elephc_preg_quote")
                     || name.eq_ignore_ascii_case("__elephc_strncmp")
                     || name.eq_ignore_ascii_case("__elephc_strncasecmp")
+                    || name.eq_ignore_ascii_case("__elephc_addcslashes")
         )
     });
     if user_declares {
