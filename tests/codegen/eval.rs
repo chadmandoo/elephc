@@ -19773,32 +19773,63 @@ eval('enum EvalBadEnumConstName {
     }
 }
 
-/// Verifies eval rejects PHP-reserved class-like declaration names.
+/// Asserts one eval fragment rejects a PHP-reserved class-like declaration name.
+fn assert_eval_declared_reserved_class_like_name_fails(source: &str) {
+    let err = compile_and_run_expect_failure(source);
+    assert!(
+        err.contains("Fatal error: eval() fragment uses an unsupported construct"),
+        "stderr did not contain eval unsupported-construct diagnostic: {err}"
+    );
+}
+
+/// Verifies eval rejects the reserved `match` class declaration name.
 #[test]
-fn test_eval_declared_reserved_class_like_name_fails() {
-    for source in [
+fn test_eval_declared_reserved_match_class_name_fails() {
+    assert_eval_declared_reserved_class_like_name_fails(
         r#"<?php
 eval('class match {}');
 "#,
+    );
+}
+
+/// Verifies eval rejects the reserved `string` class declaration name.
+#[test]
+fn test_eval_declared_reserved_string_class_name_fails() {
+    assert_eval_declared_reserved_class_like_name_fails(
         r#"<?php
 eval('class string {}');
 "#,
+    );
+}
+
+/// Verifies eval rejects the reserved `interface` interface declaration name.
+#[test]
+fn test_eval_declared_reserved_interface_name_fails() {
+    assert_eval_declared_reserved_class_like_name_fails(
         r#"<?php
 eval('interface interface {}');
 "#,
+    );
+}
+
+/// Verifies eval rejects the reserved `readonly` trait declaration name.
+#[test]
+fn test_eval_declared_reserved_readonly_trait_name_fails() {
+    assert_eval_declared_reserved_class_like_name_fails(
         r#"<?php
 eval('trait readonly {}');
 "#,
+    );
+}
+
+/// Verifies eval rejects the reserved `bool` enum declaration name.
+#[test]
+fn test_eval_declared_reserved_bool_enum_name_fails() {
+    assert_eval_declared_reserved_class_like_name_fails(
         r#"<?php
 eval('enum bool { case Ready; }');
 "#,
-    ] {
-        let err = compile_and_run_expect_failure(source);
-        assert!(
-            err.contains("Fatal error: eval() fragment uses an unsupported construct"),
-            "stderr did not contain eval unsupported-construct diagnostic: {err}"
-        );
-    }
+    );
 }
 
 /// Verifies eval rejects PHP-reserved bare class-like reference names.
