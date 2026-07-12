@@ -6885,6 +6885,12 @@ fn array_literal_element_type_for_ir(
             .constant_value(name.as_str())
             .map(|(_, ty)| ir_array_storage_type(ty))
             .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item))),
+        // A class constant or enum case must be typed the way `lower_scoped_constant`
+        // resolves it, not by the syntactic `::class`-is-string default, or the array
+        // element-type stamp would diverge from the lowered value and corrupt reads.
+        ExprKind::ScopedConstantAccess { receiver, name } => {
+            scoped_constant_value_type_for_ir(ctx, receiver, name, item)
+        }
         ExprKind::Variable(name) => ir_array_storage_type(
             ctx.local_types
                 .get(name)

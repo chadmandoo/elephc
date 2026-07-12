@@ -187,3 +187,35 @@ echo "done";
     assert!(out.success, "program failed: {}", out.stderr);
     assert_eq!(out.stdout, "done");
 }
+
+/// Regression: an indexed array literal whose element is an enum case must box the
+/// case object (Mixed), not stamp the element type `string` via the syntactic
+/// `::class`-is-string default — which previously inserted a fatal enum->string cast
+/// and even mis-typed the read (`$a[0]->value` failing as a `string` receiver).
+#[test]
+fn test_indexed_array_of_enum_case_boxes_object() {
+    let out = compile_and_run(
+        r#"<?php
+enum E: string { case A = 'a'; }
+$a = [E::A];
+echo $a[0]->value;
+"#,
+    );
+    assert_eq!(out, "a");
+}
+
+/// Regression: an enum-case array element must not corrupt a sibling union-typed
+/// property read — the mis-typed element produced a fatal enum->string cast during
+/// construction of `new T('HI', [E::A])`, so reading `$o->x` reported the enum.
+#[test]
+fn test_enum_case_array_element_with_union_sibling_prop() {
+    let out = compile_and_run(
+        r#"<?php
+enum E: string { case A = 'a'; }
+final class T { public function __construct(public string|E $x, public array $a) {} }
+$o = new T('HI', [E::A]);
+echo $o->x;
+"#,
+    );
+    assert_eq!(out, "HI");
+}
