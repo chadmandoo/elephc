@@ -201,6 +201,8 @@ fn finalize_user_asm(
     exported_functions: &HashMap<String, ExportedFunction>,
 ) -> String {
     let eval_bridge = module.required_runtime_features.eval_bridge;
+    let emit_eval_reflection_metadata =
+        eval_bridge || module.required_runtime_features.eval_scope;
     if eval_bridge {
         eval_property_helpers::emit_eval_property_helpers(module, &mut emitter, &mut data);
         eval_static_property_helpers::emit_eval_static_property_helpers(
@@ -274,11 +276,11 @@ fn finalize_user_asm(
         &runtime_classes,
         &module.enum_infos,
         Some(&allowed_class_names),
-        module.required_runtime_features.eval_bridge,
+        emit_eval_reflection_metadata,
         // The source path feeds eval Reflection source-location hooks only;
         // embedding it in native-only programs leaks the build path into the
         // assembly (and trips needle-based optimizer asm asserts).
-        if module.required_runtime_features.eval_bridge {
+        if emit_eval_reflection_metadata {
             module.source_path.as_deref()
         } else {
             None
