@@ -1331,3 +1331,33 @@ echo $m['x']['y'];
         out.stderr
     );
 }
+
+/// Regression test for issue #516: a typed string extracted from a chained
+/// read must remain valid when a later call argument releases the parent array.
+#[test]
+fn test_regression_516_chained_string_survives_parent_release() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function replace_parent(array &$value): string {
+    $value = [];
+    return str_repeat('Z', 128);
+}
+function emit_pair(string $left, string $right): void {
+    echo $left;
+    echo $right;
+}
+$a = [[str_repeat('L', 128)]];
+emit_pair($a[0][0], replace_parent($a));
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(
+        out.stdout,
+        format!("{}{}", "L".repeat(128), "Z".repeat(128))
+    );
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}

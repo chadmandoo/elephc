@@ -8593,7 +8593,8 @@ fn lower_array_access_from_value(
         _ => Op::RuntimeCall,
     };
     let result_type = array_access_result_type(ctx, array_value.value, op, expr);
-    let result = ctx.emit_value(
+    let release_receiver = ctx.value_is_owned_index_read_temp(array_value);
+    let mut result = ctx.emit_value(
         op,
         vec![array_value.value, index_value.value],
         None,
@@ -8605,12 +8606,22 @@ fn lower_array_access_from_value(
     // directly as its receiver. That intermediate carries a +1 reference (the
     // get emitters incref refcounted payloads and box Mixed cells), and unlike
     // the hoisted form `$inner = $a[$i]; $inner[$j]` no local-slot release
-    // machinery ever drops it, so the materialized inner container leaks on
-    // every evaluation. Release it once the consuming read has extracted its
-    // result: the parent container still holds its own reference to the
-    // intermediate, so this cannot free storage the just-extracted result may
-    // borrow (e.g. a string element pointing into the inner array's payload).
-    if ctx.value_is_owned_index_read_temp(array_value) {
+    // machinery ever drops it. Typed string reads borrow their bytes from that
+    // receiver, so stabilize the leaf before releasing the receiver: a later
+    // expression can otherwise drop the parent's last reference and leave the
+    // extracted string dangling. Mixed reads already return independent owned
+    // cells and do not need this copy.
+    if release_receiver && result.ir_type == IrType::Str {
+        result = ctx.emit_value(
+            Op::StrPersist,
+            vec![result.value],
+            None,
+            PhpType::Str,
+            Op::StrPersist.default_effects(),
+            Some(expr.span),
+        );
+    }
+    if release_receiver {
         crate::ir_lower::ownership::release_if_owned(ctx, array_value, Some(expr.span));
     }
     result
@@ -8942,6 +8953,12 @@ fn lower_ternary(
 /// Lowers a cast expression.
 fn lower_cast(ctx: &mut LoweringContext<'_, '_>, target: &CastType, inner: &Expr, expr: &Expr) -> LoweredValue {
     let value = lower_expr(ctx, inner);
+    // Keep the original producer visible for a no-op string cast. Wrapping an
+    // owned string temporary in `Cast(Str)` would hide its ownership from the
+    // retaining store/call cleanup and leak the detached string allocation.
+    if matches!(target, CastType::String) && value.ir_type == IrType::Str {
+        return value;
+    }
     let php_type = cast_php_type(target);
     let result = ctx.emit_value(
         Op::Cast,
