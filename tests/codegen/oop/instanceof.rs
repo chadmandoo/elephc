@@ -393,3 +393,28 @@ echo ($value instanceof $target) ? "T" : "F";
         out.stderr
     );
 }
+
+/// Verifies `is_subclass_of($object, Target::class)` returns the correct runtime boolean for a
+/// parent class, an inherited interface, a transitively-inherited interface, the self case
+/// (excluded — a class is not its own subclass), and an unrelated class. The `Target::class`
+/// spelling lowers to `ConstClassName` (not `ConstStr`), which the relation resolver previously
+/// dropped — defaulting to a silent `false`. No prior test asserted the runtime result. #636.
+#[test]
+fn test_is_subclass_of_class_constant_target_resolves_hierarchy() {
+    let out = compile_and_run(
+        r#"<?php
+interface I {}
+interface J extends I {}
+class Base implements I {}
+final class Sub extends Base {}
+final class D implements J {}
+$sub = new Sub();
+echo is_subclass_of($sub, Base::class) ? '1' : '0';       // parent class
+echo is_subclass_of($sub, I::class) ? '1' : '0';          // parent's interface
+echo is_subclass_of(new D(), I::class) ? '1' : '0';       // transitive interface (J extends I)
+echo is_subclass_of(new Base(), Base::class) ? '1' : '0'; // self -> excluded
+echo is_subclass_of($sub, D::class) ? '1' : '0';          // unrelated
+"#,
+    );
+    assert_eq!(out, "11100");
+}

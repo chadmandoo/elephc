@@ -781,7 +781,10 @@ fn optional_const_string_operand(
         .function
         .instruction(inst)
         .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
-    if inst_ref.op != Op::ConstStr {
+    // `Foo::class` lowers to `ConstClassName` (its name lives in the `class_names` intern
+    // table, not `strings`), so `is_subclass_of($x, Foo::class)` must accept it too — else the
+    // relation defaults to false, a silent miscompile of the most common target spelling.
+    if !matches!(inst_ref.op, Op::ConstStr | Op::ConstClassName) {
         return Ok(None);
     }
     let Some(Immediate::Data(data)) = inst_ref.immediate else {
@@ -789,11 +792,11 @@ fn optional_const_string_operand(
             "string literal operand has no data id",
         ));
     };
-    Ok(Some(ctx
-        .module
-        .data
-        .strings
-        .get(data.as_raw() as usize)
-        .cloned()
-        .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))?))
+    let interned = match inst_ref.op {
+        Op::ConstClassName => ctx.module.data.class_names.get(data.as_raw() as usize),
+        _ => ctx.module.data.strings.get(data.as_raw() as usize),
+    };
+    Ok(Some(interned.cloned().ok_or_else(|| {
+        CodegenIrError::missing_entry("const string/class operand", data.as_raw())
+    })?))
 }
