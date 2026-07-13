@@ -180,7 +180,9 @@ pub(super) fn resolve_expr(
         } => ExprKind::Closure {
             params: resolve_params(params, current_namespace, imports, symbols),
             variadic: variadic.clone(),
-            variadic_type: variadic_type.clone(),
+            variadic_type: variadic_type
+                .as_ref()
+                .map(|ty| resolve_type_expr(ty, current_namespace, imports, symbols)),
             return_type: return_type
                 .as_ref()
                 .map(|ty| resolve_type_expr(ty, current_namespace, imports, symbols)),

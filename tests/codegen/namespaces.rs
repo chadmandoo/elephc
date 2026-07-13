@@ -577,3 +577,30 @@ namespace App {
     );
     assert_eq!(out, "7");
 }
+
+/// Regression (#625): a `use`-imported alias used as a TYPED VARIADIC parameter
+/// (`Outcome ...$xs`) must be name-resolved. The name resolver resolved regular parameter
+/// types and return types but cloned `variadic_type` unresolved in all three declaration
+/// forms (free function, class method via `..method.clone()`, and closure), so
+/// `aggregate(StepOutcome ...$outcomes)` reported "Unknown type: StepOutcome" while the same
+/// alias as a return type resolved fine.
+#[test]
+fn test_variadic_parameter_type_resolves_use_alias() {
+    let out = compile_and_run(
+        r#"<?php
+namespace Cat {
+    enum Outcome: string { case A = 'a'; case B = 'b'; }
+}
+namespace App {
+    use Cat\Outcome;
+    function agg(Outcome ...$xs): int { return count($xs); }
+    final class Bag {
+        public function agg(Outcome ...$xs): int { return count($xs); }
+    }
+    $c = function (Outcome ...$xs): int { return count($xs); };
+    echo agg(Outcome::A, Outcome::B), (new Bag())->agg(Outcome::A), $c(Outcome::A, Outcome::B);
+}
+"#,
+    );
+    assert_eq!(out, "212");
+}
