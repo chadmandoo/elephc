@@ -624,3 +624,28 @@ try { echo $c->foo(); echo 'no'; } catch (Error $e) { echo 'err'; }
     );
     assert_eq!(out, "err");
 }
+
+/// Regression (#624): an exception subclass whose constructor overrides the inherited one with a
+/// differently-named, differently-typed parameter must keep ITS OWN parameter type. Constructing a
+/// sibling builtin exception (`new RuntimeException("base")`) propagates the message-property type
+/// to every class sharing that inherited property — but it must not stamp `Str` onto this subclass's
+/// unrelated `?Throwable $cause` parameter by position (child name, parent type). The subclass
+/// declares its own property + constructor (regular object layout, no `parent::__construct`), so it
+/// compiles and runs.
+#[test]
+fn test_exception_subclass_constructor_param_type_from_child_decl() {
+    let out = compile_and_run(
+        r#"<?php
+final class MyErr extends RuntimeException {
+    public ?Throwable $cause;
+    public function __construct(?Throwable $cause = null) {
+        $this->cause = $cause;
+    }
+}
+$base = new RuntimeException("base");
+$e = new MyErr($base);
+echo ($e->cause === $base) ? "ok" : "no";
+"#,
+    );
+    assert_eq!(out, "ok");
+}

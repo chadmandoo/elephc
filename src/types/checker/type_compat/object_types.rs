@@ -385,7 +385,18 @@ impl Checker {
                 }
             }
 
-            if !param_has_declared_type {
+            // Refine the constructor parameter ONLY when this class's own constructor promotes
+            // `prop_name` at `param_index`. A subclass that overrides the constructor with an
+            // unrelated parameter at that position (e.g. `__construct(?Throwable $previous)` over
+            // the inherited promoted `$message`) shares the property but NOT the parameter — writing
+            // the property's type into `params[param_index]` there stamps the parent's type onto the
+            // child's differently-named parameter by position (child name, parent type).
+            let promotes_here = class_info
+                .constructor_param_to_prop
+                .get(param_index)
+                .and_then(|mapped| mapped.as_ref())
+                .is_some_and(|mapped| mapped == &prop_name);
+            if !param_has_declared_type && promotes_here {
                 if let Some(sig) = class_info.methods.get_mut("__construct") {
                     if let Some((_, param_ty)) = sig.params.get_mut(param_index) {
                         *param_ty = arg_ty.clone();
