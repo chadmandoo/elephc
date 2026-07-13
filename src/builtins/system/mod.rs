@@ -41,6 +41,8 @@ pub mod exec;
 pub mod getdate;
 pub mod getenv;
 pub mod getmypid;
+pub mod memory_get_peak_usage;
+pub mod memory_get_usage;
 pub mod gmdate;
 pub mod gmmktime;
 pub mod header;

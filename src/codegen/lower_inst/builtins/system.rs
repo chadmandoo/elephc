@@ -631,6 +631,28 @@ pub(crate) fn lower_getmypid(
     store_if_result(ctx, inst)
 }
 
+/// Lowers `memory_get_usage()` by reading elephc's heap live-byte counter (`_gc_live`).
+/// The optional `real_usage` flag is accepted and ignored (0 or 1 args).
+pub(crate) fn lower_memory_get_usage(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    ensure_arg_count_between(inst, "memory_get_usage", 0, 1)?;
+    abi::emit_call_label(ctx.emitter, "__rt_memory_get_usage");
+    store_if_result(ctx, inst)
+}
+
+/// Lowers `memory_get_peak_usage()` by reading elephc's peak heap high-watermark (`_gc_peak`).
+/// The optional `real_usage` flag is accepted and ignored (0 or 1 args).
+pub(crate) fn lower_memory_get_peak_usage(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    ensure_arg_count_between(inst, "memory_get_peak_usage", 0, 1)?;
+    abi::emit_call_label(ctx.emitter, "__rt_memory_get_peak_usage");
+    store_if_result(ctx, inst)
+}
+
 /// Lowers `usleep(microseconds)` through the target's C library symbol.
 pub(crate) fn lower_usleep(
     ctx: &mut FunctionContext<'_>,

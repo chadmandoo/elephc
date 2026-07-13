@@ -3280,3 +3280,22 @@ echo assert(false, "msg") ? "1" : "0";
     );
     assert_eq!(out, "111");
 }
+
+/// Verifies `memory_get_usage()` / `memory_get_peak_usage()` return elephc's live heap-byte
+/// and peak heap-byte counters. The exact byte count is runtime-variable (as in PHP), so the
+/// test asserts the stable PHP invariants: usage is positive and the peak is at least the
+/// current usage. Re-port of the v0.26.0 fix dropped by the v0.26.1 re-port. Forge #555.
+#[test]
+fn test_memory_usage_reports_positive_heap_bytes() {
+    let out = compile_and_run(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 100; $i++) { $a[] = str_repeat("x", 100); }
+$u = memory_get_usage();
+$p = memory_get_peak_usage();
+echo ($u > 0 ? "usage-ok" : "usage-BAD") . "|";
+echo ($p >= $u ? "peak-ok" : "peak-BAD");
+"#,
+    );
+    assert_eq!(out, "usage-ok|peak-ok");
+}
