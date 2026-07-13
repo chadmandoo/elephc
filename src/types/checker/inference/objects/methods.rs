@@ -235,6 +235,24 @@ impl Checker {
             env,
             &format!("Method {}::{}", interface_name, method),
         )?;
+        // The PSR wither pattern (`@return static`): a method whose declared
+        // return names its OWN declaring interface (MessageInterface::
+        // withHeader(): MessageInterface) yields the RECEIVER's interface at
+        // the call site, so `$request->withHeader(...)` on a
+        // ServerRequestInterface receiver stays a ServerRequestInterface.
+        // Doc-comments are not retained by the parser, so the self-returning
+        // shape is the `@return static` proxy.
+        if let PhpType::Object(returned) = &sig.return_type {
+            let declaring = self
+                .interfaces
+                .get(interface_name)
+                .and_then(|info| info.method_declaring_interfaces.get(&method_key));
+            if declaring.is_some_and(|declaring| declaring == returned)
+                && returned != interface_name
+            {
+                return Ok(PhpType::Object(interface_name.to_string()));
+            }
+        }
         Ok(sig.return_type)
     }
 

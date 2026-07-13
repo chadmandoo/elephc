@@ -174,6 +174,13 @@ impl Checker {
         if self.type_accepts(existing, new_ty) {
             return Some(existing.clone());
         }
+        // PHP locals are not type-locked: assigning a SUPERTYPE value widens
+        // the variable to that supertype (`$pet = new Dog(); $pet =
+        // $pet->parent();` leaves an Animal; a PSR-7 fluent reassignment
+        // through an interface-typed wither widens to the base interface).
+        if self.type_accepts(new_ty, existing) {
+            return Some(new_ty.clone());
+        }
         if matches!(existing, PhpType::Union(_)) {
             return None;
         }

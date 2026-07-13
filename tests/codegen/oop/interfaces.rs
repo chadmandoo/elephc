@@ -327,3 +327,96 @@ echo run(new Crate());
     );
     assert_eq!(out, "3:xyz");
 }
+
+/// Regression (#622 fix b): PHP locals are not type-locked, so reassigning a variable to a
+/// SUPERTYPE value widens it. A PSR-7 fluent wither declared `@return static` (self-returning
+/// interface method) reassigned onto its own receiver must be permitted, not rejected as
+/// "cannot reassign $m from Message to MessageLike". Mirrors SseResponseWriter /
+/// SuperglobalRequestExtractor `$response = $response->with...()`.
+#[test]
+fn test_interface_wither_reassignment_to_declared_supertype() {
+    let out = compile_and_run(
+        r#"<?php
+interface MessageLike {
+    /** @return static */
+    public function withHeader(string $name, string $value): MessageLike;
+    public function header(string $name): string;
+}
+
+final class Message implements MessageLike {
+    /** @var array<string, string> */
+    private array $headers = [];
+
+    public function withHeader(string $name, string $value): MessageLike {
+        $clone = clone $this;
+        $clone->headers[$name] = $value;
+        return $clone;
+    }
+
+    public function header(string $name): string {
+        return $this->headers[$name] ?? '';
+    }
+}
+
+function decorate(MessageLike $m): MessageLike {
+    $m = $m->withHeader('X-A', 'alpha');
+    $m = $m->withHeader('X-B', 'beta');
+    return $m;
+}
+
+$m = decorate(new Message());
+echo $m->header('X-A'), ',', $m->header('X-B');
+"#,
+    );
+    assert_eq!(out, "alpha,beta");
+}
+
+/// Regression (#622 fix a): a self-returning interface method carrying `@return static`
+/// (declared `: MessageLike`) called on a SUB-interface receiver resolves to the RECEIVER's
+/// interface, not the declared one. So `$r = $r->withHeader(...)` on a RequestLike keeps
+/// RequestLike, and RequestLike-only methods (`target()`) stay callable — the PSR-7
+/// ServerRequestInterface wither shape (HttpErrorHandlerMiddleware::process etc.).
+#[test]
+fn test_interface_return_static_resolves_to_subtype_receiver() {
+    let out = compile_and_run(
+        r#"<?php
+interface MessageLike {
+    /** @return static */
+    public function withHeader(string $name, string $value): MessageLike;
+    public function header(string $name): string;
+}
+
+interface RequestLike extends MessageLike {
+    public function target(): string;
+}
+
+final class Request implements RequestLike {
+    /** @var array<string, string> */
+    private array $headers = [];
+
+    public function withHeader(string $name, string $value): MessageLike {
+        $clone = clone $this;
+        $clone->headers[$name] = $value;
+        return $clone;
+    }
+
+    public function header(string $name): string {
+        return $this->headers[$name] ?? '';
+    }
+
+    public function target(): string {
+        return '/home';
+    }
+}
+
+function decorate(RequestLike $r): RequestLike {
+    $r = $r->withHeader('X-A', 'alpha');
+    return $r;
+}
+
+$r = decorate(new Request());
+echo $r->header('X-A'), ',', $r->target();
+"#,
+    );
+    assert_eq!(out, "alpha,/home");
+}
