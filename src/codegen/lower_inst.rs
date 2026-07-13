@@ -6220,6 +6220,12 @@ fn local_load_types_share_storage(source_ty: &PhpType, result_ty: &PhpType) -> b
             PhpType::Int | PhpType::Bool | PhpType::Void | PhpType::Never
         ) | (PhpType::Array(_), PhpType::Array(_))
             | (PhpType::AssocArray { .. }, PhpType::AssocArray { .. })
+            // Every object is a single heap pointer, so loading a local as an
+            // `instanceof`-narrowed object type (interface / subtype) is a pointer
+            // reinterpretation, not a coercion — the checker's narrowing guarantees the
+            // runtime object satisfies the narrowed type. See the narrowed-receiver retype in
+            // `ir_lower::lower_method_call` (CheckResult::narrowed_call_receivers).
+            | (PhpType::Object(_), PhpType::Object(_))
     )
 }
 

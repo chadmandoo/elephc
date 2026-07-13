@@ -76,6 +76,12 @@ pub struct CheckResult {
     /// Statically-decided access violations lowered to runtime `Error` throws,
     /// keyed by the source span of the offending call/assignment.
     pub throw_access_sites: HashMap<Span, ThrowAccessInfo>,
+    /// Method-call receiver types after `instanceof`-narrowing (inline or
+    /// boolean-carried), keyed by the method-call expression span. Recorded when
+    /// the checker resolves the receiver to a narrowed interface that provides the
+    /// method; consumed by IR lowering to retype the receiver operand so codegen
+    /// dispatches on the narrowed type instead of the declared one.
+    pub narrowed_call_receivers: HashMap<Span, PhpType>,
 }
 
 /// Runs type checking using the host platform (auto-detected from the build environment).

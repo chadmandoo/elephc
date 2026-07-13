@@ -37,6 +37,14 @@ impl Checker {
         let obj_ty = self.infer_type(object, env)?;
         if let PhpType::Object(class_name) = &obj_ty {
             if self.interfaces.contains_key(class_name) {
+                // The receiver resolved (via instanceof-narrowing in this env — inline or
+                // boolean-carried) to an interface. IR lowering types the receiver operand from
+                // the variable's DECLARED class, which may not route to interface dispatch — record
+                // the narrowed interface type by call span so IR lowering can retype the receiver
+                // and codegen dispatches through the interface vtable. IR lowering applies it only
+                // when it differs from the operand's own type, so recording a non-narrowed
+                // interface receiver here is a harmless no-op.
+                self.narrowed_call_receivers.insert(expr.span, obj_ty.clone());
                 return self.infer_method_call_on_interface_type(
                     class_name, method, args, expr, env,
                 );

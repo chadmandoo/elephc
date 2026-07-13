@@ -108,6 +108,10 @@ pub(crate) struct LoweringContext<'m, 'f> {
     /// Statically-decided access violations lowered to runtime `Error` throws,
     /// keyed by the source span of the offending call/assignment.
     pub throw_access_sites: &'m HashMap<Span, ThrowAccessInfo>,
+    /// `instanceof`-narrowed method-call receiver types, keyed by call span.
+    /// `lower_method_call` retypes the receiver operand to this type so codegen
+    /// dispatches on the narrowed interface rather than the declared class.
+    pub narrowed_call_receivers: &'m HashMap<Span, PhpType>,
     pub constants: HashMap<String, (ExprKind, PhpType)>,
     pub top_level_env: TypeEnv,
     pub current_class: Option<String>,
@@ -155,6 +159,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         interfaces: &'m HashMap<String, InterfaceInfo>,
         packed_classes: &'m HashMap<String, PackedClassInfo>,
         throw_access_sites: &'m HashMap<Span, ThrowAccessInfo>,
+        narrowed_call_receivers: &'m HashMap<Span, PhpType>,
         constants: &'m HashMap<String, (ExprKind, PhpType)>,
         top_level_env: TypeEnv,
         current_class: Option<String>,
@@ -181,6 +186,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             interfaces,
             packed_classes,
             throw_access_sites,
+            narrowed_call_receivers,
             constants: constants.clone(),
             top_level_env,
             current_class,

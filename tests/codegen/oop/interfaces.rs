@@ -420,3 +420,40 @@ echo $r->header('X-A'), ',', $r->target();
     );
     assert_eq!(out, "alpha,/home");
 }
+
+/// Regression (#632): a method declared on an INTERFACE, called on a receiver whose declared type
+/// is a CLASS that does not declare the method, dispatches through the interface vtable when the
+/// receiver is narrowed to the interface by an inline `instanceof` guard. codegen previously
+/// resolved the call against the declared class and failed with "unknown method". The checker
+/// records the narrowed receiver type by call span (CheckResult::narrowed_call_receivers) and IR
+/// lowering retypes the receiver operand (a pure object-pointer reinterpretation) so codegen routes
+/// to interface dispatch. Covers the ternary, if-return, and if-accumulator guard shapes.
+#[test]
+fn test_instanceof_narrowed_receiver_dispatches_via_interface() {
+    let out = compile_and_run(
+        r#"<?php
+interface HasWeight { public function weight(): int; }
+abstract class Block {}
+final class Heavy extends Block implements HasWeight { public function weight(): int { return 5; } }
+final class Plain extends Block {}
+
+function ternaryWeight(Block $block): int {
+    return $block instanceof HasWeight ? $block->weight() : 0;
+}
+function ifReturnWeight(Block $block): int {
+    if ($block instanceof HasWeight) { return $block->weight(); }
+    return 0;
+}
+function ifAccumWeight(Block $block): int {
+    $weight = 0;
+    if ($block instanceof HasWeight) { $weight = $block->weight(); }
+    return $weight;
+}
+
+echo ternaryWeight(new Heavy()), ternaryWeight(new Plain());
+echo ifReturnWeight(new Heavy()), ifReturnWeight(new Plain());
+echo ifAccumWeight(new Heavy()), ifAccumWeight(new Plain());
+"#,
+    );
+    assert_eq!(out, "505050");
+}

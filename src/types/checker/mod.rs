@@ -167,6 +167,9 @@ pub(crate) struct Checker {
     /// Statically-decided access violations that must lower to a catchable
     /// `Error` throw instead of a compile-time error, keyed by source span.
     pub throw_access_sites: HashMap<Span, ThrowAccessInfo>,
+    /// `instanceof`-narrowed method-call receiver types, keyed by method-call
+    /// expression span. See `CheckResult::narrowed_call_receivers`.
+    pub narrowed_call_receivers: HashMap<Span, PhpType>,
 }
 
 #[derive(Clone)]
@@ -222,6 +225,7 @@ pub fn check_types(program: &Program, target_platform: Platform) -> Result<Check
         required_libraries: checker.required_libraries,
         warnings,
         throw_access_sites: checker.throw_access_sites,
+        narrowed_call_receivers: checker.narrowed_call_receivers,
     })
 }
 

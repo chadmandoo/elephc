@@ -133,6 +133,7 @@ impl Checker {
             warnings: Vec::new(),
             reference_property_promotions: HashSet::new(),
             throw_access_sites: HashMap::new(),
+            narrowed_call_receivers: HashMap::new(),
         }
     }
 }

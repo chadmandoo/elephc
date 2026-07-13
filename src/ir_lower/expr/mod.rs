@@ -8923,6 +8923,19 @@ fn lower_method_call(
     };
     let object_expr = object;
     let object = lower_expr(ctx, object_expr);
+    // Apply the checker's instanceof-narrowed receiver type (inline or boolean-carried) so codegen
+    // dispatches on the narrowed interface rather than the receiver's declared class (see
+    // CheckResult::narrowed_call_receivers). Only retype an OBJECT receiver to another object type:
+    // the narrowed and declared types then share the object-pointer IR representation, so this is a
+    // pure pointer reinterpretation. A Mixed / union / other receiver keeps its own dispatch path
+    // (retyping it to an object would leave its non-pointer IR type inconsistent). Only retype when
+    // it differs from the operand's own type — a non-narrowed interface receiver needs no change.
+    if let Some(narrowed) = ctx.narrowed_call_receivers.get(&expr.span).cloned() {
+        let current = ctx.builder.value_php_type(object.value);
+        if matches!(current, PhpType::Object(_)) && current != narrowed {
+            ctx.builder.set_value_php_type(object.value, narrowed);
+        }
+    }
     if let Some(message) = throw_access_message {
         release_owning_receiver_temporary(ctx, object, expr.span);
         return crate::ir_lower::stmt::lower_throw_access_error_expr(ctx, &message, expr.span);

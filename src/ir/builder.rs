@@ -121,6 +121,28 @@ impl<'f> Builder<'f> {
         self.func.values[value.as_raw() as usize].php_type.clone()
     }
 
+    /// Overrides the PHP-type metadata of an already-emitted, instruction-defined value.
+    ///
+    /// Used to apply the checker's `instanceof`-narrowed receiver type to a method-call receiver
+    /// (a fresh single-use object load) so codegen dispatches on the narrowed interface / subtype
+    /// rather than the declared class. The narrowed and declared types are both object types and
+    /// share an IR representation (object pointer) and ownership, so only the PHP-type metadata
+    /// changes. Both the value AND its defining instruction's `result_php_type` are updated so the
+    /// validator invariant `value.php_type == inst.result_php_type` still holds. No-op for values
+    /// not defined by an instruction (the narrowed-receiver path only ever retypes instruction
+    /// results).
+    pub fn set_value_php_type(&mut self, value: ValueId, php_type: PhpType) {
+        let idx = value.as_raw() as usize;
+        let def = self.func.values[idx].def;
+        let ValueDef::Instruction { inst, .. } = def else {
+            return;
+        };
+        self.func.values[idx].php_type = php_type.clone();
+        if let Some(instruction) = self.func.instructions.get_mut(inst.as_raw() as usize) {
+            instruction.result_php_type = php_type;
+        }
+    }
+
     /// Returns the ownership state for a value already emitted in this function.
     pub fn value_ownership(&self, value: ValueId) -> Ownership {
         self.func.values[value.as_raw() as usize].ownership
