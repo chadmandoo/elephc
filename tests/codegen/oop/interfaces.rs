@@ -282,3 +282,48 @@ echo implode(',', C::previews());
     );
     assert_eq!(out, "a,b");
 }
+
+/// Regression: an interface method with >=5 integer register arguments dispatched through the
+/// interface vtable must preserve the 5th/6th SysV argument registers (r8, r9).
+///
+/// `put(string $k, string $v)` on an interface-typed receiver marshals `this=rdi`, `$k=rsi/rdx`,
+/// `$v=rcx/r8` — so `$v`'s length is the 5th register argument, held in r8. The x86-64
+/// interface-dispatch scan previously used r8 as its per-entry scratch and r9 as the target
+/// interface id (both argument registers), silently clobbering the 5th/6th arguments. The stored
+/// value's length came out as a leftover interface id, so `strlen()` of the read-back string was
+/// garbage. The receiver is an interface-typed function parameter so the call is a true virtual
+/// dispatch (not devirtualized to a direct call).
+#[test]
+fn test_interface_dispatch_preserves_fifth_register_argument() {
+    let out = compile_and_run(
+        r#"<?php
+interface Box {
+    public function put(string $k, string $v): Box;
+    public function get(string $k): string;
+}
+
+final class Crate implements Box {
+    /** @var array<string, string> */
+    private array $data = [];
+
+    public function put(string $k, string $v): Box {
+        $clone = clone $this;
+        $clone->data[$k] = $v;
+        return $clone;
+    }
+
+    public function get(string $k): string {
+        return $this->data[$k];
+    }
+}
+
+function run(Box $box): string {
+    $c = $box->put('a', 'xyz');
+    return strlen($c->get('a')) . ':' . $c->get('a');
+}
+
+echo run(new Crate());
+"#,
+    );
+    assert_eq!(out, "3:xyz");
+}

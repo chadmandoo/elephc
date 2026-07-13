@@ -1062,17 +1062,29 @@ pub(super) fn emit_interface_dispatch_call(
             ctx.emitter.instruction("mov x0, #0");                              // defensive fallback for invalid interface metadata
         }
         Arch::X86_64 => {
+            // The scan must touch only r10/r11 (caller-saved, NON-argument scratch) plus a
+            // direct immediate compare. On SysV x86-64, r8 and r9 are integer argument
+            // registers 5 and 6; an interface-dispatched method with >=5 register arguments
+            // (e.g. `m(string $a, string $b)`: this=rdi, a=rsi/rdx, b=rcx/r8) keeps a live
+            // argument in r8 across this scan. The previous form used r8 as the per-entry
+            // scratch and r9 as the target id, silently clobbering the 5th/6th arguments.
             ctx.emitter.instruction("mov r10, QWORD PTR [rdi]");                // load receiver class id for interface metadata lookup
             abi::emit_symbol_address(ctx.emitter, "r11", "_class_interface_ptrs");
             ctx.emitter.instruction("mov r11, QWORD PTR [r11 + r10 * 8]");      // select this class's interface metadata block
             ctx.emitter.instruction("mov r10, QWORD PTR [r11]");                // load implemented interface count
             ctx.emitter.instruction("add r11, 8");                              // move to first [interface id, table] pair
-            abi::emit_load_int_immediate(ctx.emitter, "r9", interface_id);
+            let id_fits_imm32 = i32::try_from(interface_id).is_ok();
+            if !id_fits_imm32 {
+                abi::emit_load_int_immediate(ctx.emitter, "rax", interface_id); // hold target id in the return scratch (dead before the call); r8/r9 stay live args
+            }
             ctx.emitter.label(&scan_loop);
             ctx.emitter.instruction("test r10, r10");                           // check whether implemented interfaces remain
             ctx.emitter.instruction(&format!("je {}", missing));                // stop when no implemented interface matched
-            ctx.emitter.instruction("mov r8, QWORD PTR [r11]");                 // load current implemented interface id
-            ctx.emitter.instruction("cmp r8, r9");                              // compare with target interface id
+            if id_fits_imm32 {
+                ctx.emitter.instruction(&format!("cmp QWORD PTR [r11], {}", interface_id)); // compare current implemented interface id to target without a scratch register
+            } else {
+                ctx.emitter.instruction("cmp QWORD PTR [r11], rax");            // compare current implemented interface id to target held in the return scratch
+            }
             ctx.emitter.instruction(&format!("je {}", found));                  // dispatch through this table when matched
             ctx.emitter.instruction("add r11, 16");                             // advance to next interface metadata entry
             ctx.emitter.instruction("sub r10, 1");                              // consume one interface entry
