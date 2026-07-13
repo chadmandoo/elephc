@@ -68,27 +68,10 @@ pub(in crate::parser::stmt) fn try_parse_postfix_assignment(
     if op != AssignmentOperator::Assign && !can_replay_assignment_target(&lhs_expr) {
         return lower_effectful_postfix_assignment(lhs_expr, op, rhs, span).map(Some);
     }
-    let lhs_span = lhs_expr.span;
     if is_append {
-        let stmt = match lhs_expr.kind {
-            ExprKind::Variable(array) => StmtKind::ArrayPush { array, value: rhs },
-            ExprKind::PropertyAccess { object, property } => StmtKind::PropertyArrayPush {
-                object,
-                property,
-                value: rhs,
-            },
-            ExprKind::ArrayAccess { array, index } => {
-                return lower_nested_append_assignment(
-                    Expr::new(ExprKind::ArrayAccess { array, index }, lhs_span),
-                    rhs,
-                    span,
-                )
-                .map(Some);
-            }
-            _ => return Err(CompileError::new(span, "Invalid assignment target")),
-        };
-        return Ok(Some(Stmt::new(stmt, span)));
+        return build_append_statement(lhs_expr, rhs, span).map(Some);
     }
+    let lhs_span = lhs_expr.span;
 
     let value = assignment_value(lhs_expr.clone(), op, rhs, span);
 
@@ -134,6 +117,41 @@ pub(in crate::parser::stmt) fn try_parse_postfix_assignment(
     Ok(Some(Stmt::new(stmt, span)))
 }
 
+/// Builds the array-append statement for `<base>[] = <value>`, dispatching on the append
+/// base: a local `Variable` becomes an `ArrayPush`, a property/static-property becomes the
+/// matching property-array-push, and a nested array element (`$a[$k][]`) routes through the
+/// read/append/write-back desugar. Shared by statement-position append parsing and the
+/// expression-position append (`... => $a[$k][] = $v` in a match arm, #552).
+pub(crate) fn build_append_statement(
+    base: Expr,
+    value: Expr,
+    span: Span,
+) -> Result<Stmt, CompileError> {
+    let base_span = base.span;
+    let kind = match base.kind {
+        ExprKind::Variable(array) => StmtKind::ArrayPush { array, value },
+        ExprKind::PropertyAccess { object, property } => StmtKind::PropertyArrayPush {
+            object,
+            property,
+            value,
+        },
+        ExprKind::StaticPropertyAccess { receiver, property } => StmtKind::StaticPropertyArrayPush {
+            receiver,
+            property,
+            value,
+        },
+        ExprKind::ArrayAccess { array, index } => {
+            return lower_nested_append_assignment(
+                Expr::new(ExprKind::ArrayAccess { array, index }, base_span),
+                value,
+                span,
+            );
+        }
+        _ => return Err(CompileError::new(span, "Invalid assignment target")),
+    };
+    Ok(Stmt::new(kind, span))
+}
+
 /// Lowers an append through a nested array target (`$a[0][] = $value`) into a
 /// synthetic read/append/write-back sequence. The temporary append triggers the
 /// existing copy-on-write split, and the final assignment stores the detached
@@ -146,10 +164,21 @@ fn lower_nested_append_assignment(
     let mut lowerer = EffectfulTargetLowerer::new(span);
     let target = lowerer.stabilize_array_target(target);
     let temp = lowerer.next_temp_name();
+    // Read the nested element coalesced to an empty array: PHP auto-vivifies a missing
+    // (or null) `$a[$k]` to `[]` before appending, and elephc cannot append to a Void/null
+    // value directly. `$existing ?? []` keeps a present inner array unchanged and turns an
+    // absent/null one into a fresh list, so the subsequent push and write-back are well-typed.
+    let coalesced_read = Expr::new(
+        ExprKind::NullCoalesce {
+            value: Box::new(target.clone()),
+            default: Box::new(Expr::new(ExprKind::ArrayLiteral(Vec::new()), span)),
+        },
+        span,
+    );
     lowerer.stmts.push(Stmt::new(
         StmtKind::Assign {
             name: temp.clone(),
-            value: target.clone(),
+            value: coalesced_read,
         },
         span,
     ));

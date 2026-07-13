@@ -11,8 +11,8 @@
 use crate::errors::CompileError;
 use crate::lexer::Token;
 use crate::names::Name;
-use crate::parser::ast::{BinOp, CallableTarget, Expr, ExprKind, InstanceOfTarget};
-use crate::parser::stmt::parse_name;
+use crate::parser::ast::{BinOp, CallableTarget, Expr, ExprKind, InstanceOfTarget, Stmt, StmtKind};
+use crate::parser::stmt::{build_append_statement, parse_name};
 use crate::span::Span;
 
 use super::assignment_targets::{
@@ -79,6 +79,15 @@ fn parse_expr_bp_inner(
             Token::LBracket => {
                 let span = tokens[*pos].1;
                 *pos += 1;
+                // An empty subscript `[]` is an array-append target, valid only as an
+                // assignment LHS (`$a[$k][] = $v`). Parse it here — consuming `= <rhs>` and
+                // producing an assignment expression that appends then yields the value —
+                // so append-assignment works in expression position (e.g. a match arm body).
+                if *pos < tokens.len() && tokens[*pos].0 == Token::RBracket {
+                    *pos += 1; // consume `]`
+                    lhs = parse_array_append_assignment(tokens, pos, lhs, span)?;
+                    continue;
+                }
                 let index = parse_expr(tokens, pos)?;
                 if *pos >= tokens.len() || tokens[*pos].0 != Token::RBracket {
                     return Err(CompileError::new(span, "Expected ']'"));
@@ -608,6 +617,52 @@ pub(in crate::parser) fn reject_named_args_in_dynamic_call(
         ));
     }
     Ok(())
+}
+
+/// Parses an array-append assignment in expression position: `<base>[] = <rhs>`. The empty
+/// `[]` and `base` have already been consumed. Produces an assignment expression whose prelude
+/// binds the rhs to a temporary, performs the append (via the shared statement-form append
+/// lowering), and yields the appended value — matching PHP, where `$a[] = $v` evaluates to `$v`.
+/// This is what makes `match (true) { ... => $this->index[$k][] = $v }` parse (#552).
+fn parse_array_append_assignment(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    base: Expr,
+    span: Span,
+) -> Result<Expr, CompileError> {
+    if *pos >= tokens.len() || tokens[*pos].0 != Token::Assign {
+        return Err(CompileError::new(
+            span,
+            "array-append `[]` is only valid as an assignment target",
+        ));
+    }
+    *pos += 1; // consume `=`
+    let rhs = parse_expr(tokens, pos)?;
+    let value_temp = format!("__elephc_append_v_{}_{}", span.line, span.col);
+    let yield_temp = format!("__elephc_append_r_{}_{}", span.line, span.col);
+    // Bind the rhs once (single evaluation), append the bound value, then yield it.
+    let bind_value = Stmt::new(
+        StmtKind::Assign {
+            name: value_temp.clone(),
+            value: rhs,
+        },
+        span,
+    );
+    let append_stmt = build_append_statement(
+        base,
+        Expr::new(ExprKind::Variable(value_temp.clone()), span),
+        span,
+    )?;
+    Ok(Expr::new(
+        ExprKind::Assignment {
+            target: Box::new(Expr::new(ExprKind::Variable(yield_temp), span)),
+            value: Box::new(Expr::new(ExprKind::Variable(value_temp), span)),
+            result_target: None,
+            prelude: vec![bind_value, append_stmt],
+            conditional_value_temp: None,
+        },
+        span,
+    ))
 }
 
 /// Looks up assignment operator binding power.

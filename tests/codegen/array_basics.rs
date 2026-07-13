@@ -1014,3 +1014,56 @@ fn test_in_array_strict_distinguishes_bool_int_membership() {
     );
     assert_eq!(out, "101010");
 }
+
+/// Verifies a nested array-element append `$this->prop[$k][] = $v` auto-vivifies a missing
+/// inner array (PHP semantics) and accumulates across calls, byte-parity with PHP 8.5. The
+/// desugar reads the element coalesced to `[]` before pushing, so a first append to an absent
+/// key yields a one-element list rather than a corrupt value (native segfault before the fix).
+/// Re-port of the v0.26.0 fix dropped by the v0.26.1 re-port. Forge #552.
+#[test]
+fn test_nested_array_element_append_autovivifies() {
+    let out = compile_and_run(
+        r#"<?php
+class B {
+    private array $routeIndex = [];
+    public function add(string $p, string $c): void { $this->routeIndex[$p][] = $c; }
+    public function get(string $p): array { return $this->routeIndex[$p] ?? []; }
+}
+$b = new B();
+$b->add("home", "HomeBlock");
+$b->add("home", "HeroBlock");
+echo implode(",", $b->get("home"));
+"#,
+    );
+    assert_eq!(out, "HomeBlock,HeroBlock");
+}
+
+/// Verifies an array-append assignment in EXPRESSION position (a match-arm body):
+/// `match (true) { $x instanceof R => $this->index[$k][] = $v }` parses, appends, and the
+/// match yields the appended value (a Str, not an int-cast 0) — byte-parity with PHP 8.5.
+/// Mirrors BlockRegistryBuilder::indexRule. The `$key` comes from a plain param rather than a
+/// narrowed `$rule->pattern` so this isolates the append feature from the separate
+/// interface-narrowed-property-access gap. Forge #552.
+#[test]
+fn test_array_append_expression_in_match_arm() {
+    let out = compile_and_run(
+        r#"<?php
+interface Rule {}
+final class RouteRule implements Rule {}
+final class B {
+    private array $index = [];
+    public function add(Rule $rule, string $key, string $class): string {
+        return match (true) {
+            $rule instanceof RouteRule => $this->index[$key][] = $class,
+            default => "none",
+        };
+    }
+    public function get(string $p): array { return $this->index[$p] ?? []; }
+}
+$b = new B();
+$r = new RouteRule();
+echo $b->add($r, "home", "A") . "|" . $b->add($r, "home", "B") . "|" . implode(",", $b->get("home"));
+"#,
+    );
+    assert_eq!(out, "A|B|A,B");
+}

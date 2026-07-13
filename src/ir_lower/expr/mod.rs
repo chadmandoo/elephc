@@ -10475,6 +10475,13 @@ fn materialized_expr_type_for_merge(ctx: &LoweringContext<'_, '_>, expr: &Expr) 
                 .map(normalize_value_php_type)
                 .unwrap_or_else(|| fallback_expr_type(expr))
         }
+        // An assignment expression yields the assigned value, so its merge type is the value's
+        // type — not the syntactic-fallback Int. This matters for an append-assignment arm
+        // (`match (true) { ... => $a[$k][] = $v }`, #552): the desugar yields a temp bound to
+        // the rhs, so recursing into `value` recovers the rhs type via `local_type` rather than
+        // int-casting a Str/Object yield to 0 (the same silent-miscompile family as the call-arm
+        // case above).
+        ExprKind::Assignment { value, .. } => materialized_expr_type_for_merge(ctx, value),
         _ => fallback_expr_type(expr),
     }
 }
