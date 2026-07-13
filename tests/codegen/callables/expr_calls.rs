@@ -1451,3 +1451,84 @@ echo $cb();
     );
     assert_eq!(out, "B");
 }
+
+// --- First-class callable FROM a value callee (invokable object) — #613 ---
+// `<expr>(...)` where the callee is a value (a variable or a parenthesized expression
+// holding an invokable object) is semantically `<expr>->__invoke(...)`. The parser maps
+// it to the method-FCC form, reusing the existing invokable dispatch path. The
+// ControllerRouteRegistrar `(new Factory($id))(...)` registration is the motivating AIC case.
+
+/// Verifies that a first-class callable taken from an invokable-object variable calls correctly.
+#[test]
+fn test_fcc_from_invokable_object_variable() {
+    // Fixture: `$o = new Doubler(); $c = $o(...); $c(21)` → 42 via `Doubler::__invoke`.
+    let out = compile_and_run(
+        r#"<?php
+final class Doubler {
+    public function __invoke(int $n): int { return $n * 2; }
+}
+$o = new Doubler();
+$c = $o(...);
+echo $c(21);
+"#,
+    );
+    assert_eq!(out, "42");
+}
+
+/// Verifies that a first-class callable from a parenthesized invokable-object expression calls correctly.
+#[test]
+fn test_fcc_from_parenthesized_invokable_object_expr() {
+    // The motivating AIC pattern: `(new Factory($tag))(...)` used as a first-class callable.
+    // Fixture: `$c = (new Tagger("F"))(...); $c(3)` → "F:3".
+    let out = compile_and_run(
+        r#"<?php
+final class Tagger {
+    public function __construct(private string $tag) {}
+    public function __invoke(int $n): string { return $this->tag . ":" . $n; }
+}
+$c = (new Tagger("F"))(...);
+echo $c(3);
+"#,
+    );
+    assert_eq!(out, "F:3");
+}
+
+/// Verifies that the invokable receiver expression is evaluated once, at FCC creation.
+#[test]
+fn test_fcc_from_invokable_object_evaluates_receiver_once() {
+    // The constructor side-effect must fire exactly once (when the FCC is created), not per call.
+    // Fixture: `(new Counting())(...)` bound once, then invoked twice → a single "ctor" line.
+    let out = compile_and_run(
+        r#"<?php
+final class Counting {
+    public function __construct() { echo "ctor\n"; }
+    public function __invoke(int $n): int { return $n * 2; }
+}
+$c = (new Counting())(...);
+echo "made\n";
+echo $c(5), "\n";
+echo $c(7), "\n";
+"#,
+    );
+    assert_eq!(out, "ctor\nmade\n10\n14\n");
+}
+
+/// Verifies that an invokable-object first-class callable can be passed as an argument and invoked in the callee.
+#[test]
+fn test_fcc_from_invokable_object_passed_as_argument() {
+    // Mirrors the AIC `singleton($id, (new Factory($id))(...))` registration shape.
+    // Fixture: FCC built from `(new Factory("F"))(...)`, passed to `register()`, invoked there.
+    let out = compile_and_run(
+        r#"<?php
+final class Factory {
+    public function __construct(private string $tag) {}
+    public function __invoke(int $n): string { return $this->tag . ":" . $n; }
+}
+function register(string $id, callable $make): string {
+    return $id . " => " . $make(3);
+}
+echo register("svc", (new Factory("F"))(...));
+"#,
+    );
+    assert_eq!(out, "svc => F:3");
+}

@@ -11,10 +11,10 @@
 use crate::errors::CompileError;
 use crate::lexer::Token;
 use crate::names::Name;
-use crate::parser::ast::{Expr, ExprKind, MagicConstant, StaticReceiver};
+use crate::parser::ast::{CallableTarget, Expr, ExprKind, MagicConstant, StaticReceiver};
 use crate::span::Span;
 
-use super::calls::{parse_scoped_static_call, peek_cast};
+use super::calls::{parse_first_class_callable_parens, parse_scoped_static_call, peek_cast};
 use super::prefix_complex::{
     parse_arrow_closure, parse_attributed_closure, parse_closure, parse_match_expr,
     parse_named_expr, parse_new_object,
@@ -447,6 +447,20 @@ fn parse_variable(
             }
             Token::LParen => {
                 *pos += 1;
+                if parse_first_class_callable_parens(tokens, pos)? {
+                    // `$var(...)` — first-class callable from a value callee. An invokable
+                    // object's `$o(...)` is semantically `$o->__invoke(...)`, so map it to the
+                    // method-FCC the codegen already supports rather than a bespoke value-FCC.
+                    let object = Expr::new(ExprKind::Variable(name), span);
+                    let fcc_span = crate::parser::expr::span_through_prev_token(tokens, *pos, span);
+                    return Ok(Expr::new(
+                        ExprKind::FirstClassCallable(CallableTarget::Method {
+                            object: Box::new(object),
+                            method: "__invoke".to_string(),
+                        }),
+                        fcc_span,
+                    ));
+                }
                 let args = parse_args(tokens, pos, span)?;
                 let span = crate::parser::expr::span_through_prev_token(tokens, *pos, span);
                 return Ok(Expr::new(ExprKind::ClosureCall { var: name, args }, span));
@@ -490,6 +504,19 @@ fn parse_group_or_cast(
     if *pos < tokens.len() && tokens[*pos].0 == Token::LParen {
         let call_span = tokens[*pos].1;
         *pos += 1;
+        if parse_first_class_callable_parens(tokens, pos)? {
+            // `(expr)(...)` — first-class callable from a value callee (e.g. an invokable
+            // object: `(new Factory())(...)`). Map to `->__invoke(...)` method-FCC, mirroring
+            // the `$var(...)` case in `parse_variable`.
+            let fcc_span = crate::parser::expr::span_through_prev_token(tokens, *pos, call_span);
+            return Ok(Expr::new(
+                ExprKind::FirstClassCallable(CallableTarget::Method {
+                    object: Box::new(inner),
+                    method: "__invoke".to_string(),
+                }),
+                fcc_span,
+            ));
+        }
         let args = parse_args(tokens, pos, call_span)?;
         let call_span = crate::parser::expr::span_through_prev_token(tokens, *pos, call_span);
         return Ok(Expr::new(
