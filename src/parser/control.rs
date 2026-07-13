@@ -12,7 +12,7 @@ use crate::errors::CompileError;
 use crate::lexer::Token;
 use crate::parser::ast::{BinOp, CatchClause, Expr, ExprKind, Stmt, StmtKind};
 use crate::parser::expr::{parse_assignment_value_expr, parse_expr};
-use crate::parser::stmt::{expect_semicolon, expect_token, name_starts_at, parse_block, parse_body, parse_name};
+use crate::parser::stmt::{expect_semicolon, expect_token, name_starts_at, parse_block, parse_body, parse_foreach_destructure_target, parse_name};
 use crate::span::Span;
 
 /// Parse: if (expr) { stmts } (elseif (expr) { stmts })* (else { stmts })?
@@ -110,6 +110,37 @@ pub fn parse_while(
 
 /// Parses a foreach loop: `foreach ($array as $value)` or `foreach ($array as $key => $value)`.
 /// Supports by-reference values via `&` prefix and by-reference loop variables.
+/// Parses a foreach value/key target: a plain `$var` (returns its name, no unpack) or a `[...]`
+/// list-destructuring pattern (returns a synthesized temporary plus the list-unpack that spreads
+/// it into the pattern, to be prepended to the loop body). By-reference destructuring is rejected.
+/// `missing_var_msg` preserves the position-specific error text. #613
+fn parse_foreach_value_target(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    span: Span,
+    by_ref: bool,
+    missing_var_msg: &str,
+) -> Result<(String, Option<Stmt>), CompileError> {
+    match tokens.get(*pos).map(|(t, _)| t) {
+        Some(Token::Variable(n)) => {
+            let n = n.clone();
+            *pos += 1;
+            Ok((n, None))
+        }
+        Some(Token::LBracket) => {
+            if by_ref {
+                return Err(CompileError::new(
+                    span,
+                    "Cannot destructure a by-reference foreach value",
+                ));
+            }
+            let (temp, unpack) = parse_foreach_destructure_target(tokens, pos, span)?;
+            Ok((temp, Some(unpack)))
+        }
+        _ => Err(CompileError::new(span, missing_var_msg)),
+    }
+}
+
 pub fn parse_foreach(
     tokens: &[(Token, Span)],
     pos: &mut usize,
@@ -130,19 +161,23 @@ pub fn parse_foreach(
         false
     };
 
-    let first_var = match tokens.get(*pos).map(|(t, _)| t) {
-        Some(Token::Variable(n)) => n.clone(),
-        _ => return Err(CompileError::new(span, "Expected variable after 'as'")),
-    };
-    *pos += 1;
+    let (first_var, first_unpack) =
+        parse_foreach_value_target(tokens, pos, span, first_by_ref, "Expected variable after 'as'")?;
 
     // Check for => (foreach $arr as $key => $value)
-    let (key_var, value_var, value_by_ref) =
+    let (key_var, value_var, value_by_ref, value_unpack) =
         if *pos < tokens.len() && tokens[*pos].0 == Token::DoubleArrow {
         if first_by_ref {
             return Err(CompileError::new(
                 span,
                 "Key element cannot be a reference in foreach",
+            ));
+        }
+        // A foreach key is always a scalar; only the value position may destructure.
+        if first_unpack.is_some() {
+            return Err(CompileError::new(
+                span,
+                "foreach key cannot be a list destructuring pattern",
             ));
         }
         *pos += 1;
@@ -155,18 +190,19 @@ pub fn parse_foreach(
         } else {
             false
         };
-        let val_var = match tokens.get(*pos).map(|(t, _)| t) {
-            Some(Token::Variable(n)) => n.clone(),
-            _ => return Err(CompileError::new(span, "Expected variable after '=>'")),
-        };
-        *pos += 1;
-        (Some(first_var), val_var, value_by_ref)
+        let (val_var, val_unpack) =
+            parse_foreach_value_target(tokens, pos, span, value_by_ref, "Expected variable after '=>'")?;
+        (Some(first_var), val_var, value_by_ref, val_unpack)
     } else {
-        (None, first_var, first_by_ref)
+        (None, first_var, first_by_ref, first_unpack)
     };
 
     expect_token(tokens, pos, &Token::RParen, "Expected ')' after foreach")?;
-    let body = parse_body(tokens, pos)?;
+    let mut body = parse_body(tokens, pos)?;
+    // A `[...]` value pattern desugars to a leading list-unpack of the loop's temp variable.
+    if let Some(unpack) = value_unpack {
+        body.insert(0, unpack);
+    }
 
     Ok(Stmt::new(
         StmtKind::Foreach {

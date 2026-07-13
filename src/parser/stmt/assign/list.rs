@@ -66,6 +66,28 @@ pub(in crate::parser::stmt) fn parse_list_construct_unpack(
     Ok(lower_list_unpack(pattern, value, span))
 }
 
+/// Parses a `foreach` value-position list-destructuring target — the `[$x, $y]` in
+/// `foreach ($a as [$x, $y])` — starting at the `[`. Returns a synthesized temporary variable
+/// name for the loop to bind each element to, plus the list-unpack statement that spreads that
+/// temporary into the pattern. The foreach parser uses the temp as the loop value variable and
+/// prepends the unpack to the loop body, so `foreach ($a as [$x, $y]) { B }` desugars to
+/// `foreach ($a as $tmp) { [$x, $y] = $tmp; B }` — reusing the existing list-unpack lowering,
+/// including skipped entries (`[, $y]`) and nested patterns. #613
+pub(in crate::parser) fn parse_foreach_destructure_target(
+    tokens: &[(Token, Span)],
+    pos: &mut usize,
+    span: Span,
+) -> Result<(String, Stmt), CompileError> {
+    let pattern = parse_bracket_list_pattern(tokens, pos, span)?;
+    let temp = format!("__elephc_foreach_dtor_{}_{}", span.line, span.col);
+    let unpack = lower_list_unpack(
+        pattern,
+        Expr::new(ExprKind::Variable(temp.clone()), span),
+        span,
+    );
+    Ok((temp, unpack))
+}
+
 /// Represents a list destructuring pattern with ordered entries.
 #[derive(Debug, Clone)]
 struct ListPattern {

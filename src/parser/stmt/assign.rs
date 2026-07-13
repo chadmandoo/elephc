@@ -18,6 +18,7 @@ pub(super) use list::{
     parse_list_construct_unpack,
     parse_list_unpack,
 };
+pub(in crate::parser) use list::parse_foreach_destructure_target;
 pub(super) use locals::{
     looks_like_typed_assign,
     parse_global,

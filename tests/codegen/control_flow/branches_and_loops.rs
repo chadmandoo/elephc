@@ -344,3 +344,25 @@ echo pick(1), "|", pick(2);
     );
     assert_eq!(out, "A|B");
 }
+
+/// Verifies `foreach` with a `[...]` list-destructuring value pattern — plain (`[$a, $b]`), a
+/// skipped entry (`[, $b]`), a keyed form (`$k => [$a, $b]`), and a nested pattern — desugars to
+/// a temp-bound loop plus a leading list-unpack, byte-parity with PHP. Mirrors AuditLogRenderer's
+/// `foreach (self::DETAIL_FIELDS as [$label, $field])`. #613
+#[test]
+fn test_foreach_list_destructuring_value_pattern() {
+    let out = compile_and_run(
+        r#"<?php
+$rows = [['a', 1], ['b', 2]];
+foreach ($rows as [$label, $val]) { echo "$label=$val;"; }
+echo "|";
+foreach ($rows as [, $val]) { echo "$val;"; }
+echo "|";
+foreach ($rows as $i => [$name, $n]) { echo "$i:$name=$n;"; }
+echo "|";
+$nested = [[1, [2, 3]]];
+foreach ($nested as [$a, [$b, $c]]) { echo "$a,$b,$c"; }
+"#,
+    );
+    assert_eq!(out, "a=1;b=2;|1;2;|0:a=1;1:b=2;|1,2,3");
+}
