@@ -356,8 +356,8 @@ pub(super) fn emit_web_handler_prologue(ctx: &mut FunctionContext<'_>) {
 ///
 /// Like `emit_main_epilogue` it runs the per-request main local cleanup (so
 /// owned refcounted top-level locals are released each request) and restores the
-/// frame, but it `ret`s instead of exiting and skips the process-end gc-stats and
-/// heap-debug diagnostics, which are wrong to report per request.
+/// frame, but it `ret`s instead of exiting. Requested gc-stats are emitted after
+/// cleanup for every request; process-end heap-debug diagnostics remain skipped.
 pub(super) fn emit_web_handler_epilogue(ctx: &mut FunctionContext<'_>) {
     ctx.emitter.blank();
     ctx.emitter.comment("web handler epilogue + ret");
