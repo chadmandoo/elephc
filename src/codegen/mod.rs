@@ -197,7 +197,10 @@ fn finalize_user_asm(
     let user_functions = runtime_user_function_sigs(module);
     let function_variant_groups = runtime_function_variant_groups(module);
     let mut allowed_class_names = runtime_referenced_class_names(module);
-    if module_uses_dynamic_callable_lookup(module) || module_uses_dynamic_class_exists(module) {
+    if module_uses_dynamic_callable_lookup(module)
+        || module_uses_dynamic_class_exists(module)
+        || module_uses_runtime_is_subclass_of(module)
+    {
         allowed_class_names.extend(module.class_infos.keys().cloned());
     }
     let runtime_interfaces = runtime_referenced_interfaces(module, &allowed_class_names);
@@ -348,6 +351,38 @@ fn function_uses_dynamic_callable_lookup(module: &Module, function: &Function) -
 /// Such a call scans the emitted `_classes_by_name` table via `__rt_class_exists`, so the table
 /// must contain every user class (not only the ones reachable through `new $c()`). A
 /// string-literal argument is folded at compile time and needs no table, so it does not trigger.
+/// Returns true when any function calls `is_subclass_of()`. A runtime (class-name-string)
+/// receiver resolves both operands through the `_instanceof_target_entries` table + the class
+/// parent/interface metadata at runtime (see `emit_runtime_is_subclass_of`), so every user class
+/// and interface must be present in those tables — the same requirement as dynamic `class_exists`.
+/// (Purely static-object `is_subclass_of($obj, X::class)` calls also trip this and harmlessly
+/// complete the table.)
+fn module_uses_runtime_is_subclass_of(module: &Module) -> bool {
+    module
+        .functions
+        .iter()
+        .chain(module.class_methods.iter())
+        .chain(module.closures.iter())
+        .chain(module.fiber_wrappers.iter())
+        .chain(module.callback_wrappers.iter())
+        .chain(module.extern_callback_trampolines.iter())
+        .chain(module.runtime_callable_invokers.iter())
+        .any(|function| {
+            function.instructions.iter().any(|inst| {
+                if inst.op != Op::BuiltinCall {
+                    return false;
+                }
+                let Some(Immediate::Data(data)) = inst.immediate else {
+                    return false;
+                };
+                let Some(name) = module.data.function_names.get(data.as_raw() as usize) else {
+                    return false;
+                };
+                crate::names::php_symbol_key(name.trim_start_matches('\\')) == "is_subclass_of"
+            })
+        })
+}
+
 fn module_uses_dynamic_class_exists(module: &Module) -> bool {
     module
         .functions
@@ -623,7 +658,7 @@ fn runtime_referenced_interfaces(
     class_names: &HashSet<String>,
 ) -> HashMap<String, InterfaceInfo> {
     let mut names = HashSet::new();
-    if module_uses_dynamic_instanceof(module) {
+    if module_uses_dynamic_instanceof(module) || module_uses_runtime_is_subclass_of(module) {
         names.extend(dynamic_instanceof_interface_names(module));
     }
     for class_name in referenced_class_data_names(module) {

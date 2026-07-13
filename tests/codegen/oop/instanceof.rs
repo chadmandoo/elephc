@@ -418,3 +418,32 @@ echo is_subclass_of($sub, D::class) ? '1' : '0';          // unrelated
     );
     assert_eq!(out, "11100");
 }
+
+/// Verifies `is_subclass_of($clsName, $targetName)` with RUNTIME class-name strings (not a known
+/// object receiver) — the form PluginManager's forType() narrowing needs. Resolves both names at
+/// runtime and walks the hierarchy: parent, grandparent, direct + transitively-inherited
+/// interface, unrelated, excluded-self, and unknown class names. #636.
+#[test]
+fn test_is_subclass_of_runtime_string_receiver_walks_hierarchy() {
+    let out = compile_and_run(
+        r#"<?php
+interface I {}
+interface J extends I {}
+class Base implements I {}
+class Mid extends Base {}
+final class Leaf extends Mid {}
+final class D implements J {}
+final class Unrel {}
+function sc(string $a, string $b): string { return is_subclass_of($a, $b) ? '1' : '0'; }
+echo sc(Leaf::class, Mid::class);    // parent
+echo sc(Leaf::class, Base::class);   // grandparent
+echo sc(Leaf::class, I::class);      // inherited interface
+echo sc(D::class, I::class);         // transitive interface (J extends I)
+echo sc(Leaf::class, Unrel::class);  // unrelated
+echo sc(Base::class, Base::class);   // self -> excluded
+echo sc('NoSuchClass', Base::class); // unknown subject
+echo sc(Leaf::class, 'NoSuchTgt');   // unknown target
+"#,
+    );
+    assert_eq!(out, "11110000");
+}

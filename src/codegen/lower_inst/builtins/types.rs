@@ -406,16 +406,81 @@ pub(crate) fn lower_is_a_relation(
     name: &str,
 ) -> Result<()> {
     super::ensure_arg_count_between(inst, name, 2, 3)?;
-    for value in &inst.operands {
-        ctx.load_value_to_result(*value)?;
-    }
 
     let object = expect_operand(inst, 0)?;
     let target = expect_operand(inst, 1)?;
     let exclude_self = name == "is_subclass_of";
-    let result = static_relation_holds(ctx, object, target, exclude_self)?;
-    emit_bool_result(ctx, result);
+    match static_relation_holds(ctx, object, target, exclude_self)? {
+        Some(result) => {
+            // Statically determinable: evaluate operand side effects, then emit the constant.
+            for value in &inst.operands {
+                ctx.load_value_to_result(*value)?;
+            }
+            emit_bool_result(ctx, result);
+        }
+        None => emit_runtime_is_subclass_of(ctx, object, target)?,
+    }
     store_if_result(ctx, inst)
+}
+
+/// Emits `is_subclass_of($clsName, $targetName)` for the runtime case — both operands are
+/// class-name strings resolved at runtime. Resolves each name to a class id via the shared
+/// dynamic-lookup table (`__rt_instanceof_lookup`), then walks the first class's ancestor /
+/// interface hierarchy for the target id via `__rt_exception_matches` (fed a stack slot holding
+/// the id as a synthetic object header). `is_subclass_of` excludes self, so an id-equal pair is
+/// false. Unknown class names are false, matching PHP.
+///
+/// x86_64 only for now; ARM64 keeps the prior conservative `false` (the mirror is #636 follow-up).
+fn emit_runtime_is_subclass_of(
+    ctx: &mut FunctionContext<'_>,
+    object: ValueId,
+    target: ValueId,
+) -> Result<()> {
+    if ctx.emitter.target.arch != Arch::X86_64 {
+        // Evaluate both operands (side effects) then emit the conservative false.
+        let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+        ctx.load_string_value_to_regs(object, ptr_reg, len_reg)?;
+        let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+        ctx.load_string_value_to_regs(target, ptr_reg, len_reg)?;
+        emit_bool_result(ctx, false);
+        return Ok(());
+    }
+
+    let false_no_pop = ctx.next_label("rt_is_subclass_false");
+    let false_pop = ctx.next_label("rt_is_subclass_false_pop");
+    let done = ctx.next_label("rt_is_subclass_done");
+
+    // Resolve arg0 (the subject class name) -> id1. An unknown name is false.
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(object, ptr_reg, len_reg)?;
+    abi::emit_call_label(ctx.emitter, "__rt_instanceof_lookup");
+    ctx.emitter.instruction("test rax, rax"); // did the subject class-string resolve?
+    ctx.emitter.instruction(&format!("je {}", false_no_pop));
+    ctx.emitter.instruction("mov rax, rdi"); // rax = subject class id (id1)
+    abi::emit_push_reg(ctx.emitter, "rax"); // spill id1 (16-byte aligned); [rsp] = id1
+
+    // Resolve arg1 (the target class/interface name) -> id2 (rdi), kind (rdx).
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(target, ptr_reg, len_reg)?;
+    abi::emit_call_label(ctx.emitter, "__rt_instanceof_lookup");
+    ctx.emitter.instruction("test rax, rax"); // did the target class-string resolve?
+    ctx.emitter.instruction(&format!("je {}", false_pop));
+    ctx.emitter.instruction("mov rcx, [rsp]"); // rcx = id1 (preserved across the call on the stack)
+    ctx.emitter.instruction("cmp rcx, rdi"); // is_subclass_of excludes self: id1 == id2 -> false
+    ctx.emitter.instruction(&format!("je {}", false_pop));
+    ctx.emitter.instruction("mov rsi, rdi"); // arg1 = target id
+    ctx.emitter.instruction("mov rdi, rsp"); // arg0 = &id1 (synthetic object header: [rdi] = id1)
+    // rdx already holds the target kind (0 class / 1 interface) from the lookup = arg2.
+    abi::emit_call_label(ctx.emitter, "__rt_exception_matches"); // rax = 1 if id1 extends/implements id2
+    abi::emit_pop_reg(ctx.emitter, "rcx"); // discard the spilled id1 (balances the push)
+    ctx.emitter.instruction(&format!("jmp {}", done));
+
+    ctx.emitter.label(&false_pop);
+    abi::emit_pop_reg(ctx.emitter, "rcx"); // balance the push on the failure paths
+    ctx.emitter.label(&false_no_pop);
+    ctx.emitter.instruction("xor eax, eax"); // result = false
+    ctx.emitter.label(&done);
+    Ok(())
 }
 
 /// Lowers `get_declared_classes/interfaces/traits()` using the shared declaration registry.
@@ -577,28 +642,42 @@ fn emit_bool_result(ctx: &mut FunctionContext<'_>, value: bool) {
 }
 
 /// Statically evaluates an object/class relation against a literal target class name.
+/// Resolves an `is_a`/`is_subclass_of` relation at compile time when possible.
+///
+/// Returns `Some(bool)` when the answer is statically determinable (a known object receiver
+/// against a literal/`::class` target), or `None` when it needs the runtime hierarchy walk —
+/// i.e. the receiver is a runtime class-name string. Only `is_subclass_of` (whose `allow_string`
+/// defaults true) routes a string receiver to the runtime path; `is_a`'s string receiver
+/// (`allow_string` default false) stays conservatively false.
 fn static_relation_holds(
     ctx: &FunctionContext<'_>,
     object: ValueId,
     target: ValueId,
     exclude_self: bool,
-) -> Result<bool> {
-    let PhpType::Object(object_class) = ctx.value_php_type(object)? else {
-        return Ok(false);
+) -> Result<Option<bool>> {
+    let object_ty = ctx.value_php_type(object)?;
+    if matches!(
+        object_ty,
+        PhpType::Str | PhpType::Mixed | PhpType::Union(_)
+    ) {
+        return Ok(if exclude_self { None } else { Some(false) });
+    }
+    let PhpType::Object(object_class) = object_ty else {
+        return Ok(Some(false));
     };
     let Some(target_class) = optional_const_string_operand(ctx, target)? else {
-        return Ok(false);
+        return Ok(Some(false));
     };
     let object_class = object_class.trim_start_matches('\\');
     let target_class = target_class.trim_start_matches('\\');
     let target_key = php_symbol_key(target_class);
     if !exclude_self && php_symbol_key(object_class) == target_key {
-        return Ok(true);
+        return Ok(Some(true));
     }
     if parent_chain_contains(ctx, object_class, &target_key) {
-        return Ok(true);
+        return Ok(Some(true));
     }
-    Ok(class_interfaces_contain(ctx, object_class, &target_key))
+    Ok(Some(class_interfaces_contain(ctx, object_class, &target_key)))
 }
 
 /// Returns true when an object's parent chain contains the target PHP symbol key.
