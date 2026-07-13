@@ -1517,3 +1517,22 @@ function listeners(): iterable {
     );
     assert_eq!(out, "L1L2");
 }
+
+/// Verifies `Closure::fromCallable()` wraps each callable form (string function name, an
+/// existing closure, and a `[Class, method]` static-method array) into an invokable value —
+/// byte-parity with PHP. elephc invokes those callable forms uniformly, so the wrap is the
+/// callable itself (no runtime wrapper). Forge #605 (ward-events ListenerProviderBuilder).
+#[test]
+fn test_closure_from_callable_wraps_each_callable_form() {
+    let out = compile_and_run(
+        r#"<?php
+function shout(string $s): string { return strtoupper($s); }
+class Fmt { public static function tag(string $s): string { return "[" . $s . "]"; } }
+$fromString = Closure::fromCallable('shout');
+$fromClosure = Closure::fromCallable(fn(int $x): int => $x * 3);
+$fromArray = Closure::fromCallable([Fmt::class, 'tag']);
+echo $fromString("hi"), "|", $fromClosure(5), "|", $fromArray("ok");
+"#,
+    );
+    assert_eq!(out, "HI|15|[ok]");
+}

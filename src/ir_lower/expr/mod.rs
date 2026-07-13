@@ -9475,6 +9475,15 @@ fn lower_static_method_call(
             };
             return emit_closure_bind(ctx, closure.value, new_this.value, expr);
         }
+        // `Closure::fromCallable($c)` wraps a callable in a Closure. elephc invokes string,
+        // array, and closure callables uniformly, so the wrapped value IS the callable — lower
+        // and return the argument directly (no runtime wrapper needed).
+        if name.trim_start_matches('\\') == "Closure"
+            && php_symbol_key(method) == "fromcallable"
+            && !args.is_empty()
+        {
+            return lower_expr(ctx, &args[0]);
+        }
     }
     let sig = static_method_implementation_signature(ctx, receiver, method)
         .or_else(|| lexical_instance_static_call_signature(ctx, receiver, method))

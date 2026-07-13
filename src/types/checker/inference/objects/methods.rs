@@ -735,6 +735,17 @@ impl Checker {
             }
             return Ok(PhpType::Callable);
         }
+        // `Closure::fromCallable($callable)` wraps any callable (string function name,
+        // `[obj, method]` array, or existing closure) in a Closure. elephc invokes those
+        // callable forms uniformly, so the wrapped value is the callable itself — a Callable.
+        if class_name.trim_start_matches('\\') == "Closure"
+            && php_symbol_key(method) == "fromcallable"
+        {
+            for arg in args {
+                self.infer_type(arg, env)?;
+            }
+            return Ok(PhpType::Callable);
+        }
         if let Some(enum_info) = self.enums.get(class_name).cloned() {
             return self
                 .check_enum_static_call(&enum_info, class_name, method, args, env, expr.span);
