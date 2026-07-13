@@ -550,3 +550,30 @@ echo $r->binaryIsEmpty() ? "1" : "0";
     );
     assert_eq!(out, "11");
 }
+
+/// Regression (#625): a `use`-imported alias referenced inside the ARGUMENTS of a dynamic
+/// `new $class(...)` must be name-resolved. `ExprKind::NewDynamic` had no name-resolver arm, so it
+/// fell through to the catch-all and its arguments kept their short names —
+/// `new $class(new Props($x))` reported "Undefined class: Props". This is the AIC
+/// `new $class(new LayoutNodeProps(...))` and `new $controlClass(variant: ButtonVariant::Primary)`
+/// shape (resolved fine as a plain `new`, only the dynamic-new form escaped resolution).
+#[test]
+fn test_dynamic_new_resolves_use_aliases_in_arguments() {
+    let out = compile_and_run(
+        r#"<?php
+namespace Cat {
+    final class Props { public function __construct(public int $x) {} }
+    final class Widget { public function __construct(public Props $p) {} }
+}
+namespace App {
+    use Cat\Props;
+    use Cat\Widget;
+    function make(string $class, int $x): object {
+        return new $class(new Props($x));
+    }
+    echo make(Widget::class, 7)->p->x;
+}
+"#,
+    );
+    assert_eq!(out, "7");
+}

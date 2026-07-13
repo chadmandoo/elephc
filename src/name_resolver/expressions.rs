@@ -227,6 +227,18 @@ pub(super) fn resolve_expr(
                 .map(|arg| resolve_expr(arg, current_namespace, imports, symbols))
                 .collect(),
         },
+        // `new $class(...)` — the dynamic class expression AND its arguments must be resolved.
+        // Without this arm `NewDynamic` fell through to the catch-all `_ => expr.kind.clone()`,
+        // leaving imported aliases inside the arguments unresolved, e.g.
+        // `new $class(new LayoutNodeProps(...))` reported "Undefined class: LayoutNodeProps".
+        // Same class of bug as the `NamedArg` arm below.
+        ExprKind::NewDynamic { name_expr, args } => ExprKind::NewDynamic {
+            name_expr: Box::new(resolve_expr(name_expr, current_namespace, imports, symbols)),
+            args: args
+                .iter()
+                .map(|arg| resolve_expr(arg, current_namespace, imports, symbols))
+                .collect(),
+        },
         ExprKind::PropertyAccess { object, property } => ExprKind::PropertyAccess {
             object: Box::new(resolve_expr(object, current_namespace, imports, symbols)),
             property: property.clone(),
