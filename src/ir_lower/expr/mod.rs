@@ -7166,7 +7166,7 @@ fn lower_match(
     expr: &Expr,
 ) -> LoweredValue {
     let subject = lower_expr(ctx, subject);
-    let mut result_type = fallback_expr_type(expr);
+    let mut result_type = match_merged_arm_type(ctx, arms, default, expr);
     if match_null_arm_would_lose_nullness(arms, default, &result_type) {
         result_type = PhpType::Mixed;
     }
@@ -10371,6 +10371,30 @@ fn branch_merge_result_type(
     wider_type_for_merge(&fallback_ty, &branch_ty.codegen_repr())
 }
 
+/// Computes a `match` expression's result temp type by merging every arm's (and the default's)
+/// materialized type — the N-ary analogue of `branch_merge_result_type`. Without this the whole
+/// match expr falls to `fallback_expr_type` (syntactic), which types call arms as Int, so a match
+/// merging non-int CALL arms builds an Int temp and int-casts each arm (silent 0 for Str, an EIR
+/// "int cast for Object" error for objects). Arms of identical storage keep that concrete type;
+/// arms of differing storage fall back to `Mixed`, which holds any value without a lossy coercion.
+fn match_merged_arm_type(
+    ctx: &LoweringContext<'_, '_>,
+    arms: &[(Vec<Expr>, Expr)],
+    default: Option<&Expr>,
+    expr: &Expr,
+) -> PhpType {
+    let mut merged: Option<PhpType> = None;
+    for arm_expr in arms.iter().map(|(_, result)| result).chain(default) {
+        let arm_ty = materialized_expr_type_for_merge(ctx, arm_expr);
+        merged = Some(match merged {
+            None => arm_ty,
+            Some(acc) if acc.codegen_repr() == arm_ty.codegen_repr() => acc,
+            Some(_) => PhpType::Mixed,
+        });
+    }
+    merged.unwrap_or_else(|| fallback_expr_type(expr))
+}
+
 /// Chooses a ternary branch merge type without erasing PHP null branches.
 fn nullable_aware_branch_merge_type(left: &PhpType, right: &PhpType) -> PhpType {
     if php_type_allows_null(left) || php_type_allows_null(right) {
@@ -10423,6 +10447,32 @@ fn materialized_expr_type_for_merge(ctx: &LoweringContext<'_, '_>, expr: &Expr) 
             .unwrap_or_else(|| fallback_expr_type(expr)),
         ExprKind::PropertyAccess { object, property } => {
             property_access_expr_type_for_ir(ctx, object, property)
+                .unwrap_or_else(|| fallback_expr_type(expr))
+        }
+        // A call arm carries the callee's declared return type, not Int. Without this the
+        // syntactic fallback types every call as Int, so a `?:`/`match` merging two call arms
+        // over a non-int type builds an Int result temp and coerces each arm to Int (silently
+        // 0 for Str, an EIR "int cast for Object" error for objects). Resolve the return type
+        // from the same registries the call lowering uses (return-type is arg-independent for
+        // user functions/methods, so empty operands are sufficient here).
+        ExprKind::FunctionCall { name, .. } => {
+            let resolved = normalize_value_php_type(call_return_type(ctx, name.as_str(), &[]));
+            if matches!(resolved, PhpType::Mixed) {
+                fallback_expr_type(expr)
+            } else {
+                resolved
+            }
+        }
+        ExprKind::MethodCall { object, method, .. }
+        | ExprKind::NullsafeMethodCall { object, method, .. } => {
+            let method_key = php_symbol_key(method);
+            let object_ty = materialized_expr_type_for_merge(ctx, object);
+            singular_object_class(&object_ty)
+                .and_then(|(class, _)| {
+                    class_method_return_type_for_ir(ctx, class, &method_key)
+                        .or_else(|| interface_method_return_type_for_ir(ctx, class, &method_key))
+                })
+                .map(normalize_value_php_type)
                 .unwrap_or_else(|| fallback_expr_type(expr))
         }
         _ => fallback_expr_type(expr),

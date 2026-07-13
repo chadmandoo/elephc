@@ -224,3 +224,47 @@ echo $pick ? $n->a : $n->b;
     );
     assert_eq!(out, "Tishri");
 }
+
+/// Regression (#635): a ternary whose BOTH arms are function CALLS returning a
+/// non-int type must keep the result that type. Previously `branch_merge_result_type`
+/// typed call arms syntactically (Int), built an Int result temp, and int-cast each
+/// arm — silently returning 0 for strings.
+#[test]
+fn test_ternary_both_arms_string_function_calls() {
+    let out = compile_and_run(
+        r#"<?php
+function a(): string { return "A"; }
+function b(): string { return "B"; }
+function pick(bool $flag): string { return $flag ? a() : b(); }
+echo pick(true) . "|" . pick(false);
+"#,
+    );
+    assert_eq!(out, "A|B");
+}
+
+/// Regression (#635): a ternary merging two METHOD calls that return OBJECTS must
+/// build an object-typed result temp, not an Int one — the Int temp raised the EIR
+/// backend "int cast for Object" error. Mirrors ComponentRenderer::render()'s
+/// instanceof-guarded object dispatch.
+#[test]
+fn test_ternary_both_arms_object_method_calls() {
+    let out = compile_and_run(
+        r#"<?php
+final class Html { public function __construct(public string $s) {} }
+interface Tmpl { public function nm(): string; }
+abstract class Comp { abstract public function render(): Html; }
+final class Widget extends Comp implements Tmpl {
+    public function render(): Html { return new Html("wr"); }
+    public function nm(): string { return "wnm"; }
+}
+final class Plain extends Comp { public function render(): Html { return new Html("plain"); } }
+final class R {
+    public function go(Comp $c): Html { return $c instanceof Tmpl ? $this->cap($c) : $c->render(); }
+    private function cap(Tmpl $t): Html { return new Html("tmpl:" . $t->nm()); }
+}
+$r = new R();
+echo $r->go(new Widget())->s . "|" . $r->go(new Plain())->s;
+"#,
+    );
+    assert_eq!(out, "tmpl:wnm|plain");
+}

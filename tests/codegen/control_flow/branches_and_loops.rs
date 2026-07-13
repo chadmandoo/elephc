@@ -321,3 +321,26 @@ echo $sum, ":", $ticks;
     );
     assert_eq!(out, "90:3");
 }
+
+/// Regression (#635): a `match` expression whose arms are function CALLS returning a
+/// non-int type must merge the arm types instead of falling to the syntactic Int default,
+/// which built an Int result temp and int-cast each arm (silently 0 for strings). The
+/// match analogue of the ternary call-arm branch-merge fix.
+#[test]
+fn test_match_arms_are_string_function_calls() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function a(): string { return "A"; }
+function b(): string { return "B"; }
+function pick(int $n): string {
+    return match ($n) {
+        1 => a(),
+        default => b(),
+    };
+}
+echo pick(1), "|", pick(2);
+"#,
+    );
+    assert_eq!(out, "A|B");
+}
