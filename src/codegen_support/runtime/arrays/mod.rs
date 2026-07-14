@@ -35,6 +35,7 @@ mod array_flip;
 mod array_flip_string;
 mod array_free_deep;
 mod array_get_mixed_key;
+mod array_key_exists_mixed;
 mod array_grow;
 mod array_hash_union;
 mod array_intersect;
@@ -258,6 +259,7 @@ pub use array_set_mixed::emit_array_set_mixed;
 /// Emit boxed-Mixed-key indexed/hash array set helper.
 pub use array_set_mixed_key::emit_array_set_mixed_key;
 pub use array_get_mixed_key::emit_array_get_mixed_key;
+pub use array_key_exists_mixed::emit_array_key_exists_mixed;
 /// Emit refcounted indexed-array set helper.
 pub use array_set_refcounted::emit_array_set_refcounted;
 /// Emit refcounted indexed-array set helper.

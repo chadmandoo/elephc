@@ -201,6 +201,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_array_set_mixed(emitter);
     arrays::emit_array_set_mixed_key(emitter);
     arrays::emit_array_get_mixed_key(emitter);
+    arrays::emit_array_key_exists_mixed(emitter);
     arrays::emit_array_set_refcounted(emitter);
     arrays::emit_array_set_str(emitter);
     arrays::emit_array_union(emitter);

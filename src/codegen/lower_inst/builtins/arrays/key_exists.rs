@@ -24,13 +24,47 @@ pub(super) fn lower_array_key_exists(ctx: &mut FunctionContext<'_>, inst: &Instr
     let key = expect_operand(inst, 0)?;
     let array = expect_operand(inst, 1)?;
     match ctx.value_php_type(array)?.codegen_repr() {
-        PhpType::Array(_) => lower_indexed_array_key_exists(ctx, inst, key, array),
+        // An indexed array with an integer(-like) key is a direct bounds check on
+        // pure indexed storage. A string/Mixed key against a statically indexed array
+        // means the array's runtime storage kind is ambiguous (`Array(Mixed)` is
+        // indexed OR hash-promoted), so it must dispatch on the runtime kind byte.
+        PhpType::Array(_) => match ctx.value_php_type(key)?.codegen_repr() {
+            PhpType::Int | PhpType::Bool => lower_indexed_array_key_exists(ctx, inst, key, array),
+            _ => lower_mixed_array_key_exists(ctx, inst, key, array),
+        },
         PhpType::AssocArray { .. } => lower_assoc_array_key_exists(ctx, inst, key, array),
         other => Err(CodegenIrError::unsupported(format!(
             "array_key_exists for PHP array type {:?}",
             other
         ))),
     }
+}
+
+/// Lowers key existence for an array whose runtime storage kind is only known at
+/// runtime (`Array(Mixed)`, or an indexed array probed with a string/Mixed key).
+///
+/// Materializes the normalized key pair exactly as the associative path does (so a
+/// numeric string is coerced to its integer key), then dispatches on the array
+/// header's kind byte through `__rt_array_key_exists_mixed`.
+fn lower_mixed_array_key_exists(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    key: ValueId,
+    array: ValueId,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            materialize_hash_key_aarch64(ctx, key)?;
+            ctx.load_value_to_reg(array, "x0")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_key_exists_mixed");
+        }
+        Arch::X86_64 => {
+            materialize_hash_key_x86_64(ctx, key)?;
+            ctx.load_value_to_reg(array, "rdi")?;
+            abi::emit_call_label(ctx.emitter, "__rt_array_key_exists_mixed");
+        }
+    }
+    store_if_result(ctx, inst)
 }
 
 /// Lowers indexed-array key existence through the bounds-check runtime helper.
