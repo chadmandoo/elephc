@@ -14,6 +14,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::codegen::abi;
+use crate::codegen::emit::Emitter;
 use crate::codegen::platform::{Arch, Target};
 use crate::codegen::{
     emit_box_current_value_as_mixed, emit_write_current_string_stderr, emit_write_literal_stderr,
@@ -25,6 +26,7 @@ use crate::names::ir_global_symbol;
 use crate::types::PhpType;
 
 use super::context::FunctionContext;
+use super::local_analysis::LocalSlotAnalysis;
 use super::value_placement::{self, ValuePlacement};
 
 const FRAME_FOOTER_BYTES: usize = 16;
@@ -42,11 +44,13 @@ pub(super) const WEB_HANDLER_SYMBOL: &str = "_elephc_web_handler";
 pub(super) struct FrameLayout {
     pub(super) value_placement: ValuePlacement,
     pub(super) local_offsets: HashMap<LocalSlotId, usize>,
+    pub(super) ref_cell_state_offsets: HashMap<LocalSlotId, usize>,
     pub(super) try_handler_offsets: HashMap<i64, usize>,
     pub(super) concat_base_offset: usize,
     pub(super) frame_size: usize,
     pub(super) allocation: Allocation,
     pub(super) callee_saved_offsets: Vec<(&'static str, usize)>,
+    pub(super) local_analysis: LocalSlotAnalysis,
 }
 
 /// Computes the register allocation and fixed stack slots for a function.
@@ -68,6 +72,7 @@ pub(super) fn layout_for_function(
     };
 
     let value_placement = value_placement::allocate(function);
+    let local_analysis = LocalSlotAnalysis::new(function);
     let mut local_offsets = HashMap::new();
     let mut offset = value_placement.total_slot_bytes;
     for local in &function.locals {
@@ -78,6 +83,13 @@ pub(super) fn layout_for_function(
         }
         offset += bytes;
         local_offsets.insert(local.id, offset);
+    }
+    let mut ref_cell_state_offsets = HashMap::new();
+    let mut dynamic_ref_cell_slots = local_analysis.dynamic_ref_cell_slots().collect::<Vec<_>>();
+    dynamic_ref_cell_slots.sort_by_key(|slot| slot.as_raw());
+    for slot in dynamic_ref_cell_slots {
+        offset += 8;
+        ref_cell_state_offsets.insert(slot, offset);
     }
     let mut try_handler_offsets = HashMap::new();
     for token in try_handler_tokens(function) {
@@ -95,11 +107,13 @@ pub(super) fn layout_for_function(
     FrameLayout {
         value_placement,
         local_offsets,
+        ref_cell_state_offsets,
         try_handler_offsets,
         concat_base_offset,
         frame_size,
         allocation,
         callee_saved_offsets,
+        local_analysis,
     }
 }
 
@@ -163,6 +177,7 @@ pub(super) fn emit_main_prologue(ctx: &mut FunctionContext<'_>) {
         abi::emit_enable_heap_debug_flag(ctx.emitter);
     }
     zero_initialize_main_cleanup_locals(ctx);
+    zero_initialize_ref_cell_state_slots(ctx);
     zero_initialize_ref_cell_owner_locals(ctx);
     zero_initialize_eval_context_locals(ctx);
     zero_initialize_eval_scope_locals(ctx);
@@ -198,20 +213,35 @@ pub(super) fn emit_function_prologue_with_label(
             &mut incoming_args,
         );
         let local_ty = ctx.local_php_type(slot)?;
-        if !param.by_ref
+        let converted_to_owned_mixed = !param.by_ref
             && local_ty.codegen_repr() == PhpType::Mixed
-            && param.php_type.codegen_repr() != PhpType::Mixed
-        {
+            && param.php_type.codegen_repr() != PhpType::Mixed;
+        if converted_to_owned_mixed {
             abi::emit_load(ctx.emitter, &param.php_type.codegen_repr(), offset);
             emit_box_current_value_as_mixed(ctx.emitter, &param.php_type.codegen_repr());
             abi::emit_store(ctx.emitter, &PhpType::Mixed, offset);
         }
+        if ctx.owns_parameter_slot(slot) && !converted_to_owned_mixed {
+            retain_owned_parameter_local(ctx.emitter, offset, &local_ty);
+        }
     }
     zero_initialize_function_cleanup_locals(ctx);
+    zero_initialize_ref_cell_state_slots(ctx);
     zero_initialize_ref_cell_owner_locals(ctx);
     zero_initialize_eval_context_locals(ctx);
     zero_initialize_eval_scope_locals(ctx);
     Ok(())
+}
+
+/// Retains a mutable by-value parameter so its frame slot has one callee-owned reference.
+fn retain_owned_parameter_local(emitter: &mut Emitter, offset: usize, ty: &PhpType) {
+    abi::emit_load(emitter, ty, offset);
+    if matches!(ty, PhpType::Str) {
+        abi::emit_call_label(emitter, "__rt_str_persist");
+    } else {
+        abi::emit_incref_if_refcounted(emitter, ty);
+    }
+    abi::emit_store(emitter, ty, offset);
 }
 
 /// Captures the caller-visible concat-buffer offset as this frame's reset base.
@@ -347,6 +377,7 @@ pub(super) fn emit_web_handler_prologue(ctx: &mut FunctionContext<'_>) {
     capture_concat_base(ctx);
     emit_callee_saved_saves(ctx);
     zero_initialize_main_cleanup_locals(ctx);
+    zero_initialize_ref_cell_state_slots(ctx);
     zero_initialize_ref_cell_owner_locals(ctx);
     zero_initialize_eval_context_locals(ctx);
     zero_initialize_eval_scope_locals(ctx);
@@ -428,14 +459,9 @@ fn zero_initialize_main_cleanup_locals(ctx: &mut FunctionContext<'_>) {
 /// Releases owned main locals that still hold refcounted storage at process exit.
 fn emit_main_local_epilogue_cleanup(ctx: &mut FunctionContext<'_>) {
     emit_ref_cell_owner_epilogue_cleanup(ctx);
-    for (name, _, ty, offset) in main_cleanup_locals(ctx) {
+    for (name, slot, ty, offset) in main_cleanup_locals(ctx) {
         ctx.emitter.comment(&format!("epilogue cleanup ${}", name));
-        match ty {
-            PhpType::Str => emit_main_string_cleanup(ctx, offset),
-            PhpType::Callable => emit_main_refcounted_cleanup(ctx, offset, &ty),
-            other if other.is_refcounted() => emit_main_refcounted_cleanup(ctx, offset, &other),
-            _ => {}
-        }
+        emit_owned_local_cleanup(ctx, slot, offset, &ty);
     }
     emit_eval_scope_epilogue_cleanup(ctx);
     emit_eval_context_epilogue_cleanup(ctx);
@@ -454,7 +480,10 @@ fn main_cleanup_locals(ctx: &FunctionContext<'_>) -> Vec<(String, LocalSlotId, P
         .locals
         .iter()
         .filter(|local| local_kind_needs_epilogue_cleanup(local.kind))
-        .filter(|local| !promoted_ref_cell_local_slots(ctx.function).contains(&local.id))
+        .filter(|local| {
+            !ctx.local_slot_ever_stores_ref_cell_pointer(local.id)
+                || ctx.has_dynamic_ref_cell_state(local.id)
+        })
         .filter(|local| {
             local
                 .name
@@ -462,7 +491,7 @@ fn main_cleanup_locals(ctx: &FunctionContext<'_>) -> Vec<(String, LocalSlotId, P
                 .is_none_or(|name| !param_names.contains(name))
         })
         .filter(|local| {
-            local_slot_has_store(ctx.function, local.id) || function_has_eval_scope(ctx.function)
+            ctx.local_slot_has_store(local.id) || function_has_eval_scope(ctx.function)
         })
         .filter_map(|local| {
             let ty = local.php_type.codegen_repr();
@@ -484,6 +513,21 @@ fn main_cleanup_locals(ctx: &FunctionContext<'_>) -> Vec<(String, LocalSlotId, P
 /// Zero-initializes hidden ref-cell owner slots before any fallback promotion can run.
 fn zero_initialize_ref_cell_owner_locals(ctx: &mut FunctionContext<'_>) {
     for (_, _, _, offset) in ref_cell_owner_locals(ctx) {
+        abi::emit_store_zero_to_local_slot(ctx.emitter, offset);
+    }
+}
+
+/// Zero-initializes runtime flags for slots that may later store ref-cell pointers.
+fn zero_initialize_ref_cell_state_slots(ctx: &mut FunctionContext<'_>) {
+    let mut offsets = ctx
+        .function
+        .locals
+        .iter()
+        .filter_map(|local| ctx.ref_cell_state_offset(local.id))
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    offsets.dedup();
+    for offset in offsets {
         abi::emit_store_zero_to_local_slot(ctx.emitter, offset);
     }
 }
@@ -658,58 +702,6 @@ fn function_has_eval_scope(function: &Function) -> bool {
         .any(|local| matches!(local.kind, LocalKind::EvalScope | LocalKind::EvalGlobalScope))
 }
 
-/// Returns true when a local slot is written by an explicit EIR `StoreLocal`.
-fn local_slot_has_store(function: &Function, slot: LocalSlotId) -> bool {
-    function.instructions.iter().any(|inst| {
-        inst.op == Op::StoreLocal
-            && matches!(inst.immediate, Some(Immediate::LocalSlot(candidate)) if candidate == slot)
-    })
-}
-
-/// Returns PHP-visible locals whose slot is rewritten to a ref-cell pointer.
-pub(super) fn promoted_ref_cell_local_slots(function: &Function) -> HashSet<LocalSlotId> {
-    let mut slots = function
-        .instructions
-        .iter()
-        .filter_map(|inst| match inst.immediate {
-            Some(Immediate::LocalSlotPair { first, .. }) if inst.op == Op::PromoteLocalRefCell => {
-                Some(first)
-            }
-            Some(Immediate::LocalSlotPair { first, .. }) if inst.op == Op::AliasLocalRefCell => {
-                Some(first)
-            }
-            _ => None,
-        })
-        .collect::<HashSet<_>>();
-    slots.extend(closure_ref_capture_local_slots(function));
-    slots
-}
-
-/// Returns local slots whose value is captured by reference into a closure descriptor.
-fn closure_ref_capture_local_slots(function: &Function) -> HashSet<LocalSlotId> {
-    function
-        .instructions
-        .iter()
-        .filter(|inst| inst.op == Op::ClosureCapture)
-        .filter(|inst| inst.immediate == Some(Immediate::I64(1)))
-        .filter_map(|inst| inst.operands.first().copied())
-        .filter_map(|value| loaded_local_slot(function, value))
-        .collect()
-}
-
-/// Resolves a lowered local read value back to its source slot.
-fn loaded_local_slot(function: &Function, value: ValueId) -> Option<LocalSlotId> {
-    let value = function.value(value)?;
-    let ValueDef::Instruction { inst, .. } = value.def else {
-        return None;
-    };
-    let inst = function.instruction(inst)?;
-    match (inst.op, inst.immediate.as_ref()) {
-        (Op::LoadLocal | Op::LoadRefCell, Some(Immediate::LocalSlot(slot))) => Some(*slot),
-        _ => None,
-    }
-}
-
 /// Releases a string local through the validating heap-free helper.
 ///
 /// `__rt_heap_free_safe` skips non-heap pointers (null for uninitialized locals,
@@ -758,7 +750,10 @@ pub(super) fn emit_main_refcounted_cleanup(ctx: &mut FunctionContext<'_>, offset
 
 /// Zero-initializes function locals that may be released by the shared epilogue.
 fn zero_initialize_function_cleanup_locals(ctx: &mut FunctionContext<'_>) {
-    for (_, _, ty, offset) in function_cleanup_locals(ctx, None) {
+    for (_, slot, ty, offset) in function_cleanup_locals(ctx, None) {
+        if local_slot_is_parameter(ctx.function, slot) {
+            continue;
+        }
         match ty {
             PhpType::Str => {
                 abi::emit_store_zero_to_local_slot(ctx.emitter, offset);
@@ -793,14 +788,9 @@ fn emit_function_local_epilogue_cleanup(
         push_return_value(ctx, &return_ty);
     }
     emit_ref_cell_owner_epilogue_cleanup_for(ctx, ref_cell_owners);
-    for (name, _, ty, offset) in cleanup_locals {
+    for (name, slot, ty, offset) in cleanup_locals {
         ctx.emitter.comment(&format!("epilogue cleanup ${}", name));
-        match ty {
-            PhpType::Str => emit_main_string_cleanup(ctx, offset),
-            PhpType::Callable => emit_main_refcounted_cleanup(ctx, offset, &ty),
-            other if other.is_refcounted() => emit_main_refcounted_cleanup(ctx, offset, &other),
-            _ => {}
-        }
+        emit_owned_local_cleanup(ctx, slot, offset, &ty);
     }
     for (name, offset) in eval_scopes {
         ctx.emitter.comment(&format!("epilogue cleanup {}", name));
@@ -824,27 +814,24 @@ fn function_cleanup_locals(
     ctx: &FunctionContext<'_>,
     skip_return_slot: Option<LocalSlotId>,
 ) -> Vec<(String, LocalSlotId, PhpType, usize)> {
-    let param_names = ctx
-        .function
-        .params
-        .iter()
-        .map(|param| param.name.as_str())
-        .collect::<HashSet<_>>();
     let mut locals = ctx
         .function
         .locals
         .iter()
         .filter(|local| local_kind_needs_epilogue_cleanup(local.kind))
-        .filter(|local| !promoted_ref_cell_local_slots(ctx.function).contains(&local.id))
         .filter(|local| {
-            local
-                .name
-                .as_deref()
-                .is_none_or(|name| !param_names.contains(name))
+            !ctx.local_slot_ever_stores_ref_cell_pointer(local.id)
+                || ctx.has_dynamic_ref_cell_state(local.id)
+        })
+        .filter(|local| {
+            !local_slot_is_parameter(ctx.function, local.id)
+                || ctx.owns_parameter_slot(local.id)
         })
         .filter(|local| Some(local.id) != skip_return_slot)
         .filter(|local| {
-            local_slot_has_store(ctx.function, local.id) || function_has_eval_scope(ctx.function)
+            ctx.local_slot_has_store(local.id)
+                || ctx.owns_parameter_slot(local.id)
+                || function_has_eval_scope(ctx.function)
         })
         .filter_map(|local| {
             let ty = local.php_type.codegen_repr();
@@ -861,6 +848,46 @@ fn function_cleanup_locals(
         .collect::<Vec<_>>();
     locals.sort_by_key(|(_, _, _, offset)| *offset);
     locals
+}
+
+/// Returns whether a local slot is populated from the function's incoming parameter ABI.
+fn local_slot_is_parameter(function: &Function, slot: LocalSlotId) -> bool {
+    function.params.get(slot.as_raw() as usize).is_some()
+}
+
+/// Releases one owned raw local unless its runtime slot currently holds a ref-cell pointer.
+pub(super) fn emit_owned_local_cleanup(
+    ctx: &mut FunctionContext<'_>,
+    slot: LocalSlotId,
+    offset: usize,
+    ty: &PhpType,
+) {
+    let done = ctx
+        .ref_cell_state_offset(slot)
+        .map(|_| ctx.next_label("raw_local_cleanup_done"));
+    if let (Some(state_offset), Some(done)) = (ctx.ref_cell_state_offset(slot), done.as_ref()) {
+        let state_reg = abi::int_result_reg(ctx.emitter);
+        abi::load_at_offset(ctx.emitter, state_reg, state_offset);
+        match ctx.emitter.target.arch {
+            Arch::AArch64 => {
+                ctx.emitter.instruction(&format!("cbnz {}, {}", state_reg, done)); // skip raw cleanup while this slot stores a ref-cell pointer
+            }
+            Arch::X86_64 => {
+                ctx.emitter.instruction(&format!("test {}, {}", state_reg, state_reg)); // test whether this slot currently stores a ref-cell pointer
+                ctx.emitter
+                    .instruction(&format!("jne {}", done));                      // skip raw cleanup for the ref-cell representation
+            }
+        }
+    }
+    match ty {
+        PhpType::Str => emit_main_string_cleanup(ctx, offset),
+        PhpType::Callable => emit_main_refcounted_cleanup(ctx, offset, ty),
+        other if other.is_refcounted() => emit_main_refcounted_cleanup(ctx, offset, other),
+        _ => {}
+    }
+    if let Some(done) = done {
+        ctx.emitter.label(&done);
+    }
 }
 
 /// Returns whether a local kind can own values through ordinary `StoreLocal`.

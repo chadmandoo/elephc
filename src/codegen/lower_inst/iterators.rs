@@ -279,6 +279,7 @@ pub(super) fn lower_iter_current_value_ref(
             ))
         }
     }
+    ctx.mark_promoted_ref_cell(slot);
     Ok(())
 }
 

@@ -629,8 +629,12 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         self.eval_executed
     }
 
-    /// Declares a hidden owner slot for a promoted local ref-cell pointer.
+    /// Returns the reusable hidden owner slot for a promoted local, declaring it if needed.
     fn declare_ref_cell_owner(&mut self, variable: &str, php_type: PhpType) -> LocalSlotId {
+        if let Some(slot) = self.ref_cell_owner_locals.get(variable).copied() {
+            self.builder.widen_local_storage_type(slot, php_type);
+            return slot;
+        }
         let name = format!("__eir_ref_owner{}_{}", self.hidden_temp_counter, variable);
         self.hidden_temp_counter += 1;
         let slot = self.declare_local_with_kind(&name, php_type, LocalKind::RefCell);
@@ -1313,7 +1317,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         );
     }
 
-    /// Promotes an initialized local into a fallback ref-cell for by-reference foreach.
+    /// Emits an idempotent promotion of an initialized local into an owned fallback ref-cell.
     pub(crate) fn promote_local_ref_cell(&mut self, name: &str, span: Option<Span>) {
         let slot = self.declare_local(name, self.local_type(name));
         let fallback_ty = self.builder.local_php_type(slot);
@@ -1342,9 +1346,11 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             return;
         }
         let source_ty = self.local_type(source);
-        if !self.is_ref_bound_local(source) {
-            self.promote_local_ref_cell(source, span);
-        }
+        // `is_ref_bound_local` is intentionally conservative across lowered
+        // branches, so a source marked by a conditional predecessor may still
+        // be raw on another runtime path. An idempotent promotion here gives
+        // every alias operation a cell on all incoming paths.
+        self.promote_local_ref_cell(source, span);
         self.clear_static_callable_local(target);
         self.clear_reflection_class_local(target);
         self.clear_reflection_function_local(target);
