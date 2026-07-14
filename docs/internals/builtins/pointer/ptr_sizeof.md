@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/pointers/ptr_sizeof.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/pointers/ptr_sizeof.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins/pointers.rs`:75](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins/pointers.rs#L75) (`lower_ptr_sizeof`)
+- **Lowering**: [`src/codegen/lower_inst/builtins/pointers.rs`:70](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins/pointers.rs#L70) (`lower_ptr_sizeof`)
 - **Function symbol**: `lower_ptr_sizeof()`
 
 

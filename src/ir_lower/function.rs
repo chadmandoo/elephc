@@ -861,6 +861,9 @@ fn lower_body_into_function(
         crate::ir_lower::stmt::lower_stmt(&mut ctx, stmt);
     }
     terminate_open_block(&mut ctx);
+    // Final storage types are now known: erase deferred loop-store releases that
+    // guard slots which never widened to lifetime-tracked storage (issue #534).
+    ctx.builder.prune_untracked_release_local_slot_ops();
     ctx.into_closures()
 }
 

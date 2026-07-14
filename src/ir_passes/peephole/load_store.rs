@@ -103,6 +103,7 @@ fn escaping_slots(function: &Function) -> HashSet<LocalSlotId> {
             Op::PromoteLocalRefCell
                 | Op::AliasLocalRefCell
                 | Op::ReleaseLocalRefCell
+                | Op::ReleaseLocalSlot
                 | Op::InvokerRefArg
         ) {
             for slot in slots_of(inst) {

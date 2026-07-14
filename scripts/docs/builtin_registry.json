@@ -19578,7 +19578,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_get",
-      "codegen_line": 109,
+      "codegen_line": 104,
       "notes": [
         "Lowers `ptr_get(pointer)` by reading one machine word through a checked pointer."
       ],
@@ -19636,7 +19636,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_is_null",
-      "codegen_line": 56,
+      "codegen_line": 51,
       "notes": [
         "Lowers `ptr_is_null(pointer)` by comparing the raw pointer address to zero."
       ],
@@ -19687,7 +19687,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_null",
-      "codegen_line": 49,
+      "codegen_line": 44,
       "notes": [
         "Lowers `ptr_null()` by materializing the raw null pointer sentinel."
       ],
@@ -19743,7 +19743,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_offset",
-      "codegen_line": 86,
+      "codegen_line": 81,
       "notes": [
         "Lowers `ptr_offset(pointer, offset)` by adding a byte offset to a raw address."
       ],
@@ -19808,7 +19808,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read16",
-      "codegen_line": 124,
+      "codegen_line": 119,
       "notes": [
         "Lowers `ptr_read16(pointer)` by reading one unsigned 16-bit word through a checked pointer."
       ],
@@ -19868,7 +19868,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read32",
-      "codegen_line": 129,
+      "codegen_line": 124,
       "notes": [
         "Lowers `ptr_read32(pointer)` by reading one unsigned 32-bit word through a checked pointer."
       ],
@@ -19928,7 +19928,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read8",
-      "codegen_line": 119,
+      "codegen_line": 114,
       "notes": [
         "Lowers `ptr_read8(pointer)` by reading one unsigned byte through a checked pointer."
       ],
@@ -19992,7 +19992,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_read_string",
-      "codegen_line": 134,
+      "codegen_line": 129,
       "notes": [
         "Lowers `ptr_read_string(pointer, length)` by copying raw bytes into an owned PHP string."
       ],
@@ -20065,7 +20065,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_set",
-      "codegen_line": 114,
+      "codegen_line": 109,
       "notes": [
         "Lowers `ptr_set(pointer, value)` by writing one machine word through a checked pointer."
       ],
@@ -20130,7 +20130,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_sizeof",
-      "codegen_line": 75,
+      "codegen_line": 70,
       "notes": [
         "Lowers `ptr_sizeof(\"type\")` by materializing the checked static byte size."
       ],
@@ -20194,7 +20194,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write16",
-      "codegen_line": 161,
+      "codegen_line": 156,
       "notes": [
         "Lowers `ptr_write16(pointer, value)` by writing one 16-bit word through a checked pointer."
       ],
@@ -20267,7 +20267,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write32",
-      "codegen_line": 166,
+      "codegen_line": 161,
       "notes": [
         "Lowers `ptr_write32(pointer, value)` by writing one 32-bit word through a checked pointer."
       ],
@@ -20340,7 +20340,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write8",
-      "codegen_line": 156,
+      "codegen_line": 151,
       "notes": [
         "Lowers `ptr_write8(pointer, value)` by writing one byte through a checked pointer."
       ],
@@ -20411,7 +20411,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_ptr_write_string",
-      "codegen_line": 171,
+      "codegen_line": 166,
       "notes": [
         "Lowers `ptr_write_string(pointer, string)` by copying PHP string bytes into raw memory."
       ],
@@ -29824,7 +29824,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_zval_free",
-      "codegen_line": 606,
+      "codegen_line": 598,
       "notes": [
         "Lowers `zval_free(zval_ptr)` by releasing the zval block and owned children."
       ],
@@ -29868,7 +29868,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_zval_pack",
-      "codegen_line": 541,
+      "codegen_line": 533,
       "notes": [
         "Lowers `zval_pack(value)` by boxing the operand as a Mixed cell and invoking",
         "`__rt_zval_pack`, which returns a pointer to a freshly allocated 16-byte zval.",
@@ -29921,7 +29921,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_zval_type",
-      "codegen_line": 597,
+      "codegen_line": 589,
       "notes": [
         "Lowers `zval_type(zval_ptr)` by returning the PHP `IS_*` type byte."
       ],
@@ -29966,7 +29966,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins/pointers.rs",
       "codegen_function": "lower_zval_unpack",
-      "codegen_line": 588,
+      "codegen_line": 580,
       "notes": [
         "Lowers `zval_unpack(zval_ptr)` by invoking `__rt_zval_unpack`."
       ],

@@ -24,6 +24,7 @@ mod fibers;
 mod frame;
 mod function_variants;
 mod literal_defaults;
+mod local_analysis;
 pub(crate) mod lower_inst;
 mod lower_term;
 mod runtime_callable_invoker;
