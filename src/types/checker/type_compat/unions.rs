@@ -280,8 +280,17 @@ impl Checker {
         declared_ty: &PhpType,
         actual_ty: &PhpType,
     ) -> PhpType {
+        // An empty-array literal (`[]`) types as `Array(Never)` — the bottom array,
+        // which carries no element-type information. Adopting it would narrow the
+        // declared generic `array` (`Array(Mixed)`) below every concrete array, so a
+        // parameter first called with `[]` would then reject a later `Array(Int)` call.
+        // Keep the declared generic type in that case; a subsequent non-empty call
+        // still specializes it.
+        let actual_is_empty_array_placeholder =
+            matches!(actual_ty, PhpType::Array(inner) if matches!(inner.as_ref(), PhpType::Never));
         if Self::is_generic_array_hint(declared_ty)
             && matches!(actual_ty, PhpType::Array(_) | PhpType::AssocArray { .. })
+            && !actual_is_empty_array_placeholder
         {
             actual_ty.clone()
         } else {

@@ -228,6 +228,17 @@ impl Checker {
                 PhpType::AssocArray { key, value },
                 PhpType::Array(_) | PhpType::AssocArray { .. },
             ) if **key == PhpType::Mixed && **value == PhpType::Mixed => true,
+            // An empty-array literal (`[]`, typed `Array(Never)`) is a valid value for
+            // any map-typed parameter: it has no entries that could violate the declared
+            // key/value types. PHP does not distinguish an empty list from an empty map,
+            // and both share the empty-array runtime representation. Without this, a
+            // parameter first specialized to `AssocArray{Str, Str}` rejects a later `[]`
+            // call (e.g. `ComponentFactory::input([])`).
+            (PhpType::AssocArray { .. }, PhpType::Array(actual_elem))
+                if matches!(actual_elem.as_ref(), PhpType::Never) =>
+            {
+                true
+            }
             (PhpType::Float, PhpType::Int | PhpType::Bool | PhpType::False | PhpType::Void) => true,
             (PhpType::Int, PhpType::Bool | PhpType::False | PhpType::Void) => true,
             (PhpType::Bool, PhpType::Int | PhpType::Void) => true,
