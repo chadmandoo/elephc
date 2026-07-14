@@ -1858,7 +1858,7 @@ pub(super) fn load_string_arg_to_regs(
 }
 
 /// Materializes an arbitrary EIR value as a PHP string in caller-selected registers.
-pub(super) fn load_value_as_string_to_regs(
+pub(crate) fn load_value_as_string_to_regs(
     ctx: &mut FunctionContext<'_>,
     value: ValueId,
     name: &str,

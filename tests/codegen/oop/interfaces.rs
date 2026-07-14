@@ -504,3 +504,32 @@ echo resolve(new Reg(), new Rq(), 'missing');
     );
     assert_eq!(out, "G:user;null");
 }
+
+/// Regression (#646): a boxed `Mixed` flowing into a STRING-backed enum's `tryFrom`/`from` must
+/// coerce to the backing string and scan, not hard-error "backing input PHP type Mixed".
+///
+/// AIC's callers all guard with `is_string($raw)` before `Enum::tryFrom($raw)` (the value IS a
+/// string at runtime), but the guard narrows the checker env, not the codegen value type, so the
+/// lowering still saw Mixed. Coerced via the same `load_value_as_string_to_regs` the 42 other
+/// string builtins use on a Mixed operand — consistent with the codebase, and the scan returns the
+/// matching case or null exactly as PHP. 16 of 1082 survey roots hit this, all passing `--check`.
+#[test]
+fn test_string_backed_enum_tryfrom_accepts_mixed_string_input() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+enum Status: string { case Running = 'running'; case Stopped = 'stopped'; }
+final class Reg {
+    public static function fromRaw(mixed $raw): ?Status {
+        if (!is_string($raw)) { return null; }
+        return Status::tryFrom($raw);
+    }
+}
+echo Reg::fromRaw('running')?->value ?? 'none', ';';
+echo Reg::fromRaw('nope')?->value ?? 'none', ';';
+echo Reg::fromRaw(42)?->value ?? 'none', ';';
+echo Reg::fromRaw('stopped')?->value ?? 'none';
+"#,
+    );
+    assert_eq!(out, "running;none;none;stopped");
+}

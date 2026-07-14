@@ -160,13 +160,36 @@ fn lower_enum_from_like(
         CodegenIrError::unsupported(format!("{}::from on pure enum", enum_name))
     })?;
     let input = inst.operands[0];
-    let input_ty = ctx.load_value_to_result(input)?;
-    if input_ty.codegen_repr() != backing_ty.codegen_repr() {
+    let input_repr = ctx.value_php_type(input)?.codegen_repr();
+    let backing_repr = backing_ty.codegen_repr();
+    if input_repr == backing_repr {
+        ctx.load_value_to_result(input)?;
+    } else if matches!(input_repr, PhpType::Mixed | PhpType::Union(_))
+        && backing_repr == PhpType::Str
+    {
+        // A boxed Mixed flowing into a STRING-backed enum's from/tryFrom. The value is a string in
+        // practice (AIC's callers all guard with `is_string($x)` before `Enum::tryFrom($x)`), but
+        // the guard narrows the checker env, not the codegen value type, so the lowering still sees
+        // Mixed. Coerce it into the scan's string input registers with the SAME
+        // `load_value_as_string_to_regs` the other string builtins use on a Mixed operand — so the
+        // behaviour matches the rest of the codebase (which likewise does not TypeError on a Mixed
+        // cast). The scan then returns the matching case or null exactly as PHP does. 16 of 1082
+        // survey roots hit this (DdevServiceStatus, SortDirection, LayoutStrategy, ColumnType,
+        // LogLevel — all string-backed), every one passing `--check`.
+        let (string_ptr_reg, string_len_reg) = abi::string_result_regs(ctx.emitter);
+        super::builtins::strings::load_value_as_string_to_regs(
+            ctx,
+            input,
+            "enum backing input",
+            string_ptr_reg,
+            string_len_reg,
+        )?;
+    } else {
         return Err(CodegenIrError::unsupported(format!(
             "{}::{} backing input PHP type {:?}",
             enum_name,
             if is_try { "tryFrom" } else { "from" },
-            input_ty
+            input_repr
         )));
     }
     emit_enum_from_scan(ctx, enum_name, &enum_info, &backing_ty, is_try)?;
