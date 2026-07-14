@@ -97,6 +97,20 @@ pub(crate) fn build_method_sig(
             method.span,
             &format!("Method '{}'", method.name),
         )?,
+        // A method with NO BODY (interface / abstract) declares no return type AND has no
+        // statements to infer one from: the return type is genuinely UNKNOWN, which in PHP
+        // means `mixed`. Falling through to `infer_return_type_syntactic` instead walks an
+        // EMPTY body, collects zero return statements, and lands on that helper's
+        // "no return statements" default of `Int` — which then poisons every caller:
+        // `is_string($x)` cannot narrow an `Int`, so handing the value to a `string`
+        // parameter fails to type-check. PSR-7's untyped `getAttribute()` is the canonical
+        // victim (`$req->getAttribute('type')` -> Int -> every `string` param rejects it).
+        //
+        // This is the RETURN-type analogue of the unhinted-value-parameter -> `Mixed` rule
+        // applied to params just above. `has_body` — not "the body is empty" — is the
+        // discriminator, so a CONCRETE `function f() {}`, which really does return null,
+        // keeps its existing syntactic inference and is unaffected.
+        None if !method.has_body => PhpType::Mixed,
         None => super::super::infer_return_type_syntactic(&method.body),
     };
     let mut sig = Checker::callable_wrapper_sig(&FunctionSig {
