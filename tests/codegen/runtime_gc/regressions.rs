@@ -1501,3 +1501,89 @@ foreach ($m as $k => $row) { echo $k . '=' . $row[1] . "\n"; }
         out.stderr
     );
 }
+
+/// Regression test for issue #527 outside `foreach`: explicit casts,
+/// concatenation, and interpolation must release owned Mixed element boxes for
+/// every scalar runtime tag without changing PHP-visible string conversion.
+#[test]
+fn test_regression_527_mixed_string_coercions_outside_foreach_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$values = [
+    "string" => str_repeat("S", 3),
+    "int" => 42,
+    "float" => 2.5,
+    "true" => true,
+    "false" => false,
+    "null" => null,
+];
+$explicit = (string) $values["string"];
+$concat = "i=" . $values["int"];
+$interpolated = "f={$values['float']}";
+echo $explicit . "|" . $concat . "|" . $interpolated;
+echo "|t=" . $values["true"];
+echo "|f=" . $values["false"];
+echo "|n=" . $values["null"];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "SSS|i=42|f=2.5|t=1|f=|n=");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// A non-owning Mixed local load must survive repeated explicit and implicit
+/// string conversions; releasing the parameter's box during the first cast
+/// would make the later reads use freed storage or double-release it at exit.
+#[test]
+fn test_regression_527_mixed_local_survives_repeated_string_coercion() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function render_mixed(mixed $value): void {
+    $explicit = (string) $value;
+    echo $explicit;
+    echo "|[$value]";
+    echo "|again=" . $value;
+    echo "|" . (string) $value;
+}
+render_mixed(str_repeat("alive", 1));
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "alive|[alive]|again=alive|alive");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// A non-null `int|string` union uses boxed Mixed codegen storage, so owned
+/// function results must be released after both explicit casts and implicit
+/// concatenation while the detached string result remains valid.
+#[test]
+fn test_regression_527_union_string_coercion_releases_owned_box() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function choose_union(bool $asString): int|string {
+    if ($asString) {
+        return str_repeat("union", 1);
+    }
+    return 42;
+}
+$left = (string) choose_union(true);
+$right = "n=" . choose_union(false);
+echo $left . "|" . $right;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "union|n=42");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
