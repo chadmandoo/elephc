@@ -4312,6 +4312,9 @@ fn ensure_property_value_supported(
     if can_coerce_tagged_scalar_to_int_property(value_ty, &slot.php_type) {
         return Ok(());
     }
+    if can_store_tagged_scalar_to_tagged_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
     if can_store_class_default_in_refined_null_property(ctx, value_ty, &slot.php_type) {
         return Ok(());
     }
@@ -4473,6 +4476,16 @@ fn can_coerce_mixed_to_scalar_property(value_ty: &PhpType, slot_ty: &PhpType) ->
 /// Returns true when a nullable inline scalar can be narrowed into int property storage.
 fn can_coerce_tagged_scalar_to_int_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
     value_ty.codegen_repr() == PhpType::TaggedScalar && slot_ty.codegen_repr() == PhpType::Int
+}
+
+/// Returns true when a `TaggedScalar` value stores into a property whose codegen representation is
+/// ALSO `TaggedScalar` — the nullable-scalar case, e.g. a `?int $x` property (`Union([Int, Void])`,
+/// whose `codegen_repr()` is `TaggedScalar` via `nullable_int_union_members`) assigned a `?int`
+/// value. Both sides are the identical tagged word (payload + null tag), so the store is
+/// representation-preserving, unlike the sibling `can_coerce_tagged_scalar_to_int_property` above
+/// which coerces a nullable value into a non-null `int` slot.
+fn can_store_tagged_scalar_to_tagged_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    value_ty.codegen_repr() == PhpType::TaggedScalar && slot_ty.codegen_repr() == PhpType::TaggedScalar
 }
 
 /// Returns true when a class default initializer writes into an untyped property later refined to null.
@@ -5050,6 +5063,7 @@ fn is_pointer_sized_property_type(php_type: &PhpType) -> bool {
         php_type.codegen_repr(),
         PhpType::Iterable
             | PhpType::Mixed
+            | PhpType::TaggedScalar
             | PhpType::Union(_)
             | PhpType::Array(_)
             | PhpType::AssocArray { .. }

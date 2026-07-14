@@ -532,3 +532,38 @@ echo ';', $r->names();
     );
     assert_eq!(out, "10;user=L:user;page=L:page;");
 }
+
+/// Regression (#641): a nullable typed property (`?int $x`) must store AND load correctly.
+///
+/// elephc represents `?int` as `Union([Int, Void])`, whose `codegen_repr()` is `TaggedScalar`
+/// (a tagged payload+null word). Two gates rejected it: `is_pointer_sized_property_type` did not
+/// list `TaggedScalar`, and the value/slot compat check had no arm for a `TaggedScalar` value into
+/// a `TaggedScalar`-repr slot (only into a plain `int` slot, which coerces away the null). Storing
+/// a `?int` value to a `?int` property is representation-identical, so both were added.
+///
+/// This drives the full round-trip — initial null, a set/get int, a set/get null, and a negative —
+/// because merely ALLOWING the store would be a silent miscompile if the tagged store/load were
+/// wrong. 40 of 1082 survey roots hit this (a nullable typed property is extremely common); every
+/// one passed `--check`.
+#[test]
+fn test_nullable_int_property_stores_and_loads_int_and_null() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class C {
+    private ?int $x = null;
+    public function set(?int $v): void { $this->x = $v; }
+    public function get(): ?int { return $this->x; }
+}
+$c = new C();
+echo $c->get() === null ? 'null' : (string) $c->get(), ';';
+$c->set(5);
+echo $c->get(), ';';
+$c->set(null);
+echo $c->get() === null ? 'null' : (string) $c->get(), ';';
+$c->set(-42);
+echo $c->get();
+"#,
+    );
+    assert_eq!(out, "null;5;null;-42");
+}
