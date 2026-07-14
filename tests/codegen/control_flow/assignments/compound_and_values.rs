@@ -495,3 +495,41 @@ fn test_undefined_var_star_equals() {
     let out = compile_and_run(r#"<?php $w *= 5; echo $w;"#);
     assert_eq!(out, "0");
 }
+
+/// Regression (#613): an assignment whose left side is a valid target binds to THAT target,
+/// regardless of the enclosing operator's precedence — PHP's grammar has `variable '=' expr`
+/// as an expression PRODUCTION, not merely a precedence level.
+///
+///     false !== $pos = strpos($s, '\\')   is   false !== ($pos = strpos(...))
+///     $a + $b = $c                        is   $a + ($b = $c)      // PHP: int(4)
+///     $a == $b = $c                       is   $a == ($b = $c)     // PHP: bool(false)
+///
+/// Before the fix, the Pratt loop broke on `l_bp < min_bp`, left `=` to the enclosing level,
+/// handed it the whole `false !== $pos` as its target, and rejected that with
+/// "Invalid assignment target". That is the `if (false !== $pos = strpos(...))` idiom in
+/// nikic/php-parser's `Name.php:52` — valid PHP that elephc could not parse (6 survey roots).
+///
+/// The negative case still errors: `$a + 1 = $c` has no valid target and PHP rejects it too.
+#[test]
+fn test_assignment_binds_to_trailing_target_inside_binary_expression() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function first(string $name): string {
+    if (false !== $pos = strpos($name, '\\')) {
+        return substr($name, 0, $pos);
+    }
+    return $name;
+}
+echo first('Foo\\Bar\\Baz'), ';';
+echo first('Plain'), ';';
+$a = 1; $b = 2; $c = 3;
+echo ($a == $b = $c) ? 'T' : 'F', ';';
+$a = 1; $b = 2; $c = 3;
+echo $a + $b = $c, ';';
+$a = 1; $b = 2; $c = 3;
+echo $a . $b = $c;
+"#,
+    );
+    assert_eq!(out, "Foo;Plain;F;4;13");
+}

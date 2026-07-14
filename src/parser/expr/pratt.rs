@@ -367,11 +367,29 @@ fn parse_expr_bp_inner(
         }
 
         if let Some((op, l_bp, r_bp)) = assignment_bp(&tokens[*pos].0) {
-            if l_bp < min_bp {
+            let lhs_is_target = is_assignment_expression_target(&lhs);
+
+            // PHP's grammar has `variable '=' expr` as an expression PRODUCTION, not merely a
+            // precedence level. An assignment whose left side is a valid target therefore binds
+            // to THAT target regardless of the enclosing operator's binding power:
+            //
+            //     false !== $pos = strpos($s, '\\')   parses as   false !== ($pos = strpos(...))
+            //     $a + $b = $c                        parses as   $a + ($b = $c)      // PHP: int(4)
+            //     $a == $b = $c                       parses as   $a == ($b = $c)     // PHP: bool(false)
+            //
+            // Breaking on `l_bp < min_bp` here would instead leave `=` to the enclosing level,
+            // which then receives the whole `false !== $pos` as its target and rejects it as an
+            // invalid assignment target. That is the `if (false !== $pos = strpos(...))` idiom in
+            // nikic/php-parser's Name.php:52 — valid PHP that elephc could not parse.
+            //
+            // When the left side is NOT a target we still honour min_bp and defer: the enclosing
+            // level either binds the assignment correctly or reports the error below against the
+            // widest offending expression (`$a + 1 = $c` -> "Invalid assignment target").
+            if !lhs_is_target && l_bp < min_bp {
                 break;
             }
 
-            if !is_assignment_expression_target(&lhs) {
+            if !lhs_is_target {
                 return Err(CompileError::new(lhs.span, "Invalid assignment target"));
             }
 
