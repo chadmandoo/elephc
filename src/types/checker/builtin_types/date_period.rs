@@ -248,6 +248,7 @@ fn class_const(name: &str, value: i64) -> ClassConst {
         name: name.to_string(),
         visibility: Visibility::Public,
         is_final: false,
+        type_expr: None,
         value: int_lit(value),
         span: dummy(),
         attributes: Vec::new(),

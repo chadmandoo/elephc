@@ -107,6 +107,7 @@ fn populate_metadata(module: &mut Module, program: &Program, check_result: &Chec
     module.declared_trait_property_names = collect_declared_trait_property_names(program);
     module.declared_trait_constant_names = collect_declared_trait_constant_names(program);
     module.declared_trait_constants = collect_declared_trait_constants(program);
+    module.declared_trait_constant_types = collect_declared_trait_constant_types(program);
     module.declared_trait_constant_visibilities =
         collect_declared_trait_constant_visibilities(program);
     module.declared_trait_final_constants = collect_declared_trait_final_constants(program);
@@ -1365,6 +1366,40 @@ fn collect_declared_trait_constants(program: &Program) -> HashMap<String, HashMa
         }
     }
     constants
+}
+
+/// Collects direct PHP declared constant types for each trait.
+fn collect_declared_trait_constant_types(
+    program: &Program,
+) -> HashMap<String, HashMap<String, crate::parser::ast::TypeExpr>> {
+    let mut types = HashMap::new();
+    for stmt in program {
+        match &stmt.kind {
+            StmtKind::TraitDecl {
+                name,
+                constants: trait_constants,
+                ..
+            } => {
+                types.insert(
+                    name.clone(),
+                    trait_constants
+                        .iter()
+                        .filter_map(|constant| {
+                            constant
+                                .type_expr
+                                .clone()
+                                .map(|type_expr| (constant.name.clone(), type_expr))
+                        })
+                        .collect(),
+                );
+            }
+            StmtKind::NamespaceBlock { body, .. } => {
+                types.extend(collect_declared_trait_constant_types(body));
+            }
+            _ => {}
+        }
+    }
+    types
 }
 
 /// Collects direct PHP constant visibilities declared by each trait.

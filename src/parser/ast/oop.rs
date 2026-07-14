@@ -175,15 +175,16 @@ impl PartialEq for ClassProperty {
     }
 }
 
-/// `const NAME = expr;` declaration inside a class/interface/trait body.
-/// PHP supports per-constant visibility (PHP 7.1+) and the `final`
-/// modifier (PHP 8.1+). Per-constant attributes are stored for future
-/// `#[\Deprecated]` support.
+/// `const [TYPE] NAME = expr;` declaration inside a class/interface/trait body.
+/// PHP supports per-constant visibility (PHP 7.1+), the `final` modifier
+/// (PHP 8.1+), and declared types (PHP 8.3+). Per-constant attributes are
+/// retained for reflection.
 #[derive(Debug, Clone)]
 pub struct ClassConst {
     pub name: String,
     pub visibility: Visibility,
     pub is_final: bool,
+    pub type_expr: Option<TypeExpr>,
     pub value: Expr,
     #[allow(dead_code)] // Used for error reporting in future passes
     pub span: Span,
@@ -192,12 +193,13 @@ pub struct ClassConst {
 }
 
 impl PartialEq for ClassConst {
-    /// Compares class constants by name, visibility, is_final, value, and attributes;
-    /// span is not compared.
+    /// Compares class constants by name, visibility, final/type metadata, value, and
+    /// attributes; span is not compared.
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
             && self.visibility == other.visibility
             && self.is_final == other.is_final
+            && self.type_expr == other.type_expr
             && self.value == other.value
             && self.attributes == other.attributes
     }

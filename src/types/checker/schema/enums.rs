@@ -404,12 +404,19 @@ pub(crate) fn insert_enum_metadata(
     // User-declared enum constants. Values are kept as their parsed expressions, matching the
     // class-constant representation.
     let mut constants = HashMap::new();
+    let mut constant_types = HashMap::new();
     let mut constant_visibilities = HashMap::new();
     let mut final_constants = HashSet::new();
     let mut constant_attribute_names = HashMap::new();
     let mut constant_attribute_args = HashMap::new();
     for constant in user_constants {
         constants.insert(constant.name.clone(), constant.value.clone());
+        if let Some(type_expr) = &constant.type_expr {
+            constant_types.insert(
+                constant.name.clone(),
+                type_expr.substitute_relative_class_types(name, None),
+            );
+        }
         constant_visibilities.insert(constant.name.clone(), constant.visibility.clone());
         if constant.is_final {
             final_constants.insert(constant.name.clone());
@@ -444,6 +451,7 @@ pub(crate) fn insert_enum_metadata(
             is_readonly_class: true,
             allow_dynamic_properties: false,
             constants,
+            constant_types,
             constant_visibilities,
             final_constants,
             attribute_names: Vec::new(),
