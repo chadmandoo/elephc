@@ -1259,6 +1259,41 @@ echo 'acc=' . $acc;
     );
 }
 
+/// Regression test for issue #525: a chained subscript read on a `?array`
+/// receiver materializes the intermediate container through the nullable-access
+/// hidden owned temp (`lower_nullable_array_access`), and the consuming read
+/// must release that temp's reference after its last use. Exercises both the
+/// non-null receiver (populated temp) and the null receiver (boxed-null temp)
+/// on every iteration and asserts the heap is clean at exit.
+#[test]
+fn test_regression_525_nullable_chained_read_releases_hidden_temp() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function probe(?array $r): int {
+    $x = $r[0][1];
+    if ($x !== null) {
+        return 1;
+    }
+    return 0;
+}
+$hits = 0;
+for ($k = 0; $k < 50; $k++) {
+    $a = [['a', 'b' . $k]];
+    $hits = $hits + probe($a);
+    $hits = $hits + probe(null);
+}
+echo $hits;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "50");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test for issue #534 (boxed element variant): the same nested shape
 /// reading a boxed array element into a local leaked the previous outer
 /// iteration's Mixed box on every `$k = 0` re-initialization.
@@ -1286,6 +1321,38 @@ echo 'acc=' . $acc;
     );
 }
 
+/// Regression test for issue #516: a chained subscript read (`$a[$t][1]`) on a
+/// nested indexed array materializes the inner array as an owned +1 temporary
+/// (the inner `array_get` increfs refcounted elements), and nothing ever
+/// released it, leaking the inner array's blocks on every evaluation. The
+/// consuming (outer) index read must release the intermediate once its result
+/// is extracted. Regression: heap must be clean at exit and output unchanged.
+#[test]
+fn test_regression_516_chained_subscript_read_does_not_leak() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function make(int $n): array {
+    $a = [];
+    for ($i = 0; $i < $n; $i++) { $a[] = ['kw', 'word' . $i]; }
+    return $a;
+}
+$a = make(50);
+$n = count($a);
+$out = 0;
+for ($t = 0; $t < $n; $t++) { $x = (string) $a[$t][1]; $out = $out + strlen($x); }
+echo 'out=' . $out;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    // 10 five-char values (word0..word9) + 40 six-char values (word10..word49).
+    assert_eq!(out.stdout, "out=290");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test for issue #534 (int-only variant): the leak was the INNER
 /// LOOP COUNTER's Mixed box, not the refcounted body value, so a nested loop
 /// with a purely integer body leaked identically. Also proves that scalar
@@ -1309,6 +1376,40 @@ echo 'acc=' . $acc;
     assert!(
         out.stderr.contains("HEAP DEBUG: leak summary: clean"),
         "expected a clean heap (issue #534: leaked inner-counter Mixed boxes), got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #525 (multiple reads): each chained read on the
+/// same `?array` receiver creates its own nullable-access hidden temp, and every
+/// temp's reference must be released independently — using the receiver twice
+/// must not leak either intermediate container or double-release one of them.
+#[test]
+fn test_regression_525_nullable_receiver_read_twice_heap_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function probe2(?array $r): int {
+    $a = $r[0][0];
+    $b = $r[0][1];
+    if ($a !== null && $b !== null) {
+        return 1;
+    }
+    return 0;
+}
+$hits = 0;
+for ($k = 0; $k < 50; $k++) {
+    $pair = [['a' . $k, 'b' . $k]];
+    $hits = $hits + probe2($pair);
+    $hits = $hits + probe2(null);
+}
+echo $hits;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "50");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
         out.stderr
     );
 }
@@ -1347,6 +1448,262 @@ echo 'acc=' . run(300);
     assert!(
         out.stderr.contains("HEAP DEBUG: leak summary: clean"),
         "expected a clean heap for conditional nested-loop reassignment, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #516 (three-level chain): every intermediate of a
+/// deeper chained subscript read (`$a[$i][$j][$k]`) is an owned container
+/// temporary and each must be released by its consuming read. Also guards
+/// against over-eager releases: each intermediate stays alive through its
+/// parent container's reference, so the extracted leaf string must stay valid.
+/// Building the triple-nested structure has a small pre-existing constant leak
+/// (2 blocks, unrelated to reads), so this asserts via GC counters that the
+/// alloc/free gap stays constant instead of growing with read iterations.
+#[test]
+fn test_regression_516_three_level_chained_read_does_not_leak() {
+    let out = compile_and_run_with_gc_stats(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 3; $i++) {
+    $mid = [];
+    for ($j = 0; $j < 3; $j++) { $mid[] = ['leaf', 'val' . $i . $j]; }
+    $a[] = $mid;
+}
+$out = 0;
+for ($r = 0; $r < 40; $r++) {
+    for ($i = 0; $i < 3; $i++) {
+        for ($j = 0; $j < 3; $j++) {
+            $x = (string) $a[$i][$j][1];
+            $out = $out + strlen($x);
+        }
+    }
+}
+echo 'out=' . $out;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "out=1800");
+    let (allocs, frees) = parse_gc_stats(&out.stderr);
+    // Before the fix the leaked +1 references pinned every distinct mid/leaf
+    // container past process cleanup (gap of 32 blocks on this fixture); after
+    // the fix only the 2-block build residue may remain.
+    assert!(
+        allocs >= frees && allocs - frees < 10,
+        "chained three-level reads must release their intermediates: allocs={} frees={}",
+        allocs,
+        frees
+    );
+}
+
+/// Regression test for issue #516 (string-keyed nesting): a chained
+/// associative read (`$m['x']['y']`) goes through `hash_get`, whose refcounted
+/// results also carry a +1 caller reference. The chained consumer must release
+/// the intermediate hash exactly like the indexed-array path. Regression: heap
+/// must be clean at exit after repeated evaluation.
+#[test]
+fn test_regression_516_chained_string_keyed_read_does_not_leak() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$m = ['x' => ['y' => 'deep', 'z' => 'other'], 'w' => ['y' => 'second']];
+for ($i = 0; $i < 200; $i++) {
+    $v = (string) $m['x']['y'];
+}
+echo $m['x']['y'];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "deep");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #516: a typed string extracted from a chained
+/// read must remain valid when a later call argument releases the parent array.
+#[test]
+fn test_regression_516_chained_string_survives_parent_release() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function replace_parent(array &$value): string {
+    $value = [];
+    return str_repeat('Z', 128);
+}
+function emit_pair(string $left, string $right): void {
+    echo $left;
+    echo $right;
+}
+$a = [[str_repeat('L', 128)]];
+emit_pair($a[0][0], replace_parent($a));
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(
+        out.stdout,
+        format!("{}{}", "L".repeat(128), "Z".repeat(128))
+    );
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527: a by-value `foreach` over an array of arrays
+/// whose body string-coerces an element read (`echo $row[1] . "\n"`) must not
+/// leak. The `$row[1]` read produces an owned boxed Mixed temporary; the
+/// implicit Mixed→string coercion detaches its result, so the source box must
+/// be released after the cast instead of leaking two heap blocks per iteration
+/// (the box plus the string payload it owns).
+#[test]
+fn test_regression_527_foreach_value_element_string_coercion_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 4; $i++) { $a[] = ['kw', 'word' . $i]; }
+foreach ($a as $row) { echo $row[1] . "\n"; }
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "word0\nword1\nword2\nword3\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527 (post-loop semantics): after a by-value
+/// `foreach` ends, the loop variable must still hold the LAST element like PHP,
+/// and string-coercing an element of that surviving copy must release the
+/// element box so the heap stays clean at exit.
+#[test]
+fn test_regression_527_foreach_value_var_survives_loop_and_heap_stays_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$a = [];
+for ($i = 0; $i < 4; $i++) { $a[] = ['kw', 'word' . $i]; }
+foreach ($a as $row) {}
+echo $row[1] . "\n";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "word3\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527 (key + value form): iterating an associative
+/// array of arrays with string keys binds both an owned key copy and an owned
+/// value copy per iteration; string-coercing `$row[1]` inside the body must
+/// release the element box each iteration and end with a clean heap.
+#[test]
+fn test_regression_527_foreach_assoc_key_value_element_coercion_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$m = [];
+$m['alpha'] = ['kw', 'wordA'];
+$m['beta'] = ['kw', 'wordB'];
+$m['gamma'] = ['kw', 'wordC'];
+foreach ($m as $k => $row) { echo $k . '=' . $row[1] . "\n"; }
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "alpha=wordA\nbeta=wordB\ngamma=wordC\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #527 outside `foreach`: explicit casts,
+/// concatenation, and interpolation must release owned Mixed element boxes for
+/// every scalar runtime tag without changing PHP-visible string conversion.
+#[test]
+fn test_regression_527_mixed_string_coercions_outside_foreach_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$values = [
+    "string" => str_repeat("S", 3),
+    "int" => 42,
+    "float" => 2.5,
+    "true" => true,
+    "false" => false,
+    "null" => null,
+];
+$explicit = (string) $values["string"];
+$concat = "i=" . $values["int"];
+$interpolated = "f={$values['float']}";
+echo $explicit . "|" . $concat . "|" . $interpolated;
+echo "|t=" . $values["true"];
+echo "|f=" . $values["false"];
+echo "|n=" . $values["null"];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "SSS|i=42|f=2.5|t=1|f=|n=");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// A non-owning Mixed local load must survive repeated explicit and implicit
+/// string conversions; releasing the parameter's box during the first cast
+/// would make the later reads use freed storage or double-release it at exit.
+#[test]
+fn test_regression_527_mixed_local_survives_repeated_string_coercion() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function render_mixed(mixed $value): void {
+    $explicit = (string) $value;
+    echo $explicit;
+    echo "|[$value]";
+    echo "|again=" . $value;
+    echo "|" . (string) $value;
+}
+render_mixed(str_repeat("alive", 1));
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "alive|[alive]|again=alive|alive");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// A non-null `int|string` union uses boxed Mixed codegen storage, so owned
+/// function results must be released after both explicit casts and implicit
+/// concatenation while the detached string result remains valid.
+#[test]
+fn test_regression_527_union_string_coercion_releases_owned_box() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function choose_union(bool $asString): int|string {
+    if ($asString) {
+        return str_repeat("union", 1);
+    }
+    return 42;
+}
+$left = (string) choose_union(true);
+$right = "n=" . choose_union(false);
+echo $left . "|" . $right;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "union|n=42");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
         out.stderr
     );
 }
