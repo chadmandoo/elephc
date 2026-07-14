@@ -457,3 +457,50 @@ echo ifAccumWeight(new Heavy()), ifAccumWeight(new Plain());
     );
     assert_eq!(out, "505050");
 }
+
+/// Regression (#607): an interface method with NO return type declaration must infer `Mixed`,
+/// not `Int`.
+///
+/// A body-less method has no statements to infer a return type from, so the type is genuinely
+/// UNKNOWN — PHP's `mixed`. The checker previously fell through to
+/// `infer_return_type_syntactic(&method.body)`, which walked the EMPTY body, collected zero
+/// return statements, and landed on that helper's "no returns" default of `Int`. That `Int` then
+/// poisons every caller: `is_string($x)` cannot narrow an `Int`, so passing the value to a
+/// `string` parameter fails to type-check.
+///
+/// PSR-7's untyped `getAttribute()` is the canonical victim (AIC's ResourceResolver):
+///     $type = $request->getAttribute('type');
+///     if (!is_string($type) || !$registry->has($type)) { ... }
+/// -> "Method Registry::has parameter $entityTypeName expects Str, got Int".
+///
+/// This mirrors the unhinted-value-parameter -> `Mixed` rule already applied to params.
+#[test]
+fn test_interface_method_without_return_type_infers_mixed_not_int() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+interface Req {
+    public function getAttribute(string $name, mixed $default = null);
+}
+final class Rq implements Req {
+    public function getAttribute(string $name, mixed $default = null) {
+        return $name === 'type' ? 'user' : $default;
+    }
+}
+final class Reg {
+    public function has(string $n): bool { return $n !== ''; }
+    public function get(string $n): string { return 'G:' . $n; }
+}
+function resolve(Reg $r, Req $req, string $key): string {
+    $type = $req->getAttribute($key);
+    if (!is_string($type) || !$r->has($type)) {
+        return 'null';
+    }
+    return $r->get($type);
+}
+echo resolve(new Reg(), new Rq(), 'type'), ';';
+echo resolve(new Reg(), new Rq(), 'missing');
+"#,
+    );
+    assert_eq!(out, "G:user;null");
+}

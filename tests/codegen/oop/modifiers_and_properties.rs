@@ -480,3 +480,55 @@ echo (new Plan(static fn (): int => 0))->hasComparator() ? "y" : "n";
     );
     assert_eq!(out, "ny");
 }
+
+/// Regression (#607): a property DECLARED with the bare `array` hint must adopt `AssocArray`
+/// storage when a plain assign (`$this->m = $built`) hands it a string-keyed map built locally.
+///
+/// PHP has no native array generics, so `array` lowers to `Array(Mixed)` (indexed). Before the
+/// fix, `refine_object_property_type` gated ALL refinement behind `!property_has_declared_type`,
+/// so the declared property kept indexed storage: the EIR backend rejected the prop_set
+/// ("prop_set assigning AssocArray{Mixed,Mixed} to Registry::$resources with PHP type
+/// Array(Mixed)") and every `foreach` over it yielded Int keys. The push and index-assign paths
+/// already permitted this via `declared_generic_array_can_use_assoc_storage`; plain-assign did not.
+///
+/// This is the idiomatic "build a map locally, then assign it" constructor (AIC's
+/// AdminResourceRegistry). NOTE: `--check` passed both before and after the fix — only a native
+/// compile+run surfaces it, which is why this is a codegen test and not a checker test.
+#[test]
+fn test_declared_generic_array_property_adopts_assoc_storage_on_plain_assign() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final readonly class Res {
+    public function __construct(private string $name) {}
+    public function entityTypeName(): string { return $this->name; }
+    public function label(): string { return 'L:' . $this->name; }
+}
+final readonly class Registry {
+    private array $resources;
+    public function __construct(array $resources) {
+        $byName = [];
+        foreach ($resources as $resource) {
+            $byName[$resource->entityTypeName()] = $resource;
+        }
+        $this->resources = $byName;
+    }
+    public function has(string $entityTypeName): bool {
+        return array_key_exists($entityTypeName, $this->resources);
+    }
+    public function names(): string {
+        $out = '';
+        foreach ($this->resources as $name => $resource) {
+            $out .= $name . '=' . $resource->label() . ';';
+        }
+        return $out;
+    }
+}
+$r = new Registry([new Res('user'), new Res('page')]);
+echo $r->has('user') ? '1' : '0';
+echo $r->has('nope') ? '1' : '0';
+echo ';', $r->names();
+"#,
+    );
+    assert_eq!(out, "10;user=L:user;page=L:page;");
+}
