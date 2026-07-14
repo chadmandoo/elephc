@@ -26,7 +26,11 @@ fn declared_builtin_registry_derives_core_metadata() {
         );
         assert_eq!(
             eval_declared_builtin_param_names("mb_strlen"),
-            Some(["string"].as_slice())
+            Some(["string", "encoding"].as_slice())
+        );
+        assert_eq!(
+            eval_declared_builtin_default_value("mb_strlen", 1),
+            Some(EvalBuiltinDefaultValue::Null)
         );
         assert_eq!(
             eval_declared_builtin_param_names("is_finite"),

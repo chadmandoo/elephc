@@ -615,11 +615,17 @@ impl EvalValuesHook {
                 [value, length] => eval_str_split_result(*value, Some(*length), values),
                 _ => Err(EvalStatus::RuntimeFatal),
             },
-            Self::Strlen => one_arg(evaluated_args, values, |value, values| match name {
-                "mb_strlen" => eval_mb_strlen_result(value, values),
-                "strlen" => eval_strlen_result(value, values),
+            Self::Strlen => match name {
+                "mb_strlen" => match evaluated_args {
+                    [value] => eval_mb_strlen_result(*value, None, context, values),
+                    [value, encoding] => {
+                        eval_mb_strlen_result(*value, Some(*encoding), context, values)
+                    }
+                    _ => Err(EvalStatus::RuntimeFatal),
+                },
+                "strlen" => one_arg(evaluated_args, values, eval_strlen_result),
                 _ => Err(EvalStatus::RuntimeFatal),
-            }),
+            },
             Self::StrRepeat => two_args(evaluated_args, values, eval_str_repeat_result),
             Self::Strval => one_arg(evaluated_args, values, |value, values| {
                 eval_strval_result(value, context, values)

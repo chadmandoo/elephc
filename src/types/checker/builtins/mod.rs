@@ -90,6 +90,9 @@ impl Checker {
             if args.len() != 1 {
                 return Err(CompileError::new(span, "eval() takes exactly 1 argument"));
             }
+            // The magician archive contains the encoding-aware `mb_strlen()` implementation;
+            // macOS exposes iconv through a separate system library while Linux keeps it in libc.
+            self.require_macos_builtin_library("iconv");
             self.infer_type(&args[0], env)?;
             return Ok(Some(PhpType::Mixed));
         }

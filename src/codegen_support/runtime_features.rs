@@ -9,6 +9,8 @@
 //! Key details:
 //! - Direct `preg_*` calls and emitted regex iterator classes both enable regex
 //!   helpers because generated SPL methods can call them.
+//! - Lowered `mb_strlen()` calls enable its iconv-backed runtime helper without
+//!   imposing that native dependency on programs that never use the builtin.
 //! - Emitted stream/archive classes enable PHAR bridge libraries because their
 //!   generated methods route dynamic paths through `__rt_*_maybe_phar` helpers.
 //! - The dynamic builtin dispatcher (descriptor invoker) emits per-builtin
@@ -31,6 +33,8 @@ use super::program_usage::{collect_required_class_names, program_has_dynamic_ins
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RuntimeFeatures {
     pub regex: bool,
+    /// True when lowered code can call the optional iconv-backed `mb_strlen()` helper.
+    pub mb_strlen: bool,
     pub phar_archive: bool,
     /// True when codegen can emit the runtime callable dispatcher (descriptor
     /// invoker) that builds per-builtin wrappers referencing `elephc_crypto`.
@@ -53,6 +57,7 @@ impl RuntimeFeatures {
     pub const fn none() -> Self {
         Self {
             regex: false,
+            mb_strlen: false,
             phar_archive: false,
             descriptor_invoker: false,
             eval_bridge: false,
@@ -66,6 +71,7 @@ impl RuntimeFeatures {
     pub const fn all() -> Self {
         Self {
             regex: true,
+            mb_strlen: true,
             phar_archive: true,
             descriptor_invoker: true,
             eval_bridge: true,
@@ -1123,6 +1129,7 @@ mod tests {
     fn test_descriptor_invoker_runtime_features_require_elephc_crypto_library() {
         assert!(required_libraries_for_runtime_features(RuntimeFeatures {
             regex: false,
+            mb_strlen: false,
             phar_archive: false,
             descriptor_invoker: true,
             eval_bridge: false,

@@ -359,6 +359,7 @@ fn expr_exposes_dynamic_param(expr: &Expr, dynamic_params: &HashSet<String>) -> 
 pub(super) fn include_lowered_runtime_features(module: &mut Module) {
     let features = lowered_runtime_features(module);
     module.required_runtime_features.regex |= features.regex;
+    module.required_runtime_features.mb_strlen |= features.mb_strlen;
     module.required_runtime_features.phar_archive |= features.phar_archive;
     module.required_runtime_features.descriptor_invoker |= features.descriptor_invoker;
     module.required_runtime_features.eval_bridge |= features.eval_bridge;
@@ -380,6 +381,9 @@ fn lowered_runtime_features(module: &Module) -> RuntimeFeatures {
                 Op::BuiltinCall => {
                     if builtin_call_requires_regex(module, inst) {
                         features.regex = true;
+                    }
+                    if builtin_call_requires_mb_strlen(module, inst) {
+                        features.mb_strlen = true;
                     }
                     if builtin_call_requires_phar_archive(module, function, inst) {
                         features.phar_archive = true;
@@ -972,6 +976,13 @@ fn builtin_call_requires_regex(module: &Module, inst: &crate::ir::Instruction) -
         return false;
     };
     is_regex_builtin_name(name)
+}
+
+/// Returns true when a lowered builtin call references the optional `mb_strlen()` runtime helper.
+fn builtin_call_requires_mb_strlen(module: &Module, inst: &crate::ir::Instruction) -> bool {
+    builtin_call_name(module, inst).is_some_and(|name| {
+        php_symbol_key(name.trim_start_matches('\\')) == "mb_strlen"
+    })
 }
 
 /// Returns true when a lowered builtin call emits PHAR bridge pointer publishing.

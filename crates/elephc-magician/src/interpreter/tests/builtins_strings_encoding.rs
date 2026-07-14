@@ -10,16 +10,24 @@
 use super::super::*;
 use super::support::*;
 
-/// Verifies eval `mb_strlen()` counts UTF-8 code points through direct and callable paths.
+/// Verifies eval `mb_strlen()` matches encoding, malformed-byte, callable, and error behavior.
 #[test]
 fn execute_program_dispatches_mb_strlen_builtin() {
     let program = parse_fragment(
         r#"echo mb_strlen("abc"); echo ":";
-echo mb_strlen(string: "héllo wörld"); echo ":";
-echo mb_strlen(""); echo ":";
-echo call_user_func("mb_strlen", "日本語"); echo ":";
-echo call_user_func_array("mb_strlen", ["string" => "héllo"]); echo ":";
-return function_exists("mb_strlen") && is_callable("mb_strlen");"#
+	echo mb_strlen(string: "héllo", encoding: "8bit"); echo ":";
+	echo mb_strlen("", null); echo ":";
+	echo call_user_func("mb_strlen", "日本語"); echo ":";
+	echo call_user_func_array("mb_strlen", ["string" => "héllo", "encoding" => "UTF-8"]); echo ":";
+	echo mb_strlen(chr(128), "UTF-8"); echo ":";
+	echo mb_strlen(chr(104) . chr(0) . chr(233) . chr(0), "UTF-16LE"); echo ":";
+	try {
+	    mb_strlen("abc", "definitely-not-an-encoding");
+	} catch (ValueError $error) {
+	    echo "caught";
+	}
+	echo ":";
+	return function_exists("mb_strlen") && is_callable("mb_strlen");"#
             .as_bytes(),
     )
     .expect("parse eval fragment");
@@ -28,7 +36,7 @@ return function_exists("mb_strlen") && is_callable("mb_strlen");"#
 
     let result = execute_program(&program, &mut scope, &mut values).expect("execute eval ir");
 
-    assert_eq!(values.output, "3:11:0:3:5:");
+    assert_eq!(values.output, "3:6:0:3:5:1:2:caught:");
     assert_eq!(values.get(result), FakeValue::Bool(true));
 }
 
