@@ -2053,6 +2053,7 @@ fn builtin_class_const(name: &str, value: i64) -> ClassConst {
         name: name.to_string(),
         visibility: Visibility::Public,
         is_final: false,
+        type_expr: None,
         value: Expr::new(ExprKind::IntLiteral(value), crate::span::Span::dummy()),
         span: crate::span::Span::dummy(),
         attributes: Vec::new(),
@@ -3994,8 +3995,33 @@ fn builtin_reflection_owner_class(
         methods.push(builtin_reflection_constant_false_bool_method(
             "isDeprecated",
         ));
-        methods.push(builtin_reflection_constant_false_bool_method("hasType"));
-        methods.push(builtin_reflection_constant_null_mixed_method("getType"));
+        if name == "ReflectionClassConstant" {
+            properties.push(builtin_property(
+                "__has_type",
+                Visibility::Private,
+                Some(TypeExpr::Bool),
+                bool_lit(false),
+            ));
+            properties.push(builtin_property(
+                "__type",
+                Visibility::Private,
+                Some(mixed_type()),
+                null_expr(),
+            ));
+            methods.push(builtin_reflection_slot_getter(
+                "hasType",
+                "__has_type",
+                TypeExpr::Bool,
+            ));
+            methods.push(builtin_reflection_slot_getter(
+                "getType",
+                "__type",
+                mixed_type(),
+            ));
+        } else {
+            methods.push(builtin_reflection_constant_false_bool_method("hasType"));
+            methods.push(builtin_reflection_constant_null_mixed_method("getType"));
+        }
     }
     if matches!(name, "ReflectionFunction" | "ReflectionMethod") {
         properties.push(builtin_property(

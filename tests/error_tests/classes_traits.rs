@@ -187,6 +187,55 @@ fn test_error_static_constant_reference_in_class_constant_expression() {
     );
 }
 
+/// Verifies a typed class constant rejects an initializer outside its declared type.
+#[test]
+fn test_error_typed_class_constant_initializer_mismatch() {
+    expect_error(
+        "<?php class C { public const int VALUE = 'wrong'; }",
+        "Cannot use string as value for class constant C::VALUE of type int",
+    );
+}
+
+/// Verifies PHP-forbidden callable class-constant types are rejected.
+#[test]
+fn test_error_typed_class_constant_forbids_callable() {
+    expect_error(
+        "<?php class C { public const callable VALUE = null; }",
+        "Class constant C::VALUE cannot have type callable",
+    );
+}
+
+/// Verifies PHP-forbidden `void` and `never` class-constant types are rejected.
+#[test]
+fn test_error_typed_class_constant_forbids_void_and_never() {
+    expect_error(
+        "<?php class C { public const void VALUE = null; }",
+        "Class constant C::VALUE cannot have type void",
+    );
+    expect_error(
+        "<?php class C { public const never VALUE = null; }",
+        "Class constant C::VALUE cannot have type never",
+    );
+}
+
+/// Verifies a child class cannot widen an inherited typed constant contract.
+#[test]
+fn test_error_typed_class_constant_override_must_be_covariant() {
+    expect_error(
+        "<?php class Base { public const int VALUE = 1; } class Child extends Base { public const int|string VALUE = 2; }",
+        "Type of Child::VALUE must be compatible with Base::VALUE of type int",
+    );
+}
+
+/// Verifies a class constant must preserve the type required by an implemented interface.
+#[test]
+fn test_error_typed_interface_constant_implementation_must_be_compatible() {
+    expect_error(
+        "<?php interface Contract { public const int VALUE = 1; } class Impl implements Contract { public const string VALUE = 'wrong'; }",
+        "Type of Impl::VALUE must be compatible with Contract::VALUE of type int",
+    );
+}
+
 /// Verifies that `new static()` on a child with a required constructor parameter
 /// reports a missing argument error.
 #[test]

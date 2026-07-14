@@ -88,6 +88,7 @@ struct ReflectionClassConstantMetadata {
     attr_names: Vec<String>,
     attr_args: Vec<Option<Vec<AttrArgEntry>>>,
     value: ReflectionConstantValue,
+    type_metadata: Option<ReflectionParameterTypeMetadata>,
     visibility: Visibility,
     is_final: bool,
 }
@@ -827,6 +828,15 @@ fn emit_reflection_owner_object(
             emit_reflection_constant_value_as_mixed(ctx, value);
             emit_reflection_owner_mixed_property_from_result(ctx, class_name, "__value")?;
         }
+    }
+    if class_name == "ReflectionClassConstant" {
+        emit_reflection_owner_bool_property(
+            ctx,
+            class_name,
+            "__has_type",
+            metadata.type_metadata.is_some(),
+        )?;
+        emit_reflection_owner_type_property(ctx, class_name, metadata.type_metadata.as_ref())?;
     }
     if class_name == "ReflectionEnumBackedCase" {
         if let Some(value) = &metadata.backing_value {
@@ -1960,7 +1970,7 @@ fn reflection_class_constant_owner_metadata(
         backing_value: None,
         is_enum_case: false,
         parameter_members: Vec::new(),
-        type_metadata: None,
+        type_metadata: metadata.type_metadata,
         property_default_value: None,
         required_parameter_count: 0,
         is_deprecated: false,
@@ -2008,6 +2018,10 @@ fn reflection_class_constant_lookup(
                 .cloned()
                 .unwrap_or_default(),
             value,
+            type_metadata: info
+                .constant_types
+                .get(constant_name)
+                .and_then(reflection_declared_type_metadata),
             visibility: info
                 .constant_visibilities
                 .get(constant_name)
@@ -2050,6 +2064,12 @@ fn reflection_class_constant_lookup(
                 attr_names: Vec::new(),
                 attr_args: Vec::new(),
                 value,
+                type_metadata: ctx
+                    .module
+                    .declared_trait_constant_types
+                    .get(trait_name)
+                    .and_then(|types| types.get(constant_name))
+                    .and_then(reflection_declared_type_metadata),
                 visibility: ctx
                     .module
                     .declared_trait_constant_visibilities
@@ -2092,6 +2112,10 @@ fn reflection_interface_class_constant_lookup(
         attr_names: Vec::new(),
         attr_args: Vec::new(),
         value,
+        type_metadata: info
+            .constant_types
+            .get(constant_name)
+            .and_then(reflection_declared_type_metadata),
         visibility: Visibility::Public,
         is_final,
     }))
@@ -2643,6 +2667,7 @@ fn reflection_class_constant_reflection_members(
                     enum_name: class_name.to_string(),
                     case_name: case.name.clone(),
                 },
+                None,
                 Visibility::Public,
                 false,
                 true,
@@ -2677,6 +2702,10 @@ fn reflection_class_constant_reflection_members(
                     .cloned()
                     .unwrap_or_default(),
                 value,
+                current_info
+                    .constant_types
+                    .get(constant_name)
+                    .and_then(reflection_declared_type_metadata),
                 current_info
                     .constant_visibilities
                     .get(constant_name)
@@ -2780,6 +2809,10 @@ fn collect_interface_constant_reflection_members(
             Vec::new(),
             Vec::new(),
             value,
+            interface_info
+                .constant_types
+                .get(constant_name)
+                .and_then(reflection_declared_type_metadata),
             Visibility::Public,
             is_final,
             false,
@@ -2810,6 +2843,11 @@ fn reflection_trait_constant_reflection_members(
             Vec::new(),
             value,
             ctx.module
+                .declared_trait_constant_types
+                .get(trait_name)
+                .and_then(|types| types.get(constant_name))
+                .and_then(reflection_declared_type_metadata),
+            ctx.module
                 .declared_trait_constant_visibilities
                 .get(trait_name)
                 .and_then(|constants| constants.get(constant_name))
@@ -2831,6 +2869,7 @@ fn push_unique_constant_reflection_member(
     attr_names: Vec<String>,
     attr_args: Vec<Option<Vec<AttrArgEntry>>>,
     value: ReflectionConstantValue,
+    type_metadata: Option<ReflectionParameterTypeMetadata>,
     visibility: Visibility,
     is_final: bool,
     is_enum_case: bool,
@@ -2850,7 +2889,7 @@ fn push_unique_constant_reflection_member(
         is_enum_case,
         flags: reflection_member_flags(false, &visibility, is_final, false, false, false),
         modifiers: reflection_class_constant_modifiers(&visibility, is_final),
-        type_metadata: None,
+        type_metadata,
         default_value: None,
         property_hook_members: Vec::new(),
         required_parameter_count: 0,
@@ -4306,6 +4345,39 @@ fn reflection_parameter_type_metadata(
     }
 }
 
+/// Converts a retained declared class-constant type into reflection metadata.
+fn reflection_declared_type_metadata(
+    type_expr: &TypeExpr,
+) -> Option<ReflectionParameterTypeMetadata> {
+    match type_expr {
+        TypeExpr::Nullable(inner) => {
+            let mut metadata = reflection_named_type_metadata_from_type_expr(inner)?;
+            metadata.allows_null = true;
+            Some(ReflectionParameterTypeMetadata::Named(metadata))
+        }
+        TypeExpr::Union(members) => {
+            let allows_null = members.iter().any(|member| matches!(member, TypeExpr::Void));
+            let types = members
+                .iter()
+                .filter(|member| !matches!(member, TypeExpr::Void))
+                .map(reflection_named_type_metadata_from_type_expr)
+                .collect::<Option<Vec<_>>>()?;
+            if types.len() == 1 {
+                let mut metadata = types.into_iter().next()?;
+                metadata.allows_null = allows_null;
+                Some(ReflectionParameterTypeMetadata::Named(metadata))
+            } else {
+                (!types.is_empty()).then_some(ReflectionParameterTypeMetadata::Union(
+                    ReflectionUnionTypeMetadata { types, allows_null },
+                ))
+            }
+        }
+        TypeExpr::Intersection(members) => reflection_intersection_type_metadata(members),
+        _ => reflection_named_type_metadata_from_type_expr(type_expr)
+            .map(ReflectionParameterTypeMetadata::Named),
+    }
+}
+
 /// Converts a declared return type into the supported `ReflectionType` subset.
 fn reflection_return_type_metadata(sig: &FunctionSig) -> Option<ReflectionParameterTypeMetadata> {
     if !sig.declared_return {
@@ -4398,15 +4470,17 @@ fn reflection_named_type_metadata_from_type_expr(
         TypeExpr::Int => Some(reflection_builtin_named_type("int", false)),
         TypeExpr::Float => Some(reflection_builtin_named_type("float", false)),
         TypeExpr::Bool => Some(reflection_builtin_named_type("bool", false)),
+        TypeExpr::False => Some(reflection_builtin_named_type("false", false)),
         TypeExpr::Str => Some(reflection_builtin_named_type("string", false)),
         TypeExpr::Iterable => Some(reflection_builtin_named_type("iterable", false)),
         TypeExpr::Array(_) => Some(reflection_builtin_named_type("array", false)),
         TypeExpr::Named(name) => {
             let raw_name = name.as_str().trim_start_matches('\\');
             match raw_name.to_ascii_lowercase().as_str() {
-                "array" | "callable" | "mixed" | "object" => {
+                "array" | "callable" | "object" => {
                     Some(reflection_builtin_named_type(raw_name, false))
                 }
+                "mixed" => Some(reflection_builtin_named_type(raw_name, true)),
                 _ => Some(ReflectionNamedTypeMetadata {
                     name: raw_name.to_string(),
                     allows_null: false,
@@ -6370,6 +6444,15 @@ fn emit_reflection_member_object(
             "__string",
             &property_string,
         )?;
+    }
+    if member_class_name == "ReflectionClassConstant" {
+        emit_reflection_owner_bool_property(
+            ctx,
+            member_class_name,
+            "__has_type",
+            member.type_metadata.is_some(),
+        )?;
+        emit_reflection_owner_type_property(ctx, member_class_name, member.type_metadata.as_ref())?;
     }
     if matches!(
         member_class_name,

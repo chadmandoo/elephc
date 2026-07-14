@@ -3856,6 +3856,40 @@ echo $backedAttrs[0]->newInstance()->label();
     );
 }
 
+/// Verifies typed class constants expose declared named/union metadata through
+/// direct and `ReflectionClass::getReflectionConstants()` construction paths.
+#[test]
+fn test_reflection_class_constant_declared_types() {
+    let out = compile_and_run(
+        r#"<?php
+class TypedReflectConstants {
+    public const int COUNT = 3;
+    public const int|string ID = "x";
+    public const UNTYPED = true;
+}
+$count = new ReflectionClassConstant(TypedReflectConstants::class, "COUNT");
+echo ($count->hasType() ? "typed" : "untyped") . ":";
+echo $count->getType()->getName() . ":";
+echo ($count->getType()->isBuiltin() ? "builtin" : "class") . "\n";
+$id = new ReflectionClassConstant(TypedReflectConstants::class, "ID");
+echo get_class($id->getType()) . ":" . (string) $id->getType() . "\n";
+$untyped = new ReflectionClassConstant(TypedReflectConstants::class, "UNTYPED");
+echo ($untyped->hasType() ? "typed" : "untyped") . ":";
+echo ($untyped->getType() === null ? "null" : "value") . "\n";
+foreach ((new ReflectionClass(TypedReflectConstants::class))->getReflectionConstants() as $constant) {
+    if ($constant->getName() === "COUNT") {
+        echo ($constant->hasType() ? "listed" : "missing") . ":";
+        echo $constant->getType()->getName();
+    }
+}
+"#,
+    );
+    assert_eq!(
+        out,
+        "typed:int:builtin\nReflectionUnionType:int|string\nuntyped:null\nlisted:int"
+    );
+}
+
 /// Verifies `ReflectionEnum` exposes AOT enum name and backing metadata.
 #[test]
 fn test_reflection_enum_owner_metadata() {

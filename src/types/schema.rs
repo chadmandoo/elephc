@@ -11,7 +11,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::parser::ast::{AttributeGroup, ClassMethod, Expr, ExprKind, StaticReceiver, Visibility};
+use crate::parser::ast::{
+    AttributeGroup, ClassMethod, Expr, ExprKind, StaticReceiver, TypeExpr, Visibility,
+};
 use crate::span::Span;
 
 use super::{FunctionSig, PhpType};
@@ -231,6 +233,8 @@ pub struct InterfaceInfo {
     pub static_method_order: Vec<String>,
     /// Interface constants (PHP 5.0+). Inherited from parent interfaces.
     pub constants: HashMap<String, crate::parser::ast::Expr>,
+    /// PHP 8.3 declared types for visible interface constants.
+    pub constant_types: HashMap<String, TypeExpr>,
     /// Declaring interface for each visible constant, keyed by case-sensitive constant name.
     pub constant_declaring_interfaces: HashMap<String, String>,
     /// Interface constants declared with PHP 8.1+ `final`, including inherited parents.
@@ -256,6 +260,8 @@ pub struct ClassInfo {
     /// User-declared class constants (PHP 7.1+). Maps the constant name to
     /// its value expression — codegen inlines the literal at access time.
     pub constants: HashMap<String, crate::parser::ast::Expr>,
+    /// PHP 8.3 declared types for constants declared directly on this class-like symbol.
+    pub constant_types: HashMap<String, TypeExpr>,
     /// Class constant visibilities keyed by case-sensitive constant name.
     pub constant_visibilities: HashMap<String, Visibility>,
     /// Class constants declared with PHP 8.1+ `final`, keyed by constant name.

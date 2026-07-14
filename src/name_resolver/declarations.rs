@@ -351,6 +351,10 @@ fn resolve_class_consts(
     constants
         .iter()
         .map(|constant| ClassConst {
+            type_expr: constant
+                .type_expr
+                .as_ref()
+                .map(|ty| resolve_type_expr(ty, namespace, imports, symbols)),
             value: resolve_expr(&constant.value, namespace, imports, symbols),
             attributes: resolve_attribute_groups(&constant.attributes, namespace, imports, symbols),
             ..constant.clone()

@@ -318,6 +318,7 @@ pub(crate) fn build_interface_info_recursive(
     }
 
     let mut iface_constants: HashMap<String, crate::parser::ast::Expr> = HashMap::new();
+    let mut constant_types = HashMap::new();
     let mut constant_declaring_interfaces = HashMap::new();
     let mut final_constants = HashSet::new();
     for parent_name in &interface.extends {
@@ -325,6 +326,9 @@ pub(crate) fn build_interface_info_recursive(
             for (k, v) in &parent_info.constants {
                 if !iface_constants.contains_key(k) {
                     iface_constants.insert(k.clone(), v.clone());
+                    if let Some(type_expr) = parent_info.constant_types.get(k) {
+                        constant_types.insert(k.clone(), type_expr.clone());
+                    }
                     constant_declaring_interfaces.insert(
                         k.clone(),
                         parent_info
@@ -354,6 +358,11 @@ pub(crate) fn build_interface_info_recursive(
             }
         }
         iface_constants.insert(c.name.clone(), c.value.clone());
+        if let Some(type_expr) = &c.type_expr {
+            constant_types.insert(c.name.clone(), type_expr.clone());
+        } else {
+            constant_types.remove(&c.name);
+        }
         constant_declaring_interfaces.insert(c.name.clone(), interface.name.clone());
         if c.is_final {
             final_constants.insert(c.name.clone());
@@ -377,6 +386,7 @@ pub(crate) fn build_interface_info_recursive(
             static_method_declaring_interfaces,
             static_method_order,
             constants: iface_constants,
+            constant_types,
             constant_declaring_interfaces,
             final_constants,
         },

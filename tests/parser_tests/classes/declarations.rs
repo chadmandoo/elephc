@@ -46,6 +46,26 @@ fn test_parse_class_decl() {
     }
 }
 
+/// Verifies PHP 8.3 class-constant types are retained in the parsed AST while
+/// a semi-reserved constant name followed by `=` remains untyped.
+#[test]
+fn test_parse_typed_class_constant_metadata() {
+    let statements = parse_source(
+        "<?php class Limits { public const int|string VALUE = 1; const string = 'name'; }",
+    );
+    let StmtKind::ClassDecl { constants, .. } = &statements[0].kind else {
+        panic!("Expected ClassDecl");
+    };
+    assert_eq!(constants.len(), 2);
+    assert_eq!(
+        constants[0].type_expr,
+        Some(TypeExpr::Union(vec![TypeExpr::Int, TypeExpr::Str]))
+    );
+    assert_eq!(constants[0].name, "VALUE");
+    assert_eq!(constants[1].type_expr, None);
+    assert_eq!(constants[1].name, "string");
+}
+
 /// Verifies that `clone`, a PHP operator keyword, is still accepted as a method name.
 #[test]
 fn test_parse_clone_named_method() {

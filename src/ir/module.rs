@@ -75,6 +75,8 @@ pub struct Module {
     pub declared_trait_property_names: HashMap<String, Vec<String>>,
     pub declared_trait_constant_names: HashMap<String, Vec<String>>,
     pub declared_trait_constants: HashMap<String, HashMap<String, crate::parser::ast::Expr>>,
+    pub declared_trait_constant_types:
+        HashMap<String, HashMap<String, crate::parser::ast::TypeExpr>>,
     pub declared_trait_constant_visibilities: HashMap<String, HashMap<String, Visibility>>,
     pub declared_trait_final_constants: HashMap<String, HashSet<String>>,
     /// Prescanned global constant values used by EIR lowering and eval metadata registration.
@@ -119,6 +121,7 @@ impl Module {
             declared_trait_property_names: HashMap::new(),
             declared_trait_constant_names: HashMap::new(),
             declared_trait_constants: HashMap::new(),
+            declared_trait_constant_types: HashMap::new(),
             declared_trait_constant_visibilities: HashMap::new(),
             declared_trait_final_constants: HashMap::new(),
             global_constants: HashMap::new(),

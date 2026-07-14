@@ -301,3 +301,18 @@ fn test_typed_class_constants_parse_and_read() {
     );
     assert_eq!(out, "n:3");
 }
+
+/// Verifies typed constant overrides may narrow a parent union and retain the
+/// declared type when the constant is used in another typed expression.
+#[test]
+fn test_typed_class_constant_covariant_override() {
+    let out = compile_and_run(
+        r#"<?php
+class BaseLimit { public const int|string VALUE = 1; }
+class IntLimit extends BaseLimit { public const int VALUE = 2; }
+function read_limit(): int { return IntLimit::VALUE; }
+echo read_limit();
+"#,
+    );
+    assert_eq!(out, "2");
+}

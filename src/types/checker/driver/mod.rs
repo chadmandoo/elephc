@@ -39,7 +39,8 @@ use super::builtin_stdclass::inject_builtin_stdclass;
 use super::builtin_user_filter::inject_builtin_user_filter;
 use super::schema::{
     build_class_info_recursive, build_enum_info, build_interface_info_recursive,
-    drop_unresolvable_attribute_arg_refs, validate_deferred_object_defaults,
+    drop_unresolvable_attribute_arg_refs, validate_deferred_class_constants,
+    validate_deferred_object_defaults,
 };
 use super::yield_validation::validate_yield_contexts;
 use super::Checker;
@@ -128,7 +129,9 @@ pub(super) fn check_types_impl(
             // An interface has no single parent class, so `self`/`static` resolve to the interface
             // itself; `parent` is left untouched (it is meaningless in an interface contract).
             let mut interface_methods = methods.clone();
+            let mut interface_constants = constants.clone();
             substitute_relative_class_types_in_methods(&mut interface_methods, name, None);
+            substitute_relative_class_types_in_constants(&mut interface_constants, name, None);
             interface_map.insert(
                 name.clone(),
                 InterfaceDeclInfo {
@@ -140,7 +143,7 @@ pub(super) fn check_types_impl(
                     properties: properties.clone(),
                     methods: interface_methods,
                     span: stmt.span,
-                    constants: constants.clone(),
+                    constants: interface_constants,
                 },
             );
         }
@@ -272,6 +275,13 @@ pub(super) fn check_types_impl(
     errors.extend(validate_deferred_object_defaults(
         &checker,
         &flattened_classes,
+        program,
+    ));
+    errors.extend(validate_deferred_class_constants(
+        &mut checker,
+        &flattened_classes,
+        &interface_map,
+        &flattened_enums,
         program,
     ));
     // All class/interface/enum metadata now exists, so deferred symbolic
@@ -535,6 +545,11 @@ fn substitute_relative_class_types_in_flattened(classes: &mut [FlattenedClass]) 
                 *ty = ty.substitute_relative_class_types(&self_class, parent_ref);
             }
         }
+        substitute_relative_class_types_in_constants(
+            &mut class.constants,
+            &self_class,
+            parent_ref,
+        );
     }
 }
 
@@ -543,6 +558,21 @@ fn substitute_relative_class_types_in_flattened_enums(enums: &mut HashMap<String
     for enum_unit in enums.values_mut() {
         let self_class = enum_unit.name.clone();
         substitute_relative_class_types_in_methods(&mut enum_unit.methods, &self_class, None);
+        substitute_relative_class_types_in_constants(&mut enum_unit.constants, &self_class, None);
+    }
+}
+
+/// Rewrites `self`/`static`/`parent` type annotations on class constants after
+/// composition and inheritance have established the concrete owner.
+fn substitute_relative_class_types_in_constants(
+    constants: &mut [crate::parser::ast::ClassConst],
+    self_class: &str,
+    parent: Option<&str>,
+) {
+    for constant in constants {
+        if let Some(type_expr) = constant.type_expr.as_mut() {
+            *type_expr = type_expr.substitute_relative_class_types(self_class, parent);
+        }
     }
 }
 

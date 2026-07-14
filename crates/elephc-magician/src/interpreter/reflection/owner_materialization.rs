@@ -214,6 +214,21 @@ pub(super) fn eval_reflection_owner_object_with_members(
         backing_value_cell,
         constructor,
     )?;
+    if owner_kind == EVAL_REFLECTION_OWNER_CLASS_CONSTANT {
+        let has_type = values.bool_value(type_metadata.is_some())?;
+        let type_value = match type_metadata {
+            Some(type_metadata) => eval_reflection_type_object_result(type_metadata, values)?,
+            None => values.null()?,
+        };
+        eval_reflection_with_declaring_class_scope(
+            "ReflectionClassConstant",
+            context,
+            |_| -> Result<(), EvalStatus> {
+                values.property_set(object, "__has_type", has_type)?;
+                values.property_set(object, "__type", type_value)
+            },
+        )?;
+    }
     if matches!(
         owner_kind,
         EVAL_REFLECTION_OWNER_CLASS | EVAL_REFLECTION_OWNER_OBJECT | EVAL_REFLECTION_OWNER_ENUM
