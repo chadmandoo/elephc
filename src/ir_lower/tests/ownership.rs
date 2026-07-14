@@ -20,6 +20,17 @@ fn main_function_text(text: &str) -> &str {
     }
 }
 
+/// Returns the printed EIR slice for one named function.
+fn named_function_text<'a>(text: &'a str, name: &str) -> &'a str {
+    let needle = format!("function {name}(");
+    let start = text.find(&needle).expect("expected named lowered function");
+    let tail = &text[start..];
+    match tail[1..].find("\n  function ") {
+        Some(next_function) => &tail[..1 + next_function],
+        None => tail,
+    }
+}
+
 /// Verifies storing a freshly allocated array releases the temporary producer after the store.
 #[test]
 fn fresh_array_local_assignment_releases_source_after_store() {
@@ -101,6 +112,37 @@ fn overwriting_string_local_emits_release() {
     let text = print_module(&module);
     assert!(text.contains("acquire"), "expected acquire in {text}");
     assert!(text.contains("release"), "expected release in {text}");
+}
+
+/// Verifies a borrowed string result is retained before its aliased source slot is released.
+#[test]
+fn self_reassignment_acquires_borrowed_string_before_releasing_slot() {
+    let module = super::lower_source(
+        r#"<?php
+function normalize(string $value): string {
+    $value = trim($value);
+    return $value;
+}
+echo normalize("  hi  ");
+"#,
+    );
+    let text = print_module(&module);
+    let function = named_function_text(&text, "normalize");
+    let builtin = function
+        .find("builtin_call")
+        .expect("expected trim builtin call");
+    let assignment = &function[builtin..];
+    let acquire = assignment.find("acquire").expect("expected retained trim result");
+    let release = assignment
+        .find("release")
+        .expect("expected previous slot release");
+    let store = assignment
+        .find("store_local")
+        .expect("expected replacement local store");
+    assert!(
+        acquire < release && release < store,
+        "expected acquire before old-slot release and store in {function}"
+    );
 }
 
 /// Verifies appends into mixed function parameters use an explicit append opcode.

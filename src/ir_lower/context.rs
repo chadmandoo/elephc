@@ -821,6 +821,8 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let slot = self.declare_local(name, php_type.clone());
         self.builder
             .widen_local_storage_type(slot, php_type.clone());
+        // Retain before cleanup because a borrowed result can alias the old slot.
+        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
         if local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
         {
@@ -832,7 +834,6 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         {
             self.release_stored_local_value(name, slot, span);
         }
-        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
         self.store_slot_with_op(slot, stored, Op::StoreLocal, span);
         self.set_local_type(name, php_type);
         if self.value_needs_release_after_retaining_store(value) {
@@ -905,20 +906,21 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         crate::ir_lower::ownership::release_if_owned(self, previous, span);
     }
 
-    /// Releases the previous occupant of a slot that a retaining `store_local` is
-    /// about to overwrite, deciding against the FINAL storage type when needed.
+    /// Releases the previous occupant immediately before a retaining store overwrites it.
     ///
-    /// When the slot's storage type already needs lifetime tracking this emits the
-    /// eager load+release pair immediately. When it does not, the slot can STILL be
-    /// widened to refcounted storage by a store lowered later that reaches this one
-    /// through a loop back-edge (e.g. an inner `for` counter re-initialized by the
-    /// outer body but widened Int→Mixed by its checked-add update). The storage
+    /// The caller must first retain the incoming value because borrowing operations
+    /// can return storage that aliases the previous occupant (for example,
+    /// `$value = trim($value)`). When the slot's storage type already needs lifetime
+    /// tracking this emits the eager load+release pair. When it does not, the slot can
+    /// STILL be widened to refcounted storage by a store lowered later that reaches
+    /// this one through a loop back-edge (e.g. an inner `for` counter re-initialized
+    /// by the outer body but widened Int→Mixed by its checked-add update). The storage
     /// type visible here is stale in that case, so inside loops a deferred
     /// `release_local_slot` is emitted instead: the backend releases the occupant
     /// using the final widened storage type, and `prune_untracked_release_local_slot_ops`
     /// erases the op when the slot never widens (issue #534: without this, the
     /// previous outer iteration's Mixed box leaked on every re-initialization).
-    fn release_stored_local_value_before_retaining_store(
+    fn release_stored_local_value_before_overwrite(
         &mut self,
         name: &str,
         slot: LocalSlotId,
@@ -1008,35 +1010,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
                 && !matches!(previous_kind, LocalKind::HiddenTemp | LocalKind::OwnedTemp);
         let transfer_callable_source_to_store = source_is_owning_temporary
             && matches!(php_type.codegen_repr(), PhpType::Callable);
-        if !uses_global
-            && local_kind_uses_plain_store_cleanup(previous_kind)
-            && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
-        {
-            self.release_stored_local_value_before_retaining_store(name, slot, span);
-        }
-        // A loop-carried slot can exist globally without being definitely initialized
-        // on this CFG path. Release the runtime occupant before overwriting it.
-        if !uses_global
-            && local_kind_uses_plain_store_cleanup(previous_kind)
-            && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
-            && !self.loop_stack.is_empty()
-        {
-            self.release_stored_local_value_before_retaining_store(name, slot, span);
-        }
-        // A first syntactic store inside a loop body (main or function) can still
-        // overwrite a prior runtime iteration's value: the slot has no straight-line
-        // predecessor store so it is not in `initialized_slots`, but the loop back-edge
-        // makes it live on iterations 2+. Release the previous occupant so the old value
-        // is freed on reassign. Function cleanup locals (including returned slots) are
-        // zero-initialized in the prologue, so the first iteration safely releases a null
-        // slot; subsequent iterations release the prior value.
-        if !uses_global
-            && local_kind_uses_plain_store_cleanup(previous_kind)
-            && previous_slot.is_none()
-            && !self.loop_stack.is_empty()
-        {
-            self.release_stored_local_value_before_retaining_store(name, slot, span);
-        }
+        // Retain before cleanup because a borrowed result can alias the old slot.
         let value = if (uses_global || previous_kind == LocalKind::PhpLocal)
             && !transfer_callable_source_to_store
             && !self.is_ref_bound_local(name)
@@ -1063,6 +1037,35 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         } else {
             value
         };
+        if !uses_global
+            && local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
+        {
+            self.release_stored_local_value_before_overwrite(name, slot, span);
+        }
+        // A loop-carried slot can exist globally without being definitely initialized
+        // on this CFG path. Release the runtime occupant before overwriting it.
+        if !uses_global
+            && local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_some_and(|slot| !self.initialized_slots.contains(&slot))
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value_before_overwrite(name, slot, span);
+        }
+        // A first syntactic store inside a loop body (main or function) can still
+        // overwrite a prior runtime iteration's value: the slot has no straight-line
+        // predecessor store so it is not in `initialized_slots`, but the loop back-edge
+        // makes it live on iterations 2+. Release the previous occupant so the old value
+        // is freed on reassign. Function cleanup locals (including returned slots) are
+        // zero-initialized in the prologue, so the first iteration safely releases a null
+        // slot; subsequent iterations release the prior value.
+        if !uses_global
+            && local_kind_uses_plain_store_cleanup(previous_kind)
+            && previous_slot.is_none()
+            && !self.loop_stack.is_empty()
+        {
+            self.release_stored_local_value_before_overwrite(name, slot, span);
+        }
         if uses_global {
             self.store_global_name(name, slot, value, span);
             self.set_local_type(name, php_type);
@@ -1152,6 +1155,10 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         let slot = self.declare_local(name, php_type.clone());
         self.builder
             .widen_local_storage_type(slot, php_type.clone());
+        let source = value;
+        let release_source_after_store = self.value_needs_release_after_retaining_store(value);
+        // Retain before cleanup because a borrowed result can alias the old slot.
+        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
         if local_kind_uses_plain_store_cleanup(previous_kind)
             && previous_slot.is_some_and(|slot| self.initialized_slots.contains(&slot))
         {
@@ -1169,9 +1176,6 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         {
             self.release_stored_local_value(name, slot, span);
         }
-        let source = value;
-        let release_source_after_store = self.value_needs_release_after_retaining_store(value);
-        let stored = crate::ir_lower::ownership::acquire_if_refcounted(self, value, span);
         self.store_slot_with_op(slot, stored, Op::StoreLocal, span);
         self.set_local_type(name, php_type);
         if release_source_after_store {

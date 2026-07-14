@@ -312,6 +312,27 @@ echo describe("items", $items);
     );
 }
 
+/// Verifies self-reassignment retains a borrowed string slice before freeing its source slot.
+#[test]
+fn test_string_self_reassignment_preserves_borrowed_builtin_slice() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function normalize(string $value): string {
+    $value = trim($value);
+    return $value;
+}
+echo normalize("  hi  ");
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "hi");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap after aliased self-reassignment, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test: `explode` result used as an array inside a function, then
 /// indexed. Verifies that `$parts[0]` and `$parts[1]` access the correct exploded
 /// segments after `explode` is called on a comma-separated string.
