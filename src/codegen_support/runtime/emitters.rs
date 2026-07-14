@@ -94,6 +94,9 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     strings::emit_md5(emitter);
     strings::emit_sha1(emitter);
     strings::emit_crc32(emitter);
+    if features.mb_strlen {
+        strings::emit_mb_strlen(emitter);
+    }
     strings::emit_hash(emitter);
     strings::emit_hash_hmac(emitter);
     strings::emit_hash_equals(emitter);
@@ -601,6 +604,25 @@ mod tests {
         assert!(!asm.contains("__rt_preg_match:"));
         assert!(!asm.contains("__rt_preg_replace:"));
         assert!(!asm.contains("__rt_preg_split:"));
+    }
+
+    /// Verifies the iconv-backed `mb_strlen()` helper is emitted only for programs that use it.
+    #[test]
+    fn test_runtime_can_gate_mb_strlen_helper() {
+        let target = Target::new(Platform::MacOS, Arch::AArch64);
+        let mut omitted = Emitter::new(target);
+        emit_runtime(&mut omitted, RuntimeFeatures::none());
+        assert!(!omitted.output().contains("__rt_mb_strlen:"));
+
+        let mut included = Emitter::new(target);
+        emit_runtime(
+            &mut included,
+            RuntimeFeatures {
+                mb_strlen: true,
+                ..RuntimeFeatures::none()
+            },
+        );
+        assert!(included.output().contains("__rt_mb_strlen:"));
     }
 
     /// Verifies that Linux x86_64 uses the shared runtime surface.

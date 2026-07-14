@@ -39,3 +39,6 @@ pub(crate) const HASH_INIT_UNKNOWN_ALGO_MSG: &str =
 /// name or a non-cryptographic checksum (PHP rejects HMAC over crc32/adler/fnv/joaat).
 pub(crate) const HASH_HMAC_UNKNOWN_ALGO_MSG: &str =
     "hash_hmac(): Argument #1 ($algo) must be a valid cryptographic hashing algorithm";
+/// Catchable `\ValueError` message when `mb_strlen()` receives an unknown encoding name.
+pub(crate) const MB_STRLEN_UNKNOWN_ENCODING_MSG: &str =
+    "mb_strlen(): Argument #2 ($encoding) must be a valid encoding";

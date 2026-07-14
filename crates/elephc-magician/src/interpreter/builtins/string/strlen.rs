@@ -28,6 +28,14 @@ pub(in crate::interpreter) fn eval_builtin_strlen(
         return Err(EvalStatus::RuntimeFatal);
     };
     let value = eval_expr(value, context, scope, values)?;
+    eval_strlen_result(value, values)
+}
+
+/// Returns the byte length of one materialized eval string.
+pub(in crate::interpreter) fn eval_strlen_result(
+    value: RuntimeCellHandle,
+    values: &mut impl RuntimeValueOps,
+) -> Result<RuntimeCellHandle, EvalStatus> {
     let bytes = values.string_bytes(value)?;
     let len = i64::try_from(bytes.len()).map_err(|_| EvalStatus::RuntimeFatal)?;
     values.int(len)

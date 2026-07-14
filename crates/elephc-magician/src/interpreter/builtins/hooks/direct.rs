@@ -280,7 +280,7 @@ pub(in crate::interpreter) enum EvalDirectHook {
     StrReplace,
     /// Dispatches `str_split(...)`.
     StrSplit,
-    /// Dispatches `strlen(...)`.
+    /// Dispatches `strlen(...)` and `mb_strlen(...)`.
     Strlen,
     /// Dispatches `str_repeat(...)`.
     StrRepeat,
@@ -534,7 +534,11 @@ impl EvalDirectHook {
                 _ => Err(EvalStatus::RuntimeFatal),
             },
             Self::StrSplit => eval_builtin_str_split(args, context, scope, values),
-            Self::Strlen => eval_builtin_strlen(args, context, scope, values),
+            Self::Strlen => match name {
+                "mb_strlen" => eval_builtin_mb_strlen(args, context, scope, values),
+                "strlen" => eval_builtin_strlen(args, context, scope, values),
+                _ => Err(EvalStatus::RuntimeFatal),
+            },
             Self::StrRepeat => eval_builtin_str_repeat(args, context, scope, values),
             Self::Strval => eval_builtin_strval(args, context, scope, values),
             Self::Strrev => eval_builtin_strrev(args, context, scope, values),
