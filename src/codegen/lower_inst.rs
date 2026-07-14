@@ -1917,6 +1917,18 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
                 crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
                 return store_if_result(ctx, inst);
             }
+            PhpType::Mixed | PhpType::Union(_) => {
+                // A boxed Mixed converting to a nullable scalar (`?int` etc.): unbox the cell and
+                // reorder its (tag, payload) into the tagged-scalar registers. This is the SAME
+                // operation `coerce_loaded_value_to_tagged_scalar` (the canonical to-TaggedScalar
+                // conversion) already performs for a Mixed source; this `runtime_call` block simply
+                // duplicated the other arms and omitted this one, so a `mixed` value flowing to a
+                // `?int` return/param/slot failed with "runtime_call from Mixed to TaggedScalar" —
+                // 44 of 1082 survey roots, all passing `--check`.
+                load_value_to_first_int_arg(ctx, value)?;
+                emit_mixed_result_as_tagged_scalar(ctx);
+                return store_if_result(ctx, inst);
+            }
             other => {
                 return Err(CodegenIrError::unsupported(format!(
                     "runtime_call from PHP type {:?} to PHP type TaggedScalar",

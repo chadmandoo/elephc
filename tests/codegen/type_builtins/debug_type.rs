@@ -77,3 +77,26 @@ echo f(new A()), ';', f(new B()), ';', f(1), ';', f('s');
     );
     assert_eq!(out, "A;B;not-object;not-object");
 }
+
+/// Regression (#644): a boxed `Mixed` value converting to a nullable scalar (`?int`) at a
+/// runtime-call boundary must lower (unbox + reorder into the tagged-scalar registers), preserving
+/// both an int payload and null.
+///
+/// The `runtime_call` conversion block handled Int/Bool/Void sources into a TaggedScalar result but
+/// omitted the `Mixed | Union` arm that the canonical `coerce_loaded_value_to_tagged_scalar` already
+/// has, so a `mixed` value flowing to a `?int` return/param/slot failed with
+/// "runtime_call from Mixed to TaggedScalar" — 44 of 1082 survey roots, all passing `--check`.
+#[test]
+fn test_mixed_value_converts_to_nullable_int_at_runtime_call() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function m(mixed $v): mixed { return $v; }
+function f(mixed $v): ?int { return m($v); }
+echo f(5) ?? -1, ';';
+echo f(null) ?? -1, ';';
+echo f(-7) ?? -1;
+"#,
+    );
+    assert_eq!(out, "5;-1;-7");
+}
