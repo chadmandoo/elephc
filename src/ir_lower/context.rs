@@ -1498,7 +1498,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 
     /// Returns whether the value is a read from a one-shot hidden expression temp.
-    fn value_is_owned_temp_load(&self, value: ValueId) -> bool {
+    pub(crate) fn value_is_owned_temp_load(&self, value: ValueId) -> bool {
         let Some(inst) = self.builder.value_defining_instruction(value) else {
             return false;
         };
