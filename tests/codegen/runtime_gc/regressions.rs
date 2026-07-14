@@ -1452,6 +1452,193 @@ echo 'acc=' . run(300);
     );
 }
 
+/// Verifies deferred loop-slot cleanup remains balanced across `break` and `continue` paths.
+#[test]
+fn test_regression_534_break_continue_paths_are_heap_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$acc = 0;
+$value = 0;
+for ($i = 0; $i < 50; $i++) {
+    for ($k = 0; $k < 5; $k++) {
+        if ($k == 1) {
+            continue;
+        }
+        if ($k == 4) {
+            break;
+        }
+        $value = 0;
+        $value++;
+        $acc = $acc + $value;
+    }
+}
+$alias =& $value;
+echo $acc . '|' . $alias;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "150|1");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap across break/continue paths, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies a local already bound by reference before a loop never receives raw-slot cleanup.
+#[test]
+fn test_regression_534_prebound_ref_cell_loop_is_heap_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$value = 0;
+$alias =& $value;
+for ($i = 0; $i < 100; $i++) {
+    $value = 0;
+    $value++;
+}
+echo $alias;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "1");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap for a pre-bound ref-cell slot, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies a syntactic promotion inside a loop reuses its runtime cell on later iterations.
+#[test]
+fn test_regression_534_repeated_loop_ref_promotion_is_heap_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+$value = 0;
+for ($i = 0; $i < 5; $i++) {
+    $alias =& $value;
+    $alias = $i;
+}
+echo $value . '|' . $alias;
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "4|4");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected repeated runtime promotion to reuse one balanced cell, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression for a tagged nullable parameter whose local slot widens to owned Mixed storage.
+#[test]
+fn test_regression_widened_tagged_parameter_releases_final_mixed_box() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function normalize(?int $value, int $iterations): ?int {
+    for ($i = 0; $i < $iterations; $i++) {
+        $value = 0;
+    }
+    return $value;
+}
+normalize(null, 0);
+echo normalize(null, 1);
+echo '|';
+echo normalize(null, 3);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "0|0");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected widened parameter storage to be released, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies reassignment of a borrowed Mixed parameter cannot release the caller's owner.
+#[test]
+fn test_regression_reassigned_mixed_parameter_retains_caller_value() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function replace(mixed $value): mixed {
+    $value = 0;
+    return $value;
+}
+$caller = [1, 2, 3];
+echo replace($caller) . '|';
+echo count($caller);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "0|3");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected borrowed caller value and reassigned parameter to stay balanced, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies conditional ref-cell promotion cleans either each raw local owner or its cell.
+#[test]
+fn test_regression_conditional_parameter_ref_promotion_is_path_balanced() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function maybe_bind(array $value, bool $bind): int {
+    if ($bind) {
+        $alias =& $value;
+    }
+    $value = [4, 5];
+    return count($value);
+}
+function maybe_bind_local(bool $bind): int {
+    $value = [4, 5];
+    if ($bind) {
+        $alias =& $value;
+    }
+    return count($value);
+}
+function conditional_realias(bool $bind): int {
+    $value = 1;
+    if ($bind) {
+        $first =& $value;
+    }
+    $second =& $value;
+    $second = 7;
+    return $value;
+}
+function increment_ref(int &$value): void {
+    $value = $value + 1;
+}
+function conditional_ref_argument(bool $bind): int {
+    $value = 1;
+    if ($bind) {
+        $alias =& $value;
+    }
+    increment_ref($value);
+    return $value;
+}
+$caller = [1, 2, 3];
+echo maybe_bind($caller, false) . '|';
+echo maybe_bind($caller, true) . '|';
+echo maybe_bind_local(false) . '|';
+echo maybe_bind_local(true) . '|';
+echo conditional_realias(false) . '|';
+echo conditional_realias(true) . '|';
+echo conditional_ref_argument(false) . '|';
+echo conditional_ref_argument(true) . '|';
+echo count($caller);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "2|2|2|2|7|7|2|2|3");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected raw and promoted local paths to stay balanced, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test for issue #516 (three-level chain): every intermediate of a
 /// deeper chained subscript read (`$a[$i][$j][$k]`) is an owned container
 /// temporary and each must be released by its consuming read. Also guards
