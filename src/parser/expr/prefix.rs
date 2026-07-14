@@ -26,6 +26,36 @@ use super::{parse_args, parse_expr};
 /// Dispatched from `parse_expr_bp` for the leftmost expression in a binding-power loop.
 /// Advances `pos` past all tokens consumed by the prefix; the caller continues with the
 /// remaining token stream. Returns an error on unexpected end of input or unrecognized tokens.
+/// Whether `token` is a PHP global constant that the lexer emits as a DEDICATED token (not a
+/// `Token::Identifier`) and that `parse_prefix` maps to a literal on its own.
+///
+/// A leading `\` before any of these is a namespace no-op (`\PHP_INT_MAX` === `PHP_INT_MAX`), so it
+/// must be stripped rather than sent to `parse_name`, which only accepts identifier parts. Every
+/// token listed here has a corresponding literal arm in the `parse_prefix` match below.
+fn token_is_global_constant_literal(token: &Token) -> bool {
+    matches!(
+        token,
+        Token::True
+            | Token::False
+            | Token::Null
+            | Token::Inf
+            | Token::Nan
+            | Token::PhpIntMax
+            | Token::PhpIntMin
+            | Token::PhpFloatMax
+            | Token::PhpFloatMin
+            | Token::PhpFloatEpsilon
+            | Token::PhpEol
+            | Token::PhpOs
+            | Token::PhpVersion
+            | Token::MPi
+            | Token::ME
+            | Token::MSqrt2
+            | Token::MPi2
+            | Token::MPi4
+    )
+}
+
 pub(super) fn parse_prefix(
     tokens: &[(Token, Span)],
     pos: &mut usize,
@@ -238,6 +268,21 @@ pub(super) fn parse_prefix(
         {
             *pos += 1;
             parse_array_literal(tokens, pos, span, &Token::RParen)
+        }
+        Token::Backslash
+            if tokens
+                .get(*pos + 1)
+                .is_some_and(|(next, _)| token_is_global_constant_literal(next)) =>
+        {
+            // A leading `\` before a PHP global constant is a namespace no-op:
+            // `\PHP_INT_MAX` is identical to `PHP_INT_MAX`. These constants lex as DEDICATED
+            // tokens (Token::PhpIntMax, Token::Inf, Token::MPi, Token::True, ...), not as
+            // Token::Identifier, so routing them through parse_named_expr -> parse_name rejects
+            // them with "Expected name" (parse_name consumes the `\` and then demands an
+            // identifier it never finds). Strip the backslash and let the constant's own arm
+            // below handle it. nikic/php-parser's String_.php:125 `\PHP_INT_MAX` hit this.
+            *pos += 1;
+            parse_prefix(tokens, pos)
         }
         Token::Identifier(_) | Token::Backslash => parse_named_expr(tokens, pos, span),
         Token::Self_ => {

@@ -604,3 +604,33 @@ namespace App {
     );
     assert_eq!(out, "212");
 }
+
+/// Regression (#647): a leading `\` before a PHP global CONSTANT is a namespace no-op
+/// (`\PHP_INT_MAX` === `PHP_INT_MAX`) and must parse.
+///
+/// These constants lex as DEDICATED tokens (`Token::PhpIntMax`, `Token::MPi`, `Token::True`, ...),
+/// not as `Token::Identifier`. The parser routed a leading `\` through `parse_named_expr` ->
+/// `parse_name`, which consumes the backslash and then demands an identifier part it never finds,
+/// erroring "Expected name". A leading `\` before a FUNCTION (`\strlen(...)`) always worked, because
+/// that IS an identifier — only the dedicated-token constants broke. nikic/php-parser's
+/// `String_.php:125` (`\PHP_INT_MAX` in a ternary) hit this; 6 survey roots bundle that file.
+///
+/// Also asserts the negative: a leading `\` before a real function/name still routes normally.
+#[test]
+fn test_leading_backslash_on_global_constant_is_a_namespace_noop() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function pick(int $d): int {
+    return \is_int($d) ? $d : \PHP_INT_MAX;
+}
+echo pick(5), ';';
+echo \PHP_INT_MAX, ';';
+echo (int) (\M_PI * 100), ';';
+echo \true ? 'T' : 'F', \false ? 'T' : 'F', ';';
+echo \strlen('abc'), ';';
+echo \count([1, 2, 3]);
+"#,
+    );
+    assert_eq!(out, "5;9223372036854775807;314;TF;3;3");
+}
