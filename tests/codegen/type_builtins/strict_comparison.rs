@@ -261,4 +261,47 @@ echo $map["bool_t"] === true ? "1" : "0";
     assert_eq!(out, "100111");
 }
 
+// --- Array identity against the empty-array literal `[]` ---
+
+/// Regression (#642): `$array === []` compares by emptiness, not pointer identity.
+///
+/// A bare `array` value is typed `Array(Mixed)` and `[]` is `Array(Never)`; the
+/// generic strict-eq path saw the differing static types and emitted an unconditional
+/// `false`, silently miscompiling the idiomatic `$errors === []` emptiness check
+/// (a `--check`-invisible #635-class bug). An array equals `[]` exactly when it holds
+/// zero entries, so this is a length==0 test.
+#[test]
+fn test_array_strict_eq_empty_literal_is_emptiness() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+function classify(array $a): string {
+    $seen = [];
+    foreach ($a as $k => $v) { $seen[$k] = $v; }
+    return ($seen === []) ? 'empty' : 'nonempty';
+}
+echo classify([]), ';', classify(['x' => 1]), ';';
+echo ([] === []) ? 'Y' : 'N', ';';
+echo ([] === ['a']) ? 'Y' : 'N';
+"#,
+    );
+    assert_eq!(out, "empty;nonempty;Y;N");
+}
+
+/// Regression (#642): the reversed operand order and the `!==` form.
+#[test]
+fn test_array_strict_eq_empty_literal_reversed_and_negated() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+/** @param list<int> $a */
+function has_none(array $a): string { return ([] === $a) ? 'E' : 'N'; }
+/** @param list<int> $a */
+function has_any(array $a): string { return ($a !== []) ? 'has' : 'none'; }
+echo has_none([]), ';', has_none([1, 2]), ';', has_any([]), ';', has_any([9]);
+"#,
+    );
+    assert_eq!(out, "E;N;none;has");
+}
+
 // --- Include / Require ---

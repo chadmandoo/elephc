@@ -71,6 +71,19 @@ pub(super) fn lower_strict_eq(
     let rhs = expect_operand(inst, 1)?;
     let lhs_ty = ctx.value_php_type(lhs)?.codegen_repr();
     let rhs_ty = ctx.value_php_type(rhs)?.codegen_repr();
+    // `$arr === []` / `[] === $arr`: the empty-array literal is typed `Array(Never)`;
+    // PHP strict-compares it against another array by emptiness (same array type, zero
+    // entries). Without this the generic path takes `lhs_ty != rhs_ty` (for a concrete
+    // `Array(Mixed)`) and emits an unconditional `false` — silently miscompiling the
+    // idiomatic `$errors === []` / `if ($denied === [])` emptiness checks. The array
+    // length lives at header offset 0 for both indexed and associative storage.
+    if (is_empty_array_literal(&lhs_ty) && is_array_like(&rhs_ty))
+        || (is_empty_array_literal(&rhs_ty) && is_array_like(&lhs_ty))
+    {
+        let array = if is_empty_array_literal(&lhs_ty) { rhs } else { lhs };
+        emit_array_is_empty(ctx, array, is_equal)?;
+        return store_if_result(ctx, inst);
+    }
     if needs_mixed_strict_compare(&lhs_ty) || needs_mixed_strict_compare(&rhs_ty) {
         emit_mixed_strict_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
         return store_if_result(ctx, inst);
@@ -130,6 +143,44 @@ fn emit_pointer_compare(
             ctx.emitter.instruction(&format!("cmp {}, {}", lhs_reg, rhs_reg));  // compare pointer-like payloads for PHP strict identity
             ctx.emitter.instruction(&format!("set{} al", equality_cond(is_equal, ctx.emitter.target.arch))); // materialize pointer identity in the low byte
             ctx.emitter.instruction("movzx rax, al");                           // widen the pointer identity byte into the integer result register
+        }
+    }
+    Ok(())
+}
+
+/// Returns true when `ty` is the empty-array literal placeholder `Array(Never)`
+/// produced by a `[]` literal.
+fn is_empty_array_literal(ty: &PhpType) -> bool {
+    matches!(ty, PhpType::Array(elem) if matches!(elem.as_ref(), PhpType::Never))
+}
+
+/// Returns true when `ty` is any array-like storage (indexed or associative).
+fn is_array_like(ty: &PhpType) -> bool {
+    matches!(ty, PhpType::Array(_) | PhpType::AssocArray { .. })
+}
+
+/// Emits the boolean result of comparing an array against the empty-array literal
+/// `[]` for strict (in)equality: the array is equal to `[]` exactly when it holds
+/// zero entries. The length lives at array header offset 0 for both indexed and
+/// associative storage (as `count()` reads it), so this is a single length==0 test.
+fn emit_array_is_empty(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+    is_equal: bool,
+) -> Result<()> {
+    ctx.load_value_to_result(array)?;
+    let reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, reg, reg, 0);                       // reg = array length (header offset 0)
+    let cond = equality_cond(is_equal, ctx.emitter.target.arch);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, #0", reg));                // an array equals [] exactly when its length is zero
+            ctx.emitter.instruction(&format!("cset x0, {}", cond));             // materialize emptiness as the strict-(in)equality result
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("test {}, {}", reg, reg));          // an array equals [] exactly when its length is zero
+            ctx.emitter.instruction(&format!("set{} al", cond));               // materialize emptiness in the low byte
+            ctx.emitter.instruction("movzx rax, al");                           // widen the boolean into the integer result register
         }
     }
     Ok(())
