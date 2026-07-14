@@ -285,7 +285,7 @@ pub(in crate::interpreter) enum EvalValuesHook {
     StrReplace,
     /// Dispatches `str_split(...)`.
     StrSplit,
-    /// Dispatches `strlen(...)`.
+    /// Dispatches `strlen(...)` and `mb_strlen(...)`.
     Strlen,
     /// Dispatches `str_repeat(...)`.
     StrRepeat,
@@ -615,14 +615,11 @@ impl EvalValuesHook {
                 [value, length] => eval_str_split_result(*value, Some(*length), values),
                 _ => Err(EvalStatus::RuntimeFatal),
             },
-            Self::Strlen => {
-                let [value] = evaluated_args else {
-                    return Err(EvalStatus::RuntimeFatal);
-                };
-                let bytes = values.string_bytes(*value)?;
-                let len = i64::try_from(bytes.len()).map_err(|_| EvalStatus::RuntimeFatal)?;
-                values.int(len)
-            }
+            Self::Strlen => one_arg(evaluated_args, values, |value, values| match name {
+                "mb_strlen" => eval_mb_strlen_result(value, values),
+                "strlen" => eval_strlen_result(value, values),
+                _ => Err(EvalStatus::RuntimeFatal),
+            }),
             Self::StrRepeat => two_args(evaluated_args, values, eval_str_repeat_result),
             Self::Strval => one_arg(evaluated_args, values, |value, values| {
                 eval_strval_result(value, context, values)

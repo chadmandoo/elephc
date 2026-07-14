@@ -10,6 +10,28 @@
 use super::super::*;
 use super::support::*;
 
+/// Verifies eval `mb_strlen()` counts UTF-8 code points through direct and callable paths.
+#[test]
+fn execute_program_dispatches_mb_strlen_builtin() {
+    let program = parse_fragment(
+        r#"echo mb_strlen("abc"); echo ":";
+echo mb_strlen(string: "héllo wörld"); echo ":";
+echo mb_strlen(""); echo ":";
+echo call_user_func("mb_strlen", "日本語"); echo ":";
+echo call_user_func_array("mb_strlen", ["string" => "héllo"]); echo ":";
+return function_exists("mb_strlen") && is_callable("mb_strlen");"#
+            .as_bytes(),
+    )
+    .expect("parse eval fragment");
+    let mut scope = ElephcEvalScope::new();
+    let mut values = FakeOps::default();
+
+    let result = execute_program(&program, &mut scope, &mut values).expect("execute eval ir");
+
+    assert_eq!(values.output, "3:11:0:3:5:");
+    assert_eq!(values.get(result), FakeValue::Bool(true));
+}
+
 /// Verifies eval `explode()` and `implode()` bridge byte strings and arrays.
 #[test]
 fn execute_program_dispatches_explode_implode_builtins() {

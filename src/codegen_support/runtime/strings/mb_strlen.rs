@@ -25,18 +25,18 @@ pub fn emit_mb_strlen(emitter: &mut Emitter) {
     emitter.blank();
     emitter.comment("--- runtime: mb_strlen (UTF-8 code-point count) ---");
     emitter.label_global("__rt_mb_strlen");
-    emitter.instruction("mov x0, #0"); // count = 0 (return register)
-    emitter.instruction("mov x4, #0"); // byte index = 0
+    emitter.instruction("mov x0, #0");                                          // count = 0 (return register)
+    emitter.instruction("mov x4, #0");                                          // byte index = 0
     emitter.label("__rt_mb_strlen_loop");
-    emitter.instruction("cmp x4, x2"); // processed every input byte? (len in x2)
+    emitter.instruction("cmp x4, x2");                                          // processed every input byte? (len in x2)
     emitter.instruction("b.hs __rt_mb_strlen_done");
-    emitter.instruction("ldrb w5, [x1, x4]"); // load the current byte (ptr in x1)
-    emitter.instruction("and w5, w5, #0xC0"); // isolate the top two bits
-    emitter.instruction("cmp w5, #0x80"); // continuation byte (10xxxxxx)?
-    emitter.instruction("b.eq __rt_mb_strlen_skip"); // yes → not a code-point start
-    emitter.instruction("add x0, x0, #1"); // count a code-point-leading byte
+    emitter.instruction("ldrb w5, [x1, x4]");                                   // load the current byte (ptr in x1)
+    emitter.instruction("and w5, w5, #0xC0");                                   // isolate the top two bits
+    emitter.instruction("cmp w5, #0x80");                                       // continuation byte (10xxxxxx)?
+    emitter.instruction("b.eq __rt_mb_strlen_skip");                            // yes → not a code-point start
+    emitter.instruction("add x0, x0, #1");                                      // count a code-point-leading byte
     emitter.label("__rt_mb_strlen_skip");
-    emitter.instruction("add x4, x4, #1"); // advance to the next byte
+    emitter.instruction("add x4, x4, #1");                                      // advance to the next byte
     emitter.instruction("b __rt_mb_strlen_loop");
     emitter.label("__rt_mb_strlen_done");
     emitter.instruction("ret");
@@ -47,19 +47,19 @@ fn emit_mb_strlen_x86_64(emitter: &mut Emitter) {
     emitter.blank();
     emitter.comment("--- runtime: mb_strlen (UTF-8 code-point count) ---");
     emitter.label_global("__rt_mb_strlen");
-    emitter.instruction("mov rsi, rax"); // rsi = input pointer (rax/edx hold ptr/len on entry)
-    emitter.instruction("xor eax, eax"); // count = 0 (return register)
-    emitter.instruction("xor r8, r8"); // byte index = 0
+    emitter.instruction("mov rsi, rax");                                        // rsi = input pointer (rax/edx hold ptr/len on entry)
+    emitter.instruction("xor eax, eax");                                        // count = 0 (return register)
+    emitter.instruction("xor r8, r8");                                          // byte index = 0
     emitter.label("__rt_mb_strlen_loop_x86");
-    emitter.instruction("cmp r8d, edx"); // processed every input byte? (len in edx)
+    emitter.instruction("cmp r8d, edx");                                        // processed every input byte? (len in edx)
     emitter.instruction("jae __rt_mb_strlen_done_x86");
-    emitter.instruction("movzx r9d, BYTE PTR [rsi + r8]"); // load the current byte
-    emitter.instruction("and r9d, 0xC0"); // isolate the top two bits
-    emitter.instruction("cmp r9d, 0x80"); // continuation byte (10xxxxxx)?
-    emitter.instruction("je __rt_mb_strlen_skip_x86"); // yes → not a code-point start
-    emitter.instruction("inc eax"); // count a code-point-leading byte
+    emitter.instruction("movzx r9d, BYTE PTR [rsi + r8]");                      // load the current byte
+    emitter.instruction("and r9d, 0xC0");                                       // isolate the top two bits
+    emitter.instruction("cmp r9d, 0x80");                                       // continuation byte (10xxxxxx)?
+    emitter.instruction("je __rt_mb_strlen_skip_x86");                          // yes → not a code-point start
+    emitter.instruction("inc eax");                                             // count a code-point-leading byte
     emitter.label("__rt_mb_strlen_skip_x86");
-    emitter.instruction("inc r8"); // advance to the next byte
+    emitter.instruction("inc r8");                                              // advance to the next byte
     emitter.instruction("jmp __rt_mb_strlen_loop_x86");
     emitter.label("__rt_mb_strlen_done_x86");
     emitter.instruction("ret");

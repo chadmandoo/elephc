@@ -312,6 +312,7 @@ const EVAL_DECLARATIVE_REGISTRY_BUILTINS: &[&str] = &[
     "ltrim",
     "max",
     "method_exists",
+    "mb_strlen",
     "microtime",
     "md5",
     "min",
