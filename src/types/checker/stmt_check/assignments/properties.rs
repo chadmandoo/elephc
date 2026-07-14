@@ -353,12 +353,17 @@ fn is_empty_array_placeholder(ty: &PhpType) -> bool {
     matches!(ty, PhpType::Array(inner) if matches!(inner.as_ref(), PhpType::Never))
 }
 
-/// Refines the inferred type of an object property after a write, for properties without declared types.
+/// Refines the inferred type of an object property after a write.
 ///
-/// For untyped `Int` or `Void` properties, replaces the type with the assigned value's type.
-/// For an `[]`-initialized property (`Array(Never)`), adopts the first concrete array assigned.
-/// For generic arrays, calls `Checker::specialize_generic_array_hint` to narrow the element type
-/// based on the assigned value. Only updates when the refined type differs from the current type.
+/// For properties WITHOUT a declared type: untyped `Int`/`Void` properties take the assigned
+/// value's type; an `[]`-initialized property (`Array(Never)`) adopts the first concrete array
+/// assigned; generic arrays are narrowed via `Checker::specialize_generic_array_hint`.
+///
+/// For properties WITH a declared type, the only permitted refinement is the one
+/// `declared_generic_array_can_use_assoc_storage` sanctions: a property declared as the bare
+/// `array` hint may adopt `AssocArray` storage from the assigned value (see below).
+///
+/// Only updates when the refined type differs from the current type.
 fn refine_object_property_type(
     checker: &mut Checker,
     class_name: &str,
@@ -389,6 +394,22 @@ fn refine_object_property_type(
                         prop.1 = refined_ty;
                     }
                 }
+            } else if declared_generic_array_can_use_assoc_storage(&prop.1, val_ty) {
+                // A property DECLARED with the bare `array` hint carries no key/value
+                // information: PHP has no native array generics, so `array` lowers to
+                // `Array(Mixed)` (indexed storage). Adopting the assigned `AssocArray`
+                // is therefore a SPECIALIZATION of an untyped array (`Mixed` is the top
+                // element type), not a widening — the string-keyed shape is recoverable
+                // from the assignment even though the declaration cannot express it.
+                //
+                // Without this, `private array $m;` assigned a string-keyed map keeps
+                // indexed storage: the EIR backend rejects the `prop_set`, and every
+                // `foreach` over the property yields Int keys (so passing the key to a
+                // `string` parameter fails to type-check). The push (`$this->m[] = v`)
+                // and index-assign (`$this->m[$k] = v`) paths already make exactly this
+                // allowance via `update_object_property_type`; the plain-assign path
+                // (`$this->m = $built`) was the one that did not.
+                prop.1 = val_ty.clone();
             }
         }
     }
