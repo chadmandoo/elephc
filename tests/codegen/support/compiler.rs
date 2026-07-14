@@ -96,6 +96,12 @@ pub(crate) fn compile_source_to_asm_with_defines_repr(
     let resolved = elephc::tz_prelude::inject_if_used(resolved, false);
     let resolved = elephc::list_id_prelude::inject_if_used(resolved);
     let resolved = elephc::var_export_prelude::inject_if_used(resolved);
+    // The shared standard-library prelude (mb_* / array_* / http_build_query / get_debug_type,
+    // written in elephc-PHP). The real pipeline injects this here — `src/pipeline.rs:163`,
+    // immediately after var_export and before strtr — but this fixture harness omitted it, so NO
+    // codegen test could exercise any stdlib-prelude function: they all failed with
+    // "Undefined function: ...". Restored so the prelude is actually covered (#638).
+    let resolved = elephc::stdlib_prelude::inject_if_used(resolved);
     let resolved = elephc::image_prelude::inject_if_used(resolved, false);
     let resolved = elephc::strtr_prelude::inject_if_used(resolved);
     let resolved = elephc::substr_compare_prelude::inject_if_used(resolved);

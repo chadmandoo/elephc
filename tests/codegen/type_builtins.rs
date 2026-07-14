@@ -21,3 +21,6 @@ mod division;
 // `INF`, `NAN`, `-INF` constants and `is_nan()` / `is_infinite()` / `is_finite()` predicates.
 #[path = "type_builtins/float_checks.rs"]
 mod float_checks;
+// `get_debug_type()` — the stdlib-prelude polyfill whose `get_class($mixed)` blocked native compilation (#638).
+#[path = "type_builtins/debug_type.rs"]
+mod debug_type;

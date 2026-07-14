@@ -168,7 +168,22 @@ function http_build_query(mixed $data): string {
 }
 function get_debug_type(mixed $value): string {
     if (is_object($value)) {
-        return get_class($value);
+        // `$value::class`, NOT `get_class($value)`. Both are identical for an object
+        // (which the is_object() guard has just established), but they lower very
+        // differently: `$value::class` desugars to the __elephc_class_name_of intrinsic,
+        // whose Mixed arm routes to the __rt_class_name_of runtime helper, whereas
+        // get_class()'s lowering (lower_class_name_lookup) has NO Mixed arm and hard-errors
+        // with "get_class for PHP type Mixed".
+        //
+        // elephc has no "any object" PhpType — only Object(ClassName) — so a `mixed` value
+        // cannot be narrowed to an object by is_object() (or even by an `object` type hint);
+        // it stays Mixed, and get_class() therefore could never lower here.
+        //
+        // This one call made the ENTIRE stdlib prelude un-compilable natively, which is why
+        // explode/strtr/arity_ext/substr_compare each had to be split into their own
+        // one-function preludes just to avoid dragging this bundle in (see their module docs).
+        // It was the single largest native-compile gap in the AIC survey: 114 of 1082 roots.
+        return $value::class;
     }
     if ($value === null) {
         return 'null';
