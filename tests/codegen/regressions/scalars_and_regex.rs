@@ -274,3 +274,49 @@ fn test_mb_ereg_match_options_case_insensitive() {
     );
     assert_eq!(out, "010");
 }
+
+/// Regression (#639): `mb_ereg_match` (and the `preg_*` family) must accept a boxed `Mixed`
+/// subject — the type of every ARRAY KEY (a foreach key is an `Op::IterCurrentKey` boxed cell,
+/// and `array_keys()` yields the same).
+///
+/// Two bugs were behind this, both load-bearing:
+///  1. `regex.rs::load_string_arg` hard-required a statically-`Str` operand
+///     ("mb_ereg_match subject for PHP type Mixed"), instead of using the shared
+///     `load_value_as_string_to_regs` coercion the other 42 string builtins use. 98 of 1082
+///     survey roots failed on this — the largest native gap — and every one passed `--check`.
+///  2. The naive fix (just coerce) SEGFAULTED at runtime: the Mixed coercion lowers to a CALL
+///     (`__rt_mixed_unbox`) that clobbers caller-saved registers, and the loader wrote operands
+///     straight into their final ABI registers, so coercing the subject destroyed the
+///     already-loaded pattern. The real fix stages pattern/subject/options through scratch + the
+///     stack (mirroring `strings::load_binary_string_args`) and pops them into ABI registers last.
+///
+/// This fixture drives the exact multi-arg shape that crashed — a `mb_ereg_match($pattern, $key)`
+/// with a foreach/array_keys key subject and BOTH matching and non-matching keys — plus a
+/// `preg_match` to guard the shared `load_pattern_and_subject` loader that the same fix touched.
+#[test]
+fn test_mb_ereg_match_accepts_mixed_array_key_subject() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class C {
+    public function __construct(public array $attrs = []) {
+        foreach (array_keys($attrs) as $key) {
+            if (!mb_ereg_match('^[a-z][a-z0-9-]*\z', $key)) {
+                throw new InvalidArgumentException('bad: ' . $key);
+            }
+        }
+    }
+}
+$c = new C(['data-foo' => 'bar', 'id' => 'x']);
+echo count($c->attrs), ';';
+$m = ['alpha' => 1, 'beta' => 2];
+$hits = 0;
+foreach ($m as $k => $v) { if (mb_ereg_match('^[a-z]+\z', $k)) { $hits++; } }
+echo $hits, ';';
+try { $bad = new C(['BAD' => 'x']); echo 'no-throw'; } catch (InvalidArgumentException $e) { echo 'threw'; }
+echo ';';
+echo preg_match('/\d+/', 'x42') === 1 ? 'y' : 'n';
+"#,
+    );
+    assert_eq!(out, "2;2;threw;y");
+}

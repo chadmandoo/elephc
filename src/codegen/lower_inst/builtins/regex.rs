@@ -433,6 +433,14 @@ pub(crate) fn lower_preg_split(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Loads pattern and subject string operands into the regex runtime ABI registers.
+///
+/// Each operand is staged through SCRATCH registers and the stack, never loaded straight into its
+/// final ABI register. That is mandatory now that `load_string_arg` coerces: a boxed `Mixed`
+/// operand lowers to a CALL (`__rt_mixed_unbox`), which clobbers the caller-saved registers —
+/// including the ones an earlier operand was already sitting in. Loading pattern into rdi/rsi and
+/// then coercing subject would destroy the pattern and segfault at runtime.
+///
+/// This mirrors `strings::load_binary_string_args`, which has always staged for exactly this reason.
 fn load_pattern_and_subject(
     ctx: &mut FunctionContext<'_>,
     pattern: ValueId,
@@ -441,16 +449,31 @@ fn load_pattern_and_subject(
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             load_string_arg(ctx, pattern, "x1", "x2", "preg pattern")?;
-            load_string_arg(ctx, subject, "x3", "x4", "preg subject")
+            ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                 // preserve the pattern pointer/length across the subject coercion
+            load_string_arg(ctx, subject, "x1", "x2", "preg subject")?;
+            ctx.emitter.instruction("mov x3, x1");                              // pass the subject pointer as the third regex-ABI argument
+            ctx.emitter.instruction("mov x4, x2");                              // pass the subject length as the fourth regex-ABI argument
+            ctx.emitter.instruction("ldp x1, x2, [sp], #16");                   // restore the pattern pointer/length into the primary argument registers
+            Ok(())
         }
         Arch::X86_64 => {
-            load_string_arg(ctx, pattern, "rdi", "rsi", "preg pattern")?;
-            load_string_arg(ctx, subject, "rdx", "rcx", "preg subject")
+            load_string_arg(ctx, pattern, "rax", "rdx", "preg pattern")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");                 // preserve the pattern pointer/length across the subject coercion
+            load_string_arg(ctx, subject, "rax", "rdx", "preg subject")?;
+            ctx.emitter.instruction("mov rcx, rdx");                            // pass the subject length as the fourth SysV argument
+            ctx.emitter.instruction("mov rdx, rax");                            // pass the subject pointer as the third SysV argument
+            abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");                  // restore the pattern pointer/length into the primary argument registers
+            Ok(())
         }
     }
 }
 
 /// Loads `mb_ereg_match()` pattern, subject, and optional options into runtime ABI registers.
+///
+/// Same staging discipline as `load_pattern_and_subject` above — see its docs. Pattern and subject
+/// are pushed, the (possibly coercing, possibly clobbering) options load runs while both are safely
+/// on the stack, and the two are then popped straight into their final ABI registers. The pops write
+/// only rdx/rcx and rdi/rsi (x3/x4 and x1/x2), so the options registers survive them.
 fn load_mb_ereg_match_args(
     ctx: &mut FunctionContext<'_>,
     pattern: ValueId,
@@ -460,13 +483,23 @@ fn load_mb_ereg_match_args(
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             load_string_arg(ctx, pattern, "x1", "x2", "mb_ereg_match pattern")?;
-            load_string_arg(ctx, subject, "x3", "x4", "mb_ereg_match subject")?;
-            load_optional_string_arg(ctx, options, "x5", "x6", "mb_ereg_match options")
+            ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                 // preserve the pattern across the subject and options loads
+            load_string_arg(ctx, subject, "x1", "x2", "mb_ereg_match subject")?;
+            ctx.emitter.instruction("stp x1, x2, [sp, #-16]!");                 // preserve the subject across the options load
+            load_optional_string_arg(ctx, options, "x5", "x6", "mb_ereg_match options")?;
+            ctx.emitter.instruction("ldp x3, x4, [sp], #16");                   // restore the subject into its regex-ABI argument registers
+            ctx.emitter.instruction("ldp x1, x2, [sp], #16");                   // restore the pattern into its regex-ABI argument registers
+            Ok(())
         }
         Arch::X86_64 => {
-            load_string_arg(ctx, pattern, "rdi", "rsi", "mb_ereg_match pattern")?;
-            load_string_arg(ctx, subject, "rdx", "rcx", "mb_ereg_match subject")?;
-            load_optional_string_arg(ctx, options, "r8", "r9", "mb_ereg_match options")
+            load_string_arg(ctx, pattern, "rax", "rdx", "mb_ereg_match pattern")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");                 // preserve the pattern across the subject and options loads
+            load_string_arg(ctx, subject, "rax", "rdx", "mb_ereg_match subject")?;
+            abi::emit_push_reg_pair(ctx.emitter, "rax", "rdx");                 // preserve the subject across the options load
+            load_optional_string_arg(ctx, options, "r8", "r9", "mb_ereg_match options")?;
+            abi::emit_pop_reg_pair(ctx.emitter, "rdx", "rcx");                  // restore the subject pointer/length into the SysV third/fourth arguments
+            abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi");                  // restore the pattern pointer/length into the SysV first/second arguments
+            Ok(())
         }
     }
 }
@@ -554,6 +587,21 @@ fn value_source_instruction<'a>(
 }
 
 /// Loads a string operand into an explicit pointer/length register pair.
+///
+/// Delegates to the shared `load_value_as_string_to_regs` coercion the other 42 string builtins
+/// already use, rather than hard-requiring a statically-`Str` operand.
+///
+/// The old `require_string` gate rejected a boxed `Mixed` operand outright
+/// ("mb_ereg_match subject for PHP type Mixed") — which is the type of every ARRAY KEY: a foreach
+/// key is an `Op::IterCurrentKey` boxed cell, and `array_keys()` yields the same. So the entirely
+/// ordinary
+///
+///     foreach (array_keys($attrs) as $key) { mb_ereg_match($pattern, $key); }
+///
+/// could not compile natively, even though the shared coercion has handled `Mixed` on BOTH arches
+/// all along (`emit_mixed_borrowed_string_to_regs` -> `__rt_mixed_unbox`, tag-dispatched over
+/// int/string/float/bool payloads). That gap was 98 of 1082 roots in the AIC survey — the largest
+/// remaining native gap — and `--check` passed every one of them.
 fn load_string_arg(
     ctx: &mut FunctionContext<'_>,
     value: ValueId,
@@ -561,8 +609,7 @@ fn load_string_arg(
     len_reg: &str,
     context: &str,
 ) -> Result<()> {
-    require_string(ctx.value_php_type(value)?, context)?;
-    ctx.load_string_value_to_regs(value, ptr_reg, len_reg)
+    super::strings::load_value_as_string_to_regs(ctx, value, context, ptr_reg, len_reg)
 }
 
 /// Loads an optional string operand, using a null pointer and zero length when absent or null.
