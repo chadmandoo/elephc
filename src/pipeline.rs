@@ -56,11 +56,13 @@ pub(crate) fn compile(config: CliConfig) {
         extra_link_paths,
         extra_frameworks,
         defines,
+        strict_php,
         web,
         with_crates,
     } = config;
     let filename = filename.as_str();
     codegen::set_null_repr(null_repr);
+    crate::strict_php::set_enabled(strict_php);
     let parent = Path::new(filename).parent().unwrap_or(Path::new("."));
     let output_paths = output_paths(filename, target, emit);
     let mut timings = CompileTimings::new(emit_timings);
@@ -94,6 +96,15 @@ pub(crate) fn compile(config: CliConfig) {
         }
     };
     timings.record_since("parse", phase_started);
+
+    // Strict-PHP audit of the main file, before `conditional::apply` consumes
+    // `ifdef` nodes: every elephc-only construct is reported with its span.
+    // Included and autoloaded user files are audited where they are parsed
+    // (resolver / autoloader), so injected compiler preludes are never audited.
+    if let Err(e) = crate::strict_php::check_file(&parsed, filename) {
+        errors::report(&e);
+        process::exit(1);
+    }
 
     let phase_started = Instant::now();
     let main_file_path = Path::new(filename).to_path_buf();
