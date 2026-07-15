@@ -17,10 +17,11 @@ For each builtin we enrich the registry data with:
 3. optional type-precision refinements for non-scalar params/returns that the
    registry represents coarsely as ``Mixed`` (``PARAM_TYPES`` / ``RETURN_TYPE_OVERRIDES``).
 
-The 8 PHP language constructs that intentionally stay checker-resident
-(``isset``/``unset``/``empty``/``exit``/``die``/``buffer_len``/``buffer_free``/
-``buffer_new``) are not in the registry; they are added from a small hand-curated
-table so their documentation pages are preserved.
+The 6 names that intentionally stay outside the registry
+(``isset``/``unset``/``empty``/``exit``/``die`` language constructs, plus the
+catalog-name-only ``buffer_new`` whose call form is dedicated syntax) are added
+from a small hand-curated table so their documentation pages are preserved.
+``buffer_len``/``buffer_free`` live in the ``builtin!`` registry.
 
 The output is a list of :class:`registry.Builtin` written to a JSON file in
 ``scripts/docs/builtin_registry.json``.
@@ -447,22 +448,9 @@ LANGUAGE_CONSTRUCTS: dict[str, dict] = {
         "description": "",
         "emitter_fn": None,
     },
-    "buffer_len": {
-        "params": [("buffer", "buffer", False, None, False)],
-        "variadic": None,
-        "return_type": "int",
-        "area": ("Buffer", "Buffer"),
-        "description": "Lowers `buffer_len()` through the direct buffer opcode helper.",
-        "emitter_fn": "lower_buffer_len",
-    },
-    "buffer_free": {
-        "params": [("buffer", "buffer", False, None, False)],
-        "variadic": None,
-        "return_type": "mixed",
-        "area": ("Buffer", "Buffer"),
-        "description": "Lowers `buffer_free()` through the direct buffer opcode helper.",
-        "emitter_fn": "lower_buffer_free",
-    },
+    # `buffer_len` / `buffer_free` moved to the single-source `builtin!` registry
+    # (src/builtins/pointers/); only the catalog-name-only `buffer_new` remains
+    # hand-described here because its call form is dedicated syntax.
     "buffer_new": {
         "params": [("length", "int", False, None, False)],
         "variadic": None,

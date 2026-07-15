@@ -1,6 +1,6 @@
 ---
 title: "buffer_free()"
-description: "Lowers `buffer_free()` through the direct buffer opcode helper."
+description: "Frees a buffer<T> and nulls the local variable that held it."
 sidebar:
   order: 64
 ---
@@ -8,15 +8,15 @@ sidebar:
 ## buffer_free()
 
 ```php
-function buffer_free(buffer $buffer): mixed
+function buffer_free(buffer $buffer): void
 ```
 
-Lowers `buffer_free()` through the direct buffer opcode helper.
+Frees a buffer<T> and nulls the local variable that held it.
 
 **Parameters**:
 - `$buffer` (`buffer`)
 
-**Returns**: `mixed`
+**Returns**: `void`
 
 ## Availability
 

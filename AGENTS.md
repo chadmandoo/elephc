@@ -254,8 +254,14 @@ Key invariants:
 - **Separate surfaces still need hand-wiring** when relevant: the EIR emitter/runtime
   routine, optimizer effects (`src/optimize/effects/builtins.rs`), and the
   runtime-callable wrapper exclusion (`src/codegen/callable_dispatch.rs`).
-- `isset`/`unset`/`empty`/`exit`/`die`/`buffer_*` are language constructs that stay
+- `isset`/`unset`/`empty`/`exit`/`die` are language constructs that stay
   checker-resident (`numeric`/`arrays` `check_builtin`), not in the registry.
+  `buffer_new` is catalog-name-only (its call form is dedicated syntax); `buffer_len`
+  and `buffer_free` are ordinary registry builtins.
+- **elephc-only builtins declare `extension: true`** so `--strict-php` hides them from
+  user programs (pinned in `src/builtins/parity_tests.rs`). Injected preludes must call
+  `internal: true` `__elephc_*` aliases instead of PHP-visible extension builtins; a
+  parity gate scans the prelude sources to enforce this.
 - Add codegen + error tests (include a case-insensitive or namespaced call for
   PHP-visible builtins); keep the parity gates in `src/builtins/parity_tests.rs` green.
 - Before opening a PR that adds, removes, or changes PHP-visible builtins, run the

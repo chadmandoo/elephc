@@ -1,6 +1,6 @@
 ---
 title: "buffer_len()"
-description: "Lowers `buffer_len()` through the direct buffer opcode helper."
+description: "Returns the logical element count of a buffer<T>."
 sidebar:
   order: 65
 ---
@@ -11,7 +11,7 @@ sidebar:
 function buffer_len(buffer $buffer): int
 ```
 
-Lowers `buffer_len()` through the direct buffer opcode helper.
+Returns the logical element count of a buffer<T>.
 
 **Parameters**:
 - `$buffer` (`buffer`)
