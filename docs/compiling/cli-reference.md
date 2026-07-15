@@ -130,6 +130,15 @@ The audit covers the main file plus every `include`/`require`d and autoloaded
 user file. Compiler-injected preludes (PDO, timezone, image, web, …) are exempt,
 so programs using those PHP-level APIs keep compiling in strict mode.
 
+Strict mode also reaches `eval()`, matching PHP's runtime semantics for eval'd
+code: the compiled binary marks the eval bridge as strict, so extension
+builtins do not exist inside eval'd fragments either — calling one is a runtime
+fatal (like any unknown function in eval), `function_exists()`/`is_callable()`
+report them as missing, and extension syntax in a fragment is a runtime parse
+error. Fragments are never rejected at compile time: PHP only fails eval'd code
+when it actually executes, and strict mode preserves that. User functions that
+shadow extension names remain callable from eval'd code.
+
 `--strict-php` cannot be combined with `--define`: defines only feed the `ifdef`
 extension, which strict mode rejects.
 

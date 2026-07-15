@@ -464,6 +464,12 @@ Injected compiler preludes must never call a PHP-visible extension builtin — u
 `internal: true` `__elephc_*` alias instead (see `src/builtins/pointers/__elephc_ptr_read_string.rs`);
 the `preludes_never_call_php_visible_extension_builtins` gate enforces this.
 
+On the eval side, magician derives its extension set from `EvalArea::RawMemory`
+plus the `SYMBOLS_EXTENSION_BUILTINS` list (`crates/elephc-magician/src/interpreter/builtins/spec.rs`)
+instead of a per-declaration flag; the `extension_builtin_sets_agree_across_registries`
+gate in `tests/builtin_parity_tests.rs` pins that derivation against the compiler
+registry, so adding an extension builtin to either registry forces both sides to agree.
+
 ## Adding functionality via a Rust crate (bridge crates)
 
 elephc compiles a static subset of PHP straight to native code, so most features
