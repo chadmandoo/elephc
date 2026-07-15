@@ -29,7 +29,7 @@ use crate::types::checker::builtins::canonical_builtin_function_name;
 use crate::types::{
     array_key_type_from_value_type, checker::infer_expr_type_syntactic,
     merge_array_key_types, normalized_array_key_type, ExternFunctionSig, FunctionSig, PhpType,
-    ThrowAccessKind,
+    ReturnArgAlias, ThrowAccessKind,
 };
 use std::collections::HashSet;
 
@@ -1858,7 +1858,13 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         // Plain extern calls release owned argument temporaries the same way method
         // and builtin calls do, so a fresh owned temporary passed as an argument is
         // not leaked once per call. The alias guard keeps a pass-through result alive.
-        release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), expr.span);
+        release_owned_call_arg_temporaries(
+            ctx,
+            &operands,
+            Some(call.value),
+            &ReturnArgAlias::Unknown,
+            expr.span,
+        );
         return call;
     }
     if is_user_function {
@@ -1874,7 +1880,18 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         // Plain user calls release owned argument temporaries the same way method and
         // builtin calls do. The alias guard keeps a passthrough result (e.g. a function
         // that returns its own array argument typed `iterable`) from being freed.
-        release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), expr.span);
+        let return_alias = ctx
+            .return_alias_summaries
+            .function(canonical)
+            .cloned()
+            .unwrap_or(ReturnArgAlias::Unknown);
+        release_owned_call_arg_temporaries(
+            ctx,
+            &operands,
+            Some(call.value),
+            &return_alias,
+            expr.span,
+        );
         return call;
     }
     if ctx.has_eval_barrier()
@@ -1926,7 +1943,13 @@ fn emit_builtin_call_value(
         effects,
         Some(span),
     );
-    release_owned_call_arg_temporaries(ctx, &operands, Some(call.value), span);
+    release_owned_call_arg_temporaries(
+        ctx,
+        &operands,
+        Some(call.value),
+        &ReturnArgAlias::Unknown,
+        span,
+    );
     let eval_needs_barrier = match eval_literal {
         Some(fragment) => eval_literal_needs_barrier(ctx, fragment),
         None => true,
@@ -9956,7 +9979,13 @@ fn emit_fixed_object_new(
         Op::ObjectNew.default_effects(),
         Some(span),
     );
-    release_owned_call_arg_temporaries(ctx, &operands, None, span);
+    release_owned_call_arg_temporaries(
+        ctx,
+        &operands,
+        None,
+        &ReturnArgAlias::None,
+        span,
+    );
     object
 }
 
@@ -10843,7 +10872,14 @@ fn lower_method_call(
         op.default_effects(),
         Some(expr.span),
     );
-    release_owned_call_arg_temporaries(ctx, &arg_values, Some(call.value), expr.span);
+    let return_alias = method_return_arg_alias(ctx, object.value, dispatch_method);
+    release_owned_call_arg_temporaries(
+        ctx,
+        &arg_values,
+        Some(call.value),
+        &return_alias,
+        expr.span,
+    );
     release_owning_receiver_temporary(ctx, object, expr.span);
     call
 }
@@ -13445,7 +13481,14 @@ fn lower_method_call_with_receiver(
         op.default_effects(),
         Some(expr.span),
     );
-    release_owned_call_arg_temporaries(ctx, &arg_values, Some(call.value), expr.span);
+    let return_alias = method_return_arg_alias(ctx, object.value, dispatch_method);
+    release_owned_call_arg_temporaries(
+        ctx,
+        &arg_values,
+        Some(call.value),
+        &return_alias,
+        expr.span,
+    );
     release_owning_receiver_temporary(ctx, object, expr.span);
     call
 }
@@ -13488,16 +13531,19 @@ fn release_owned_call_arg_temporaries(
     ctx: &mut LoweringContext<'_, '_>,
     args: &[crate::ir::ValueId],
     result: Option<crate::ir::ValueId>,
+    return_alias: &ReturnArgAlias,
     span: Span,
 ) {
-    for value in args {
+    for (parameter_index, value) in args.iter().enumerate() {
         let php_type = ctx.builder.value_php_type(*value);
         let lowered = LoweredValue {
             value: *value,
             ir_type: value_ir_type(&php_type),
         };
         if ctx.value_is_owning_temporary(lowered) {
-            if call_result_may_alias_arg(ctx, *value, result) {
+            if return_alias.may_alias_parameter(parameter_index)
+                && call_result_may_alias_arg(ctx, *value, result)
+            {
                 continue;
             }
             crate::ir_lower::ownership::release_if_owned(ctx, lowered, Some(span));
@@ -13616,6 +13662,80 @@ fn method_signature(
         return common_dynamic_method_signature(ctx, &key);
     }
     None
+}
+
+/// Returns the conservative return-to-argument alias summary for a method dispatch.
+///
+/// A non-final receiver type includes every closed-world descendant implementation,
+/// because runtime dispatch can select an override. Missing or synthetic summaries
+/// therefore fall back to `Unknown` rather than enabling unsafe cleanup.
+fn method_return_arg_alias(
+    ctx: &LoweringContext<'_, '_>,
+    object: crate::ir::ValueId,
+    method: &str,
+) -> ReturnArgAlias {
+    let object_ty = ctx.builder.value_php_type(object);
+    let method_key = php_symbol_key(method);
+    let mut summary: Option<ReturnArgAlias> = None;
+    if let Some((class_name, _)) = singular_object_class(&object_ty) {
+        let base_class = class_name.trim_start_matches('\\');
+        let Some(base_info) = ctx.classes.get(base_class) else {
+            return ReturnArgAlias::Unknown;
+        };
+        if base_info.is_final || base_info.final_methods.contains(&method_key) {
+            return class_method_return_arg_alias(ctx, base_class, &method_key)
+                .unwrap_or(ReturnArgAlias::Unknown);
+        }
+        for candidate in ctx.classes.keys() {
+            if !is_same_or_descendant_class(ctx, candidate, base_class) {
+                continue;
+            }
+            let Some(alias) = class_method_return_arg_alias(ctx, candidate, &method_key) else {
+                continue;
+            };
+            summary = Some(match summary {
+                Some(current) => current.merge(&alias),
+                None => alias,
+            });
+        }
+        return summary.unwrap_or(ReturnArgAlias::Unknown);
+    }
+    if dynamic_method_receiver_needs_mixed_fallback(&object_ty) {
+        if ctx.has_eval_barrier() {
+            return ReturnArgAlias::Unknown;
+        }
+        for candidate in ctx.classes.keys() {
+            let Some(alias) = class_method_return_arg_alias(ctx, candidate, &method_key) else {
+                continue;
+            };
+            summary = Some(match summary {
+                Some(current) => current.merge(&alias),
+                None => alias,
+            });
+        }
+    }
+    summary.unwrap_or(ReturnArgAlias::Unknown)
+}
+
+/// Resolves one concrete class's dispatched implementation and its source summary.
+fn class_method_return_arg_alias(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    method_key: &str,
+) -> Option<ReturnArgAlias> {
+    class_method_signature(ctx, class_name, method_key)?;
+    let class_info = ctx.classes.get(class_name)?;
+    let impl_class = class_info
+        .method_impl_classes
+        .get(method_key)
+        .map(String::as_str)
+        .unwrap_or(class_name);
+    Some(
+        ctx.return_alias_summaries
+            .method(impl_class, method_key)
+            .cloned()
+            .unwrap_or(ReturnArgAlias::Unknown),
+    )
 }
 
 /// Returns a class/interface method signature, preferring the implementing class metadata.

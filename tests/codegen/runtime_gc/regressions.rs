@@ -1092,13 +1092,12 @@ echo "x";
 /// function that accepts an array and returns it typed as `iterable`
 /// (`function id(iterable $x): iterable`) aliases its argument. Releasing owned
 /// call-argument temporaries must not free that shared payload, or the returned
-/// value would be corrupted (read back as null/garbage). This asserts correctness
-/// only — the conservative alias guard intentionally keeps the argument alive when
-/// it might be the return value, which leaves a pre-existing passthrough leak that
-/// is out of scope for the call-argument-release fix.
+/// value would be corrupted (read back as null/garbage). The retained temporary
+/// owner transfers to the function result, so normal result cleanup must also leave
+/// the heap balanced.
 #[test]
 fn test_iterable_passthrough_arg_not_freed() {
-    let out = compile_and_run(
+    let out = compile_and_run_with_heap_debug(
         r#"<?php
 function id(iterable $x): iterable { return $x; }
 $total = 0;
@@ -1109,7 +1108,13 @@ for ($i = 0; $i < 100; $i++) {
 echo $total;
 "#,
     );
-    assert_eq!(out, "600");
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "600");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
 }
 
 /// Regression test for the call-argument-temporary leak: a fresh array literal passed
@@ -1142,7 +1147,7 @@ echo $t;
 /// not return it is an owning temporary that must be released after the call, the same
 /// way method and builtin calls do. Before the fix, user (and extern) calls never
 /// released owned argument temporaries, leaking one array per iteration. The alias
-/// guard still keeps a passthrough result alive (see
+/// guard still transfers a passthrough owner to the result (see
 /// `test_iterable_passthrough_arg_not_freed`); here the argument is discarded, so the
 /// heap must stay flat.
 #[test]
@@ -1159,6 +1164,130 @@ echo $t;
     );
     assert!(out.success, "program failed: {}", out.stderr);
     assert_eq!(out.stdout, "600");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #540 root cause 5: an Array-returning method whose
+/// result is fresh must not keep an unrelated inline Array argument alive. The
+/// old type-only alias guard treated every `Array -> Array` call as a possible
+/// passthrough and leaked the argument plus its two boxed string elements on
+/// every invocation.
+#[test]
+fn test_regression_540_fresh_method_array_result_releases_inline_array_argument() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class CallAliasScanner {
+    public function scan(array $delimiters): array {
+        $tokens = [];
+        $count = count($delimiters);
+        for ($i = 0; $i < $count; $i++) {
+            $tokens[] = $delimiters[$i];
+        }
+        return $tokens;
+    }
+}
+$scanner = new CallAliasScanner();
+for ($i = 0; $i < 40; $i++) {
+    $tokens = $scanner->scan(['//', '#']);
+}
+$copy = $tokens;
+$copy[] = 'tail';
+echo $tokens[0] . ':' . count($tokens) . ':' . count($copy);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "//:2:3");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies the precise call-result summary keeps only the argument a method
+/// actually returns. The unrelated first temporary must be released, while the
+/// second temporary transfers its owner to the result and remains COW-safe.
+#[test]
+fn test_regression_540_method_passthrough_preserves_only_aliased_argument() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class CallAliasChooser {
+    public function choose(array $discard, array $keep): array {
+        return $keep;
+    }
+}
+$chooser = new CallAliasChooser();
+for ($i = 0; $i < 40; $i++) {
+    $value = $chooser->choose(['drop'], ['keep']);
+}
+$copy = $value;
+$copy[] = 'tail';
+echo $value[0] . ':' . count($value) . ':' . count($copy);
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "keep:1:2");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies a non-final receiver summary includes descendant overrides. The base
+/// implementation returns fresh storage, but the child returns its argument; a
+/// call through the base type must retain that possible alias without leaking.
+#[test]
+fn test_regression_540_method_alias_summary_includes_overrides() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class CallAliasBase {
+    public function choose(array $value): array { return []; }
+}
+class CallAliasChild extends CallAliasBase {
+    public function choose(array $value): array { return $value; }
+}
+function chooseThroughBase(CallAliasBase $chooser): array {
+    return $chooser->choose(['child']);
+}
+for ($i = 0; $i < 40; $i++) {
+    $value = chooseThroughBase(new CallAliasChild());
+}
+echo $value[0];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "child");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies the same precise cleanup applies to a source function that returns
+/// a locally-created array containing a value retained from its argument.
+#[test]
+fn test_regression_540_fresh_function_result_releases_inline_array() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function copyFirst(array $source): array {
+    $copy = [];
+    $copy[] = $source[0];
+    return $copy;
+}
+for ($i = 0; $i < 40; $i++) {
+    $functionResult = copyFirst(['function']);
+}
+echo $functionResult[0];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "function");
     assert!(
         out.stderr.contains("HEAP DEBUG: leak summary: clean"),
         "expected a clean heap, got: {}",
