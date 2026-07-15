@@ -458,6 +458,7 @@ LANGUAGE_CONSTRUCTS: dict[str, dict] = {
         "area": ("Misc", "Misc"),
         "description": "",
         "emitter_fn": None,
+        "extension": True,
     },
 }
 
@@ -522,6 +523,7 @@ def _eval_only_builtin(entry: dict) -> Builtin:
         description=description,
         eval_support=eval_support,
         eval_only=True,
+        is_extension=bool(entry.get("extension")),
     )
 
 
@@ -636,6 +638,7 @@ def build_registry(repo: Path) -> list[Builtin]:
                 lowering=lowering,
                 description=description,
                 eval_support=entry.get("eval"),
+                is_extension=bool(entry.get("extension")),
             )
         )
 
@@ -670,6 +673,7 @@ def build_registry(repo: Path) -> list[Builtin]:
                 lowering=lowering,
                 description=description,
                 eval_support=resident_eval.get(canonical),
+                is_extension=bool(spec.get("extension")),
             )
         )
 
@@ -711,6 +715,7 @@ def _builtin_to_dict(b: Builtin) -> dict:
         "sub_area": b.sub_area,
         "in_catalog": b.in_catalog,
         "is_internal": b.is_internal,
+        "is_extension": b.is_extension,
         "description": b.description,
         "sig": {
             "params": [
