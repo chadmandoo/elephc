@@ -493,6 +493,63 @@ echo $wad->name;
     assert_eq!(out, "PLAYPAL");
 }
 
+/// Regression test for issue #540: each successful `file_get_contents()` call
+/// returns an owned Mixed box containing an owned string. A retaining string cast
+/// must release that source value instead of leaking two blocks per call.
+#[test]
+fn test_file_get_contents_owned_success_result_is_released_after_string_cast() {
+    let id = TEST_ID.fetch_add(1, Ordering::SeqCst);
+    let path = std::env::temp_dir().join(format!("elephc_fgc_owned_success_{}.txt", id));
+    fs::write(&path, b"payload").unwrap();
+
+    let source = format!(
+        r#"<?php
+for ($i = 0; $i < 100; $i++) {{
+    $contents = (string) file_get_contents("{path}");
+}}
+echo $contents;
+"#,
+        path = path.display()
+    );
+    let out = compile_and_run_with_heap_debug(&source);
+    let _ = fs::remove_file(&path);
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "payload");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #540: the failure branch of `file_get_contents()`
+/// returns a fresh boxed `false`. Casting repeated failures to string must release
+/// each source box while preserving PHP's empty-string result.
+#[test]
+fn test_file_get_contents_owned_false_result_is_released_after_string_cast() {
+    let id = TEST_ID.fetch_add(1, Ordering::SeqCst);
+    let path = std::env::temp_dir().join(format!("elephc_fgc_owned_missing_{}.txt", id));
+    let _ = fs::remove_file(&path);
+
+    let source = format!(
+        r#"<?php
+for ($i = 0; $i < 100; $i++) {{
+    $contents = (string) @file_get_contents("{path}");
+}}
+echo strlen($contents);
+"#,
+        path = path.display()
+    );
+    let out = compile_and_run_with_heap_debug(&source);
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "0");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test: an object returned from a function carries a property built
 /// via a loop that accumulates string characters. Verifies that the property built
 /// inside the loop (`$name .= $ch`) is correctly preserved on the returned object.
@@ -1102,6 +1159,108 @@ echo $t;
     );
     assert!(out.success, "program failed: {}", out.stderr);
     assert_eq!(out.stdout, "600");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #540: a fresh object passed directly to a constructor
+/// is an owning argument temporary. `ObjectNew` must release the caller's reference
+/// after the constructor returns, even when the constructor ignores the argument.
+#[test]
+fn test_object_new_releases_owned_nested_object_argument() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class ObjectNewNestedPayload {}
+class ObjectNewNestedSink {
+    public function __construct(ObjectNewNestedPayload $payload) {}
+}
+for ($i = 0; $i < 100; $i++) {
+    $sink = new ObjectNewNestedSink(new ObjectNewNestedPayload());
+}
+echo "ok";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "ok");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #540: an inline array passed to a constructor owns
+/// its array payload and boxed Mixed elements. All of those temporary allocations
+/// must be released after the constructor has consumed the argument.
+#[test]
+fn test_object_new_releases_owned_inline_array_argument() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class ObjectNewArraySink {
+    public function __construct(array $items) {}
+}
+for ($i = 0; $i < 100; $i++) {
+    $sink = new ObjectNewArraySink([$i, $i + 1, $i + 2]);
+}
+echo "ok";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "ok");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Regression test for issue #540: a Mixed container read is an owned temporary
+/// before it is materialized for a typed constructor parameter.
+/// `ObjectNew` must release that temporary after the constructor returns.
+#[test]
+fn test_object_new_releases_owned_mixed_container_read_argument() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class ObjectNewStringSink {
+    public function __construct(string $value) {}
+}
+$source = ["value" => "payload", "other" => 1];
+for ($i = 0; $i < 100; $i++) {
+    $sink = new ObjectNewStringSink((string) $source["value"]);
+}
+unset($sink);
+echo "ok";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "ok");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Verifies that constructor argument cleanup does not release borrowed by-reference
+/// array storage. The constructor must still mutate the caller's array, and both the
+/// caller and object lifetimes must finish with a clean heap.
+#[test]
+fn test_object_new_argument_cleanup_preserves_by_ref_array_alias() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class ObjectNewArrayMutator {
+    public function __construct(array &$items) { $items[] = 3; }
+}
+$items = [1, 2];
+$mutator = new ObjectNewArrayMutator($items);
+echo count($items) . ":" . $items[2];
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "3:3");
     assert!(
         out.stderr.contains("HEAP DEBUG: leak summary: clean"),
         "expected a clean heap, got: {}",
