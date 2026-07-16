@@ -28,9 +28,11 @@ fn lowers_examples_corpus() {
             .parent()
             .and_then(|dir| dir.file_name())
             .is_some_and(|name| name == "strict-php");
-        crate::strict_php::set_enabled(strict);
+        // RAII guard: if lowering a strict fixture panics, the guard still
+        // restores the state during unwinding, so no later fixture can
+        // accidentally run with strict mode inherited.
+        let _guard = strict.then(crate::strict_php::scoped_enable);
         let module = super::lower_file(&fixture);
-        crate::strict_php::set_enabled(false);
         assert!(
             !module.functions.is_empty(),
             "expected at least main function for {}",

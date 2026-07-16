@@ -12,42 +12,48 @@
 //!   thread-local keeps parallel unit tests isolated from each other.
 
 use super::*;
-use crate::strict_php_mode::{set_strict_php_mode, strict_php_mode};
+use crate::strict_php_mode::{scoped_enable, strict_php_mode};
 
 /// Verifies strict mode hides extension builtins from declarative lookup while
-/// genuine PHP builtins stay resolvable.
+/// genuine PHP builtins stay resolvable. The RAII guard restores the previous
+/// state even if an assertion panics mid-test.
 #[test]
 fn strict_mode_hides_extension_builtins_from_lookup() {
-    set_strict_php_mode(true);
-    let ptr_get = eval_declared_builtin_spec("ptr_get").is_some();
-    let buffer_new = eval_declared_builtin_spec("buffer_new").is_some();
-    let class_attrs = eval_declared_builtin_spec("class_attribute_names").is_some();
-    let strlen = eval_declared_builtin_spec("strlen").is_some();
-    let exists_probe = eval_php_visible_builtin_exists("ptr_read8");
-    set_strict_php_mode(false);
-
-    assert!(!ptr_get, "strict mode must hide ptr_get from eval lookup");
-    assert!(!buffer_new, "strict mode must hide buffer_new from eval lookup");
+    let _guard = scoped_enable();
     assert!(
-        !class_attrs,
+        eval_declared_builtin_spec("ptr_get").is_none(),
+        "strict mode must hide ptr_get from eval lookup"
+    );
+    assert!(
+        eval_declared_builtin_spec("buffer_new").is_none(),
+        "strict mode must hide buffer_new from eval lookup"
+    );
+    assert!(
+        eval_declared_builtin_spec("class_attribute_names").is_none(),
         "strict mode must hide class_attribute_names from eval lookup"
     );
-    assert!(strlen, "strlen must stay resolvable in strict mode");
-    assert!(!exists_probe, "existence probes must honor strict mode");
+    assert!(
+        eval_declared_builtin_spec("strlen").is_some(),
+        "strlen must stay resolvable in strict mode"
+    );
+    assert!(
+        !eval_php_visible_builtin_exists("ptr_read8"),
+        "existence probes must honor strict mode"
+    );
 }
 
-/// Verifies the flag defaults to off and round-trips, so non-strict binaries
-/// keep the full extension surface.
+/// Verifies the flag defaults to off and the guard restores it, so non-strict
+/// binaries keep the full extension surface.
 #[test]
-fn strict_mode_defaults_off_and_roundtrips() {
+fn strict_mode_defaults_off_and_guard_restores() {
     assert!(!strict_php_mode(), "strict mode must default to off");
     assert!(
         eval_declared_builtin_spec("ptr_get").is_some(),
         "extension builtins stay visible without strict mode"
     );
-    set_strict_php_mode(true);
-    let enabled = strict_php_mode();
-    set_strict_php_mode(false);
-    assert!(enabled, "set_strict_php_mode(true) must be observable");
-    assert!(!strict_php_mode(), "set_strict_php_mode(false) must restore");
+    {
+        let _guard = scoped_enable();
+        assert!(strict_php_mode(), "scoped_enable must be observable");
+    }
+    assert!(!strict_php_mode(), "dropping the guard must restore the state");
 }

@@ -31,3 +31,29 @@ pub(crate) fn set_strict_php_mode(enabled: bool) {
 pub(crate) fn strict_php_mode() -> bool {
     STRICT_PHP_MODE.with(|cell| cell.get())
 }
+
+/// RAII guard restoring the previous strict-mode state on drop.
+///
+/// Test fixtures hold one of these instead of calling `set_strict_php_mode` in
+/// pairs, so a panicking assertion cannot leak strict state into later
+/// fixtures on the same thread.
+#[cfg(test)]
+pub(crate) struct StrictModeGuard {
+    previous: bool,
+}
+
+#[cfg(test)]
+impl Drop for StrictModeGuard {
+    /// Restores the strict-mode state captured when the guard was created.
+    fn drop(&mut self) {
+        set_strict_php_mode(self.previous);
+    }
+}
+
+/// Enables strict mode and returns a guard that restores the previous state on drop.
+#[cfg(test)]
+pub(crate) fn scoped_enable() -> StrictModeGuard {
+    let previous = strict_php_mode();
+    set_strict_php_mode(true);
+    StrictModeGuard { previous }
+}
