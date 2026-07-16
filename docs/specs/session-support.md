@@ -183,7 +183,10 @@ cannot be changed through `ini_set()` during a request. Auto-start and the two
 deployment upload-progress toggles can be seeded for a worker with the documented
 `ELEPHC_SESSION_*` environment variables. The upload tracker also accepts
 deployment-time name, save-path, serializer, and cookie-only policy variables,
-because body draining necessarily precedes execution of PHP request code.
+because body draining necessarily precedes execution of PHP request code. The
+same deployment seed is reapplied before PHP execution, so upload tracking and
+`session_start()` cannot select different names, paths, serializers, or SID
+transport policies for one request.
 
 For `ini_set()`, invalid names, serializers, save handlers, SameSite values,
 negative lifetimes, invalid GC divisors, or invalid SID parameters return

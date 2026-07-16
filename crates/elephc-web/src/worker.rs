@@ -162,6 +162,11 @@ pub fn serve(listen: &str, handler: extern "C" fn(), cfg: WorkerConfig) {
                 .timer(TokioTimer::new())
                 .header_read_timeout(Duration::from_secs(30))
                 .serve_connection(io, service_fn(move |req: Request<hyper::body::Incoming>| async move {
+                    // Seed session deployment config before upload-progress body
+                    // draining. The PHP prelude repeats this reset immediately
+                    // before the handler, so both phases see identical values and
+                    // no request can inherit the prior request's session settings.
+                    unsafe { crate::session::elephc_web_session_reset() };
                     let started = Instant::now();
                     let method = req.method().as_str().to_string();
                     let uri = req.uri().to_string();

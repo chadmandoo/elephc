@@ -1511,3 +1511,64 @@ echo make([$h, 'greet']);
     );
     assert_eq!(out, "H:id");
 }
+
+/// Verifies boxed-Mixed callbacks dispatch invokable objects and static method
+/// arrays instead of treating those valid PHP callable forms as non-callable.
+#[test]
+fn test_call_user_func_dispatches_boxed_mixed_invokable_and_static_callbacks() {
+    let out = compile_and_run_capture(
+        r#"<?php
+class Handler {
+    public function __invoke(string $id): string { return "I:" . $id; }
+    public static function greet(string $id): string { return "S:" . $id; }
+}
+class Adapter {
+    public mixed $cb;
+    public function __construct(mixed $cb) { $this->cb = $cb; }
+    public function run(string $id): string { return (string)call_user_func($this->cb, $id); }
+}
+function dispatch(mixed $cb): string {
+    $adapter = new Adapter($cb);
+    return $adapter->run("id");
+}
+echo dispatch(new Handler());
+echo dispatch(["Handler", "greet"]);
+"#,
+    );
+    assert!(
+        out.success,
+        "callable dispatch failed: stdout={:?} stderr={:?}",
+        out.stdout,
+        out.stderr
+    );
+    assert_eq!(out.stdout, "I:idS:id");
+}
+
+/// Regression: a boxed callable array shorter than two elements must take a
+/// deterministic fatal path before codegen reads receiver/method slots out of bounds.
+#[test]
+fn test_call_user_func_rejects_short_boxed_mixed_callable_array_without_oob() {
+    let out = compile_and_run_capture(
+        r#"<?php
+class Handler {
+    public function greet(string $id): string { return $id; }
+}
+class Adapter {
+    public mixed $cb;
+    public function __construct(mixed $cb) { $this->cb = $cb; }
+    public function run(): string { return (string)call_user_func($this->cb, "id"); }
+}
+$handler = new Handler();
+$adapter = new Adapter([$handler]);
+echo $adapter->run();
+"#,
+    );
+
+    assert!(!out.success, "short callable array unexpectedly ran: {}", out.stdout);
+    assert!(
+        out.stderr
+            .contains("Fatal error: callable array did not resolve to an invokable target"),
+        "short callable array should fail cleanly, got: {}",
+        out.stderr
+    );
+}

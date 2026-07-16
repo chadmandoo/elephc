@@ -41,6 +41,8 @@ const MIXED_METHOD_PAYLOAD_OFFSET: usize = 16;
 const MIXED_RECEIVER_TAG_OFFSET: usize = 32;
 const MIXED_RECEIVER_PAYLOAD_OFFSET: usize = 48;
 const MIXED_SELECTOR_BYTES: usize = 64;
+const MIXED_VALUE_PAYLOAD_OFFSET: usize = 16;
+const MIXED_VALUE_BYTES: usize = 32;
 const MIXED_TAG_STRING: i64 = 1;
 const MIXED_TAG_OBJECT: i64 = 6;
 const STRING_METHOD_OFFSET: usize = 0;
@@ -58,6 +60,7 @@ struct RuntimeStringFunctionTarget {
 }
 
 /// Resolved public instance-method candidate for a runtime callable array.
+#[derive(Clone)]
 struct RuntimeArrayInstanceMethodTarget {
     class_name: String,
     class_id: u64,
@@ -177,14 +180,9 @@ pub(super) fn lower_callable_descriptor_invoke(
 
 /// Lowers descriptor invocation when the callable traveled through a boxed Mixed value.
 ///
-/// Unboxes the Mixed callback and dispatches by runtime tag: a callable descriptor
-/// (tag 10, a closure/first-class callable) is invoked directly, a string (tag 1, a
-/// function name) is dispatched through the same per-candidate function lookup used
-/// for concrete string callables, and a boxed indexed array (tag 4, `[$obj,
-/// "method"]`) is routed through the shared instance-method callable-array
-/// dispatch. Any other boxed payload — including a boxed array whose element 0 is a
-/// class-name string (the static `["Class", "method"]` form) — is a fatal "not
-/// callable".
+/// Unboxes the callback and dispatches every PHP callable runtime shape: string
+/// function names, closure descriptors, invokable objects, and two-element
+/// instance/static method arrays. Any other tag or malformed array is fatal.
 fn lower_mixed_callable_descriptor_invoke(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -193,8 +191,16 @@ fn lower_mixed_callable_descriptor_invoke(
     op_name: &str,
 ) -> Result<()> {
     let instance_targets = runtime_array_instance_method_targets_for_descriptor(ctx);
-    let array_label = (!instance_targets.is_empty())
+    let invokable_targets = instance_targets
+        .iter()
+        .filter(|target| target.method_key == "__invoke")
+        .cloned()
+        .collect::<Vec<_>>();
+    let static_cases = runtime_static_method_descriptor_cases(ctx);
+    let array_label = (!instance_targets.is_empty() || !static_cases.is_empty())
         .then(|| ctx.next_label("mixed_callable_array"));
+    let object_label = (!invokable_targets.is_empty())
+        .then(|| ctx.next_label("mixed_callable_object"));
     let descriptor_reg = abi::nested_call_reg(ctx.emitter);
     let string_label = ctx.next_label("mixed_callable_string_name");
     let callable_label = ctx.next_label("mixed_callable_closure");
@@ -209,8 +215,12 @@ fn lower_mixed_callable_descriptor_invoke(
             ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_CALLABLE)); // is the boxed Mixed payload a callable descriptor?
             ctx.emitter.instruction(&format!("b.eq {}", callable_label));       // dispatch a boxed closure/first-class callable descriptor
             if let Some(array_label) = &array_label {
-                ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a [$obj, "method"] array?
-                ctx.emitter.instruction(&format!("b.eq {}", array_label));      // dispatch a boxed instance-method callable array
+                ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a two-element callable array?
+                ctx.emitter.instruction(&format!("b.eq {}", array_label));      // dispatch a boxed instance/static-method callable array
+            }
+            if let Some(object_label) = &object_label {
+                ctx.emitter.instruction(&format!("cmp x0, #{}", MIXED_TAG_OBJECT)); // is the boxed Mixed payload an invokable object?
+                ctx.emitter.instruction(&format!("b.eq {}", object_label));     // dispatch the object's public __invoke method
             }
             abi::emit_jump(ctx.emitter, &fatal_label);
             ctx.emitter.label(&callable_label);
@@ -224,8 +234,12 @@ fn lower_mixed_callable_descriptor_invoke(
             ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_CALLABLE)); // is the boxed Mixed payload a callable descriptor?
             ctx.emitter.instruction(&format!("je {}", callable_label));         // dispatch a boxed closure/first-class callable descriptor
             if let Some(array_label) = &array_label {
-                ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a [$obj, "method"] array?
-                ctx.emitter.instruction(&format!("je {}", array_label));        // dispatch a boxed instance-method callable array
+                ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_INDEXED_ARRAY)); // is the boxed Mixed payload a two-element callable array?
+                ctx.emitter.instruction(&format!("je {}", array_label));        // dispatch a boxed instance/static-method callable array
+            }
+            if let Some(object_label) = &object_label {
+                ctx.emitter.instruction(&format!("cmp rax, {}", MIXED_TAG_OBJECT)); // is the boxed Mixed payload an invokable object?
+                ctx.emitter.instruction(&format!("je {}", object_label));       // dispatch the object's public __invoke method
             }
             abi::emit_jump(ctx.emitter, &fatal_label);
             ctx.emitter.label(&callable_label);
@@ -260,9 +274,7 @@ fn lower_mixed_callable_descriptor_invoke(
     }
     abi::emit_jump(ctx.emitter, &done_label);
 
-    // Boxed indexed array (tag 4): a `[$obj, "method"]` instance-method callable.
-    // Re-unbox the array from the boxed Mixed value, fill the selector slots, and
-    // reuse the same instance-method dispatch as a statically-typed callable array.
+    // Boxed indexed array (tag 4): `[$obj, "method"]` or `["Class", "method"]`.
     if let Some(array_label) = &array_label {
         ctx.emitter.label(array_label);
         emit_mixed_callable_array_selector_slots(ctx, &CallableArraySource::BoxedArray(callable))?;
@@ -273,8 +285,38 @@ fn lower_mixed_callable_descriptor_invoke(
             arg_mixed,
             op_name,
             &instance_targets,
-            &[],
+            &static_cases,
         )?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
+
+    // Boxed object (tag 6): dispatch its public `__invoke` implementation by
+    // runtime class id, capturing the unboxed receiver in a descriptor.
+    if let Some(object_label) = &object_label {
+        ctx.emitter.label(object_label);
+        emit_push_mixed_unbox_payload(ctx);
+        let object_done_label = ctx.next_label("mixed_callable_object_done");
+        for target in &invokable_targets {
+            let next_label = ctx.next_label("mixed_callable_object_next");
+            emit_branch_if_saved_receiver_class_id_mismatch(
+                ctx,
+                target.class_id,
+                MIXED_VALUE_PAYLOAD_OFFSET,
+                &next_label,
+            );
+            emit_runtime_array_instance_descriptor_invoke(
+                ctx,
+                inst,
+                arg_mixed,
+                target,
+                MIXED_VALUE_PAYLOAD_OFFSET,
+            )?;
+            abi::emit_jump(ctx.emitter, &object_done_label);
+            ctx.emitter.label(&next_label);
+        }
+        emit_mixed_callable_not_callable_fatal(ctx, op_name);
+        ctx.emitter.label(&object_done_label);
+        abi::emit_release_temporary_stack(ctx.emitter, MIXED_VALUE_BYTES);
         abi::emit_jump(ctx.emitter, &done_label);
     }
 
@@ -788,7 +830,13 @@ fn emit_mixed_callable_array_descriptor_dispatch(
     for target in instance_targets {
         let next_label = ctx.next_label("callable_array_instance_next");
         emit_branch_if_runtime_array_instance_mismatch(ctx, target, &next_label);
-        emit_runtime_array_instance_descriptor_invoke(ctx, inst, arg_mixed, target)?;
+        emit_runtime_array_instance_descriptor_invoke(
+            ctx,
+            inst,
+            arg_mixed,
+            target,
+            MIXED_RECEIVER_PAYLOAD_OFFSET,
+        )?;
         abi::emit_jump(ctx.emitter, &done_label);
         ctx.emitter.label(&next_label);
     }
@@ -1172,6 +1220,7 @@ fn emit_mixed_callable_array_selector_slots(
     ctx: &mut FunctionContext<'_>,
     source: &CallableArraySource,
 ) -> Result<()> {
+    emit_require_mixed_callable_array_pair(ctx, source)?;
     match source {
         CallableArraySource::RawArray(callable) if value_is_array_literal(ctx, *callable) => {
             ctx.emitter.comment("runtime callable-array literal mixed selector");
@@ -1183,10 +1232,84 @@ fn emit_mixed_callable_array_selector_slots(
             ctx.emitter.comment("runtime callable-array boxed-mixed selector");
         }
     }
+    if matches!(source, CallableArraySource::BoxedArray(_)) {
+        return emit_boxed_callable_array_selector_slots(ctx, source);
+    }
     emit_unbox_mixed_callable_array_slot(ctx, source, 0)?;
     emit_push_mixed_unbox_payload(ctx);
     emit_unbox_mixed_callable_array_slot(ctx, source, 1)?;
     emit_push_mixed_unbox_payload(ctx);
+    Ok(())
+}
+
+/// Saves selectors from a boxed callable array according to its runtime slot stamp.
+///
+/// `array<mixed>` stores boxed-cell pointers in 8-byte slots, while a static
+/// `['Class', 'method']` callback normally arrives as `array<string>` with
+/// pointer/length pairs in 16-byte slots. Both paths produce the same 64-byte
+/// tag-plus-payload selector block consumed by the shared dispatch below.
+fn emit_boxed_callable_array_selector_slots(
+    ctx: &mut FunctionContext<'_>,
+    source: &CallableArraySource,
+) -> Result<()> {
+    let array_reg = abi::symbol_scratch_reg(ctx.emitter);
+    let stamp_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let mixed_label = ctx.next_label("boxed_callable_array_mixed_slots");
+    let string_label = ctx.next_label("boxed_callable_array_string_slots");
+    let done_label = ctx.next_label("boxed_callable_array_slots_done");
+    emit_load_callable_array_base(ctx, source, array_reg)?;
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("ldr {}, [{}, #-8]", stamp_reg, array_reg)); // load the indexed-array packed value-type stamp
+            ctx.emitter.instruction(&format!("lsr {}, {}, #8", stamp_reg, stamp_reg)); // move the value-type byte into the low bits
+            ctx.emitter.instruction(&format!("and {}, {}, #0x7f", stamp_reg, stamp_reg)); // isolate the callable-array slot representation
+            ctx.emitter.instruction(&format!("cmp {}, #7", stamp_reg));         // do the array slots contain boxed Mixed cells?
+            ctx.emitter.instruction(&format!("b.eq {}", mixed_label));          // decode each selector through __rt_mixed_unbox
+            ctx.emitter.instruction(&format!("cmp {}, #1", stamp_reg));         // do the array slots contain string pointer/length pairs?
+            ctx.emitter.instruction(&format!("b.eq {}", string_label));         // synthesize string-tagged selectors from typed slots
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("mov {}, QWORD PTR [{} - 8]", stamp_reg, array_reg)); // load the indexed-array packed value-type stamp
+            ctx.emitter.instruction(&format!("shr {}, 8", stamp_reg));          // move the value-type byte into the low bits
+            ctx.emitter.instruction(&format!("and {}, 0x7f", stamp_reg));       // isolate the callable-array slot representation
+            ctx.emitter.instruction(&format!("cmp {}, 7", stamp_reg));          // do the array slots contain boxed Mixed cells?
+            ctx.emitter.instruction(&format!("je {}", mixed_label));            // decode each selector through __rt_mixed_unbox
+            ctx.emitter.instruction(&format!("cmp {}, 1", stamp_reg));          // do the array slots contain string pointer/length pairs?
+            ctx.emitter.instruction(&format!("je {}", string_label));           // synthesize string-tagged selectors from typed slots
+        }
+    }
+    emit_runtime_callable_array_no_match_abort(ctx);
+
+    ctx.emitter.label(&mixed_label);
+    emit_unbox_mixed_callable_array_slot(ctx, source, 0)?;
+    emit_push_mixed_unbox_payload(ctx);
+    emit_unbox_mixed_callable_array_slot(ctx, source, 1)?;
+    emit_push_mixed_unbox_payload(ctx);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&string_label);
+    emit_push_boxed_string_callable_array_slot(ctx, source, 0)?;
+    emit_push_boxed_string_callable_array_slot(ctx, source, 1)?;
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Pushes one typed string-array slot as a Mixed-compatible selector block.
+fn emit_push_boxed_string_callable_array_slot(
+    ctx: &mut FunctionContext<'_>,
+    source: &CallableArraySource,
+    slot: usize,
+) -> Result<()> {
+    let array_reg = abi::symbol_scratch_reg(ctx.emitter);
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    let tag_reg = abi::int_result_reg(ctx.emitter);
+    let offset = 24 + slot * 16;
+    emit_load_callable_array_base(ctx, source, array_reg)?;
+    abi::emit_load_from_address(ctx.emitter, ptr_reg, array_reg, offset);
+    abi::emit_load_from_address(ctx.emitter, len_reg, array_reg, offset + 8);
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+    abi::emit_load_int_immediate(ctx.emitter, tag_reg, MIXED_TAG_STRING);
+    abi::emit_push_reg(ctx.emitter, tag_reg);
     Ok(())
 }
 
@@ -1195,6 +1318,7 @@ fn emit_string_callable_array_selector_slots(
     ctx: &mut FunctionContext<'_>,
     callable: ValueId,
 ) -> Result<()> {
+    emit_require_string_callable_array_pair(ctx, callable)?;
     if value_is_array_literal(ctx, callable) {
         ctx.emitter
             .comment("runtime callable-array literal string selector");
@@ -1291,6 +1415,54 @@ fn emit_load_callable_array_base(
     }
 }
 
+/// Verifies a mixed callable-array source has exactly two elements before any
+/// selector slot is read, preventing short arrays from reading past allocation.
+fn emit_require_mixed_callable_array_pair(
+    ctx: &mut FunctionContext<'_>,
+    source: &CallableArraySource,
+) -> Result<()> {
+    let array_reg = abi::symbol_scratch_reg(ctx.emitter);
+    emit_load_callable_array_base(ctx, source, array_reg)?;
+    emit_require_callable_array_pair_in_reg(ctx, array_reg);
+    Ok(())
+}
+
+/// Verifies a string callable array has exactly two elements before loading its
+/// class and method string slots.
+fn emit_require_string_callable_array_pair(
+    ctx: &mut FunctionContext<'_>,
+    callable: ValueId,
+) -> Result<()> {
+    let array_reg = abi::symbol_scratch_reg(ctx.emitter);
+    ctx.load_value_to_reg(callable, array_reg)?;
+    emit_require_callable_array_pair_in_reg(ctx, array_reg);
+    Ok(())
+}
+
+/// Emits the target-aware length check for a loaded indexed-array pointer.
+fn emit_require_callable_array_pair_in_reg(ctx: &mut FunctionContext<'_>, array_reg: &str) {
+    let valid_label = ctx.next_label("callable_array_pair_valid");
+    let invalid_label = ctx.next_label("callable_array_pair_invalid");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cbz {}, {}", array_reg, invalid_label)); // reject a null callable-array pointer before reading its header
+            ctx.emitter.instruction(&format!("ldr x10, [{}]", array_reg));      // load the callable-array element count
+            ctx.emitter.instruction("cmp x10, #2");                             // require exactly [receiver, method]
+            ctx.emitter.instruction(&format!("b.eq {}", valid_label));          // read selectors only for a valid pair
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("test {}, {}", array_reg, array_reg)); // reject a null callable-array pointer before reading its header
+            ctx.emitter.instruction(&format!("je {}", invalid_label));          // avoid dereferencing a null callable-array pointer
+            ctx.emitter.instruction(&format!("mov r10, QWORD PTR [{}]", array_reg)); // load the callable-array element count
+            ctx.emitter.instruction("cmp r10, 2");                              // require exactly [receiver, method]
+            ctx.emitter.instruction(&format!("je {}", valid_label));            // read selectors only for a valid pair
+        }
+    }
+    ctx.emitter.label(&invalid_label);
+    emit_runtime_callable_array_no_match_abort(ctx);
+    ctx.emitter.label(&valid_label);
+}
+
 /// Preserves the tag and payload returned by `__rt_mixed_unbox`.
 fn emit_push_mixed_unbox_payload(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
@@ -1313,7 +1485,12 @@ fn emit_branch_if_runtime_array_instance_mismatch(
 ) {
     emit_branch_if_stack_tag_mismatch(ctx, MIXED_RECEIVER_TAG_OFFSET, MIXED_TAG_OBJECT, next_label);
     emit_branch_if_stack_tag_mismatch(ctx, MIXED_METHOD_TAG_OFFSET, MIXED_TAG_STRING, next_label);
-    emit_branch_if_receiver_class_id_mismatch(ctx, target.class_id, next_label);
+    emit_branch_if_saved_receiver_class_id_mismatch(
+        ctx,
+        target.class_id,
+        MIXED_RECEIVER_PAYLOAD_OFFSET,
+        next_label,
+    );
     emit_branch_if_stack_string_mismatch(
         ctx,
         MIXED_METHOD_PAYLOAD_OFFSET,
@@ -1393,14 +1570,15 @@ fn emit_branch_if_stack_tag_mismatch(
 }
 
 /// Branches when the saved receiver object's class id does not match the target.
-fn emit_branch_if_receiver_class_id_mismatch(
+fn emit_branch_if_saved_receiver_class_id_mismatch(
     ctx: &mut FunctionContext<'_>,
     class_id: u64,
+    receiver_payload_offset: usize,
     next_label: &str,
 ) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            abi::emit_load_temporary_stack_slot(ctx.emitter, "x9", MIXED_RECEIVER_PAYLOAD_OFFSET);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x9", receiver_payload_offset);
             ctx.emitter.instruction(&format!("cbz x9, {}", next_label));        // reject null callable-array receivers before reading class id
             ctx.emitter.instruction("ldr x10, [x9]");                           // load the callable-array receiver class id
             abi::emit_load_int_immediate(ctx.emitter, "x11", class_id as i64);
@@ -1408,7 +1586,7 @@ fn emit_branch_if_receiver_class_id_mismatch(
             ctx.emitter.instruction(&format!("b.ne {}", next_label));           // try the next callable-array target when the class differs
         }
         Arch::X86_64 => {
-            abi::emit_load_temporary_stack_slot(ctx.emitter, "r10", MIXED_RECEIVER_PAYLOAD_OFFSET);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "r10", receiver_payload_offset);
             ctx.emitter.instruction("test r10, r10");                           // reject null callable-array receivers before reading class id
             ctx.emitter.instruction(&format!("je {}", next_label));             // try the next callable-array target when the receiver is null
             ctx.emitter.instruction("mov r11, QWORD PTR [r10]");                // load the callable-array receiver class id
@@ -1537,6 +1715,7 @@ fn emit_runtime_array_instance_descriptor_invoke(
     inst: &Instruction,
     arg_mixed: ValueId,
     target: &RuntimeArrayInstanceMethodTarget,
+    receiver_payload_offset: usize,
 ) -> Result<()> {
     let receiver_ty = PhpType::Object(target.class_name.clone());
     let captures = vec![("receiver".to_string(), receiver_ty.clone(), false)];
@@ -1563,7 +1742,12 @@ fn emit_runtime_array_instance_descriptor_invoke(
         ),
         Some(&invoker_label),
     );
-    emit_runtime_descriptor_with_saved_receiver_capture(ctx, &descriptor_label, &receiver_ty);
+    emit_runtime_descriptor_with_saved_receiver_capture(
+        ctx,
+        &descriptor_label,
+        &receiver_ty,
+        receiver_payload_offset,
+    );
     emit_descriptor_reg_invoker_call_with_mixed_arg(
         ctx,
         inst,
@@ -1604,7 +1788,12 @@ fn emit_runtime_array_instance_descriptor_value(
         ),
         Some(&invoker_label),
     );
-    emit_runtime_descriptor_with_saved_receiver_capture(ctx, &descriptor_label, &receiver_ty);
+    emit_runtime_descriptor_with_saved_receiver_capture(
+        ctx,
+        &descriptor_label,
+        &receiver_ty,
+        MIXED_RECEIVER_PAYLOAD_OFFSET,
+    );
     Ok(())
 }
 
@@ -1632,11 +1821,12 @@ fn emit_runtime_descriptor_with_saved_receiver_capture(
     ctx: &mut FunctionContext<'_>,
     descriptor_label: &str,
     receiver_ty: &PhpType,
+    receiver_payload_offset: usize,
 ) {
     let result_reg = abi::int_result_reg(ctx.emitter);
     let descriptor_reg = abi::nested_call_reg(ctx.emitter);
     let total_bytes = callable_descriptor::CALLABLE_DESC_RUNTIME_CAPTURE_OFFSET + 16;
-    abi::emit_load_temporary_stack_slot(ctx.emitter, result_reg, MIXED_RECEIVER_PAYLOAD_OFFSET);
+    abi::emit_load_temporary_stack_slot(ctx.emitter, result_reg, receiver_payload_offset);
     abi::emit_incref_if_refcounted(ctx.emitter, receiver_ty);
     abi::emit_push_reg(ctx.emitter, result_reg);
     abi::emit_load_int_immediate(ctx.emitter, result_reg, total_bytes as i64);

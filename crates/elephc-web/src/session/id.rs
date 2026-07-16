@@ -34,6 +34,10 @@ use std::io::Read;
 const ID_CHARSET_TABLE: &[u8; 64] =
     b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ,-";
 
+/// php-src's independent upper bound for a complete incoming session ID.
+/// `session.sid_length` controls only the generated random suffix length.
+const MAX_SESSION_ID_LENGTH: usize = 256;
+
 /// Returns true if every byte in `s` is in PHP's session-ID/prefix charset:
 /// `[a-zA-Z0-9,-]`. Shared by prefix validation (`create_id`) and incoming-ID
 /// validation (`validate_session_id`). Does not check emptiness — callers
@@ -153,15 +157,13 @@ pub unsafe extern "C" fn elephc_web_session_create_id(
     opt_ptr(core::ptr::addr_of!(RET_STRING))
 }
 
-/// Validates an incoming session ID: length must be 1 up to the configured
-/// `sid_length` (BUG-9(b): tracks state, default 32, settable up to 256 —
-/// previously a hardcoded 128 that self-rejected once `sid_length` was
-/// raised above it), and every character must be in the set `a-zA-Z0-9,-`.
-/// Returns true if valid.
+/// Validates a complete incoming session ID: length must be 1 through php-src's
+/// fixed 256-byte maximum and every character must be in `a-zA-Z0-9,-`.
+/// `session.sid_length` is deliberately not consulted because it controls only
+/// the generated random suffix; `session_create_id($prefix)` prepends to it.
 pub(super) fn validate_session_id(id: &str) -> bool {
     let len = id.len();
-    let cap = unsafe { *core::ptr::addr_of!(SID_LENGTH) } as usize;
-    if len == 0 || len > cap {
+    if len == 0 || len > MAX_SESSION_ID_LENGTH {
         return false;
     }
     has_valid_id_charset(id)
@@ -200,42 +202,41 @@ mod tests {
             let s = id.to_str().unwrap();
             assert!(s.starts_with("abc-"));
             assert_eq!(s.len(), 36); // 4 prefix + 32 hex
+            assert!(validate_session_id(s));
         }
     }
 
-    /// Verifies session ID validation accepts valid IDs and rejects invalid
-    /// ones against the default sid_length=32 cap.
+    /// Verifies complete session IDs use php-src's fixed 256-byte cap rather
+    /// than the generated suffix length.
     #[test]
     fn session_id_validation() {
         assert!(validate_session_id("abc123"));
         assert!(validate_session_id("a,b-c,d"));
         assert!(validate_session_id("0123456789abcdef0123456789abcdef")); // 32 chars
+        assert!(validate_session_id(&"x".repeat(256)));
         assert!(!validate_session_id(""));
         assert!(!validate_session_id("with space"));
         assert!(!validate_session_id("with;semicolon"));
-        assert!(!validate_session_id(&"x".repeat(33)));
+        assert!(!validate_session_id(&"x".repeat(257)));
     }
 
-    /// BUG-9(b): validate_session_id's incoming-ID cap must track the
-    /// configured sid_length instead of a hardcoded 128, so raising
-    /// sid_length above the old hardcoded value doesn't self-reject the next
-    /// request's cookie.
+    /// Verifies changing the random suffix length does not change validation of
+    /// complete IDs, including IDs longer than the configured suffix.
     #[test]
-    fn validate_session_id_tracks_sid_length() {
+    fn validate_session_id_is_independent_of_sid_length() {
         let _g = lock();
         unsafe {
             super::super::state::elephc_web_session_reset();
             let ok32 = "a".repeat(32);
-            let bad33 = "a".repeat(33);
+            let prefixed35 = "a".repeat(35);
             assert!(validate_session_id(&ok32));
-            assert!(!validate_session_id(&bad33));
+            assert!(validate_session_id(&prefixed35));
 
-            // Raise sid_length past the old hardcoded 128 cap.
             assert_eq!(super::super::state::elephc_web_session_set_sid_length(200), 1);
             let ok200 = "a".repeat(200);
-            let bad201 = "a".repeat(201);
+            let prefixed203 = "a".repeat(203);
             assert!(validate_session_id(&ok200));
-            assert!(!validate_session_id(&bad201));
+            assert!(validate_session_id(&prefixed203));
 
             super::super::state::elephc_web_session_reset();
         }

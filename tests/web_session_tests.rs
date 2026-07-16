@@ -236,22 +236,17 @@ fn response_complete(buf: &[u8]) -> bool {
     false
 }
 
-/// Extracts the `PHPSESSID=...` value from a Set-Cookie header in the raw response.
-fn extract_phpsessid(resp: &str) -> Option<String> {
+/// Extracts one named session-cookie value from a raw HTTP response.
+fn extract_session_id(resp: &str, name: &str) -> Option<String> {
+    let needle = format!("{}=", name);
+    let lower_needle = needle.to_ascii_lowercase();
     for line in resp.lines() {
         let lower = line.to_lowercase();
-        if lower.starts_with("set-cookie:") && lower.contains("phpsessid=") {
+        if lower.starts_with("set-cookie:") && lower.contains(&lower_needle) {
             let rest = &line["set-cookie:".len()..];
             let rest = rest.trim();
-            if let Some(eq) = rest.find("PHPSESSID=") {
-                let after = &rest[eq + "PHPSESSID=".len()..];
-                let end = after
-                    .find(|c: char| c == ';' || c == ' ' || c == '\r')
-                    .unwrap_or(after.len());
-                return Some(after[..end].to_string());
-            }
-            if let Some(eq) = rest.find("phpsessid=") {
-                let after = &rest[eq + "phpsessid=".len()..];
+            if let Some(eq) = rest.to_ascii_lowercase().find(&lower_needle) {
+                let after = &rest[eq + needle.len()..];
                 let end = after
                     .find(|c: char| c == ';' || c == ' ' || c == '\r')
                     .unwrap_or(after.len());
@@ -260,6 +255,11 @@ fn extract_phpsessid(resp: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Extracts the default `PHPSESSID=...` value from a raw response.
+fn extract_phpsessid(resp: &str) -> Option<String> {
+    extract_session_id(resp, "PHPSESSID")
 }
 
 /// Verifies that `session_start()` activates a session and `session_status()`
@@ -458,6 +458,34 @@ fn session_id_not_empty() {
     );
 }
 
+/// Regression: `session.sid_length` sizes only the random suffix, so the files
+/// handler must accept a complete ID returned by `session_create_id($prefix)`.
+#[test]
+fn session_create_id_prefix_is_accepted_by_files_handler() {
+    let dir = make_test_dir("sess_prefixed_id");
+    let save_path = dir.to_string_lossy().replace('\\', "/");
+    let source = format!(
+        "<?php\n\
+         $id = (string) session_create_id('abc');\n\
+         session_id($id);\n\
+         $started = session_start(['save_path' => '{save_path}', 'use_cookies' => false]);\n\
+         echo strlen($id) . ':' . ($started ? 'started' : 'failed');\n\
+         session_abort();"
+    );
+    let bin = compile_web(&dir, &source, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let response = http_get(&addr, "/");
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        response.ends_with("35:started"),
+        "prefix plus the default 32-byte suffix must be accepted: {response:?}"
+    );
+}
+
 /// Verifies that `session_name()` returns the default name `PHPSESSID`.
 #[test]
 fn session_name_default() {
@@ -473,6 +501,41 @@ fn session_name_default() {
         resp.contains("PHPSESSID"),
         "session_name should contain PHPSESSID: {:?}",
         resp
+    );
+}
+
+/// Verifies `session_name()` rejects CRLF and the rest of PHP's forbidden
+/// `session.name` characters before the value can reach a `Set-Cookie` header.
+#[test]
+fn session_name_rejects_header_injection_characters() {
+    let dir = make_test_dir("sess_name_injection");
+    let source = r#"<?php
+$old = session_name("Bad\r\nX-Elephc-Injected: yes");
+$current = session_name();
+session_start();
+echo $old . '|' . $current;
+"#;
+    let bin = compile_web(&dir, source, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let response = http_get(&addr, "/");
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        response
+            .to_ascii_lowercase()
+            .contains("set-cookie: phpsessid="),
+        "the valid default name should still own the cookie: {response:?}"
+    );
+    assert!(
+        !response.to_ascii_lowercase().contains("x-elephc-injected:"),
+        "invalid name escaped into response headers: {response:?}"
+    );
+    assert!(
+        response.ends_with("PHPSESSID|PHPSESSID"),
+        "invalid session_name must return and preserve the old name: {response:?}"
     );
 }
 
@@ -640,6 +703,73 @@ fn session_write_close_status() {
         resp.ends_with("1"),
         "session_status after write_close should be 1 (NONE): {:?}",
         resp
+    );
+}
+
+/// Regression: an unencodable `php`-serializer key must write an empty payload
+/// and release the files-handler lock, allowing the same request to reopen the SID.
+#[test]
+fn session_write_close_encode_failure_releases_lock() {
+    let dir = make_test_dir("sess_encode_close_unlock");
+    let save_path = dir.to_string_lossy().replace('\\', "/");
+    let sid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let source = format!(
+        "<?php\n\
+         session_id('{sid}');\n\
+         session_start(['save_path' => '{save_path}', 'use_cookies' => false]);\n\
+         $_SESSION['bad|key'] = 1;\n\
+         echo session_write_close() ? 'closed:' : 'close-failed:';\n\
+         echo session_start(['save_path' => '{save_path}', 'use_cookies' => false]) ? 'reopened:' : 'reopen-failed:';\n\
+         echo count($_SESSION);\n\
+         session_abort();"
+    );
+    let bin = compile_web(&dir, &source, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let response = http_get(&addr, "/");
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        response.ends_with("closed:reopened:0"),
+        "encode failure must close and reopen without deadlock: {response:?}"
+    );
+    assert_eq!(
+        fs::metadata(dir.join(format!("sess_{sid}"))).unwrap().len(),
+        0,
+        "php-src writes an empty session payload after encode failure"
+    );
+}
+
+/// Regression: the stock `SessionHandler` object delegates `close()` to the
+/// files bridge so `session_abort()` cannot leave its read-time flock held.
+#[test]
+fn stock_session_handler_close_releases_lock() {
+    let dir = make_test_dir("sess_handler_close_unlock");
+    let save_path = dir.to_string_lossy().replace('\\', "/");
+    let source = format!(
+        "<?php\n\
+         $handler = new SessionHandler();\n\
+         session_set_save_handler($handler, true);\n\
+         session_id('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');\n\
+         session_start(['save_path' => '{save_path}', 'use_cookies' => false]);\n\
+         $_SESSION['discarded'] = 1;\n\
+         session_abort();\n\
+         echo session_start(['save_path' => '{save_path}', 'use_cookies' => false]) ? 'reopened' : 'failed';\n\
+         session_abort();"
+    );
+    let bin = compile_web(&dir, &source, "app");
+    let port = free_port();
+    let addr = format!("127.0.0.1:{}", port);
+    let mut child = spawn_server(&bin, &addr, "1");
+    let response = http_get(&addr, "/");
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(
+        response.ends_with("reopened"),
+        "SessionHandler::close must release the file lock: {response:?}"
     );
 }
 
@@ -1164,6 +1294,9 @@ fn session_start_twice_warns_on_stderr() {
 #[test]
 fn upload_progress_end_state_persists_with_cleanup_off() {
     let dir = make_test_dir("sess_upload_prog");
+    let session_store = dir.join("sessions");
+    fs::create_dir_all(&session_store).unwrap();
+    let session_store_env = session_store.to_string_lossy().into_owned();
     // Request 1 starts a session; requests 2/3 branch on the URI path. Request 2
     // is a bare upload endpoint (no session_start) so ONLY the drain writes the
     // progress entry; request 3 starts the session and reads it back.
@@ -1184,18 +1317,26 @@ fn upload_progress_end_state_persists_with_cleanup_off() {
     let bin = compile_web(&dir, src, "app");
     let port = free_port();
     let addr = format!("127.0.0.1:{}", port);
-    // cleanup OFF so the final done=true snapshot survives for the read request.
+    // The deployment overrides must seed both the pre-handler upload tracker and
+    // the later PHP session_start() calls. Cleanup stays off so the final snapshot
+    // survives for the read request; php_serialize exercises path/format alignment.
     let mut child = spawn_server_with_env(
         &bin,
         &addr,
         "1",
-        &[("ELEPHC_SESSION_UPLOAD_PROGRESS_CLEANUP", "0")],
+        &[
+            ("ELEPHC_SESSION_UPLOAD_PROGRESS_CLEANUP", "0"),
+            ("ELEPHC_SESSION_NAME", "APPSESSID"),
+            ("ELEPHC_SESSION_SAVE_PATH", &session_store_env),
+            ("ELEPHC_SESSION_SERIALIZE_HANDLER", "php_serialize"),
+        ],
     );
 
     // 1) Start the session, capture the cookie.
     let r1 = http_request(&addr, "GET", "/start", &[], "");
-    let cookie = extract_phpsessid(&r1).expect("first response should set a PHPSESSID cookie");
-    let cookie_hdr = format!("PHPSESSID={}", cookie);
+    let cookie = extract_session_id(&r1, "APPSESSID")
+        .expect("first response should set the deployment-configured session cookie");
+    let cookie_hdr = format!("APPSESSID={}", cookie);
 
     // 2) POST a multipart upload with the progress trigger field before the file.
     let boundary = "elephcUPLOADBOUND";
@@ -1248,6 +1389,10 @@ fn upload_progress_end_state_persists_with_cleanup_off() {
         r3.contains("fn=f"),
         "file field_name should be 'f': {:?}",
         r3
+    );
+    assert!(
+        session_store.join(format!("sess_{cookie}")).exists(),
+        "upload tracker and session_start must share the configured save path"
     );
 }
 

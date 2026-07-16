@@ -355,7 +355,7 @@ pub(crate) fn begin(headers: &[(String, String)], query: &str) -> Option<Tracker
     let boundary = extract_boundary(&content_type)?;
 
     // SAFETY: single-threaded per worker; getters only read/lazy-init statics.
-    let (mut name_cookie, mut save_path, prefix, name_field, freq, min_freq, mut handler_name) = unsafe {
+    let (name_cookie, save_path, prefix, name_field, freq, min_freq, handler_name) = unsafe {
         (
             getter_string(super::state::elephc_web_session_get_name()),
             getter_string(super::state::elephc_web_session_get_save_path()),
@@ -366,11 +366,6 @@ pub(crate) fn begin(headers: &[(String, String)], query: &str) -> Option<Tracker
             getter_string(super::state::elephc_web_session_get_serialize_handler()),
         )
     };
-    name_cookie = std::env::var("ELEPHC_SESSION_NAME").unwrap_or(name_cookie);
-    save_path = std::env::var("ELEPHC_SESSION_SAVE_PATH").unwrap_or(save_path);
-    handler_name =
-        std::env::var("ELEPHC_SESSION_SERIALIZE_HANDLER").unwrap_or(handler_name);
-
     let handler = match handler_name.as_str() {
         "php" | "" => Handler::Php,
         "php_serialize" => Handler::PhpSerialize,
@@ -426,36 +421,19 @@ pub(crate) fn begin(headers: &[(String, String)], query: &str) -> Option<Tracker
     })
 }
 
-/// Whether progress tracking is enabled: the `ELEPHC_SESSION_UPLOAD_PROGRESS_
-/// ENABLED` env override (mirroring the `session.auto_start` env model, since
-/// elephc has no php.ini layer to seed ini config before a request) wins;
-/// otherwise the per-worker config getter (PHP default: enabled).
+/// Returns the request-seeded upload-progress enabled flag.
 fn config_enabled() -> bool {
-    match std::env::var("ELEPHC_SESSION_UPLOAD_PROGRESS_ENABLED") {
-        Ok(v) => matches!(v.trim(), "1" | "on" | "true" | "On" | "ON"),
-        Err(_) => unsafe { super::state::elephc_web_session_get_upload_progress_enabled() == 1 },
-    }
+    unsafe { super::state::elephc_web_session_get_upload_progress_enabled() == 1 }
 }
 
-/// Whether the progress entry is removed on completion: the
-/// `ELEPHC_SESSION_UPLOAD_PROGRESS_CLEANUP` env override wins; otherwise the
-/// per-worker config getter (PHP default: cleanup on).
+/// Returns the request-seeded upload-progress cleanup flag.
 fn config_cleanup() -> bool {
-    match std::env::var("ELEPHC_SESSION_UPLOAD_PROGRESS_CLEANUP") {
-        Ok(v) => matches!(v.trim(), "1" | "on" | "true" | "On" | "ON"),
-        Err(_) => unsafe { super::state::elephc_web_session_get_upload_progress_cleanup() == 1 },
-    }
+    unsafe { super::state::elephc_web_session_get_upload_progress_cleanup() == 1 }
 }
 
-/// Returns the deployment-time cookie-only policy used before PHP executes.
+/// Returns the request-seeded cookie-only policy used before PHP executes.
 fn config_use_only_cookies() -> bool {
-    match std::env::var("ELEPHC_SESSION_USE_ONLY_COOKIES") {
-        Ok(value) => !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "0" | "off" | "false" | "no"
-        ),
-        Err(_) => unsafe { super::state::elephc_web_session_get_use_only_cookies() == 1 },
-    }
+    unsafe { super::state::elephc_web_session_get_use_only_cookies() == 1 }
 }
 
 /// Copies a session getter's C-string return into an owned `String`. The

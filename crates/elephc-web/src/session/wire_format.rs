@@ -178,12 +178,19 @@ fn skip_serialized_value(data: &[u8], pos: usize) -> usize {
             } else {
                 return pos;
             }
-            // Skip count*2 serialized values (keys + values).
-            for _ in 0..count * 2 {
-                p = skip_serialized_value(data, p);
-                if p == pos {
+            // Skip count*2 serialized values (keys + values). Reject an
+            // overflowing declared count and require every nested value to
+            // advance from the current cursor; comparing with the outer `pos`
+            // lets a truncated payload spin for the attacker-controlled count.
+            let Some(item_count) = count.checked_mul(2) else {
+                return pos;
+            };
+            for _ in 0..item_count {
+                let next = skip_serialized_value(data, p);
+                if next == p {
                     return pos;
                 }
+                p = next;
             }
             if p < data.len() && data[p] == b'}' {
                 p + 1
@@ -249,11 +256,15 @@ fn skip_serialized_value(data: &[u8], pos: usize) -> usize {
             } else {
                 return pos;
             }
-            for _ in 0..count * 2 {
-                p = skip_serialized_value(data, p);
-                if p == pos {
+            let Some(item_count) = count.checked_mul(2) else {
+                return pos;
+            };
+            for _ in 0..item_count {
+                let next = skip_serialized_value(data, p);
+                if next == p {
                     return pos;
                 }
+                p = next;
             }
             if p < data.len() && data[p] == b'}' {
                 p + 1
@@ -597,6 +608,22 @@ mod tests {
         // a:1:{i:0;a:1:{i:0;i:1;}}
         let nested = b"a:1:{i:0;a:1:{i:0;i:1;}}";
         assert_eq!(skip_serialized_value(nested, 0), nested.len());
+    }
+
+    /// Regression: a truncated collection with an attacker-controlled element
+    /// count must stop on the first non-advancing child instead of looping count times.
+    #[test]
+    fn truncated_collection_count_cannot_drive_unbounded_skip_work() {
+        assert_eq!(skip_serialized_value(b"a:500000000:{", 0), 0);
+        assert_eq!(skip_serialized_value(b"O:1:\"X\":500000000:{", 0), 0);
+    }
+
+    /// Verifies collection item-count multiplication rejects overflow before
+    /// constructing the iteration range for hostile serialized input.
+    #[test]
+    fn collection_count_overflow_is_rejected() {
+        let payload = format!("a:{}:{{", usize::MAX);
+        assert_eq!(skip_serialized_value(payload.as_bytes(), 0), 0);
     }
 
     /// Verifies the session entry parser splits key|value pairs.

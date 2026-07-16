@@ -109,6 +109,10 @@ session_start([
 `cookie_partitioned` requires the PHP 8.5 profile and also requires
 `cookie_secure=true`. Across every maintained profile, PHP's defaults are
 `cookie_httponly=0`, an empty SameSite value, and `use_strict_mode=0`.
+Those defaults are preserved for compatibility, not presented as secure
+deployment guidance. Internet-facing applications should normally enable
+`cookie_httponly`, `use_strict_mode`, `cookie_secure` on HTTPS, and an
+appropriate SameSite policy explicitly.
 
 ## File storage
 
@@ -182,10 +186,9 @@ session_set_save_handler('my_open', 'my_close', 'my_read', 'my_write', 'my_destr
 session_start();
 ```
 
-Each callable may be a function-name string, a closure, or an instance array
-callable (`[$object, 'method']`). Only a static array callable (`['Class',
-'method']`) is unsupported in the 6-callable form — wrap it in the object form (a
-class implementing `SessionHandlerInterface`) instead.
+Each callable may be a function-name string, a closure, an invokable object, an
+instance array callable (`[$object, 'method']`), or a static array callable
+(`['Class', 'method']`).
 
 ## Serialize handlers, strict mode, and GC
 
@@ -233,11 +236,12 @@ Directives cover `name`, `save_path`, `save_handler`, `cache_limiter`,
   handler body runs. Matching PHP's `PERDIR` semantics,
   `ini_set('session.auto_start', …)` returns `false`; the same applies to the
   `session.upload_progress.*` PERDIR directives.
-- **`session.referer_check`** — when non-empty, a cookie-supplied session ID
-  whose request `Referer` header does not contain the configured substring is
-  treated as invalid: the old data is not loaded and a fresh session starts
-  (session-fixation defense). Settable via `ini_set()` or the
-  `session_start(['referer_check' => …])` option.
+- **`session.referer_check`** — matching php-src, this legacy check is evaluated
+  only when `session.use_only_cookies=0`. In that mode, a supplied session ID
+  (including one found in a cookie) is discarded when a non-empty request
+  `Referer` does not contain the configured substring. With PHP's default
+  `use_only_cookies=1` it is inert, so it must not be treated as a replacement
+  for strict mode or modern cookie controls. PHP 8.4 deprecates the directive.
 
 ## Upload progress
 
@@ -291,7 +295,10 @@ seeded per worker process from the `ELEPHC_SESSION_UPLOAD_PROGRESS_ENABLED` /
 `session.auto_start`); otherwise they use the PHP defaults. Configuration needed
 before the body drain can also be supplied through `ELEPHC_SESSION_NAME`,
 `ELEPHC_SESSION_SAVE_PATH`, `ELEPHC_SESSION_SERIALIZE_HANDLER`, and
-`ELEPHC_SESSION_USE_ONLY_COOKIES`.
+`ELEPHC_SESSION_USE_ONLY_COOKIES`. These deployment values seed both the
+pre-handler upload tracker and the request's later `session_start()`, so the
+cookie name, file path, serializer, and transport policy cannot diverge between
+the two phases.
 
 Notes and limitations specific to elephc:
 
@@ -364,12 +371,6 @@ standalone server binary.
 
 - **`--web` only** — sessions require the HTTP request lifecycle. A CLI-compiled
   binary has no session context.
-- **Save handler: static array callables need the object form** — both the object
-  form (`session_set_save_handler(SessionHandlerInterface $handler, …)`) and the
-  legacy 6-callable form (deprecated in PHP 8.4) are supported. In the 6-callable
-  form each callable may be a function-name string, a closure, or an instance
-  array callable (`[$object, 'method']`); only a static array callable
-  (`['Class', 'method']`) still needs the object form.
 - **Warning surface** — session misuse now emits the real PHP `E_WARNING`/`E_NOTICE`
   text (e.g. `session_start(): Ignoring session_start() because a session is already
   active`, `session_id(): Session ID cannot be changed when a session is active`) to

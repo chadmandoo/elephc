@@ -398,7 +398,11 @@ function __elephc_session_entry_bytes(string $data, int $idx, bool $value, bool 
 class SessionHandler implements SessionHandlerInterface, SessionIdInterface {
     public function open(string $path, string $name): bool {
         elephc_web_session_set_save_path($path); elephc_web_session_set_name($name); return true; }
-    public function close(): bool { return true; }
+    public function close(): bool {
+        return elephc_web_session_abort(
+            elephc_web_session_get_id(), elephc_web_session_get_save_path()
+        ) === 1;
+    }
     public function read(string $id): string|false {
         return __elephc_session_read_file($id, elephc_web_session_get_save_path(), 0); }
     public function write(string $id, string $data): bool {
@@ -906,16 +910,23 @@ function session_write_close(): bool {
     if (elephc_web_session_get_status() !== PHP_SESSION_ACTIVE) { return false; }
     $id = elephc_web_session_get_id();
     $save_path = elephc_web_session_get_save_path();
+    $__elephc_h = __ElephcSessionState::$handler;
     $__elephc_encoded = __elephc_session_encode();
     if ($__elephc_encoded === false) {
-        // BUG-10: a $_SESSION key contains '|' under the php/php_binary
-        // handler. session_encode() surfaces false for this; write_close()
-        // still reports success and simply skips the write (matches PHP).
+        // A `php`-serializer key containing `|` cannot be encoded. php-src
+        // writes an empty payload in this case, then closes the handler. Besides
+        // matching those bytes, completing the close is essential: the files
+        // handler's read lock must never survive an inactive session status.
+        if ($__elephc_h !== null && $__elephc_h instanceof SessionHandlerInterface) {
+            $__elephc_h->write($id, '');
+            $__elephc_h->close();
+        } else {
+            __elephc_session_write_file($id, $save_path, '');
+        }
         elephc_web_session_set_status(PHP_SESSION_NONE);
         return true;
     }
     $__elephc_data = (string)$__elephc_encoded;
-    $__elephc_h = __ElephcSessionState::$handler;
     if ($__elephc_h !== null) {
         // lazy_write for a custom handler: unchanged data + a timestamp handler
         // → updateTimestamp instead of write. Standalone instanceof so the
@@ -981,7 +992,14 @@ function session_name(?string $name = null): string|false {
         return false;
     }
     $old = elephc_web_session_get_name();
-    if ($name !== null) { elephc_web_session_set_name((string)$name); }
+    if ($name !== null) {
+        if (!__elephc_session_name_valid((string)$name)) {
+            trigger_error('session_name(): session.name "' . (string)$name
+                . '" must not be numeric, empty, contain null bytes or any of the following characters "=,;.[ \\t\\r\\n\\013\\014"', E_WARNING);
+            return $old;
+        }
+        elephc_web_session_set_name((string)$name);
+    }
     return $old;
 }
 function session_status(): int {
@@ -1324,7 +1342,14 @@ function __elephc_session_decode(string $raw): void {
     if ($__elephc_sh === 'php_serialize') {
         $__elephc_decoded = unserialize($raw);
         if (is_array($__elephc_decoded)) {
-            $_SESSION = $__elephc_decoded;
+            // Copy through the session hash so each value is retained by the
+            // request-global owner before the temporary unserialize result is
+            // released at function exit. Assigning the Mixed root wholesale can
+            // leave $_SESSION pointing at the temporary array storage.
+            $_SESSION = [];
+            foreach ($__elephc_decoded as $__elephc_key => $__elephc_value) {
+                $_SESSION[$__elephc_key] = $__elephc_value;
+            }
         }
         return;
     }
@@ -1517,7 +1542,7 @@ function __elephc_session_ini_bool(mixed $value): int {
     return $value ? 1 : 0;
 }
 function __elephc_session_name_valid(string $name): bool {
-    if ($name === '' || is_numeric($name)) { return false; }
+    if ($name === '' || strpos($name, "\0") !== false || is_numeric($name)) { return false; }
     foreach (['=', ',', ';', '.', '[', ' ', "\t", "\r", "\n", "\v", "\f"] as $__elephc_nc) {
         if (strpos($name, $__elephc_nc) !== false) { return false; }
     }

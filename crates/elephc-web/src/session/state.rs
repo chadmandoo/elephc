@@ -829,19 +829,70 @@ pub unsafe extern "C" fn elephc_web_session_set_auto_start(v: i64) {
 // Per-request state reset
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Resets all session state to defaults and releases any held file lock. Called
-/// by the web prelude at the start of every request. Clears name, ID, status,
-/// save path, cache limiter/expire, cookie params, data snapshot, and fd.
+/// Resets all session state to deployment defaults and releases any held file
+/// lock. The worker calls this before draining a request body and the web prelude
+/// repeats it before PHP execution. The shared `ELEPHC_SESSION_*` seed values
+/// therefore drive both upload progress and the later `session_start()` call.
 #[no_mangle]
 pub unsafe extern "C" fn elephc_web_session_reset() {
     // Release any held session-file lock.
     super::file_io::release_lock();
 
-    // Reset all state to defaults.
-    core::ptr::write(core::ptr::addr_of_mut!(SESSION_NAME), None);
+    // Read immutable deployment configuration before resetting the per-request
+    // working copies. Invalid values fall back to PHP's defaults.
+    let configured_name = std::env::var("ELEPHC_SESSION_NAME")
+        .ok()
+        .filter(|value| {
+            !value.is_empty()
+                && value.parse::<f64>().is_err()
+                && !value.bytes().any(|byte| {
+                    matches!(
+                        byte,
+                        b'=' | b',' | b';' | b'.' | b'[' | b' ' | b'\t' | b'\r' | b'\n' | 0x0b | 0x0c
+                    )
+                })
+        })
+        .and_then(|value| CString::new(value).ok());
+    let configured_save_path = std::env::var("ELEPHC_SESSION_SAVE_PATH")
+        .ok()
+        .and_then(|value| CString::new(value).ok());
+    let configured_serializer = std::env::var("ELEPHC_SESSION_SERIALIZE_HANDLER")
+        .ok()
+        .filter(|value| matches!(value.as_str(), "php" | "php_serialize" | "php_binary"))
+        .and_then(|value| CString::new(value).ok());
+    let configured_use_only_cookies = std::env::var("ELEPHC_SESSION_USE_ONLY_COOKIES")
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "off" | "false" | "no"
+            )
+        })
+        .unwrap_or(true);
+    let configured_upload_enabled = std::env::var("ELEPHC_SESSION_UPLOAD_PROGRESS_ENABLED")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "on" | "true"
+            )
+        })
+        .unwrap_or(true);
+    let configured_upload_cleanup = std::env::var("ELEPHC_SESSION_UPLOAD_PROGRESS_CLEANUP")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "on" | "true"
+            )
+        })
+        .unwrap_or(true);
+
+    // Reset all state to PHP defaults plus the deployment-level overrides.
+    core::ptr::write(core::ptr::addr_of_mut!(SESSION_NAME), configured_name);
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_ID), None);
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_STATUS), 1);
-    core::ptr::write(core::ptr::addr_of_mut!(SESSION_SAVE_PATH), None);
+    core::ptr::write(
+        core::ptr::addr_of_mut!(SESSION_SAVE_PATH),
+        configured_save_path,
+    );
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_CACHE_LIMITER), None);
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_CACHE_EXPIRE), 180);
     core::ptr::write(core::ptr::addr_of_mut!(COOKIE_LIFETIME), 0);
@@ -857,7 +908,10 @@ pub unsafe extern "C" fn elephc_web_session_reset() {
     (*core::ptr::addr_of_mut!(STAGING_BUFFER)).clear();
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_FD), -1);
     core::ptr::write(core::ptr::addr_of_mut!(STRICT_MODE), 0);
-    core::ptr::write(core::ptr::addr_of_mut!(SERIALIZE_HANDLER), None);
+    core::ptr::write(
+        core::ptr::addr_of_mut!(SERIALIZE_HANDLER),
+        configured_serializer,
+    );
     core::ptr::write(core::ptr::addr_of_mut!(GC_PROBABILITY), 1);
     core::ptr::write(core::ptr::addr_of_mut!(GC_DIVISOR), 100);
     core::ptr::write(core::ptr::addr_of_mut!(GC_MAXLIFETIME), 1440);
@@ -867,13 +921,22 @@ pub unsafe extern "C" fn elephc_web_session_reset() {
     // ints reset to their PHP defaults.
     core::ptr::write(core::ptr::addr_of_mut!(SESSION_REFERER_CHECK), None);
     core::ptr::write(core::ptr::addr_of_mut!(USE_COOKIES), 1);
-    core::ptr::write(core::ptr::addr_of_mut!(USE_ONLY_COOKIES), 1);
+    core::ptr::write(
+        core::ptr::addr_of_mut!(USE_ONLY_COOKIES),
+        i64::from(configured_use_only_cookies),
+    );
     core::ptr::write(core::ptr::addr_of_mut!(LAZY_WRITE), 1);
     core::ptr::write(core::ptr::addr_of_mut!(USE_TRANS_SID), 0);
     core::ptr::write(core::ptr::addr_of_mut!(TRANS_SID_TAGS), None);
     core::ptr::write(core::ptr::addr_of_mut!(TRANS_SID_HOSTS), None);
-    core::ptr::write(core::ptr::addr_of_mut!(UPLOAD_PROGRESS_ENABLED), 1);
-    core::ptr::write(core::ptr::addr_of_mut!(UPLOAD_PROGRESS_CLEANUP), 1);
+    core::ptr::write(
+        core::ptr::addr_of_mut!(UPLOAD_PROGRESS_ENABLED),
+        i64::from(configured_upload_enabled),
+    );
+    core::ptr::write(
+        core::ptr::addr_of_mut!(UPLOAD_PROGRESS_CLEANUP),
+        i64::from(configured_upload_cleanup),
+    );
     core::ptr::write(core::ptr::addr_of_mut!(UPLOAD_PROGRESS_PREFIX), None);
     core::ptr::write(core::ptr::addr_of_mut!(UPLOAD_PROGRESS_NAME), None);
     core::ptr::write(core::ptr::addr_of_mut!(UPLOAD_PROGRESS_FREQ), None);
