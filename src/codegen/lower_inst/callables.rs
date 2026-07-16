@@ -23,6 +23,7 @@ use crate::parser::ast::Visibility;
 use crate::types::{FunctionSig, PhpType};
 
 use super::super::context::FunctionContext;
+use super::super::shared_state::RuntimeInstanceMethodDescriptorTemplate;
 use super::{
     class_method_already_emitted, class_method_body_exists, direct_call_stack_pad_bytes,
     emit_instance_method_descriptor_entry_wrapper, emit_ref_arg_writebacks,
@@ -429,6 +430,13 @@ pub(super) fn runtime_string_descriptor_cases(
     ctx: &mut FunctionContext<'_>,
     source_arg_ty: Option<&PhpType>,
 ) -> Result<Vec<callable_dispatch::RuntimeCallableCase>> {
+    let cache_ty = source_arg_ty.map(PhpType::codegen_repr);
+    if let Some(cases) = ctx
+        .shared
+        .runtime_string_descriptor_cases(cache_ty.as_ref())
+    {
+        return Ok(cases);
+    }
     let mut cases = runtime_extern_descriptor_cases(ctx)?;
     cases.extend(runtime_builtin_descriptor_cases(ctx, source_arg_ty)?);
     cases.extend(runtime_user_function_descriptor_cases(ctx, source_arg_ty));
@@ -439,6 +447,8 @@ pub(super) fn runtime_string_descriptor_cases(
     );
     cases.sort_by(|left, right| left.label.cmp(&right.label));
     cases.dedup_by(|left, right| left.label == right.label);
+    ctx.shared
+        .cache_runtime_string_descriptor_cases(cache_ty.as_ref(), &cases);
     Ok(cases)
 }
 
@@ -701,27 +711,71 @@ pub(super) fn emit_invokable_object_descriptor_value(
     }
 
     let receiver_ty = PhpType::Object(normalized_class.clone());
-    let captures = vec![("receiver".to_string(), receiver_ty.clone(), false)];
+    let template = runtime_instance_method_descriptor_template(
+        ctx,
+        &normalized_class,
+        "__invoke",
+        method_key,
+        &impl_class,
+        &sig,
+    )?;
+    emit_runtime_descriptor_with_receiver_capture(
+        ctx,
+        &template.descriptor_label,
+        receiver,
+        &receiver_ty,
+    )
+}
+
+/// Returns one module-wide static descriptor template for a public instance method.
+/// Receiver objects are captured into runtime copies, so the wrapper, invoker, and
+/// immutable descriptor header can be shared by every dynamic call site.
+fn runtime_instance_method_descriptor_template(
+    ctx: &mut FunctionContext<'_>,
+    class_name: &str,
+    method_name: &str,
+    method_key: &str,
+    impl_class: &str,
+    sig: &FunctionSig,
+) -> Result<RuntimeInstanceMethodDescriptorTemplate> {
+    if let Some(template) = ctx.shared.runtime_instance_method_descriptor(
+        class_name,
+        method_key,
+        impl_class,
+        sig,
+    ) {
+        return Ok(template);
+    }
+    let receiver_ty = PhpType::Object(class_name.to_string());
+    let captures = vec![("receiver".to_string(), receiver_ty, false)];
     let entry_label =
-        emit_instance_method_descriptor_entry_wrapper(ctx, &impl_class, method_key, &sig)?;
-    let invoker_label = emit_runtime_callable_invoker_inline(ctx, &sig, &captures);
-    let php_name = format!("{}::__invoke", normalized_class);
+        emit_instance_method_descriptor_entry_wrapper(ctx, impl_class, method_key, sig)?;
+    let invoker_label = emit_runtime_callable_invoker_inline(ctx, sig, &captures);
+    let php_name = format!("{}::{}", class_name, method_name);
     let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
         ctx.data,
         &entry_label,
         Some(&php_name),
         callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
-        Some(&sig),
+        Some(sig),
         &captures,
         &[],
         callable_descriptor::CallableDescriptorInvocation::method(
             callable_descriptor::CallableDescriptorShape::InstanceMethod,
-            Some(normalized_class),
-            method_key,
+            Some(class_name.to_string()),
+            method_name,
         ),
         Some(&invoker_label),
     );
-    emit_runtime_descriptor_with_receiver_capture(ctx, &descriptor_label, receiver, &receiver_ty)
+    let template = RuntimeInstanceMethodDescriptorTemplate { descriptor_label };
+    ctx.shared.cache_runtime_instance_method_descriptor(
+        class_name,
+        method_key,
+        impl_class,
+        sig,
+        template.clone(),
+    );
+    Ok(template)
 }
 
 /// Verifies that a descriptor-invoker argument operand is a supported container shape.
@@ -1089,6 +1143,9 @@ fn runtime_array_instance_method_targets_for_descriptor(
 fn runtime_static_method_descriptor_cases(
     ctx: &mut FunctionContext<'_>,
 ) -> Vec<callable_dispatch::RuntimeStaticMethodCallableCase> {
+    if let Some(cases) = ctx.shared.runtime_static_method_descriptor_cases() {
+        return cases;
+    }
     let mut methods = Vec::new();
     let mut classes = ctx.module.class_infos.iter().collect::<Vec<_>>();
     classes.sort_by(|left, right| left.0.cmp(right.0));
@@ -1163,6 +1220,8 @@ fn runtime_static_method_descriptor_cases(
             case,
         });
     }
+    ctx.shared
+        .cache_runtime_static_method_descriptor_cases(&cases);
     cases
 }
 
@@ -1718,33 +1777,17 @@ fn emit_runtime_array_instance_descriptor_invoke(
     receiver_payload_offset: usize,
 ) -> Result<()> {
     let receiver_ty = PhpType::Object(target.class_name.clone());
-    let captures = vec![("receiver".to_string(), receiver_ty.clone(), false)];
-    let entry_label = emit_instance_method_descriptor_entry_wrapper(
+    let template = runtime_instance_method_descriptor_template(
         ctx,
-        &target.impl_class,
+        &target.class_name,
+        &target.method_name,
         &target.method_key,
+        &target.impl_class,
         &target.sig,
     )?;
-    let invoker_label = emit_runtime_callable_invoker_inline(ctx, &target.sig, &captures);
-    let php_name = format!("{}::{}", target.class_name, target.method_name);
-    let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
-        ctx.data,
-        &entry_label,
-        Some(&php_name),
-        callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
-        Some(&target.sig),
-        &captures,
-        &[],
-        callable_descriptor::CallableDescriptorInvocation::method(
-            callable_descriptor::CallableDescriptorShape::InstanceMethod,
-            Some(target.class_name.clone()),
-            target.method_name.as_str(),
-        ),
-        Some(&invoker_label),
-    );
     emit_runtime_descriptor_with_saved_receiver_capture(
         ctx,
-        &descriptor_label,
+        &template.descriptor_label,
         &receiver_ty,
         receiver_payload_offset,
     );
@@ -1764,33 +1807,17 @@ fn emit_runtime_array_instance_descriptor_value(
     target: &RuntimeArrayInstanceMethodTarget,
 ) -> Result<()> {
     let receiver_ty = PhpType::Object(target.class_name.clone());
-    let captures = vec![("receiver".to_string(), receiver_ty.clone(), false)];
-    let entry_label = emit_instance_method_descriptor_entry_wrapper(
+    let template = runtime_instance_method_descriptor_template(
         ctx,
-        &target.impl_class,
+        &target.class_name,
+        &target.method_name,
         &target.method_key,
+        &target.impl_class,
         &target.sig,
     )?;
-    let invoker_label = emit_runtime_callable_invoker_inline(ctx, &target.sig, &captures);
-    let php_name = format!("{}::{}", target.class_name, target.method_name);
-    let descriptor_label = callable_descriptor::static_descriptor_with_optional_invoker_meta(
-        ctx.data,
-        &entry_label,
-        Some(&php_name),
-        callable_descriptor::CALLABLE_DESC_KIND_FIRST_CLASS,
-        Some(&target.sig),
-        &captures,
-        &[],
-        callable_descriptor::CallableDescriptorInvocation::method(
-            callable_descriptor::CallableDescriptorShape::InstanceMethod,
-            Some(target.class_name.clone()),
-            target.method_name.as_str(),
-        ),
-        Some(&invoker_label),
-    );
     emit_runtime_descriptor_with_saved_receiver_capture(
         ctx,
-        &descriptor_label,
+        &template.descriptor_label,
         &receiver_ty,
         MIXED_RECEIVER_PAYLOAD_OFFSET,
     );

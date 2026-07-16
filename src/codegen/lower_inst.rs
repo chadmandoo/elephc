@@ -1641,6 +1641,7 @@ fn emit_runtime_call_wrapper_inline(
         &label,
         ctx.emitter,
         ctx.data,
+        ctx.shared,
         false,
     )?;
     ctx.emitter.label(&done_label);

@@ -43,6 +43,7 @@ use super::literal_defaults::{
 };
 use super::lower_inst;
 use super::lower_term;
+use super::shared_state::SharedCodegenState;
 use super::{CodegenIrError, Result};
 
 const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
@@ -64,6 +65,7 @@ pub(super) fn emit_module(
     regalloc_linear: bool,
     web: bool,
 ) -> Result<()> {
+    let mut shared = SharedCodegenState::default();
     function_variants::emit_dispatchers(module, emitter, data);
     // In `--web` builds the reset routine references every request superglobal.
     // If a superglobal is never read or written by user/prelude code, the symbol
@@ -80,13 +82,13 @@ pub(super) fn emit_module(
         .iter()
         .filter(|function| !is_main(function))
     {
-        emit_user_function(module, function, emitter, data, regalloc_linear)?;
+        emit_user_function(module, function, emitter, data, &mut shared, regalloc_linear)?;
     }
     for method in &module.class_methods {
-        emit_class_method(module, method, emitter, data, regalloc_linear)?;
+        emit_class_method(module, method, emitter, data, &mut shared, regalloc_linear)?;
     }
     for closure in &module.closures {
-        emit_user_function(module, closure, emitter, data, regalloc_linear)?;
+        emit_user_function(module, closure, emitter, data, &mut shared, regalloc_linear)?;
     }
     emit_eir_fiber_wrappers(module, emitter);
     if matches!(emit, Emit::Cdylib) {
@@ -102,6 +104,7 @@ pub(super) fn emit_module(
         main,
         emitter,
         data,
+        &mut shared,
         gc_stats,
         heap_debug,
         requires_elephc_tls,
@@ -172,6 +175,7 @@ fn emit_user_function(
     function: &Function,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     regalloc_linear: bool,
 ) -> Result<()> {
     let entry_label = user_function_entry_symbol(function);
@@ -184,6 +188,7 @@ fn emit_user_function(
             &entry_label,
             emitter,
             data,
+            shared,
             regalloc_linear,
         )?;
         emit_endfn_marker(emitter, &function.name);
@@ -196,6 +201,7 @@ fn emit_user_function(
         function,
         emitter,
         data,
+        shared,
         layout,
         false,
         false,
@@ -216,6 +222,7 @@ pub(super) fn emit_synthetic_function_with_label(
     entry_label: &str,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     regalloc_linear: bool,
 ) -> Result<()> {
     let layout = frame::layout_for_function(function, emitter.target, regalloc_linear);
@@ -225,6 +232,7 @@ pub(super) fn emit_synthetic_function_with_label(
         function,
         emitter,
         data,
+        shared,
         layout,
         false,
         false,
@@ -264,6 +272,7 @@ fn emit_class_method(
     function: &Function,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     regalloc_linear: bool,
 ) -> Result<()> {
     let entry_label = class_method_entry_symbol(function)?;
@@ -275,6 +284,7 @@ fn emit_class_method(
             &entry_label,
             emitter,
             data,
+            shared,
             regalloc_linear,
         )?;
         emit_endfn_marker(emitter, &function.name);
@@ -287,6 +297,7 @@ fn emit_class_method(
         function,
         emitter,
         data,
+        shared,
         layout,
         false,
         false,
@@ -317,6 +328,7 @@ fn emit_generator_function(
     entry_label: &str,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     regalloc_linear: bool,
 ) -> Result<()> {
     let body_label = format!("{}__genbody", entry_label);
@@ -344,6 +356,7 @@ fn emit_generator_function(
         &body_label,
         emitter,
         data,
+        shared,
         regalloc_linear,
     )?;
     emit_generator_callback(emitter, &callback_label, &body_label, &param_types);
@@ -555,6 +568,7 @@ fn emit_generator_body(
     body_label: &str,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     regalloc_linear: bool,
 ) -> Result<()> {
     let layout = frame::layout_for_function(function, emitter.target, regalloc_linear);
@@ -564,6 +578,7 @@ fn emit_generator_body(
         function,
         emitter,
         data,
+        shared,
         layout,
         false,
         false,
@@ -762,6 +777,7 @@ fn emit_main_function(
     function: &Function,
     emitter: &mut Emitter,
     data: &mut DataSection,
+    shared: &mut SharedCodegenState,
     gc_stats: bool,
     heap_debug: bool,
     requires_elephc_tls: bool,
@@ -776,7 +792,7 @@ fn emit_main_function(
     emit_fn_marker(emitter, &function.name, entry_symbol, false);
     let layout = frame::layout_for_function(function, emitter.target, regalloc_linear);
     let mut ctx = FunctionContext::new(
-        module, function, emitter, data, layout, true, gc_stats, heap_debug, None,
+        module, function, emitter, data, shared, layout, true, gc_stats, heap_debug, None,
     );
     if web {
         ctx.web = true;
