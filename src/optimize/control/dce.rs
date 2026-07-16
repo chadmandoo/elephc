@@ -110,7 +110,29 @@ fn stmt_contains_control_flow(stmt: &Stmt) -> bool {
         | StmtKind::DoWhile { .. }
         | StmtKind::For { .. }
         | StmtKind::Foreach { .. } => true,
+        StmtKind::Synthetic(body)
+        | StmtKind::NamespaceBlock { body, .. }
+        | StmtKind::IncludeOnceGuard { body, .. } => stmts_contain_control_flow(body),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: parser-generated `Synthetic` grouping must not hide nested
+    /// control flow from the tail-sinking exponential-growth guard.
+    #[test]
+    fn synthetic_statement_recursively_reports_control_flow() {
+        let tokens = crate::lexer::tokenize(
+            "<?php declare(ticks=1) { if ($argc > 1) { echo 'x'; } }",
+        )
+        .expect("tokenize synthetic control-flow fixture");
+        let statements = crate::parser::parse(&tokens).expect("parse synthetic control-flow fixture");
+
+        assert!(matches!(statements[0].kind, StmtKind::Synthetic(_)));
+        assert!(stmt_contains_control_flow(&statements[0]));
     }
 }
 
