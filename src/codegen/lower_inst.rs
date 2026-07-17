@@ -1993,6 +1993,20 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         abi::emit_call_label(ctx.emitter, "__rt_array_to_assoc");
         return store_if_result(ctx, inst);
     }
+    if matches!(inst.result_php_type.codegen_repr(), PhpType::Array(elem) if elem.codegen_repr() == PhpType::Mixed)
+        && matches!(source_ty, PhpType::AssocArray { .. })
+    {
+        // An associative array flowing to a declared `array<mixed>` type (e.g. `return $this->attrs`
+        // where the property is `array<string, mixed>`) is a representation-identity widening: the
+        // runtime value is a kind-tagged array pointer that `array<mixed>` consumers dispatch on, so
+        // its string keys are preserved (matching PHP's `return $hash` into an `array` return, and
+        // mirroring the #644 Array/AssocArray->Iterable arm). Load the pointer as the owned result
+        // and acquire a reference; no hash normalization is needed because the generic `array<mixed>`
+        // type does not require packed storage.
+        ctx.load_value_to_result(value)?;
+        abi::emit_incref_if_refcounted(ctx.emitter, &inst.result_php_type.codegen_repr());
+        return store_if_result(ctx, inst);
+    }
     Err(CodegenIrError::unsupported(format!(
         "runtime_call from PHP type {:?} to PHP type {:?}",
         source_ty, inst.result_php_type
