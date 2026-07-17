@@ -197,6 +197,65 @@ echo fwd("-", ["a", "b", "c"]);
     assert_eq!(out, "a-b-c");
 }
 
+/// Regression for #623 (callable half): calling a runtime `Mixed` value that holds a string
+/// function name must dispatch to that function instead of fataling ("mixed value is not callable").
+#[test]
+fn test_mixed_callee_string_function_name() {
+    let out = compile_and_run(
+        r#"<?php
+function greet(string $n) { return "Hi $n"; }
+function call_it($cb, string $s) { return $cb($s); }
+echo call_it('greet', 'Al');
+"#,
+    );
+    assert_eq!(out, "Hi Al");
+}
+
+/// Regression for #623 (callable half): a `Mixed` value holding an `[object, method]` array callable
+/// must dispatch to the instance method.
+#[test]
+fn test_mixed_callee_object_method_array() {
+    let out = compile_and_run(
+        r#"<?php
+final class Svc { public function times(int $x) { return $x * 3; } }
+function call_it($cb, int $x) { return $cb($x); }
+$svc = new Svc();
+echo call_it([$svc, 'times'], 4);
+"#,
+    );
+    assert_eq!(out, "12");
+}
+
+/// Regression for #623 (callable half): the closure/first-class-callable case that already worked
+/// must keep working through the new Mixed runtime-type dispatch (the fallback arm).
+#[test]
+fn test_mixed_callee_closure_still_dispatches() {
+    let out = compile_and_run(
+        r#"<?php
+function call_it($cb, int $x) { return $cb($x); }
+echo call_it(fn(int $n) => $n + 100, 5);
+"#,
+    );
+    assert_eq!(out, "105");
+}
+
+/// Regression for #623 (callable half): a `Mixed` callee holding a string function name, exercised
+/// alongside a `[object, method]` array through the SAME Mixed parameter so the callee stays `Mixed`
+/// (not monomorphized), forcing the runtime is_string/is_array dispatch to route both correctly.
+#[test]
+fn test_mixed_callee_string_and_array_share_one_mixed_param() {
+    let out = compile_and_run(
+        r#"<?php
+function twice(int $n) { return $n * 2; }
+final class S { public function m(int $n) { return $n * 3; } }
+function run($cb, int $x) { return $cb($x); }
+$s = new S();
+echo run('twice', 10), '|', run([$s, 'm'], 10);
+"#,
+    );
+    assert_eq!(out, "20|30");
+}
+
 // Issue #17: Braceless single-statement bodies — verifies `implode` works with integer arrays.
 
 /// Regression test for Issue #17: `implode` must correctly join integer array elements into a comma-separated string.

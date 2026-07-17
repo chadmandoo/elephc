@@ -7972,6 +7972,16 @@ fn lower_closure_call(ctx: &mut LoweringContext<'_, '_>, var: &str, args: &[Expr
     let callable = ctx.load_local(var, Some(expr.span));
     let result_type = result_type.unwrap_or_else(|| dynamic_callable_result_type(ctx, callable.value, expr));
     if instance_signature.is_none() {
+        if matches!(
+            ctx.builder.value_php_type(callable.value).codegen_repr(),
+            PhpType::Mixed | PhpType::Union(_)
+        ) {
+            if let Some(value) =
+                lower_mixed_callee_dispatch(ctx, callable, args, result_type.clone(), expr)
+            {
+                return value;
+            }
+        }
         if let Some(arg_container) = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span) {
             return emit_callable_descriptor_invoke(
                 ctx,
@@ -8062,6 +8072,16 @@ fn lower_expr_call(ctx: &mut LoweringContext<'_, '_>, callee: &Expr, args: &[Exp
         }
     }
     let result_type = dynamic_callable_result_type(ctx, lowered_callee.value, expr);
+    if matches!(
+        ctx.builder.value_php_type(lowered_callee.value).codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) {
+        if let Some(value) =
+            lower_mixed_callee_dispatch(ctx, lowered_callee, args, result_type.clone(), expr)
+        {
+            return value;
+        }
+    }
     if let Some(arg_container) = lower_untyped_descriptor_invoker_arg_container(ctx, args, expr.span) {
         return emit_callable_descriptor_invoke(
             ctx,
@@ -8131,6 +8151,150 @@ fn lower_expr_call_from_value(
         Op::ExprCall.default_effects(),
         Some(expr.span),
     )
+}
+
+/// Lowers `$cb(...)` when `$cb` is a runtime `Mixed`/`Union` value by dispatching on its actual
+/// runtime type to the concrete callable handlers: a string function name, an `[object, method]`
+/// / `[class, method]` array, or — the fallback arm — a closure / first-class-callable descriptor.
+///
+/// The single Mixed descriptor-invoke path only recognizes the closure/descriptor tag and fatals
+/// ("mixed value is not callable") on a string or array callable, even though the typed `Str` and
+/// `Array` callable paths already work (#623 callable half). The string/array arms synthesize
+/// `((string)$cb)(...)` / `((array)$cb)(...)`: the cast retypes the callee so `lower_expr` routes
+/// the call through those working handlers and never re-enters this dispatch (the callee is no
+/// longer `Mixed`). The fallback arm emits the descriptor invoke directly on the Mixed value, which
+/// preserves the existing closure / first-class-callable behavior.
+///
+/// Each arm builds its own argument container in its own block, so the arguments evaluate exactly
+/// once at runtime (only one arm runs) and refcount ownership stays local to the arm. Returns
+/// `None` — deferring to the caller's single descriptor invoke — for named or spread arguments,
+/// which the synthesized casted calls do not model.
+fn lower_mixed_callee_dispatch(
+    ctx: &mut LoweringContext<'_, '_>,
+    callee: LoweredValue,
+    args: &[Expr],
+    result_type: PhpType,
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if crate::types::call_args::has_named_args(args) || args.iter().any(is_spread_arg) {
+        return None;
+    }
+    let span = expr.span;
+    let cb_name = ctx.declare_hidden_temp(PhpType::Mixed);
+    store_value_into_temp(ctx, &cb_name, PhpType::Mixed, callee, span);
+    let cb_var = Expr::new(ExprKind::Variable(cb_name), span);
+    let result_name = ctx.declare_hidden_temp(result_type.clone());
+
+    let string_block = ctx.builder.create_named_block("mixed_callee.string", Vec::new());
+    let check_array_block = ctx
+        .builder
+        .create_named_block("mixed_callee.check_array", Vec::new());
+    let array_block = ctx.builder.create_named_block("mixed_callee.array", Vec::new());
+    let closure_block = ctx.builder.create_named_block("mixed_callee.closure", Vec::new());
+    let merge = ctx.builder.create_named_block("mixed_callee.merge", Vec::new());
+
+    let is_string = lower_expr(ctx, &synth_callable_type_check(&cb_var, "is_string", span));
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: is_string.value,
+        then_target: string_block,
+        then_args: Vec::new(),
+        else_target: check_array_block,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(string_block);
+    let string_result =
+        emit_coerced_mixed_callee_invoke(ctx, &cb_var, PhpType::Str, args, result_type.clone(), span);
+    store_value_into_temp(ctx, &result_name, result_type.clone(), string_result, span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(check_array_block);
+    let is_array = lower_expr(ctx, &synth_callable_type_check(&cb_var, "is_array", span));
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: is_array.value,
+        then_target: array_block,
+        then_args: Vec::new(),
+        else_target: closure_block,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(array_block);
+    let array_result = emit_coerced_mixed_callee_invoke(
+        ctx,
+        &cb_var,
+        PhpType::Array(Box::new(PhpType::Mixed)),
+        args,
+        result_type.clone(),
+        span,
+    );
+    store_value_into_temp(ctx, &result_name, result_type.clone(), array_result, span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(closure_block);
+    let cb_loaded = lower_expr(ctx, &cb_var);
+    let arg_container = build_descriptor_arg_container(ctx, args, span);
+    let closure_result =
+        emit_callable_descriptor_invoke(ctx, cb_loaded, arg_container, result_type.clone(), span);
+    store_value_into_temp(ctx, &result_name, result_type, closure_result, span);
+    branch_to(ctx, merge);
+
+    ctx.builder.position_at_end(merge);
+    Some(take_owned_temp(ctx, &result_name, span))
+}
+
+/// Builds `is_string($cb)` / `is_array($cb)` for the Mixed-callee runtime type dispatch.
+fn synth_callable_type_check(cb_var: &Expr, predicate: &str, span: Span) -> Expr {
+    Expr::new(
+        ExprKind::FunctionCall {
+            name: Name::unqualified(predicate),
+            args: vec![cb_var.clone()],
+        },
+        span,
+    )
+}
+
+/// Invokes a Mixed callee for one runtime-type arm: coerces the boxed Mixed to the concrete callable
+/// representation (`Str` for a function name, `Array(Mixed)` for `[object, method]`) via the same
+/// `Op::RuntimeCall` coercion used elsewhere, then emits the descriptor invoke on the now-typed
+/// callee so codegen routes it to the concrete `Str`/`Array` handler. The coerced callee is an owned
+/// temporary that the invoke only borrows, so it is released after (the ownership-aware release is a
+/// no-op for a representation-identity coercion that returns a borrow).
+fn emit_coerced_mixed_callee_invoke(
+    ctx: &mut LoweringContext<'_, '_>,
+    cb_var: &Expr,
+    target_ty: PhpType,
+    args: &[Expr],
+    result_type: PhpType,
+    span: Span,
+) -> LoweredValue {
+    let cb_loaded = lower_expr(ctx, cb_var);
+    let typed_callee = ctx.emit_value(
+        Op::RuntimeCall,
+        vec![cb_loaded.value],
+        None,
+        target_ty,
+        effects_lookup::runtime_effects(),
+        Some(span),
+    );
+    let arg_container = build_descriptor_arg_container(ctx, args, span);
+    let result =
+        emit_callable_descriptor_invoke(ctx, typed_callee, arg_container, result_type, span);
+    if ctx.value_is_owning_temporary(typed_callee) {
+        crate::ir_lower::ownership::release_if_owned(ctx, typed_callee, Some(span));
+    }
+    result
+}
+
+/// Builds the indexed descriptor-invoker argument container for a positional-argument call. The
+/// caller (`lower_mixed_callee_dispatch`) guarantees no named or spread arguments, so the builder's
+/// indexed path always produces a container.
+fn build_descriptor_arg_container(
+    ctx: &mut LoweringContext<'_, '_>,
+    args: &[Expr],
+    span: Span,
+) -> LoweredValue {
+    lower_untyped_descriptor_invoker_arg_container(ctx, args, span)
+        .expect("positional descriptor arguments always build an indexed container")
 }
 
 /// Lowers explicit named arguments for signature-unknown descriptor invocations.
