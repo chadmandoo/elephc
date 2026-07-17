@@ -1742,6 +1742,146 @@ fn lower_inc_dec(
     if post { old } else { stored }
 }
 
+/// Lowers `str_replace(search, replace, $subject)` when `search` is a `string`-element array and the
+/// subject is a scalar string, as a fold: the codegen str_replace helper only accepts scalar search
+/// ("str_replace string coercion for PHP type Array(Str)"), but PHP applies each `search[i]` in turn.
+/// This threads the subject through the SCALAR str_replace once per search element, replacing with
+/// `replace[i]` (array replace) or the single `replace` string.
+///
+/// Scoped so the reused-per-iteration operands stay valid: the subject is scalar `Str`; `search` is
+/// `array<string>`; `replace` is either a string LITERAL (persistent, safe to reuse each iteration)
+/// or an `array<string>` (a fresh element is read per iteration). Returns `Str` — matching PHP's
+/// scalar-subject result and the checker's existing str_replace inference, so no checker change is
+/// needed. Any other shape returns `None` and takes the normal path.
+fn lower_str_replace_search_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    expr: &Expr,
+) -> Option<LoweredValue> {
+    if php_symbol_key(name.trim_start_matches('\\')) != "str_replace" {
+        return None;
+    }
+    if args.len() != 3
+        || crate::types::call_args::has_named_args(args)
+        || args.iter().any(is_spread_arg)
+    {
+        return None;
+    }
+    let arg_ty = |ctx: &LoweringContext<'_, '_>, e: &Expr| match &e.kind {
+        ExprKind::Variable(v) => ctx.local_type(v),
+        _ => infer_expr_type_syntactic(e),
+    }
+    .codegen_repr();
+    let search_ty = arg_ty(ctx, &args[0]);
+    if !matches!(&search_ty, PhpType::Array(elem) if elem.codegen_repr() == PhpType::Str) {
+        return None;
+    }
+    if arg_ty(ctx, &args[2]) != PhpType::Str {
+        return None;
+    }
+    let replace_ty = arg_ty(ctx, &args[1]);
+    let replace_is_array =
+        matches!(&replace_ty, PhpType::Array(elem) if elem.codegen_repr() == PhpType::Str);
+    // A non-array replace must be a string literal (persistent) so reusing it each iteration is safe.
+    if !replace_is_array && !matches!(args[1].kind, ExprKind::StringLiteral(_)) {
+        return None;
+    }
+
+    let span = expr.span;
+    let search = lower_expr(ctx, &args[0]);
+    let replace = lower_expr(ctx, &args[1]);
+    let subject = lower_expr(ctx, &args[2]);
+    let acc_name = ctx.declare_hidden_temp(PhpType::Str);
+    store_value_into_temp(ctx, &acc_name, PhpType::Str, subject, span);
+    let acc_var = Expr::new(ExprKind::Variable(acc_name.clone()), span);
+
+    let len = ctx.emit_value(
+        Op::ArrayLen,
+        vec![search.value],
+        None,
+        PhpType::Int,
+        Op::ArrayLen.default_effects(),
+        Some(span),
+    );
+    let zero = emit_i64_at_span(ctx, 0, span);
+    let header = ctx
+        .builder
+        .create_named_block("str_replace_search.next", vec![(IrType::I64, PhpType::Int)]);
+    let body = ctx.builder.create_named_block("str_replace_search.body", Vec::new());
+    let exit = ctx.builder.create_named_block("str_replace_search.exit", Vec::new());
+    ctx.builder.terminate(Terminator::Br {
+        target: header,
+        args: vec![zero.value],
+    });
+
+    ctx.builder.position_at_end(header);
+    let index = ctx.builder.block_param(header, 0);
+    let has_next = ctx.emit_value(
+        Op::ICmp,
+        vec![index, len.value],
+        Some(Immediate::CmpPredicate(CmpPredicate::Slt)),
+        PhpType::Bool,
+        Op::ICmp.default_effects(),
+        Some(span),
+    );
+    ctx.builder.terminate(Terminator::CondBr {
+        cond: has_next.value,
+        then_target: body,
+        then_args: Vec::new(),
+        else_target: exit,
+        else_args: Vec::new(),
+    });
+
+    ctx.builder.position_at_end(body);
+    let search_i = ctx.emit_value(
+        Op::ArrayGet,
+        vec![search.value, index],
+        None,
+        PhpType::Str,
+        Op::ArrayGet.default_effects(),
+        Some(span),
+    );
+    let replace_i = if replace_is_array {
+        ctx.emit_value(
+            Op::ArrayGet,
+            vec![replace.value, index],
+            None,
+            PhpType::Str,
+            Op::ArrayGet.default_effects(),
+            Some(span),
+        )
+        .value
+    } else {
+        replace.value
+    };
+    let cur = lower_expr(ctx, &acc_var);
+    let replaced = emit_builtin_call_value(
+        ctx,
+        "str_replace",
+        vec![search_i.value, replace_i, cur.value],
+        PhpType::Str,
+        span,
+    );
+    store_value_into_temp(ctx, &acc_name, PhpType::Str, replaced, span);
+    let one = emit_i64_at_span(ctx, 1, span);
+    let next = ctx.emit_value(
+        Op::IAdd,
+        vec![index, one.value],
+        None,
+        PhpType::Int,
+        Op::IAdd.default_effects(),
+        Some(span),
+    );
+    ctx.builder.terminate(Terminator::Br {
+        target: header,
+        args: vec![next.value],
+    });
+
+    ctx.builder.position_at_end(exit);
+    Some(take_owned_temp(ctx, &acc_name, span))
+}
+
 /// Lowers a direct function, builtin, or extern call.
 fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[Expr], expr: &Expr) -> LoweredValue {
     constants::register_static_define_call(ctx, name, args);
@@ -1771,6 +1911,9 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
         return value;
     }
     if let Some(value) = lower_static_array_walk(ctx, canonical, args, expr) {
+        return value;
+    }
+    if let Some(value) = lower_str_replace_search_array(ctx, canonical, args, expr) {
         return value;
     }
     if php_symbol_key(canonical.trim_start_matches('\\')) == "unset" {

@@ -154,6 +154,25 @@ fn test_str_replace_multiple() {
     assert_eq!(out, "Hell0 W0rld");
 }
 
+/// Regression for #648: str_replace with an ARRAY `search` over a scalar string subject applies each
+/// search term in turn (a fold reusing the scalar str_replace). Covers a string `replace` (removal),
+/// a parallel array `replace`, and variable array operands — the actual AIC shapes
+/// (`str_replace(['b','t'], '', $mode)`, `str_replace($search, $replace, $message)`). The scalar
+/// str_replace path must be unaffected.
+#[test]
+fn test_str_replace_array_search() {
+    let out = compile_and_run(
+        r#"<?php
+echo str_replace(["b", "t"], "", "r+bt"), "\n";           // r+   (array search, string removal)
+echo str_replace(["a", "b"], ["X", "Y"], "aabbc"), "\n";  // XXYYc (parallel array replace)
+$s = ["foo", "bar"]; $r = ["F", "B"];
+echo str_replace($s, $r, "foo-bar-foo"), "\n";            // F-B-F (variable array operands)
+echo str_replace("a", "Z", "aaa");                         // ZZZ  (scalar path unchanged)
+"#,
+    );
+    assert_eq!(out, "r+\nXXYYc\nF-B-F\nZZZ");
+}
+
 /// Verifies explode splits a string on a delimiter and returns an indexed array.
 #[test]
 fn test_explode() {
