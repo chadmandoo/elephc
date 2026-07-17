@@ -1574,18 +1574,16 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         {
             return true;
         }
-        // By-value foreach binds a fresh OWNED copy of the current element/key
-        // (a boxed Mixed cell, an increfed object, a retained callable
-        // descriptor); without this `store_local` re-acquires it and never
-        // releases the copy, leaking on every iteration. Concrete `Str`
-        // elements are the exception: like `ArrayGet` string results they are
-        // borrowed pointers into the source container's payload, so treating
-        // them as owning would free the source array's block out from under it.
-        if matches!(
-            self.builder.value_defining_op(value.value),
-            Some(Op::IterCurrentValue | Op::IterCurrentKey)
-        ) {
-            return !matches!(php_type.codegen_repr(), PhpType::Str);
+        // By-value foreach binds either an owned current value or an owned boxed
+        // Mixed key. Concrete `Str` values are the exception: like `ArrayGet`
+        // string results they borrow the source container's payload, so treating
+        // them as owning would free the array's string block out from under it.
+        match self.builder.value_defining_op(value.value) {
+            Some(Op::IterCurrentValue) => {
+                return !matches!(php_type.codegen_repr(), PhpType::Str);
+            }
+            Some(Op::IterCurrentKey) => return true,
+            _ => {}
         }
         matches!(
             self.builder.value_defining_op(value.value),

@@ -63,6 +63,70 @@ echo $r[0], $r[1], $r[2];"#,
     assert_eq!(out, "123");
 }
 
+/// Float elements keep their concrete register and array-slot representation
+/// when the collected array crosses the function-return boundary.
+#[test]
+fn test_foreach_float_value_append_survives_function_return() {
+    let out = compile_and_run(
+        r#"<?php
+function collect(): array {
+    $out = [];
+    foreach ([1.25, 2.5, 3.75] as $item) {
+        $out[] = $item;
+    }
+    return $out;
+}
+$r = collect();
+echo $r[0], "|", $r[1], "|", $r[2];"#,
+    );
+    assert_eq!(out, "1.25|2.5|3.75");
+}
+
+/// Bool elements remain unboxed across the function-return boundary instead
+/// of being read back through a widened `Mixed` array layout.
+#[test]
+fn test_foreach_bool_value_append_survives_function_return() {
+    let out = compile_and_run(
+        r#"<?php
+function collect(): array {
+    $out = [];
+    foreach ([true, false] as $item) {
+        $out[] = $item;
+    }
+    return $out;
+}
+$r = collect();
+if ($r[0]) { echo "T"; }
+if (!$r[1]) { echo "F"; }"#,
+    );
+    assert_eq!(out, "TF");
+}
+
+/// The string ownership fix remains clean under allocator poisoning and leak
+/// reporting, guarding both the original UAF and a future missing release.
+#[test]
+fn test_foreach_string_value_append_heap_debug_clean() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+function collect(string $csv): array {
+    $out = [];
+    foreach (explode(',', $csv) as $item) {
+        $out[] = $item;
+    }
+    return $out;
+}
+$r = collect('a,b,c');
+echo $r[0], $r[1], $r[2];"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "abc");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected a clean heap, got: {}",
+        out.stderr
+    );
+}
+
 /// Appending the foreach value of an inline literal source: the borrowed
 /// current-value string must not be released into the source array (its block
 /// was reused by the append's str_persist and then zeroed by the source's
