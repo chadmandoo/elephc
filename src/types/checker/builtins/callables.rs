@@ -174,7 +174,17 @@ pub(crate) fn comparator_dummy_arg_for_elem(
         // infers as Mixed, phpdoc generics not being enforced on the PHP `array` type) accepts
         // any declared parameter type at the runtime-enforced boundary — the same trust posture
         // as the `mixed`→narrower type-compat relaxation.
-        PhpType::Object(_) | PhpType::Mixed => (
+        // Object, Mixed, and array/iterable elements have no scalar literal form. Bind a
+        // reserved synthetic variable to the real element type so a typed callback parameter
+        // (`FieldDescriptor $f`, `array $row`) validates against it rather than a fabricated
+        // Int. #643: array-typed elements (`usort` over an array of arrays) previously fell to
+        // the `_` Int placeholder below, producing a spurious "callback parameter expects
+        // Array(Mixed), got Int".
+        PhpType::Object(_)
+        | PhpType::Mixed
+        | PhpType::Array(_)
+        | PhpType::AssocArray { .. }
+        | PhpType::Iterable => (
             Expr::new(ExprKind::Variable(COMPARATOR_ELEM_PLACEHOLDER.to_string()), span),
             Some((COMPARATOR_ELEM_PLACEHOLDER.to_string(), elem_ty.clone())),
         ),

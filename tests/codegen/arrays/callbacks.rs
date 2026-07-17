@@ -26,6 +26,41 @@ echo $b[0] . $b[1] . $b[2];
     assert_eq!(out, "246");
 }
 
+/// #643: usort over an array of arrays with a typed `array` callback parameter. The
+/// element type `Array(Mixed)` previously produced a spurious checker error ("callback
+/// parameter expects Array(Mixed), got Int") and then an unsupported-feature codegen
+/// error ("usort indexed-array element"). Array values are single 8-byte heap handles,
+/// permutable by `__rt_usort` like objects; the comparator interprets each element.
+#[test]
+fn test_usort_array_of_arrays_typed_callback() {
+    let out = compile_and_run(
+        r#"<?php
+$rows = [[3, 'c'], [1, 'a'], [2, 'b']];
+usort($rows, fn(array $x, array $y): int => $x[0] <=> $y[0]);
+echo $rows[0][1], $rows[1][1], $rows[2][1];
+"#,
+    );
+    assert_eq!(out, "abc");
+}
+
+/// #643: usort over a bare-`array` value (element type `Mixed`) sorts the boxed-Mixed
+/// elements by handle through the same 8-byte permutation.
+#[test]
+fn test_usort_mixed_element_array() {
+    let out = compile_and_run(
+        r#"<?php
+function sortvals(array $items): string {
+    usort($items, fn($a, $b): int => $a <=> $b);
+    $out = '';
+    foreach ($items as $v) { $out .= $v; }
+    return $out;
+}
+echo sortvals([3, 1, 2, 5, 4]);
+"#,
+    );
+    assert_eq!(out, "12345");
+}
+
 // Tests `array_map` on a single-element array with a user-defined increment callback.
 /// Verifies that array map single.
 #[test]

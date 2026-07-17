@@ -48,7 +48,12 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     // `array` yields a Mixed element (phpdoc generics are not enforced on the PHP `array` type),
     // and a typed comparator (`fn (FieldDescriptor $a, FieldDescriptor $b)`) must validate against
     // the real element type rather than a fabricated Int — Mixed accepts any declared parameter.
-    if let PhpType::Object(_) | PhpType::Mixed = cmp_ty {
+    if let PhpType::Object(_)
+        | PhpType::Mixed
+        | PhpType::Array(_)
+        | PhpType::AssocArray { .. }
+        | PhpType::Iterable = cmp_ty
+    {
         if let ExprKind::Closure {
             params,
             variadic,

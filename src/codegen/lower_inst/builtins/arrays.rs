@@ -2276,8 +2276,19 @@ fn user_sort_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
             let elem = elem.codegen_repr();
             if matches!(
                 elem,
-                PhpType::Int | PhpType::Void | PhpType::Never | PhpType::Object(_)
+                PhpType::Int
+                    | PhpType::Void
+                    | PhpType::Never
+                    | PhpType::Object(_)
+                    | PhpType::Array(_)
+                    | PhpType::AssocArray { .. }
+                    | PhpType::Iterable
+                    | PhpType::Mixed
             ) {
+                // #643: array/iterable/boxed-Mixed elements are each a single 8-byte heap or
+                // box pointer, so `__rt_usort` permutes them by handle exactly like objects;
+                // the comparator interprets each element. (Strings stay rejected below — their
+                // multi-word ptr+len descriptors are not permuted by the 8-byte slot sorter.)
                 return Ok(elem);
             }
             Err(CodegenIrError::unsupported(format!(
