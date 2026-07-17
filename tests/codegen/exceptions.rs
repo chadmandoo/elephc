@@ -52,6 +52,50 @@ fn test_builtin_error_is_not_caught_by_exception() {
     assert_eq!(out, "error");
 }
 
+/// #628: a user exception subclass whose own `__construct` calls
+/// `parent::__construct($message, $code)` on a builtin Throwable parent. Before the
+/// fix this emitted a call to the un-emitted `_method_Exception____construct` symbol
+/// and failed to LINK (`undefined reference`); the parent ctor is now inlined as a
+/// compact-payload field init on `$this`.
+#[test]
+fn test_subclass_parent_construct_message_and_code() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class MyException extends RuntimeException {
+    public function __construct(string $what) {
+        parent::__construct("bad: " . $what, 42);
+    }
+}
+$e = new MyException("input");
+echo $e->getMessage(), "|", $e->getCode();
+"#,
+    );
+    assert_eq!(out, "bad: input|42");
+}
+
+/// #628: the inlined parent ctor composes with throw/catch — the constructed message
+/// survives being thrown and caught through the builtin RuntimeException parent.
+#[test]
+fn test_subclass_parent_construct_throw_catch() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class DomainFailure extends RuntimeException {
+    public function __construct(string $detail) {
+        parent::__construct("domain: " . $detail, 7);
+    }
+}
+try {
+    throw new DomainFailure("x");
+} catch (RuntimeException $e) {
+    echo $e->getMessage(), "|", $e->getCode();
+}
+"#,
+    );
+    assert_eq!(out, "domain: x|7");
+}
+
 /// Checks that the public `$message` property and getMessage() both return the
 /// constructor argument, verifying the Exception property surface.
 #[test]

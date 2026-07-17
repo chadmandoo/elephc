@@ -4628,6 +4628,20 @@ fn lower_lexical_instance_static_method_call(
     let mut target =
         resolve_method_call_target(ctx, receiver, method_name, inst.operands.len() + 1)?;
     target.dynamic_slot = None;
+    // #628: intercept `parent::__construct(...)` on a builtin Throwable parent — it has
+    // no emitted ctor body, so the normal path below would emit a call to an undefined
+    // `_method_<parent>____construct` symbol (link failure). Inline the field init on
+    // `$this` instead; falls through for a non-throwable parent with a real body.
+    if target.method_key == php_symbol_key("__construct")
+        && objects::try_inline_builtin_throwable_parent_construct(
+            ctx,
+            inst,
+            this_slot,
+            &target.impl_class,
+        )?
+    {
+        return Ok(());
+    }
     let receiver_ty = PhpType::Object(receiver.to_string());
     let mut param_types = Vec::with_capacity(target.params.len() + 1);
     param_types.push(receiver_ty.clone());

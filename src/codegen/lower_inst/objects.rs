@@ -873,6 +873,63 @@ fn lower_builtin_throwable_new(
     store_if_result(ctx, inst)
 }
 
+/// #628: `parent::__construct(...)` (or `self::__construct`) whose resolved
+/// implementation is a builtin Throwable has no emitted method body — builtin
+/// throwable ctors are materialized inline by the `new` path, never compiled as
+/// callable symbols. The lexical instance-static call path would therefore emit a
+/// call to an undefined `_method_<parent>____construct` and fail to link. Inline
+/// the compact-payload field init on the already-allocated `$this` instead,
+/// mirroring `lower_builtin_throwable_new` minus the allocation.
+///
+/// Returns `Ok(true)` when handled inline; `Ok(false)` to fall through to the
+/// normal call path (a non-throwable parent, which has a real emitted body).
+pub(super) fn try_inline_builtin_throwable_parent_construct(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    this_slot: LocalSlotId,
+    impl_class: &str,
+) -> Result<bool> {
+    if !is_builtin_throwable_payload_class(impl_class) {
+        return Ok(false);
+    }
+    if inst.operands.len() > 3 {
+        // Unexpected arity — fall through to the normal call path rather than
+        // erroring, so this interception is purely additive over the clean case.
+        return Ok(false);
+    }
+    // The IR pads the full `(message, code, previous)` signature. A genuinely chained
+    // (non-null) `$previous` needs the payload's `$previous` slot (deferred #628 part
+    // B). Fall through to the normal call path for it — identical to the pre-fix
+    // behavior, so an unreachable chained ctor still dead-strips to OK (no regression)
+    // and a reachable one link-fails exactly as before, rather than turning into a
+    // hard codegen error. Only the clean null-`$previous` case is inlined here.
+    if let Some(&previous) = inst.operands.get(2) {
+        if !throwable_previous_operand_is_const_null(ctx, previous)? {
+            return Ok(false);
+        }
+    }
+    // Drive the same push -> init -> pop convention as the `new` path, but over the
+    // caller's `$this` rather than a freshly allocated object.
+    ctx.load_local_to_result(this_slot)?;
+    preserve_throwable_for_init(ctx);
+    emit_throwable_message_fields(ctx, inst.operands.first().copied())?;
+    emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
+    restore_throwable_after_init(ctx);
+    // `parent::__construct(...)` is a void call: stamp the void sentinel when the
+    // result slot is void-typed, matching the static-call result convention.
+    if let Some(result) = inst.result {
+        if ctx.value_php_type(result)? == PhpType::Void {
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                0x7fff_ffff_ffff_fffe,
+            );
+        }
+        ctx.store_result_value(result)?;
+    }
+    Ok(true)
+}
+
 /// Returns true when the `$previous` constructor operand is a literal PHP null
 /// (the padded default), recognized by its defining `const_null` instruction.
 fn throwable_previous_operand_is_const_null(
