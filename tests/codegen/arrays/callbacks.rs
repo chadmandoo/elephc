@@ -1202,6 +1202,22 @@ echo array_all([1, -2, 3], "pos") ? "y" : "n";
     assert_eq!(out, "yn");
 }
 
+/// Regression for #648: array_any/array_all over an indexed array with `Mixed` elements (a
+/// mixed-type literal) must lower — each element is a single 8-byte boxed cell passed to the
+/// predicate — instead of being rejected ("array_any indexed-array element PHP type Mixed").
+#[test]
+fn test_array_predicate_mixed_elements() {
+    let out = compile_and_run(
+        r#"<?php
+$a = [1, "a", 2.5];
+echo array_any($a, fn($x) => $x === "a") ? "y" : "n";
+echo array_all($a, fn($x) => $x !== null) ? "y" : "n";
+echo array_any($a, fn($x) => $x === "zzz") ? "y" : "n";
+"#,
+    );
+    assert_eq!(out, "yyn");
+}
+
 /// Verifies array_find / array_any / array_all are callable case-insensitively.
 /// Fixture: mixed-case spellings over a small numeric array.
 #[test]

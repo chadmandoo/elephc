@@ -1406,7 +1406,11 @@ fn predicate_callback_element_type(ty: PhpType, name: &str) -> Result<PhpType> {
     match ty.codegen_repr() {
         PhpType::Array(elem) => {
             let elem = elem.codegen_repr();
-            if matches!(elem, PhpType::Int | PhpType::Bool) {
+            // Int/Bool are raw 8-byte scalars and Mixed is a single 8-byte boxed-cell pointer; each
+            // is passed to the predicate callback as one 8-byte element handle (the callback receives
+            // the boxed Mixed and compares/uses it dynamically). Multi-word elements (Str's ptr+len)
+            // are not yet handled.
+            if matches!(elem, PhpType::Int | PhpType::Bool | PhpType::Mixed) {
                 Ok(elem)
             } else {
                 Err(CodegenIrError::unsupported(format!(
