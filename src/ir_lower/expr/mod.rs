@@ -3722,10 +3722,21 @@ fn emit_callable_descriptor_invoke(
 }
 
 /// Returns true when the EIR backend has descriptor dispatch for this callback type.
+///
+/// A `Mixed`/`Union` callback (e.g. a callable read back from an untyped property)
+/// is routed here too: the codegen `callable_descriptor_invoke` unboxes it and
+/// dispatches by runtime tag (string function name or closure descriptor), so the
+/// robust descriptor path is preferred over the `Op::ExprCall` fallback, which has
+/// no Mixed arm.
 fn descriptor_callback_php_type_supported(php_type: &PhpType) -> bool {
     matches!(
         php_type,
-        PhpType::Str | PhpType::Callable | PhpType::Array(_) | PhpType::Object(_)
+        PhpType::Str
+            | PhpType::Callable
+            | PhpType::Array(_)
+            | PhpType::Object(_)
+            | PhpType::Mixed
+            | PhpType::Union(_)
     )
 }
 

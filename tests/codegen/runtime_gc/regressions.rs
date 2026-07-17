@@ -878,6 +878,37 @@ echo count(C::$a);
     );
 }
 
+/// Regression test: overwriting a Mixed/nullable-object static property with a
+/// freshly-constructed object must release the previous object's boxed owner. A
+/// non-Mixed value assigned to a Mixed slot is boxed with `__rt_mixed_from_value`,
+/// which takes its own retained reference to the object; the owning `new C()`
+/// temporary is a separate reference that must be released after the store, or
+/// each overwrite leaks one object. Twenty iterations must stay bounded — only the
+/// final boxed value remains live in the process-lifetime static slot (one block),
+/// never a per-iteration accumulation of twenty.
+#[test]
+fn test_regression_static_property_object_overwrite_releases_old_object() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class C { public int $v = 0; }
+class H { public static ?C $h = null; }
+for ($i = 0; $i < 20; $i++) {
+    H::$h = new C();
+}
+H::$h = null;
+echo "done";
+"#,
+    );
+    assert!(out.success, "program failed: {}", out.stderr);
+    assert_eq!(out.stdout, "done");
+    assert!(
+        out.stderr
+            .contains("HEAP DEBUG: leak summary: live_blocks=1"),
+        "expected only the final boxed static value to remain live (bounded), got: {}",
+        out.stderr
+    );
+}
+
 /// Regression test: array literals with spread build their result through
 /// `__rt_array_push_refcounted` for refcounted elements. The non-spread element
 /// path retained the element via `retain_borrowed_heap_arg` and again inside the

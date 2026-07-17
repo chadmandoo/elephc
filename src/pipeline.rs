@@ -51,6 +51,7 @@ pub(crate) fn compile(config: CliConfig) {
         regalloc_linear,
         ir_opt,
         target,
+        php_version,
         mut extra_link_libs,
         extra_link_paths,
         extra_frameworks,
@@ -164,7 +165,7 @@ pub(crate) fn compile(config: CliConfig) {
     timings.record_since("image-prelude", phase_started);
 
     let phase_started = Instant::now();
-    let ast = web_prelude::inject_if_web(ast, web);
+    let ast = web_prelude::inject_if_web(ast, web, php_version);
     timings.record_since("web-prelude", phase_started);
 
     let phase_started = Instant::now();
@@ -258,11 +259,12 @@ pub(crate) fn compile(config: CliConfig) {
 
     if emit_ir {
         let phase_started = Instant::now();
-        let mut module = match ir_lower::lower_program_with_source_path(
+        let mut module = match ir_lower::lower_program_with_source_path_and_web(
             &ast,
             &check_result,
             target,
             Path::new(filename),
+            web,
         ) {
             Ok(module) => module,
             Err(err) => {
@@ -287,11 +289,12 @@ pub(crate) fn compile(config: CliConfig) {
     }
 
     let phase_started = Instant::now();
-    let mut ir_module = match ir_lower::lower_program_with_source_path(
+    let mut ir_module = match ir_lower::lower_program_with_source_path_and_web(
         &ast,
         &check_result,
         target,
         Path::new(filename),
+        web,
     ) {
         Ok(module) => module,
         Err(err) => {

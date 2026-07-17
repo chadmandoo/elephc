@@ -10218,7 +10218,7 @@ fn push_eval_process_superglobal(globals: &mut Vec<EvalSyncGlobal>, name: &str, 
 
 /// Returns one unambiguous codegen type used for a program global, if available.
 fn eval_sync_global_type(ctx: &FunctionContext<'_>, name: &str) -> Option<PhpType> {
-    let is_superglobal = crate::superglobals::is_superglobal(name);
+    let is_typed_superglobal = ctx.module.web && crate::superglobals::is_superglobal(name);
     let mut inferred = None;
     for function in ctx
         .module
@@ -10236,7 +10236,7 @@ fn eval_sync_global_type(ctx: &FunctionContext<'_>, name: &str) -> Option<PhpTyp
             if !matches!(inst.op, Op::LoadGlobal | Op::StoreGlobal) {
                 continue;
             }
-            if !is_superglobal {
+            if !is_typed_superglobal {
                 // Regular globals always hold one boxed Mixed word (see
                 // `lower_store_global`); store operands carry narrower source
                 // types, so per-instruction inference would reject globals
