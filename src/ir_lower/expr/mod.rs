@@ -10978,6 +10978,20 @@ fn materialized_expr_type_for_merge(ctx: &LoweringContext<'_, '_>, expr: &Expr) 
                 .map(normalize_value_php_type)
                 .unwrap_or_else(|| fallback_expr_type(expr))
         }
+        // A static call arm (`self::foo()`, `Bar::foo()`) carries the callee's declared return
+        // type too — the same reason as the instance-call arm above. Without it the syntactic
+        // fallback types the arm Int, so a `match`/`?:` merging static-call arms over a non-int
+        // type (e.g. `match ($op) { Drop => self::without(...), Create => self::withSet(...) }`
+        // returning `array<string, ...>`) builds an Int result temp and then coerces it to the
+        // array return type ("runtime_call from PHP type Int to PHP type AssocArray"). Resolve
+        // the class from the static receiver and read the return type from the same registry the
+        // instance arm uses (static methods share `class_method_return_type_for_ir`'s table).
+        ExprKind::StaticMethodCall { receiver, method, .. } => {
+            static_method_implementation_signature(ctx, receiver, method)
+                .or_else(|| lexical_instance_static_call_signature(ctx, receiver, method))
+                .map(|sig| normalize_value_php_type(sig.return_type.clone()))
+                .unwrap_or_else(|| fallback_expr_type(expr))
+        }
         // An assignment expression yields the assigned value, so its merge type is the value's
         // type — not the syntactic-fallback Int. This matters for an append-assignment arm
         // (`match (true) { ... => $a[$k][] = $v }`, #552): the desugar yields a temp bound to
