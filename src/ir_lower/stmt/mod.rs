@@ -1332,6 +1332,7 @@ fn foreach_value_type(source_ty: &PhpType) -> PhpType {
         PhpType::Array(elem) => match elem.codegen_repr() {
             PhpType::Callable => PhpType::Callable,
             PhpType::Object(class_name) => PhpType::Object(class_name),
+            elem @ (PhpType::Int | PhpType::Float | PhpType::Str | PhpType::Bool) => elem,
             _ => PhpType::Mixed,
         },
         PhpType::Object(class_name) if class_name == "Phar" || class_name == "PharData" => {
@@ -3329,6 +3330,11 @@ fn coerce_container_to_return_type(
             && return_value.codegen_repr() == PhpType::Mixed =>
         {
             Op::HashToMixed
+        }
+        (PhpType::Array(source_elem), PhpType::AssocArray { .. })
+            if source_elem.as_ref() == &PhpType::Never =>
+        {
+            Op::ArrayToHash
         }
         _ => return None,
     };
