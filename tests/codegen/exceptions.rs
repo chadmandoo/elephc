@@ -693,3 +693,51 @@ echo ($e->cause === $base) ? "ok" : "no";
     );
     assert_eq!(out, "ok");
 }
+
+/// Verifies an array-returning function whose only implicit fall-through is unreachable.
+#[test]
+fn test_array_return_unreachable_fallthrough_placeholder() {
+    // Both the try-body and the catch-body `return` an array, so the structural
+    // try/catch join block is unreachable — yet it still needs a value of the
+    // array return type for its terminator. Regression for the backend rejecting
+    // that placeholder ("runtime_call with 0 operands returning PHP type
+    // Array(Mixed)"): the implicit array return now lowers to an empty array.
+    let out = compile_and_run(
+        r#"<?php
+function build(bool $ok): array {
+    if (!$ok) { throw new RuntimeException('x'); }
+    return [1, 2, 3];
+}
+function pick(bool $ok): array {
+    try { return build($ok); }
+    catch (RuntimeException $e) { return []; }
+}
+echo count(pick(true)), '-', count(pick(false));
+"#,
+    );
+    assert_eq!(out, "3-0");
+}
+
+/// Verifies an associative-array-returning function whose only implicit fall-through is unreachable.
+#[test]
+fn test_assoc_array_return_unreachable_fallthrough_placeholder() {
+    // Same unreachable try/catch join as the indexed-array case, but the return type
+    // is an associative array (`array<string, int>`). The placeholder must lower to an
+    // empty hash rather than the un-lowerable 0-operand `Op::RuntimeCall`.
+    let out = compile_and_run(
+        r#"<?php
+/** @return array<string, int> */
+function build(bool $ok): array {
+    if (!$ok) { throw new RuntimeException('x'); }
+    return ['a' => 1, 'b' => 2];
+}
+/** @return array<string, int> */
+function pick(bool $ok): array {
+    try { return build($ok); }
+    catch (RuntimeException $e) { return []; }
+}
+echo count(pick(true)), '-', count(pick(false));
+"#,
+    );
+    assert_eq!(out, "2-0");
+}

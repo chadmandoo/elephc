@@ -807,6 +807,39 @@ fn emit_default_return_value(ctx: &mut LoweringContext<'_, '_>) -> crate::ir::Va
             )
             .value
         }
+        IrType::Heap(_) if matches!(ctx.return_php_type.codegen_repr(), PhpType::Array(_)) => {
+            // An array-returning body that falls through is unreachable whenever every
+            // real arm already returns or throws — e.g. a `try` whose try-body and every
+            // catch-body `return` — yet the structural join block still needs a value of
+            // the array return type for its terminator. Emit an empty array (mirroring the
+            // `return []` arm, which lowers to `array_new capacity=0`): a representation-valid
+            // placeholder codegen can lower. The prior `Op::RuntimeCall` with no operand
+            // reached no arm in `lower_runtime_call` and failed the backend
+            // ("runtime_call with 0 operands returning PHP type Array(Mixed)").
+            ctx.emit_value(
+                Op::ArrayNew,
+                Vec::new(),
+                Some(Immediate::Capacity(0)),
+                ctx.return_php_type.clone(),
+                Op::ArrayNew.default_effects(),
+                None,
+            )
+            .value
+        }
+        IrType::Heap(_) if matches!(ctx.return_php_type.codegen_repr(), PhpType::AssocArray { .. }) => {
+            // Same unreachable fall-through join for an associative-array return type: emit
+            // an empty hash (mirroring `lower_array_literal_as_hash_from_lowered`) rather than
+            // the un-lowerable 0-operand `Op::RuntimeCall`.
+            ctx.emit_value(
+                Op::HashNew,
+                Vec::new(),
+                Some(Immediate::Capacity(0)),
+                ctx.return_php_type.clone(),
+                Op::HashNew.default_effects(),
+                None,
+            )
+            .value
+        }
         IrType::Heap(_) => {
             let lowered = ctx.emit_value(
                 Op::RuntimeCall,
