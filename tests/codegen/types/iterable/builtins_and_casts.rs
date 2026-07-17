@@ -25,6 +25,35 @@ fn test_gettype_iterable_returns_array() {
     assert_eq!(out, "array|array");
 }
 
+/// #644: an array of objects coerced to an `iterable` parameter (`Array(Object)` ->
+/// `Iterable`) — the runtime_call coercion is a representation-identity widening that
+/// was previously an unsupported backend feature.
+#[test]
+fn test_iterable_from_object_array() {
+    let out = compile_and_run(
+        "<?php
+        final class Box { public function __construct(public int $n) {} }
+        function total(iterable $it): int { $s = 0; foreach ($it as $o) { $s += $o->n; } return $s; }
+        echo total([new Box(10), new Box(20), new Box(5)]);
+        ",
+    );
+    assert_eq!(out, "35");
+}
+
+/// #644: an associative array of objects also coerces to `iterable` (the `Object->Iterable`
+/// object-receiver path is exercised end-to-end by the native survey's Traversable roots).
+#[test]
+fn test_iterable_from_assoc_object_array() {
+    let out = compile_and_run(
+        "<?php
+        final class Box { public function __construct(public int $n) {} }
+        function total(iterable $it): int { $s = 0; foreach ($it as $o) { $s += $o->n; } return $s; }
+        echo total(['a' => new Box(3), 'b' => new Box(4)]);
+        ",
+    );
+    assert_eq!(out, "7");
+}
+
 /// Verifies `var_dump` on a hash (associative) `iterable` prints the array shell with correct count.
 #[test]
 fn test_var_dump_iterable_hash_prints_array_shell() {

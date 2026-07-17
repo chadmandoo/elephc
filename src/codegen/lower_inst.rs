@@ -1967,6 +1967,21 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         }
         return store_if_result(ctx, inst);
     }
+    if inst.result_php_type.codegen_repr() == PhpType::Iterable
+        && matches!(
+            source_ty,
+            PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Object(_)
+        )
+    {
+        // #644: an array (indexed or associative) or a Traversable object coerced to
+        // `iterable` is a representation-identity widening — each is already a single
+        // heap pointer that satisfies `iterable`. Load the pointer as the owned result
+        // and acquire a reference (matching the Mixed->Iterable arm's ownership), with
+        // no unbox needed since the source is not a boxed Mixed.
+        ctx.load_value_to_result(value)?;
+        abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Iterable);
+        return store_if_result(ctx, inst);
+    }
     Err(CodegenIrError::unsupported(format!(
         "runtime_call from PHP type {:?} to PHP type {:?}",
         source_ty, inst.result_php_type
