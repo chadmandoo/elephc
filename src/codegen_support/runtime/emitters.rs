@@ -243,6 +243,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_array_shift(emitter);
     arrays::emit_array_unshift(emitter);
     arrays::emit_array_merge(emitter);
+    arrays::emit_array_merge_str(emitter);
     arrays::emit_array_merge_refcounted(emitter);
     arrays::emit_array_slice(emitter);
     arrays::emit_array_slice_str(emitter);

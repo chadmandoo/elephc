@@ -50,6 +50,7 @@ mod array_merge;
 mod array_merge_into;
 mod array_merge_into_refcounted;
 mod array_merge_recursive;
+mod array_merge_str;
 mod array_merge_refcounted;
 mod array_multisort;
 mod array_new;
@@ -232,6 +233,7 @@ pub use array_map_mixed::emit_array_map_mixed;
 pub use array_map_str::{emit_array_map_str, emit_array_map_str_owned};
 /// Emit array merge helper.
 pub use array_merge::emit_array_merge;
+pub use array_merge_str::emit_array_merge_str;
 /// Emit array merge-into helper.
 pub use array_merge_into::emit_array_merge_into;
 pub use array_merge_into_refcounted::emit_array_merge_into_refcounted;

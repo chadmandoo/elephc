@@ -4065,8 +4065,92 @@ fn lower_builtin_call_args(
         {
             lower_user_value_sort_args(ctx, sig, args)
         }
+        "array_merge"
+            if args.len() == 2
+                && !crate::types::call_args::has_named_args(args)
+                && !args.iter().any(is_spread_arg) =>
+        {
+            lower_array_merge_args(ctx, args)
+        }
         _ => lower_args_with_signature(ctx, sig, args),
     }
+}
+
+/// Lowers `array_merge(a, b)` arguments, coercing a `Mixed`/`Union` operand — e.g. an `array<...>`
+/// erased to `Mixed` by an array-element access like `$this->headers[$k]` — to the concrete array
+/// type its sibling determines, via the same `Op::RuntimeCall` coercion used elsewhere. Codegen's
+/// merge then sees a typed array instead of the boxed Mixed it rejected ("array_merge for PHP type
+/// Mixed"). When neither operand is Mixed the arguments are returned unchanged.
+fn lower_array_merge_args(
+    ctx: &mut LoweringContext<'_, '_>,
+    args: &[Expr],
+) -> Vec<crate::ir::ValueId> {
+    let a = lower_expr(ctx, &args[0]);
+    let b = lower_expr(ctx, &args[1]);
+    let a_mixed = matches!(
+        ctx.builder.value_php_type(a.value).codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    );
+    let b_mixed = matches!(
+        ctx.builder.value_php_type(b.value).codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    );
+    if !a_mixed && !b_mixed {
+        return vec![a.value, b.value];
+    }
+    let target_ty = array_merge_coercion_target_type(ctx, a.value, b.value);
+    let a_value = if a_mixed {
+        coerce_mixed_operand_to_array(ctx, a, target_ty.clone(), args[0].span)
+    } else {
+        a.value
+    };
+    let b_value = if b_mixed {
+        coerce_mixed_operand_to_array(ctx, b, target_ty, args[1].span)
+    } else {
+        b.value
+    };
+    vec![a_value, b_value]
+}
+
+/// Picks the array type a Mixed `array_merge` operand is coerced to: a concrete indexed-array
+/// sibling's type when available (recovering the erased element representation), else `array<mixed>`.
+fn array_merge_coercion_target_type(
+    ctx: &LoweringContext<'_, '_>,
+    a: crate::ir::ValueId,
+    b: crate::ir::ValueId,
+) -> PhpType {
+    let ta = ctx.builder.value_php_type(a).codegen_repr();
+    if matches!(ta, PhpType::Array(_)) {
+        return ta;
+    }
+    let tb = ctx.builder.value_php_type(b).codegen_repr();
+    if matches!(tb, PhpType::Array(_)) {
+        return tb;
+    }
+    PhpType::Array(Box::new(PhpType::Mixed))
+}
+
+/// Coerces one Mixed `array_merge` operand to `target_ty` via `Op::RuntimeCall` (unboxing the mixed
+/// cell to its owned array payload) and releases the original owning-temporary Mixed — ownership
+/// transfers to the coerced array, which the builtin call releases after use.
+fn coerce_mixed_operand_to_array(
+    ctx: &mut LoweringContext<'_, '_>,
+    value: LoweredValue,
+    target_ty: PhpType,
+    span: Span,
+) -> crate::ir::ValueId {
+    let coerced = ctx.emit_value(
+        Op::RuntimeCall,
+        vec![value.value],
+        None,
+        target_ty,
+        effects_lookup::runtime_effects(),
+        Some(span),
+    );
+    if ctx.value_is_owning_temporary(value) {
+        crate::ir_lower::ownership::release_if_owned(ctx, value, Some(span));
+    }
+    coerced.value
 }
 
 /// Lowers `usort`/`uasort` arguments, typing an unannotated comparator closure

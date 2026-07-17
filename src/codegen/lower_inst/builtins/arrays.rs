@@ -847,11 +847,17 @@ pub(crate) fn lower_array_merge(ctx: &mut FunctionContext<'_>, inst: &Instructio
     super::ensure_arg_count(inst, "array_merge", 2)?;
     let first = expect_operand(inst, 0)?;
     let second = expect_operand(inst, 1)?;
-    let elem_ty = compatible_eight_byte_indexed_array_element_type(
-        ctx.value_php_type(first)?,
-        ctx.value_php_type(second)?,
-        "array_merge",
-    )?;
+    let first_ty = ctx.value_php_type(first)?;
+    let second_ty = ctx.value_php_type(second)?;
+    // String-element arrays use 16-byte descriptor slots (rejected by the 8-byte compatibility
+    // check); merge them through the persisting `__rt_array_merge_str` when both sides are `Str`.
+    let first_str = matches!(first_ty.codegen_repr(), PhpType::Array(e) if e.codegen_repr() == PhpType::Str);
+    let second_str = matches!(second_ty.codegen_repr(), PhpType::Array(e) if e.codegen_repr() == PhpType::Str);
+    let elem_ty = if first_str && second_str {
+        PhpType::Str
+    } else {
+        compatible_eight_byte_indexed_array_element_type(first_ty, second_ty, "array_merge")?
+    };
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.load_value_to_reg(first, "x0")?;
@@ -4756,7 +4762,11 @@ fn array_unique_runtime_helper(elem_ty: &PhpType) -> &'static str {
 
 /// Returns the runtime helper for `array_merge()` based on element ownership.
 fn array_merge_runtime_helper(elem_ty: &PhpType) -> &'static str {
-    if elem_ty.is_refcounted() {
+    if matches!(elem_ty.codegen_repr(), PhpType::Str) {
+        // String elements are 16-byte descriptors with array-owned heap buffers; the Str merger
+        // persists each element into an owned copy (a raw descriptor copy would double-free).
+        "__rt_array_merge_str"
+    } else if elem_ty.is_refcounted() {
         "__rt_array_merge_refcounted"
     } else {
         "__rt_array_merge"

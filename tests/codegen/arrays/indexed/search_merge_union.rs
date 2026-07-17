@@ -88,6 +88,28 @@ echo $c[0] . $c[1] . $c[2] . $c[3];
     assert_eq!(out, "41234");
 }
 
+/// Regression for #648: `array_merge` over `string`-element arrays must copy the 16-byte string
+/// descriptors AND persist each into an owned buffer — a raw copy would share the sources'
+/// array-owned strings and double-free them. Also exercises a `Mixed` operand (an erased
+/// `array<...>` from an array-element access) coerced to the sibling's `Array(Str)` type. Asserts
+/// both source arrays remain intact after the merge (the double-free proof).
+#[test]
+fn test_array_merge_string_elements() {
+    let out = compile_and_run(
+        r#"<?php
+function j(array $a): string { return implode(",", $a); }
+$a = ["a", "b"];
+$b = ["c", "d", "e"];
+echo j(array_merge($a, $b)), "|";   // a,b,c,d,e
+echo j($a), "|", j($b), "|";        // a,b|c,d,e  (sources intact)
+$h = ["k" => ["x", "y"]];
+$mixed = $h["k"];                    // Mixed via array-element access
+echo j(array_merge($mixed, ["z"]));  // x,y,z
+"#,
+    );
+    assert_eq!(out, "a,b,c,d,e|a,b|c,d,e|x,y,z");
+}
+
 /// Verifies `array_merge` uses the right operand element type when the left array is empty.
 #[test]
 fn test_array_merge_empty_left_uses_right_element_type() {
