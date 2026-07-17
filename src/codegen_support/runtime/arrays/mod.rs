@@ -76,6 +76,7 @@ mod array_search;
 mod array_shift;
 mod array_slice;
 mod array_slice_refcounted;
+mod array_slice_str;
 mod array_splice;
 mod array_splice_refcounted;
 mod array_sum;
@@ -288,6 +289,7 @@ pub use array_search::emit_array_search;
 pub use array_shift::emit_array_shift;
 /// Emit array shift (remove first) helper.
 pub use array_slice::emit_array_slice;
+pub use array_slice_str::emit_array_slice_str;
 /// Emit array slice extraction helper.
 pub use array_slice_refcounted::emit_array_slice_refcounted;
 /// Emit refcounted array slice helper.

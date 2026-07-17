@@ -4862,6 +4862,7 @@ fn require_array_slice_element_layout(elem: &PhpType) -> Result<()> {
             | PhpType::Float
             | PhpType::Void
             | PhpType::Mixed
+            | PhpType::Str
             | PhpType::Array(_)
             | PhpType::AssocArray { .. }
             | PhpType::Object(_)
@@ -5324,7 +5325,11 @@ fn array_pad_runtime_helper(source_elem_ty: &PhpType) -> &'static str {
 
 /// Returns the helper that matches the source element ownership representation.
 fn array_slice_runtime_helper(source_elem_ty: &PhpType) -> &'static str {
-    if source_elem_ty.is_refcounted() {
+    if matches!(source_elem_ty.codegen_repr(), PhpType::Str) {
+        // String elements are 16-byte descriptors whose heap buffers are array-owned; the Str slicer
+        // persists each element into an owned copy (a raw descriptor copy would double-free).
+        "__rt_array_slice_str"
+    } else if source_elem_ty.is_refcounted() {
         "__rt_array_slice_refcounted"
     } else {
         "__rt_array_slice"

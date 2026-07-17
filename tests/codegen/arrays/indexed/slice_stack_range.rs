@@ -23,6 +23,26 @@ echo $b[0] . " " . $b[1] . " " . $b[2];
     assert_eq!(out, "20 30 40");
 }
 
+/// Regression for #648: `array_slice` over a `string`-element array must copy the 16-byte string
+/// descriptors AND persist each into an owned buffer — a raw descriptor copy would share the
+/// source's array-owned strings and double-free them when the slice is released, corrupting the
+/// source. Covers a positive slice, a to-end slice, a negative offset, and — critically — that the
+/// SOURCE array remains intact after the slice temporaries are gone.
+#[test]
+fn test_array_slice_string_elements() {
+    let out = compile_and_run(
+        r#"<?php
+function j(array $a): string { return implode(",", $a); }
+$a = ["a", "b", "c", "d", "e"];
+echo j(array_slice($a, 1, 2)), "|";   // b,c
+echo j(array_slice($a, 2)), "|";      // c,d,e  (to end)
+echo j(array_slice($a, -2)), "|";     // d,e    (negative offset)
+echo j($a);                            // a,b,c,d,e  (source intact — no double-free)
+"#,
+    );
+    assert_eq!(out, "b,c|c,d,e|d,e|a,b,c,d,e");
+}
+
 /// Tests `array_shift` removes and returns the first element from a 3-element array.
 /// Verifies the popped value (10) and that remaining array length is reduced to 2.
 #[test]
