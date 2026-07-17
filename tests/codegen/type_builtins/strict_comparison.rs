@@ -44,6 +44,121 @@ fn test_strict_eq_int_vs_bool() {
     assert_eq!(out, "");
 }
 
+/// #642: deep `===` for two populated indexed `Array(Mixed)` values — equal by value,
+/// unequal by value, unequal by length. Bare `array` params are `Array(Mixed)`, so this
+/// exercises the new `__rt_array_strict_eq` deep comparator (packed operands normalized).
+#[test]
+fn test_strict_eq_arrays_indexed() {
+    let out = compile_and_run(
+        r#"<?php
+function eq(array $a, array $b): bool { return $a === $b; }
+echo eq([1,2,3],[1,2,3])?'T':'F', eq([1,2,3],[1,2,4])?'T':'F', eq([1,2],[1,2,3])?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TFF");
+}
+
+/// #642: deep `===` for associative arrays is order-sensitive and key-sensitive.
+#[test]
+fn test_strict_eq_arrays_assoc_order_and_keys() {
+    let out = compile_and_run(
+        r#"<?php
+function eq(array $a, array $b): bool { return $a === $b; }
+echo eq(['a'=>1,'b'=>2],['a'=>1,'b'=>2])?'T':'F',
+     eq(['a'=>1],['b'=>1])?'T':'F',
+     eq(['a'=>1,'b'=>2],['b'=>2,'a'=>1])?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TFF");
+}
+
+/// #642: values compare type-strictly (int `1` !== string `'1'`); string values compare
+/// by bytes.
+#[test]
+fn test_strict_eq_arrays_type_strict_values() {
+    let out = compile_and_run(
+        r#"<?php
+$ia=[1]; $sa=['1']; echo ($ia===$sa)?'T':'F';
+$xa=['x'=>'hi']; $xb=['x'=>'hi']; echo ($xa===$xb)?'T':'F';
+$ya=['x'=>'hi']; $yb=['x'=>'ho']; echo ($ya===$yb)?'T':'F';
+"#,
+    );
+    assert_eq!(out, "FTF");
+}
+
+/// #642: the comparator recurses into nested arrays (indexed and associative).
+#[test]
+fn test_strict_eq_arrays_nested_recursion() {
+    let out = compile_and_run(
+        r#"<?php
+$a=[[1,2],[3]]; $b=[[1,2],[3]]; echo ($a===$b)?'T':'F';
+$c=[[1,2]]; $d=[[1,3]]; echo ($c===$d)?'T':'F';
+$e=[['a'=>1]]; $f=[['a'=>1]]; echo ($e===$f)?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TFT");
+}
+
+/// #642: empty arrays, heterogeneous scalar elements, and a differing bool element.
+#[test]
+fn test_strict_eq_arrays_empty_and_mixed_scalars() {
+    let out = compile_and_run(
+        r#"<?php
+function eq(array $a, array $b): bool { return $a === $b; }
+echo eq([],[])?'T':'F',
+     eq([1,'x',true,null],[1,'x',true,null])?'T':'F',
+     eq([1,'x',true],[1,'x',false])?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TTF");
+}
+
+/// #642: cross-kind — a packed indexed array vs an associative hash (int keys 0,1 vs
+/// string keys) is unequal; `!==` inverts the deep comparison.
+#[test]
+fn test_strict_eq_arrays_cross_kind_and_neq() {
+    let out = compile_and_run(
+        r#"<?php
+function eq(array $a, array $b): bool { return $a === $b; }
+function neq(array $a, array $b): bool { return $a !== $b; }
+echo eq([1,2],['a'=>1,'b'=>2])?'T':'F',
+     neq([1,2],[1,2])?'T':'F',
+     neq([1,2],[1,3])?'T':'F';
+"#,
+    );
+    assert_eq!(out, "FFT");
+}
+
+/// #642: object elements compare by identity (`===`), matching PHP — the same instance is
+/// equal, two distinct-but-equal instances are not.
+#[test]
+fn test_strict_eq_arrays_object_identity() {
+    let out = compile_and_run(
+        r#"<?php
+final class Box { public function __construct(public int $n) {} }
+function eq(array $a, array $b): bool { return $a === $b; }
+$o = new Box(1);
+echo eq([$o],[$o])?'T':'F', eq([new Box(1)],[new Box(1)])?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TF");
+}
+
+/// #642: a nested array boxed inside a heterogeneous `Array(Mixed)` element deep-compares
+/// by value through the mutual recursion between `__rt_array_strict_eq` and
+/// `__rt_mixed_strict_eq`, not by box-pointer identity.
+#[test]
+fn test_strict_eq_arrays_nested_in_mixed() {
+    let out = compile_and_run(
+        r#"<?php
+$a=[1,[2,3]]; $b=[1,[2,3]]; echo ($a===$b)?'T':'F';
+$c=[1,[2,3]]; $d=[1,[2,4]]; echo ($c===$d)?'T':'F';
+$e=['k'=>1,'m'=>['x'=>2]]; $f=['k'=>1,'m'=>['x'=>2]]; echo ($e===$f)?'T':'F';
+"#,
+    );
+    assert_eq!(out, "TFT");
+}
+
 /// Verifies `!==` returns true when comparing int `1` to bool `true` (different types).
 #[test]
 fn test_strict_neq_int_vs_bool() {

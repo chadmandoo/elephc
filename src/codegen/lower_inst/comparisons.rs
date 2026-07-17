@@ -84,6 +84,14 @@ pub(super) fn lower_strict_eq(
         emit_array_is_empty(ctx, array, is_equal)?;
         return store_if_result(ctx, inst);
     }
+    if is_array_like(&lhs_ty) && is_array_like(&rhs_ty) {
+        // Two populated arrays (indexed or associative): PHP `===` is deep value-equality
+        // in insertion order, recursing into nested arrays (objects compare by identity).
+        // Without this, the generic path rejects `Array(Mixed) === Array(Mixed)` as an
+        // unsupported backend feature. The `=== []` empty case is handled above.
+        emit_array_strict_eq_call(ctx, lhs, rhs, is_equal)?;
+        return store_if_result(ctx, inst);
+    }
     if needs_mixed_strict_compare(&lhs_ty) || needs_mixed_strict_compare(&rhs_ty) {
         emit_mixed_strict_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty, is_equal)?;
         return store_if_result(ctx, inst);
@@ -145,6 +153,41 @@ fn emit_pointer_compare(
             ctx.emitter.instruction("movzx rax, al");                           // widen the pointer identity byte into the integer result register
         }
     }
+    Ok(())
+}
+
+/// Emits a call to the `__rt_array_strict_eq` deep-equality helper for two array
+/// operands, inverting the boolean result for `!==`. Mirrors `emit_mixed_strict_compare`'s
+/// push-both-then-load-args sequence, but passes the array pointers directly (no boxing).
+fn emit_array_strict_eq_call(
+    ctx: &mut FunctionContext<'_>,
+    lhs: ValueId,
+    rhs: ValueId,
+    is_equal: bool,
+) -> Result<()> {
+    ctx.load_value_to_result(lhs)?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    ctx.load_value_to_result(rhs)?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x0", 16);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", 0);
+            abi::emit_call_label(ctx.emitter, "__rt_array_strict_eq");
+            if !is_equal {
+                ctx.emitter.instruction("eor x0, x0, #1");                      // invert the array strict-equality result for !==
+            }
+        }
+        Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdi", 16);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rsi", 0);
+            abi::emit_call_label(ctx.emitter, "__rt_array_strict_eq");
+            if !is_equal {
+                ctx.emitter.instruction("xor rax, 1");                          // invert the array strict-equality result for !==
+            }
+        }
+    }
+    abi::emit_release_temporary_stack(ctx.emitter, 32);
     Ok(())
 }
 

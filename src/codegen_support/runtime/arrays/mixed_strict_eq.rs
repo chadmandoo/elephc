@@ -51,6 +51,10 @@ pub fn emit_mixed_strict_eq(emitter: &mut Emitter) {
     emitter.instruction("b.eq __rt_mixed_strict_eq_true");                      // null identity depends only on the matching runtime tag
     emitter.instruction("cmp x0, #1");                                          // do both payloads hold strings?
     emitter.instruction("b.eq __rt_mixed_strict_eq_string");                    // strings need byte-by-byte comparison
+    emitter.instruction("cmp x0, #4");                                          // indexed-array payload?
+    emitter.instruction("b.eq __rt_mixed_strict_eq_array");                     // arrays deep-compare by value, not pointer
+    emitter.instruction("cmp x0, #5");                                          // assoc-array payload?
+    emitter.instruction("b.eq __rt_mixed_strict_eq_array");
     emitter.instruction("ldr x10, [sp, #24]");                                  // reload the left payload low word
     emitter.instruction("cmp x10, x1");                                         // compare low payload words for scalar/pointer tags
     emitter.instruction("b.ne __rt_mixed_strict_eq_false");                     // mismatched payload low words are not equal
@@ -69,6 +73,12 @@ pub fn emit_mixed_strict_eq(emitter: &mut Emitter) {
     emitter.instruction("ldp x1, x2, [sp, #24]");                               // reload the left string pointer/length into the first two argument slots
     emitter.instruction("bl __rt_str_eq");                                      // compare the two string payloads byte-for-byte
     emitter.instruction("b __rt_mixed_strict_eq_done");                         // return the string comparison result
+
+    // -- arrays inside a boxed Mixed deep-compare by value (mutual recursion) --
+    emitter.label("__rt_mixed_strict_eq_array");
+    emitter.instruction("ldr x0, [sp, #24]");                                   // left array pointer (saved left payload low); x1 = right array pointer
+    emitter.instruction("bl __rt_array_strict_eq");                            // deep value-compare of the two nested arrays
+    emitter.instruction("b __rt_mixed_strict_eq_done");                         // return the deep array comparison result
 
     emitter.label("__rt_mixed_strict_eq_false");
     emitter.instruction("mov x0, #0");                                          // report that the mixed payloads are not strictly equal
@@ -110,6 +120,10 @@ fn emit_mixed_strict_eq_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("je __rt_mixed_strict_eq_true");                        // null identity depends only on the matching runtime tag
     emitter.instruction("cmp rax, 1");                                          // do both payloads hold strings?
     emitter.instruction("je __rt_mixed_strict_eq_string");                      // strings need byte-by-byte comparison
+    emitter.instruction("cmp rax, 4");                                          // indexed-array payload?
+    emitter.instruction("je __rt_mixed_strict_eq_array");                       // arrays deep-compare by value, not pointer
+    emitter.instruction("cmp rax, 5");                                          // assoc-array payload?
+    emitter.instruction("je __rt_mixed_strict_eq_array");
     emitter.instruction("cmp QWORD PTR [rsp + 24], rdi");                       // compare low payload words for scalar or pointer tags
     emitter.instruction("jne __rt_mixed_strict_eq_false");                      // mismatched payload low words are not equal
     emitter.instruction("cmp QWORD PTR [rsp + 32], rdx");                       // compare high payload words for string/null padding
@@ -126,6 +140,13 @@ fn emit_mixed_strict_eq_linux_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rsi, QWORD PTR [rsp + 32]");                       // reload the left string length into the second SysV integer argument register
     abi::emit_call_label(emitter, "__rt_str_eq");                               // compare the two string payloads byte-by-byte
     emitter.instruction("jmp __rt_mixed_strict_eq_done");                       // return the string comparison result
+
+    // -- arrays inside a boxed Mixed deep-compare by value (mutual recursion) --
+    emitter.label("__rt_mixed_strict_eq_array");
+    emitter.instruction("mov rsi, rdi");                                        // right array pointer (right payload low)
+    emitter.instruction("mov rdi, QWORD PTR [rsp + 24]");                       // left array pointer (saved left payload low)
+    abi::emit_call_label(emitter, "__rt_array_strict_eq");                      // deep value-compare of the two nested arrays
+    emitter.instruction("jmp __rt_mixed_strict_eq_done");
 
     emitter.label("__rt_mixed_strict_eq_false");
     emitter.instruction("xor rax, rax");                                        // report that the mixed payloads are not strictly equal
