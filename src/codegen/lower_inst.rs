@@ -1982,6 +1982,17 @@ fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Iterable);
         return store_if_result(ctx, inst);
     }
+    if matches!(inst.result_php_type.codegen_repr(), PhpType::AssocArray { .. })
+        && matches!(source_ty, PhpType::Array(_) | PhpType::AssocArray { .. })
+    {
+        // #648-cluster: coerce an indexed/associative array to a declared `AssocArray` type.
+        // A statically-indexed source may be packed or hash at runtime; `__rt_array_to_assoc`
+        // normalizes to owned hash storage (packed -> `__rt_array_to_hash`; hash -> owned
+        // retain) so associative consumers always receive hash storage.
+        load_value_to_first_int_arg(ctx, value)?;
+        abi::emit_call_label(ctx.emitter, "__rt_array_to_assoc");
+        return store_if_result(ctx, inst);
+    }
     Err(CodegenIrError::unsupported(format!(
         "runtime_call from PHP type {:?} to PHP type {:?}",
         source_ty, inst.result_php_type

@@ -280,6 +280,7 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_array_diff_key(emitter);
     arrays::emit_array_intersect_key(emitter);
     arrays::emit_array_to_hash(emitter);
+    arrays::emit_array_to_assoc(emitter);
     arrays::emit_array_replace(emitter);
     arrays::emit_array_replace_recursive(emitter);
     arrays::emit_assoc_diff_intersect(emitter);

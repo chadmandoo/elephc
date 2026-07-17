@@ -79,6 +79,7 @@ mod array_slice_refcounted;
 mod array_splice;
 mod array_splice_refcounted;
 mod array_sum;
+mod array_to_assoc;
 mod array_to_hash;
 mod array_to_mixed;
 mod array_udiff_uintersect;
@@ -297,6 +298,8 @@ pub use array_splice_refcounted::emit_array_splice_refcounted;
 pub use array_sum::emit_array_sum;
 /// Emit array sum helper.
 pub use array_to_hash::emit_array_to_hash;
+/// Emit array-to-associative (hash) coercion helper.
+pub use array_to_assoc::emit_array_to_assoc;
 /// Emit indexed-array-to-hash converter helper (shared by hash-based set ops).
 pub use array_to_mixed::emit_array_to_mixed;
 /// Emit array-to-Mixed conversion helper.
