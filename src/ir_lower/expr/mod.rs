@@ -4592,6 +4592,9 @@ fn lower_args_with_signature(
     if let Some(operands) = lower_assoc_spread_only_args(ctx, sig, args) {
         return coerce_operands_to_params(ctx, sig, operands);
     }
+    if let Some(operands) = lower_variadic_mixed_spread_pack(ctx, sig, args) {
+        return coerce_operands_to_params(ctx, sig, operands);
+    }
     if args.iter().any(is_spread_arg) {
         return lower_args(ctx, args);
     }
@@ -5670,6 +5673,93 @@ fn lower_variadic_tail_array(
         super::stmt::release_indexed_array_write_operand(ctx, elem_ty.as_ref(), value, item.span);
     }
     array
+}
+
+/// Lowers `f(...$src)` into a variadic callee when the single trailing spread source is a runtime
+/// `Mixed` value (e.g. an untyped forwarded parameter). The specialized spread paths above only
+/// accept statically-typed `Array`/`AssocArray` sources; a `Mixed` source otherwise falls through
+/// to the raw `lower_args` fallback, which passes the boxed Mixed pointer straight through as the
+/// variadic pack — the callee then reads a mixed cell as an array (#623 spread miscompile).
+///
+/// Fires (returning the packed operands) only for the shape that needs no param/pack boundary
+/// split: a regular prefix that fills every declared regular parameter followed by one trailing
+/// `Mixed` spread that maps wholly to the variadic pack. The Mixed source is coerced to the pack's
+/// concrete array type (unboxing the mixed cell and adapting element representation) by the same
+/// `Op::RuntimeCall` coercion that powers `return $mixed;` from an array-typed function. Non-`Mixed`
+/// sources return `None` and keep their existing lowering (a typed `Array`/`AssocArray` pointer is
+/// already a valid pack).
+fn lower_variadic_mixed_spread_pack(
+    ctx: &mut LoweringContext<'_, '_>,
+    sig: &FunctionSig,
+    args: &[Expr],
+) -> Option<Vec<crate::ir::ValueId>> {
+    if sig.variadic.is_none() {
+        return None;
+    }
+    // The variadic pack is a single indexed array parameter; the Mixed source is coerced to that
+    // concrete array type (element representation included) by the runtime coercion below.
+    let array_ty = variadic_array_type(sig);
+    if !matches!(array_ty.codegen_repr(), PhpType::Array(_)) {
+        return None;
+    }
+    // Exactly one trailing spread, with a regular prefix that fills the regular params so the spread
+    // maps wholly to the variadic pack (no element split across the parameter boundary).
+    let (last, prefix) = args.split_last()?;
+    let ExprKind::Spread(inner) = &last.kind else {
+        return None;
+    };
+    if prefix.iter().any(is_spread_arg) {
+        return None;
+    }
+    let regular_param_count = crate::types::call_args::regular_param_count(sig);
+    if prefix.len() != regular_param_count {
+        return None;
+    }
+    // Only a `Mixed` runtime source needs this path: statically-typed `Array`/`AssocArray` sources
+    // already lower correctly through the existing fallback (their pointer IS a valid pack array).
+    let source_ty = match &inner.kind {
+        ExprKind::Variable(name) => ctx.local_type(name),
+        _ => infer_expr_type_syntactic(inner),
+    }
+    .codegen_repr();
+    if source_ty != PhpType::Mixed {
+        return None;
+    }
+    let mut operands: Vec<crate::ir::ValueId> = prefix
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| lower_arg_with_signature(ctx, sig, index, arg))
+        .collect();
+    let pack = materialize_variadic_pack_from_mixed_spread(ctx, &array_ty, inner, last.span);
+    operands.push(pack.value);
+    Some(operands)
+}
+
+/// Coerces a `Mixed` spread source into the concrete variadic pack array type via `Op::RuntimeCall`
+/// — the same runtime coercion `return $mixed;` uses to satisfy an array-typed return. It unboxes
+/// the mixed cell and adapts the array's element representation to the pack's declared element type.
+/// When the coercion allocates a fresh container it consumes a reference, so an owning source
+/// temporary is released once the pack replaces it (a plain `$args` local load is a borrow, so it
+/// is left untouched).
+fn materialize_variadic_pack_from_mixed_spread(
+    ctx: &mut LoweringContext<'_, '_>,
+    array_ty: &PhpType,
+    source_expr: &Expr,
+    span: Span,
+) -> LoweredValue {
+    let source = lower_expr(ctx, source_expr);
+    let pack = ctx.emit_value(
+        Op::RuntimeCall,
+        vec![source.value],
+        None,
+        array_ty.clone(),
+        effects_lookup::runtime_effects(),
+        Some(span),
+    );
+    if pack.value != source.value && ctx.value_is_owning_temporary(source) {
+        crate::ir_lower::ownership::release_if_owned(ctx, source, Some(span));
+    }
+    pack
 }
 
 /// Returns the element type expected inside a variadic tail container.

@@ -154,6 +154,49 @@ echo add3(10, ...$rest);
     assert_eq!(out, "60");
 }
 
+/// Regression for #623: spreading a runtime `Mixed` source (`$args`, an untyped forwarded
+/// parameter) into a variadic callee must unpack the underlying array as the pack rather than
+/// passing the boxed mixed cell straight through (which the callee read as an array, producing a
+/// garbage sum). Covers an inferred `array<int>` pack.
+#[test]
+fn test_variadic_spread_of_mixed_source_into_int_pack() {
+    let out = compile_and_run(
+        r#"<?php
+function collect(...$nums) { $s = 0; foreach ($nums as $n) { $s += $n; } return $s; }
+function forward($args) { return collect(...$args); }
+echo forward([1, 2, 3, 4]);
+"#,
+    );
+    assert_eq!(out, "10");
+}
+
+/// Regression for #623: a `Mixed` spread source into a `string`-typed variadic pack.
+#[test]
+fn test_variadic_spread_of_mixed_source_into_string_pack() {
+    let out = compile_and_run(
+        r#"<?php
+function names(string ...$n) { return implode(",", $n); }
+function relay($xs) { return names(...$xs); }
+echo relay(["x", "y", "z"]);
+"#,
+    );
+    assert_eq!(out, "x,y,z");
+}
+
+/// Regression for #623: a `Mixed` spread source following a regular prefix argument — the prefix
+/// must fill the regular parameter and the whole Mixed source must map to the variadic pack.
+#[test]
+fn test_variadic_spread_of_mixed_source_with_regular_prefix() {
+    let out = compile_and_run(
+        r#"<?php
+function joiner(string $sep, ...$parts) { return implode($sep, $parts); }
+function fwd($sep, $parts) { return joiner($sep, ...$parts); }
+echo fwd("-", ["a", "b", "c"]);
+"#,
+    );
+    assert_eq!(out, "a-b-c");
+}
+
 // Issue #17: Braceless single-statement bodies — verifies `implode` works with integer arrays.
 
 /// Regression test for Issue #17: `implode` must correctly join integer array elements into a comma-separated string.
