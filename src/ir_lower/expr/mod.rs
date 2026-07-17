@@ -7378,6 +7378,19 @@ fn assoc_array_literal_value_type_for_ir(
             property,
         )
         .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(value))),
+        // A method call's return type is not resolved here, and the syntactic fallback
+        // guesses `Int` for anything it does not special-case (`infer_expr_type_syntactic`'s
+        // `_ => Int`). For hash STORAGE typing an unresolved value must be `Mixed`: the slot
+        // has to hold whatever the call actually returns (string, array, object, ...).
+        // Stamping it `Int` mistypes the whole literal (`array<string, int>`) — every value
+        // here is a method call, they all agree on the `Int` guess, and `merge_ir_assoc_value_type`
+        // keeps it — so a later `array<mixed>` or string value either fails the backend
+        // ("hash_set value PHP type Array(Mixed)") or is silently miscompiled as an int.
+        // `Mixed` is the correct conservative storage type; any single Mixed value widens the
+        // whole literal through `merge_ir_assoc_value_type`.
+        ExprKind::MethodCall { .. }
+        | ExprKind::NullsafeMethodCall { .. }
+        | ExprKind::StaticMethodCall { .. } => PhpType::Mixed,
         _ => ir_array_storage_type(infer_expr_type_syntactic(value)),
     }
 }
