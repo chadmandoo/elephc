@@ -414,6 +414,17 @@ impl Checker {
                 }
                 return Ok(PhpType::Mixed);
             }
+            // A `Mixed`/`Union` value used as a callee is dispatched at runtime by
+            // `lower_mixed_callee_dispatch` (string name, `[object, method]` array, or
+            // closure/descriptor), matching PHP's dynamic-callable semantics; a value that turns out
+            // not to be callable fatals at runtime exactly as PHP does. (Concrete non-callable types
+            // such as `int` still fall through to the rejection below.)
+            if matches!(var_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+                for arg in args {
+                    self.infer_type(arg, env)?;
+                }
+                return Ok(PhpType::Mixed);
+            }
             if let Some(target) = self.callable_array_targets.get(var).cloned() {
                 return self.infer_callable_array_target_call(&target, args, expr, env);
             }
@@ -523,6 +534,15 @@ impl Checker {
         }
         let callee_ty = self.infer_type(callee, env)?;
         if matches!(callee_ty.codegen_repr(), PhpType::Str) {
+            for arg in args {
+                self.infer_type(arg, env)?;
+            }
+            return Ok(PhpType::Mixed);
+        }
+        // A `Mixed`/`Union` callee expression is dispatched at runtime by
+        // `lower_mixed_callee_dispatch` (see the variable-callee path); non-callable runtime values
+        // fatal as in PHP, and concrete non-callable types still reach the rejection below.
+        if matches!(callee_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
             for arg in args {
                 self.infer_type(arg, env)?;
             }

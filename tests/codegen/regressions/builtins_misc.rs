@@ -256,6 +256,24 @@ echo run('twice', 10), '|', run([$s, 'm'], 10);
     assert_eq!(out, "20|30");
 }
 
+/// Regression for #623 (callable half): a `Mixed` callee reached with all three runtime kinds —
+/// string name, `[object, method]` array, and closure — stays `Mixed` (unnarrowable) and must be
+/// admitted by the checker (previously rejected "not a callable (got Mixed)") and dispatched at
+/// runtime to each concrete handler.
+#[test]
+fn test_mixed_callee_three_runtime_kinds() {
+    let out = compile_and_run(
+        r#"<?php
+function twice(int $n) { return $n * 2; }
+final class S { public function m(int $n) { return $n * 3; } }
+function run($cb, int $x) { return $cb($x); }
+$s = new S();
+echo run('twice', 10), '|', run([$s, 'm'], 10), '|', run(fn(int $n) => $n + 1, 10);
+"#,
+    );
+    assert_eq!(out, "20|30|11");
+}
+
 // Issue #17: Braceless single-statement bodies — verifies `implode` works with integer arrays.
 
 /// Regression test for Issue #17: `implode` must correctly join integer array elements into a comma-separated string.
