@@ -761,6 +761,8 @@ pub(super) fn lower_spaceship(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     let uses_float_compare = lhs_ty == PhpType::Float || rhs_ty == PhpType::Float;
     if uses_float_compare {
         emit_numeric_float_compare(ctx, lhs, &lhs_ty, rhs, &rhs_ty)?;
+    } else if lhs_ty == PhpType::Str && rhs_ty == PhpType::Str {
+        emit_string_spaceship_compare(ctx, lhs, rhs)?;
     } else if intish_or_null(&lhs_ty) && intish_or_null(&rhs_ty) {
         emit_numeric_int_compare(ctx, lhs, rhs)?;
     } else {
@@ -772,6 +774,36 @@ pub(super) fn lower_spaceship(ctx: &mut FunctionContext<'_>, inst: &Instruction)
     }
     emit_spaceship_result(ctx, uses_float_compare);
     store_if_result(ctx, inst)
+}
+
+/// Emits the byte-lexicographic string comparison for spaceship (`"a" <=> "b"`).
+///
+/// Loads both operands into `__rt_strcmp`'s string registers (the same setup as
+/// `lower_str_cmp`), calls it (result `< 0` / `0` / `> 0`), then compares that against
+/// zero so the shared `emit_spaceship_result` reduces the sign to `-1` / `0` / `1` — the
+/// non-float path there reads exactly the flags this `cmp` leaves. PHP's numeric-string
+/// ordering rule is not applied (matching `lower_str_cmp`).
+fn emit_string_spaceship_compare(
+    ctx: &mut FunctionContext<'_>,
+    lhs: ValueId,
+    rhs: ValueId,
+) -> Result<()> {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.load_string_value_to_regs(lhs, "x1", "x2")?;
+            ctx.load_string_value_to_regs(rhs, "x3", "x4")?;
+            abi::emit_call_label(ctx.emitter, "__rt_strcmp");
+            ctx.emitter.instruction(&format!("cmp {}, #0", result_reg));         // set flags from the lexicographic result's sign
+        }
+        Arch::X86_64 => {
+            ctx.load_string_value_to_regs(lhs, "rdi", "rsi")?;
+            ctx.load_string_value_to_regs(rhs, "rdx", "rcx")?;
+            abi::emit_call_label(ctx.emitter, "__rt_strcmp");
+            ctx.emitter.instruction(&format!("cmp {}, 0", result_reg));          // set flags from the lexicographic result's sign
+        }
+    }
+    Ok(())
 }
 
 /// Returns true for scalar values that can participate in the current loose integer path.

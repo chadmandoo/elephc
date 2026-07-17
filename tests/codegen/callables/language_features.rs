@@ -373,6 +373,16 @@ fn test_spaceship_negative() {
     assert_eq!(out, "-1");
 }
 
+/// Verifies the spaceship operator orders string operands lexicographically, returning
+/// -1 / 0 / 1 by byte sequence (with the longer string greater on a shared prefix).
+#[test]
+fn test_spaceship_string_lexicographic() {
+    let out = compile_and_run(
+        r#"<?php echo ("a" <=> "b"), ",", ("b" <=> "a"), ",", ("a" <=> "a"), ",", ("abc" <=> "abd"), ",", ("Z" <=> "a"), ",", ("apple" <=> "app");"#,
+    );
+    assert_eq!(out, "-1,1,0,-1,-1,1");
+}
+
 // ===== Feature 5: Heredoc / Nowdoc strings =====
 
 /// Verifies basic heredoc syntax with a single line of content.
