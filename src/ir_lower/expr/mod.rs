@@ -3861,6 +3861,16 @@ fn instance_callable_object_class(
             .functions
             .get(name.as_str())
             .and_then(|sig| class_name_from_php_type(&sig.return_type)),
+        // A property-access receiver (`$this->factory->make()`) resolves through the property's
+        // declared type, not the syntactic default — otherwise a method call on it types as the
+        // `Int` fallback (e.g. an array literal element `[$this->factory->link(...)]` stamped
+        // `array<int>`, int-casting the returned object). Mirrors the declared-property resolution
+        // the property read itself uses.
+        ExprKind::PropertyAccess { object: inner, property } => {
+            property_access_expr_type_for_ir(ctx, inner, property)
+                .as_ref()
+                .and_then(class_name_from_php_type)
+        }
         _ => class_name_from_php_type(&infer_expr_type_syntactic(object)),
     }
 }

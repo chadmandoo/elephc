@@ -247,3 +247,27 @@ echo (new QB())->group()->first();
     );
     assert_eq!(out, "AND");
 }
+
+/// Regression (#644): an indexed array-literal element that is a `$this->prop->method()` call
+/// (a property-access receiver, not `$this`) must also be typed by the callee's declared return
+/// type. `instance_callable_object_class` resolved Variable/This/new/function receivers but not a
+/// property-access receiver, so `[$this->factory->link(...)]` fell to the Int default and int-cast
+/// the returned object ("int cast for Object(<x>)"). Mirrors AIC EntityTableComposer::row.
+#[test]
+fn test_indexed_array_literal_property_receiver_method_element_typed_by_return() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+final class Link { public function __construct(public string $label) {} }
+final class Factory { public function link(string $l): Link { return new Link($l); } }
+final class Row { public function __construct(public array $links) {} }
+final class Composer {
+    public function __construct(private Factory $factory) {}
+    public function row(): Row { return new Row([$this->factory->link('View'), $this->factory->link('Edit')]); }
+}
+$c = new Composer(new Factory());
+echo $c->row()->links[0]->label, '|', $c->row()->links[1]->label;
+"#,
+    );
+    assert_eq!(out, "View|Edit");
+}
