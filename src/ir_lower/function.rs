@@ -840,6 +840,24 @@ fn emit_default_return_value(ctx: &mut LoweringContext<'_, '_>) -> crate::ir::Va
             )
             .value
         }
+        IrType::Heap(_) if matches!(ctx.return_php_type.codegen_repr(), PhpType::Object(_)) => {
+            // Same unreachable fall-through join for an object return type — a `try` whose
+            // try-body returns and whose every catch-body throws (`create(): PDO`,
+            // PgsqlConnectionFactory) leaves a structural join needing an object-typed value.
+            // Emit the null-object sentinel via `Op::ConstNull` (const_null loads the null
+            // sentinel for a non-tagged result) rather than the un-lowerable 0-operand
+            // `Op::RuntimeCall`. The join is unreachable, so the placeholder is never
+            // materialized at runtime; it only needs a representation codegen can lower.
+            ctx.emit_value(
+                Op::ConstNull,
+                Vec::new(),
+                None,
+                ctx.return_php_type.clone(),
+                Op::ConstNull.default_effects(),
+                None,
+            )
+            .value
+        }
         IrType::Heap(_) => {
             let lowered = ctx.emit_value(
                 Op::RuntimeCall,

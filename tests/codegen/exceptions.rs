@@ -741,3 +741,27 @@ echo count(pick(true)), '-', count(pick(false));
     );
     assert_eq!(out, "2-0");
 }
+
+/// Verifies an object-returning function whose only implicit fall-through is unreachable (#644).
+#[test]
+fn test_object_return_unreachable_fallthrough_placeholder() {
+    // The try-body `return`s a `Conn` and the catch-body `throw`s, so the structural
+    // try/catch join is unreachable — yet it still needs a value of the object return
+    // type for its terminator. The backend rejected that placeholder ("runtime_call with
+    // 0 operands returning PHP type Object(<x>)", e.g. PgsqlConnectionFactory returning
+    // PDO). The implicit object return now lowers to the null-object sentinel via
+    // const_null rather than the un-lowerable 0-operand `Op::RuntimeCall`.
+    let out = compile_and_run(
+        r#"<?php
+final class Conn { public function __construct(public string $dsn) {} }
+final class Factory {
+    public function create(string $dsn): Conn {
+        try { return new Conn($dsn); }
+        catch (\Throwable $e) { throw new \RuntimeException('fail'); }
+    }
+}
+echo (new Factory())->create('pg')->dsn;
+"#,
+    );
+    assert_eq!(out, "pg");
+}
