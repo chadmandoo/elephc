@@ -219,3 +219,31 @@ echo $o->x;
     );
     assert_eq!(out, "HI");
 }
+
+/// Regression (#644): an indexed array-literal element that is a `$this->method()` call must be
+/// typed by the callee's declared return type, not the syntactic `Int` default. In an
+/// interface-implementing class `$this` carries no concrete local class type, so the element
+/// helper resolved the object class as empty and fell back to Int — stamping `[$this->make()]`
+/// as `array<int>` and int-casting the returned object into it ("int cast for Object(<x>)").
+/// Resolving `$this` via the current class (like the real call lowering) types the element as the
+/// object. Mirrors AIC's QueryBuilder `whereGroup(): self { withConditions([$this->compound()]); }`.
+#[test]
+fn test_indexed_array_literal_this_method_element_typed_by_return() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+interface Cond {}
+final class Group implements Cond { public function __construct(public string $glue) {} }
+interface Builder { public function group(): self; }
+final class QB implements Builder {
+    /** @var list<Cond> */ private array $conditions = [];
+    private function makeGroup(string $glue): Group { return new Group($glue); }
+    private function withConditions(array $c): self { $n = new self(); $n->conditions = $c; return $n; }
+    public function group(): self { return $this->withConditions([$this->makeGroup('AND')]); }
+    public function first(): string { return $this->conditions[0]->glue; }
+}
+echo (new QB())->group()->first();
+"#,
+    );
+    assert_eq!(out, "AND");
+}

@@ -7193,7 +7193,15 @@ fn array_literal_element_type_for_ir(
     match &item.kind {
         ExprKind::Null => PhpType::Mixed,
         ExprKind::Spread(inner) => match array_literal_element_type_for_ir(ctx, inner).codegen_repr() {
-            PhpType::Array(elem) => elem.codegen_repr(),
+            // A spread of an empty/unknown array (`array<never>`, e.g. a `$x = []` local or a
+            // bare-`array`-returning method) contributes no element constraint, so widen its
+            // Void/Never element to Mixed rather than collapsing the outer literal to
+            // `array<never>` — which would normalize to a `Void` element and emit an unsupported
+            // `array_push for PHP type Void` (`[...$acc, ...$this->more()]`, WardCoverageGate).
+            PhpType::Array(elem) => match elem.codegen_repr() {
+                PhpType::Void | PhpType::Never => PhpType::Mixed,
+                other => other,
+            },
             _ => PhpType::Mixed,
         },
         ExprKind::ArrayLiteral(items) => array_literal_type_for_ir(ctx, items, item).codegen_repr(),
@@ -7224,6 +7232,29 @@ fn array_literal_element_type_for_ir(
             }
             ir_array_storage_type(infer_expr_type_syntactic(item))
         }
+        // A method-call element must be typed by the callee's declared return type, not the
+        // syntactic `Int` default. Without this, `[$this->makeCompound(...)]` stamps the literal
+        // `array<int>` and the returned object is int-cast into it ("int cast for Object(<x>)")
+        // — the same Int-default disease #648 fixed for the merge/assoc-literal paths. Return-type
+        // is arg-independent for user methods, so the resolution mirrors those arms exactly.
+        ExprKind::MethodCall { object, method, .. }
+        | ExprKind::NullsafeMethodCall { object, method, .. } => {
+            let method_key = php_symbol_key(method);
+            instance_callable_object_class(ctx, object)
+                .and_then(|class| {
+                    class_method_return_type_for_ir(ctx, &class, &method_key)
+                        .or_else(|| interface_method_return_type_for_ir(ctx, &class, &method_key))
+                })
+                .and_then(materializable_array_element_type)
+                .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item)))
+        }
+        ExprKind::StaticMethodCall { receiver, method, .. } => {
+            static_method_implementation_signature(ctx, receiver, method)
+                .or_else(|| lexical_instance_static_call_signature(ctx, receiver, method))
+                .map(|sig| sig.return_type.clone())
+                .and_then(materializable_array_element_type)
+                .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item)))
+        }
         ExprKind::ArrayAccess { array, .. } => array_access_expr_value_type_for_ir(ctx, array)
             .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item))),
         ExprKind::PropertyAccess { object, property } => property_access_expr_type_for_ir(
@@ -7233,6 +7264,19 @@ fn array_literal_element_type_for_ir(
         )
         .unwrap_or_else(|| ir_array_storage_type(infer_expr_type_syntactic(item))),
         _ => ir_array_storage_type(infer_expr_type_syntactic(item)),
+    }
+}
+
+/// Returns the EIR array storage type for a resolved element type, or `None` when the type
+/// cannot be an array element. A `Void`/`Never` method return (a value-less call whose result
+/// is nonetheless collected into a literal) has no array-element representation — stamping it
+/// would emit an unsupported `array_push for PHP type Void` — so the caller keeps its syntactic
+/// fallback for that degenerate case, exactly as before this arm existed (no regression).
+fn materializable_array_element_type(return_type: PhpType) -> Option<PhpType> {
+    let stored = ir_array_storage_type(return_type);
+    match stored.codegen_repr() {
+        PhpType::Void | PhpType::Never => None,
+        _ => Some(stored),
     }
 }
 
