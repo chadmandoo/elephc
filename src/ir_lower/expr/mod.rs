@@ -10999,8 +10999,36 @@ fn materialized_expr_type_for_merge(ctx: &LoweringContext<'_, '_>, expr: &Expr) 
         // int-casting a Str/Object yield to 0 (the same silent-miscompile family as the call-arm
         // case above).
         ExprKind::Assignment { value, .. } => materialized_expr_type_for_merge(ctx, value),
+        // A scoped-constant arm that names an enum case (`self::Desc`, `Dir::Asc`) materializes
+        // the case *object* singleton (see `lower_scoped_constant`) — i.e. `Object(<enum>)`, not
+        // the backing-value `Str` the syntactic fallback guesses. Without this, a `match`/`?:`
+        // merging enum-case arms of a backed enum (`match ($this) { self::Asc => self::Desc, ... }`
+        // in an enum's `opposite(): self`) builds a `Str` result temp, casts each enum singleton to
+        // its backing string, then coerces the string back to the enum at the return — an
+        // unsupported "runtime_call from Str to Object(<enum>)" backend error (and a pointless
+        // enum->string->enum round trip). Resolve the case type the way `lower_scoped_constant` does.
+        ExprKind::ScopedConstantAccess { receiver, name } => {
+            scoped_constant_enum_case_object_type(ctx, receiver, name)
+                .unwrap_or_else(|| fallback_expr_type(expr))
+        }
         _ => fallback_expr_type(expr),
     }
+}
+
+/// Returns `Object(<enum>)` when a scoped-constant access names a case of a known enum,
+/// mirroring `lower_scoped_constant`'s enum-case materialization; `None` otherwise (a plain
+/// class constant keeps its syntactic fallback type).
+fn scoped_constant_enum_case_object_type(
+    ctx: &LoweringContext<'_, '_>,
+    receiver: &StaticReceiver,
+    name: &str,
+) -> Option<PhpType> {
+    let class_name = scoped_constant_receiver_name(ctx, receiver);
+    let normalized = class_name.trim_start_matches('\\');
+    ctx.enums
+        .get(normalized)
+        .is_some_and(|enum_info| enum_info.cases.iter().any(|case| case.name == name))
+        .then(|| PhpType::Object(normalized.to_string()))
 }
 
 /// Coerces branch values to the hidden temp storage type before storing them.

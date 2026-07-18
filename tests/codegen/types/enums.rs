@@ -882,3 +882,30 @@ echo encode(Suit::Hearts), "|", encode(Level::High), "|", encode(5);
     );
     assert_eq!(out, "H|3|?");
 }
+
+/// Regression (#644): a `match`/`?:` whose arms are enum-case constants of a backed enum must
+/// build an `Object(<enum>)` result temp, not a `Str` one. Before the merge-type fix,
+/// `match ($this) { self::Asc => self::Desc, self::Desc => self::Asc }` in an enum's
+/// `opposite(): self` typed the result temp as the backing `Str`, cast each enum singleton to its
+/// backing string, then coerced the string back to the enum at the return — an unsupported
+/// "runtime_call from Str to Object(<enum>)" backend error. The arms now type as the case object.
+#[test]
+fn test_match_over_backed_enum_cases_returns_enum_object() {
+    let out = compile_and_run(
+        r#"<?php
+declare(strict_types=1);
+enum Dir: string {
+    case Asc = 'asc';
+    case Desc = 'desc';
+    public function opposite(): self {
+        return match ($this) {
+            self::Asc => self::Desc,
+            self::Desc => self::Asc,
+        };
+    }
+}
+echo Dir::Asc->opposite()->value, "|", Dir::Desc->opposite()->value;
+"#,
+    );
+    assert_eq!(out, "desc|asc");
+}
