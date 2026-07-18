@@ -642,6 +642,10 @@ pub(crate) fn lower_property_init_thunk(
 }
 
 /// Builds `$this->property = <default>;` statements for property-default initialization.
+///
+/// A null default whose slot type cannot represent null (a scalar slot rebound by
+/// constructor-argument propagation) is skipped: those slots are always overwritten
+/// before an observable read, and the store would be unrepresentable.
 fn property_init_body(class_info: &ClassInfo) -> Vec<Stmt> {
     let span = Span::dummy();
     class_info
@@ -650,7 +654,11 @@ fn property_init_body(class_info: &ClassInfo) -> Vec<Stmt> {
         .enumerate()
         .filter_map(|(index, default)| {
             let default = default.as_ref()?;
-            let property = class_info.properties.get(index)?.0.clone();
+            let (name, php_type) = class_info.properties.get(index)?;
+            if matches!(default.kind, ExprKind::Null) && !php_type.null_property_default_required() {
+                return None;
+            }
+            let property = name.clone();
             Some(Stmt::new(
                 StmtKind::ExprStmt(Expr::new(
                     ExprKind::Assignment {

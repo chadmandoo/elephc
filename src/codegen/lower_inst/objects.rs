@@ -2210,6 +2210,14 @@ fn collect_property_defaults(
         let Some(default_expr) = class_info.defaults.get(index).and_then(Option::as_ref) else {
             continue;
         };
+        // A null default whose slot cannot represent null (a scalar slot rebound by
+        // constructor-argument propagation) is skipped; the slot is always written
+        // before an observable read on those paths.
+        if matches!(default_expr.kind, crate::parser::ast::ExprKind::Null)
+            && !php_type.null_property_default_required()
+        {
+            continue;
+        }
         let offset = 8 + index * 16;
         defaults.push(PropertyDefault {
             offset,
