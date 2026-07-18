@@ -795,3 +795,65 @@ echo $assoc["a"], $assoc["b"], "|", $list[2], "|", $b['='], "|", $b['nested'][1]
     );
     assert_eq!(out, "12|9|5|20");
 }
+
+/// Regression (#640): reading a hash-promoted `array<Mixed>` by a string or Mixed key.
+///
+/// Writing Mixed keys into an `[]` literal promotes its runtime storage to a hash while the
+/// static type stays `array<Mixed>` (the indexed-vs-hash choice is deliberately deferred to the
+/// runtime write helper). Reads back out were broken three ways: the x86_64 mixed-key read took
+/// `__rt_hash_get`'s payload from the AArch64 registers, and a key that was not syntactically an
+/// integer literal — a parameter, a `foreach` value — was guessed as `Int` and coerced to a
+/// nonsense offset. Together those returned NULL for a present key, or crashed once the bogus
+/// payload was used. Iteration, `count()` and `array_key_exists()` always worked, which is why
+/// this survived: only the by-key read was wrong.
+#[test]
+fn test_mixed_key_array_read_after_hash_promotion() {
+    let out = compile_and_run(
+        r#"<?php
+function readBack(array $in, string $key): string {
+    $m = [];
+    foreach ($in as $r) { $m[$r] = "V:" . $r; }
+    $viaLiteral = $m["a"];
+    $viaParam = $m[$key];
+    $viaMixed = "";
+    foreach ($in as $k) { $viaMixed .= $m[$k] . ","; }
+    $iter = "";
+    foreach ($m as $k => $v) { $iter .= $k . "=" . $v . ";"; }
+    return $viaLiteral . "|" . $viaParam . "|" . $viaMixed . "|" . $iter . "|" . count($m);
+}
+echo readBack(["a", "b"], "b");
+"#,
+    );
+    assert_eq!(out, "V:a|V:b|V:a,V:b,|a=V:a;b=V:b;|2");
+}
+
+/// Regression (#640): `isset()` on a hash-promoted `array<Mixed>` must answer correctly and
+/// must never warn.
+///
+/// The probe read its operand through the WARNING-capable mixed-key op, so a miss printed an
+/// "Undefined array key" diagnostic that PHP never emits from `isset()`. It also inherited the
+/// bad integer key guess, so a present key reported absent. The present-but-null case pins the
+/// semantic that separates `isset()` from `array_key_exists()`.
+#[test]
+fn test_isset_on_hash_promoted_mixed_array_is_correct_and_silent() {
+    let out = compile_and_run(
+        r#"<?php
+function probe(array $in, string $key): string {
+    $m = [];
+    foreach ($in as $r) { $m[$r] = "V:" . $r; }
+    $out = (isset($m["a"]) ? "y" : "n")
+         . (isset($m["zz"]) ? "y" : "n")
+         . (isset($m[$key]) ? "y" : "n");
+    foreach ($in as $k) { $out .= isset($m[$k]) ? "y" : "n"; }
+    return $out;
+}
+function nulls(array $in): string {
+    $m = [];
+    foreach ($in as $r) { $m[$r] = null; }
+    return (isset($m["a"]) ? "y" : "n") . (array_key_exists("a", $m) ? "y" : "n");
+}
+echo probe(["a", "b"], "b"), "|", nulls(["a"]);
+"#,
+    );
+    assert_eq!(out, "ynyyy|ny");
+}

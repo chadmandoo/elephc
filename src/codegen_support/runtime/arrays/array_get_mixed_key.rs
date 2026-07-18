@@ -288,20 +288,26 @@ fn emit_array_get_mixed_key_linux_x86_64(emitter: &mut Emitter) {
     emitter.label("__rt_array_get_mixed_key_hash");
     emitter.instruction("mov rsi, QWORD PTR [rbp - 16]");                       // rsi = key_lo
     emitter.instruction("mov rdx, QWORD PTR [rbp - 24]");                       // rdx = key_hi
-    emitter.instruction("call __rt_hash_get");                                  // rax=found, rsi=value_lo, rdx=value_hi, rcx=value_tag
+    // NOTE: on x86_64 `__rt_hash_get` returns the borrowed payload in rdi/rsi — NOT the
+    // rsi/rdx the AArch64 contract (x1/x2) would suggest. Reading the AArch64 registers here
+    // fed `__rt_mixed_from_value` the key words instead of the value, so a hash-backed
+    // `Array(Mixed)` read returned NULL for a present string key (and crashed outright once
+    // the bogus payload was dereferenced) while `array_key_exists` on the same array answered
+    // correctly, because it only consumes the `found` flag in rax.
+    emitter.instruction("call __rt_hash_get");                                  // rax=found, rdi=value_lo, rsi=value_hi, rcx=value_tag
     emitter.instruction("test rax, rax");                                       // miss → null
     emitter.instruction("je __rt_array_get_mixed_key_hash_missing");            // miss → optional warning + null
     emitter.instruction("cmp rcx, 7");                                          // is the hash entry already a boxed Mixed?
     emitter.instruction("jne __rt_array_get_mixed_key_hash_box");               // no → box (lo, hi, tag) into a fresh Mixed cell
-    emitter.instruction("mov rax, rsi");                                        // yes → move the stored Mixed cell into the return register
+    emitter.instruction("mov rax, rdi");                                        // yes → move the stored Mixed cell into the return register
     emitter.instruction("call __rt_incref");                                    // retain the stored Mixed cell so the caller owns the returned result
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer
     emitter.instruction("ret");                                                 // return Mixed* in rax
     emitter.label("__rt_array_get_mixed_key_hash_box");
     emitter.instruction("mov rax, rcx");                                        // rax = value_tag (mixed_from_value first arg)
-    emitter.instruction("mov rdi, rsi");                                        // rdi = value_lo from hash_get
-    emitter.instruction("mov rsi, rdx");                                        // rsi = value_hi from hash_get
+    // rdi already holds value_lo and rsi already holds value_hi from __rt_hash_get, which is
+    // exactly `__rt_mixed_from_value`'s (rax=tag, rdi=lo, rsi=hi) argument layout.
     emitter.instruction("call __rt_mixed_from_value");                          // box the hash entry into a Mixed cell
     emitter.instruction("mov rsp, rbp");                                        // release the helper frame
     emitter.instruction("pop rbp");                                             // restore caller frame pointer

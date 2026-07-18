@@ -2311,7 +2311,8 @@ fn lower_native_isset_offset_probe_from_value(
     match array_value.ir_type {
         IrType::Heap(IrHeapKind::Array) => {
             let mut index_value = lower_expr(ctx, index);
-            let index_ty = index_expr_key_type(ctx, index);
+            let index_ty =
+                resolved_array_index_key_type(ctx, index, &index_value, &array_value);
             if index_ty == PhpType::Int {
                 index_value = coerce_to_int_at_span(ctx, index_value, Some(index.span));
                 ctx.emit_value(
@@ -2323,14 +2324,17 @@ fn lower_native_isset_offset_probe_from_value(
                     Some(expr.span),
                 )
             } else {
-                // String or mixed key on indexed storage: read through the
-                // mixed-key runtime path and check if the result is null.
+                // String or mixed key on indexed storage: read through the mixed-key runtime
+                // path and check if the result is null. The SILENT variant is required —
+                // `isset()` reports absence, it never emits an undefined-key warning, so the
+                // warning-capable read would make `isset($m["missing"])` print a diagnostic
+                // PHP does not.
                 let read_value = ctx.emit_value(
-                    Op::ArrayGetMixedKey,
+                    Op::ArrayGetMixedKeySilent,
                     vec![array_value.value, index_value.value],
                     None,
                     PhpType::Mixed,
-                    Op::ArrayGetMixedKey.default_effects(),
+                    Op::ArrayGetMixedKeySilent.default_effects(),
                     Some(expr.span),
                 );
                 let is_null = ctx.emit_value(
@@ -7667,7 +7671,7 @@ fn lower_array_access_from_value(
     let mut index_value = lower_expr(ctx, index);
     let op = match array_value.ir_type {
         IrType::Heap(IrHeapKind::Array) => {
-            let index_ty = index_expr_key_type(ctx, index);
+            let index_ty = resolved_array_index_key_type(ctx, index, &index_value, &array_value);
             if index_ty == PhpType::Int {
                 index_value = coerce_to_int_at_span(ctx, index_value, Some(index.span));
                 if warn_on_missing {
@@ -7752,6 +7756,41 @@ fn lower_nullable_array_access(
 fn index_expr_key_type(_ctx: &LoweringContext<'_, '_>, index: &Expr) -> PhpType {
     let ty = infer_expr_type_syntactic(index);
     normalized_array_key_type(index, ty)
+}
+
+/// Returns the key type to lower an `$array[$key]` read with, preferring the already-lowered
+/// index value's real type over the purely syntactic guess.
+///
+/// `index_expr_key_type` reads the type off the expression's SYNTAX, so a plain variable — a
+/// parameter, a `foreach` value, a call result — falls back to `Int`. That sends a string or
+/// boxed-Mixed key down the integer indexed path, where it is coerced to a nonsense offset: the
+/// read returns the wrong element (or garbage that crashes when used). The index has already been
+/// lowered by the time we choose the op, so its actual type is available and strictly better.
+///
+/// Deliberately narrow: it only overrides for an `array<Mixed>` source, whose runtime storage is
+/// genuinely ambiguous (a Mixed-keyed write promotes it to a hash, which is exactly what the
+/// mixed-key read path dispatches on). That case also keeps the result type identical — both ops
+/// yield `Mixed` for a Mixed element type — so no caller observes a different static type. A
+/// concrete-element array (`array<string>`, `array<int>`) is always real indexed storage, and is
+/// left on its existing path rather than silently widening its element type to Mixed here.
+fn resolved_array_index_key_type(
+    ctx: &LoweringContext<'_, '_>,
+    index: &Expr,
+    index_value: &LoweredValue,
+    array_value: &LoweredValue,
+) -> PhpType {
+    let syntactic = index_expr_key_type(ctx, index);
+    let array_is_mixed_element = matches!(
+        ctx.builder.value_php_type(array_value.value).codegen_repr(),
+        PhpType::Array(elem) if elem.codegen_repr() == PhpType::Mixed
+    );
+    if !array_is_mixed_element {
+        return syntactic;
+    }
+    match ctx.builder.value_php_type(index_value.value).codegen_repr() {
+        ty @ (PhpType::Str | PhpType::Mixed) => ty,
+        _ => syntactic,
+    }
 }
 
 /// Returns the best PHP result type for a lowered array/string/hash access.
