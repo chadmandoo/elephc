@@ -893,6 +893,37 @@ fn lower_nested_array_assign(
     value: &Expr,
     span: Span,
 ) {
+    // Lowering the FULL target as an expression routes the write through the
+    // read helper (`__rt_mixed_array_get`), which returns a detached fresh box
+    // whenever the slot storage is not already a boxed Mixed cell; the
+    // two-operand cell replacement then mutated a temporary and the write was
+    // silently lost (#529). Splitting off the innermost key writes through the
+    // parent cell instead (`__rt_mixed_array_set` for Mixed parents,
+    // `offsetSet` for ArrayAccess objects), which mutates the aliased
+    // container for every slot representation.
+    if let ExprKind::ArrayAccess { array, index } = &target.kind {
+        let parent = lower_expr(ctx, array);
+        let key = lower_expr(ctx, index);
+        let value = lower_expr(ctx, value);
+        ctx.emit_void(
+            Op::RuntimeCall,
+            vec![parent.value, key.value, value.value],
+            None,
+            effects_lookup::runtime_effects(),
+            Some(span),
+        );
+        release_persisted_string_operand(ctx, key, span);
+        release_persisted_string_operand(ctx, value, span);
+        // Parent subscript reads of Mixed/refcounted elements are owning
+        // temporaries (`ArrayGet`/`HashGet`/`RuntimeCall` return a +1 caller
+        // reference). The set helper mutates through the cell/object without
+        // consuming that reference, so release it here. Non-owning parents
+        // (plain locals, `$this`) are left to normal scope cleanup.
+        if ctx.value_is_owning_temporary(parent) {
+            crate::ir_lower::ownership::release_if_owned(ctx, parent, Some(span));
+        }
+        return;
+    }
     let target = lower_expr(ctx, target);
     let value = lower_expr(ctx, value);
     ctx.emit_void(
