@@ -61,6 +61,29 @@ echo sortvals([3, 1, 2, 5, 4]);
     assert_eq!(out, "12345");
 }
 
+/// #643: `usort()` over a boxed-`Mixed` source (a value the checker could not type as a concrete
+/// array — here passed through a `mixed` boundary that defeats element specialization) unboxes the
+/// Mixed to its underlying indexed array, COW-separates it, and sorts it in place, republishing the
+/// unique pointer into the Mixed cell so the by-reference result is observed through the source.
+#[test]
+fn test_usort_over_boxed_mixed_source() {
+    let out = compile_and_run(
+        r#"<?php
+final class P { public function __construct(public int $w) {} }
+function opaque(mixed $x): mixed { return $x; }
+function sortit(mixed $xs): array {
+    usort($xs, static fn (P $a, P $b): int => $a->w <=> $b->w);
+    return $xs;
+}
+$o = sortit(opaque([new P(5), new P(2), new P(8), new P(1)]));
+$s = '';
+foreach ($o as $p) { $s .= $p->w; }
+echo $s;
+"#,
+    );
+    assert_eq!(out, "1258");
+}
+
 // Tests `array_map` on a single-element array with a user-defined increment callback.
 /// Verifies that array map single.
 #[test]

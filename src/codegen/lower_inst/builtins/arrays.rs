@@ -2034,6 +2034,14 @@ fn lower_user_sort_static_callback(
     super::ensure_arg_count(inst, name, 2)?;
     let array = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
+    // A boxed-`Mixed` source (a `$row` the checker could not type as a concrete array — built
+    // from a bare-`array` source whose element type lived only in discarded phpdoc) holds an
+    // indexed array at runtime. `__rt_usort` needs the raw array pointer, so unbox the Mixed to
+    // its underlying array, COW-separate it, and publish the unique pointer back into the Mixed
+    // cell (preserving `usort`'s by-reference in-place semantics), then sort that pointer. #643.
+    if name == "usort" && ctx.value_php_type(array)?.codegen_repr() == PhpType::Mixed {
+        return lower_user_sort_over_mixed(ctx, inst, array, callback, name);
+    }
     user_sort_element_type(ctx.value_php_type(array)?, name)?;
     let source_local = source_load_local_slot(ctx, array)?;
     ensure_unique_sort_source(ctx, array)?;
@@ -2140,6 +2148,138 @@ fn lower_user_sort_with_static_callback_binding(
         0x7fff_ffff_ffff_fffe,
     );
     store_if_result(ctx, inst)
+}
+
+/// Lowers `usort($mixed, $cb)` where the array operand is a boxed-`Mixed` value that holds an
+/// indexed array at runtime (a `$row` the checker could not type as a concrete array). Recovers
+/// the static comparator binding, normalizes the Mixed to a unique indexed-array pointer
+/// (published back into the Mixed cell so the in-place sort is observed by reference), and sorts
+/// that pointer through `__rt_usort`. A non-`static`/unrecoverable comparator reports a clean
+/// compile error via `static_sort_callback_binding`; a runtime Mixed that does not hold an
+/// indexed array aborts loudly (never a silent mis-sort). #643/#648.
+fn lower_user_sort_over_mixed(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    array: ValueId,
+    callback: ValueId,
+    name: &str,
+) -> Result<()> {
+    let callback_owner = format!("{} callback", name);
+    let callback_ty = ctx.value_php_type(callback)?.codegen_repr();
+    if callback_ty == PhpType::Callable && static_callback_operand_is_recoverable(ctx, callback) {
+        // A statically recoverable callable (e.g. a named function or `self::method`): recover the
+        // comparator label directly, then sort the normalized array.
+        let callback_binding = static_sort_callback_binding(
+            ctx,
+            callback,
+            &callback_owner,
+            Some(&[PhpType::Int, PhpType::Int]),
+        )?;
+        let callback_label = sort_callback_label_returning_int(ctx, &callback_binding)?;
+        let env_bytes = reserve_static_callback_env(ctx, callback_binding.env_source)?;
+        emit_mixed_sort_dispatch(ctx, array, &callback_label, env_bytes)?;
+        if env_bytes != 0 {
+            abi::emit_release_temporary_stack(ctx.emitter, env_bytes);
+        }
+    } else if callback_ty == PhpType::Callable {
+        // A runtime closure descriptor (an inline `static fn (...)` comparator — the common
+        // usort shape): the descriptor runtime wraps the closure, and the emit-call callback
+        // sorts the normalized array through that wrapper.
+        lower_descriptor_callback_runtime(
+            ctx,
+            callback,
+            vec![PhpType::Int, PhpType::Int],
+            PhpType::Int,
+            |ctx, wrapper_label, env_bytes| {
+                emit_mixed_sort_dispatch(ctx, array, wrapper_label, env_bytes)
+            },
+        )?;
+    } else {
+        return Err(CodegenIrError::unsupported(format!(
+            "{} over a Mixed source with a non-closure comparator PHP type {:?}",
+            name, callback_ty
+        )));
+    }
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        0x7fff_ffff_ffff_fffe,
+    );
+    store_if_result(ctx, inst)
+}
+
+/// Normalizes the boxed-Mixed `usort` source and issues the `__rt_usort` call against the unique
+/// indexed-array pointer with the given comparator wrapper label and reserved environment. The
+/// unique pointer is moved into arg1 before arg0 (which aliases the result register) is loaded
+/// with the wrapper address.
+fn emit_mixed_sort_dispatch(
+    ctx: &mut FunctionContext<'_>,
+    array: ValueId,
+    wrapper_label: &str,
+    env_bytes: usize,
+) -> Result<()> {
+    emit_mixed_indexed_sort_source(ctx, array)?;
+    let array_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 1);
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    ctx.emitter
+        .instruction(&format!("mov {}, {}", array_arg_reg, result_reg));
+    let callback_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 0);
+    abi::emit_symbol_address(ctx.emitter, callback_arg_reg, wrapper_label);
+    let env_arg_reg = abi::int_arg_reg_name(ctx.emitter.target, 2);
+    load_static_callback_env_arg(ctx, env_arg_reg, env_bytes);
+    abi::emit_call_label(ctx.emitter, "__rt_usort");
+    Ok(())
+}
+
+/// Unboxes a boxed-`Mixed` `usort` source into its underlying indexed array, COW-separates it to
+/// a unique pointer, and republishes that pointer into the Mixed cell (offset +8) so `usort`'s
+/// in-place mutation is observed through the source variable. Leaves the unique array pointer in
+/// the int-result register. Mirrors `convert_mixed_indexed_source_for_ref` (the by-ref foreach
+/// path) minus the iterator state. A Mixed holding a non-indexed value aborts loudly.
+fn emit_mixed_indexed_sort_source(ctx: &mut FunctionContext<'_>, array: ValueId) -> Result<()> {
+    let indexed = ctx.next_label("usort_mixed_indexed");
+    let unsupported = ctx.next_label("usort_mixed_unsupported");
+    let done = ctx.next_label("usort_mixed_done");
+    ctx.load_value_to_result(array)?;
+    abi::emit_push_reg(ctx.emitter, abi::int_result_reg(ctx.emitter));
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("cmp x0, #4");                              // mixed tag 4 = indexed array
+            ctx.emitter.instruction(&format!("b.eq {}", indexed));
+            ctx.emitter.instruction(&format!("b {}", unsupported));
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("cmp rax, 4");                              // mixed tag 4 = indexed array
+            ctx.emitter.instruction(&format!("je {}", indexed));
+            ctx.emitter.instruction(&format!("jmp {}", unsupported));
+        }
+    }
+    ctx.emitter.label(&unsupported);
+    abi::emit_call_label(ctx.emitter, "__rt_iterable_unsupported_kind");        // loud abort, not a silent mis-sort
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => ctx.emitter.instruction(&format!("b {}", done)),
+        Arch::X86_64 => ctx.emitter.instruction(&format!("jmp {}", done)),
+    }
+    ctx.emitter.label(&indexed);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, x1");                              // unboxed indexed-array payload -> arg0
+            abi::emit_call_label(ctx.emitter, "__rt_array_ensure_unique");      // COW-separate -> x0 = unique pointer
+            ctx.emitter.instruction("ldr x9, [sp]");                            // reload the preserved boxed Mixed cell
+            ctx.emitter.instruction("str x0, [x9, #8]");                        // publish the unique pointer into the Mixed cell
+        }
+        Arch::X86_64 => {
+            // `__rt_mixed_unbox` leaves the indexed-array payload in rdi (arg0) already.
+            abi::emit_call_label(ctx.emitter, "__rt_array_ensure_unique");      // COW-separate -> rax = unique pointer
+            ctx.emitter.instruction("mov r10, QWORD PTR [rsp]");                // reload the preserved boxed Mixed cell
+            ctx.emitter.instruction("mov QWORD PTR [r10 + 8], rax");            // publish the unique pointer into the Mixed cell
+        }
+    }
+    ctx.emitter.label(&done);
+    // Balance the preserved-Mixed push without clobbering the unique array pointer (result reg).
+    abi::emit_pop_reg(ctx.emitter, abi::secondary_scratch_reg(ctx.emitter));
+    Ok(())
 }
 
 /// Returns a callback label whose runtime ABI produces an integer comparison result.

@@ -140,6 +140,16 @@ pub(crate) fn array_element_type(arr_ty: &PhpType) -> PhpType {
     match arr_ty {
         PhpType::Array(elem_ty) => (**elem_ty).clone(),
         PhpType::AssocArray { value, .. } => (**value).clone(),
+        // A `Mixed` source (a value the checker could not type as a concrete array — e.g. a
+        // `$row` bound from a `foreach` over an `Array(Mixed)`, itself built from a bare-`array`
+        // param whose element type lived only in discarded phpdoc) has `Mixed` elements, not
+        // `Int`. The `Int` fallback was a syntactic default that made a typed comparator over
+        // such an array fabricate an `Int` element and reject the declared parameter ("expects
+        // Object(X), got Int"). A `Mixed` element routes through the runtime-trust closure-hint
+        // path (`Mixed` accepts any declared parameter at the runtime-enforced boundary), and
+        // the usort lowering unboxes the boxed-Mixed source to its underlying array at runtime.
+        // #643/#648.
+        PhpType::Mixed => PhpType::Mixed,
         _ => PhpType::Int,
     }
 }
