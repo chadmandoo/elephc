@@ -1218,6 +1218,21 @@ fn lower_foreach(
 fn foreach_value_type(source_ty: &PhpType) -> PhpType {
     match source_ty.codegen_repr() {
         PhpType::Array(elem) if elem.codegen_repr() == PhpType::Callable => PhpType::Callable,
+        // A by-value foreach over a concrete array of objects yields the element object type,
+        // not Mixed (#648): `iter_current_value` then skips the Mixed-box (its result type
+        // equals the loaded element type — see `box_current_indexed_value_if_needed`), so the
+        // value flows typed into usort comparators and append targets instead of erasing to
+        // `array<mixed>`. Objects are handle types (the loaded pointer is the same object the
+        // source array holds, kept alive across the loop body), matching the by-ref sibling
+        // `foreach_ref_value_type` which already yields the element type. Scoped to object
+        // elements — the concrete #648/#643 victim — leaving scalar/other elements on the
+        // existing Mixed path until each is separately verified.
+        PhpType::Array(elem) if matches!(elem.codegen_repr(), PhpType::Object(_)) => {
+            elem.codegen_repr()
+        }
+        PhpType::AssocArray { value, .. } if matches!(value.codegen_repr(), PhpType::Object(_)) => {
+            value.codegen_repr()
+        }
         PhpType::Object(class_name) if class_name == "Phar" || class_name == "PharData" => {
             PhpType::Object("PharFileInfo".to_string())
         }

@@ -234,7 +234,16 @@ fn box_current_indexed_value_if_needed(
             emit_box_current_value_as_mixed(ctx.emitter, elem);
             Ok(())
         }
-        result_ty if result_ty == elem.codegen_repr() => Ok(()),
+        result_ty if result_ty == elem.codegen_repr() => {
+            // The un-boxed element was loaded as a BORROWED pointer from the source array;
+            // a by-value foreach yields an owned copy, and the consumer (array_push, a call
+            // argument, etc.) takes ownership and later releases it. Acquire a reference here
+            // to balance that release — mirroring the incref the Mixed-box arm performs when
+            // it wraps the element. Without this the borrowed pointer is over-released, freeing
+            // the still-referenced object mid-loop (use-after-free / garbage reads). #648.
+            abi::emit_incref_if_refcounted(ctx.emitter, &result_ty);
+            Ok(())
+        }
         other => Err(CodegenIrError::unsupported(format!(
             "indexed iterator value PHP type {:?} stored as {:?}",
             elem,

@@ -1289,3 +1289,33 @@ echo count(Array_Uintersect([1, 2, 3, 4], [2, 4], "cmp"));
     );
     assert_eq!(out, "22");
 }
+
+/// Verifies a by-value foreach over a concrete array of objects yields the typed element,
+/// so the objects flow through an append into a usort with a typed comparator and sort
+/// correctly. Regression for the #648 silent miscompile: the foreach value used to erase
+/// to boxed Mixed, poisoning the append target to array<mixed> and making the comparator
+/// read garbage. Also exercises the balancing incref — the collected objects outlive their
+/// (temporary) source array.
+#[test]
+fn test_foreach_object_array_append_usort() {
+    let out = compile_and_run(
+        r#"<?php
+final class Desc { public function __construct(public int $weight) {} }
+final class Mgr {
+    /** @return array */
+    public function plugins(): array { $r = []; $r[] = new Desc(3); $r[] = new Desc(1); $r[] = new Desc(2); return $r; }
+    /** @return array */
+    public function ordered(): array {
+        $matches = [];
+        foreach ($this->plugins() as $d) { $matches[] = $d; }
+        usort($matches, static fn (Desc $a, Desc $b): int => $a->weight <=> $b->weight);
+        return $matches;
+    }
+}
+$out = '';
+foreach ((new Mgr())->ordered() as $d) { $out .= $d->weight; }
+echo $out;
+"#,
+    );
+    assert_eq!(out, "123");
+}
