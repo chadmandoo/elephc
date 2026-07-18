@@ -1097,11 +1097,19 @@ fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
 pub(crate) fn lower_strlen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "strlen", 1)?;
     let value = expect_operand(inst, 0)?;
-    let ty = ctx.load_value_to_result(value)?;
-    match ty.codegen_repr() {
-        PhpType::Str => {}
+    match ctx.value_php_type(value)?.codegen_repr() {
+        PhpType::Str => {
+            ctx.load_value_to_result(value)?;
+        }
         PhpType::Mixed | PhpType::Union(_) => {
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
+            // Borrow the boxed payload instead of calling __rt_mixed_cast_string:
+            // the cast helper persists an owned copy of tag-1 string payloads that
+            // strlen() never released, leaking one block per call (issue #485).
+            // strlen() only reads the byte length, so the shared borrowed argument
+            // coercion is sufficient; scalar payloads stringify into concat scratch
+            // storage exactly as they do for every other string builtin argument.
+            let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+            strings::load_value_as_string_to_regs(ctx, value, "strlen", ptr_reg, len_reg)?;
         }
         other => {
             return Err(CodegenIrError::unsupported(format!(

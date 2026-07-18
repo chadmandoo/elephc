@@ -37,9 +37,10 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     // Accept Str, Mixed, and Union types — PHP's strlen() coerces its
     // argument to a string per the standard PHP type juggling rules
     // (numbers become their decimal representation, true → "1",
-    // false/null → ""). Mixed inputs flow through __rt_mixed_strlen
-    // at codegen time which reads the cell tag and returns the
-    // length of the coerced representation.
+    // false/null → ""). Mixed inputs flow through the shared borrowed
+    // string-argument coercion at codegen time, which reads the cell tag
+    // and returns the length of the coerced representation without
+    // persisting an owned copy of string payloads.
     if !matches!(ty, PhpType::Str | PhpType::Mixed | PhpType::Union(_)) {
         return Err(CompileError::new(cx.span, "strlen() argument must be string"));
     }
