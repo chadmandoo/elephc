@@ -578,6 +578,30 @@ namespace App {
     assert_eq!(out, "7");
 }
 
+/// Regression (#644): `new $class(...)` enumerates every arg-count-matching class as a
+/// dynamic-new candidate and emits a constructor branch for each. A candidate whose
+/// constructor param cannot receive the actual argument — here an `Html` object passed
+/// where a sibling class declares `?int` at the same position — forced an impossible
+/// `Object -> TaggedScalar` arg materialization and failed the whole module at codegen.
+/// Such a candidate is only reachable by a call that is a PHP `TypeError`, so it must be
+/// excluded; the intended target (whose param accepts the object) compiles and runs.
+#[test]
+fn test_dynamic_new_excludes_type_incompatible_candidate() {
+    let out = compile_and_run(
+        r#"<?php
+final class Html { public function __construct(public string $s) {} }
+final class WithHtml { public function __construct(public string $a, public Html $h) {} }
+final class WithNullableInt { public function __construct(public string $a, public ?int $n) {} }
+final class Factory {
+    public function make(string $cls, Html $h): object { return new $cls("x", $h); }
+}
+$f = new Factory();
+echo $f->make(WithHtml::class, new Html("deep"))->h->s;
+"#,
+    );
+    assert_eq!(out, "deep");
+}
+
 /// Regression (#625): a `use`-imported alias used as a TYPED VARIADIC parameter
 /// (`Outcome ...$xs`) must be name-resolved. The name resolver resolved regular parameter
 /// types and return types but cloned `variadic_type` unresolved in all three declaration

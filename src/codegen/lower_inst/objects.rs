@@ -1761,6 +1761,33 @@ fn class_is_same_or_descends_from(
 }
 
 /// Builds one dynamic factory candidate when its constructor path is emitted.
+/// Returns true when a dynamic-`new` candidate constructor parameter can receive the
+/// call-site argument without an unsupported codegen conversion.
+///
+/// The dynamic-new switch emits a branch for every arg-count-matching class, but only
+/// `TaggedScalar` (`int|null`) param slots can fail to materialize an argument — every
+/// other param target either casts a Mixed source or accepts the value unchanged (see
+/// `materialize_direct_call_arg_for_param`). A `TaggedScalar` slot only accepts the
+/// int-shaped sources `coerce_loaded_value_to_tagged_scalar` handles; a non-int source
+/// (an object, string, float, or array) there would be a PHP `TypeError` at runtime, so
+/// its candidate is excluded rather than compiled as an impossible branch.
+fn dynamic_new_param_accepts_arg(source_ty: &PhpType, param_ty: &PhpType) -> bool {
+    match param_ty.codegen_repr() {
+        PhpType::TaggedScalar => matches!(
+            source_ty.codegen_repr(),
+            PhpType::TaggedScalar
+                | PhpType::Int
+                | PhpType::Bool
+                | PhpType::Callable
+                | PhpType::Void
+                | PhpType::Never
+                | PhpType::Mixed
+                | PhpType::Union(_)
+        ),
+        _ => true,
+    }
+}
+
 fn dynamic_new_candidate(
     ctx: &FunctionContext<'_>,
     class_name: &str,
@@ -1794,6 +1821,18 @@ fn dynamic_new_candidate(
             .iter()
             .map(|(_, ty)| ty.codegen_repr())
             .collect::<Vec<_>>();
+        // The dynamic-new switch emits one branch per arg-count-matching class. A class
+        // whose constructor param cannot receive the actual argument (e.g. an object
+        // argument into an `int|null` param slot) is only ever reached by a call that is a
+        // TypeError in PHP, so exclude it here rather than forcing an impossible arg
+        // materialization (Object -> TaggedScalar) at codegen time. The intended runtime
+        // target — whose params DO accept the arguments — is unaffected.
+        let constructor_args = inst.operands.get(1..).unwrap_or(&[]);
+        for (arg, param_ty) in constructor_args.iter().zip(param_types.iter()) {
+            if !dynamic_new_param_accepts_arg(&ctx.value_php_type(*arg)?, param_ty) {
+                return Ok(None);
+            }
+        }
         Some(ConstructorCallTarget {
             impl_class,
             param_types,
