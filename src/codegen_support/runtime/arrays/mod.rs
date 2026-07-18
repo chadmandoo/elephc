@@ -25,6 +25,7 @@ mod array_ensure_unique;
 mod array_fill;
 mod array_fill_assoc;
 mod array_fill_keys;
+mod array_fill_keys_mixed;
 mod array_fill_keys_refcounted;
 mod array_fill_refcounted;
 mod array_fill_str;
@@ -193,6 +194,10 @@ pub use array_fill::emit_array_fill;
 pub use array_fill_assoc::emit_array_fill_assoc;
 /// Emit array fill helper.
 pub use array_fill_keys::emit_array_fill_keys;
+/// Emit boxed-Mixed-key array fill with keys helper.
+pub use array_fill_keys_mixed::emit_array_fill_keys_mixed;
+/// Emit array_fill_keys-cast-key hash insert helper.
+pub use array_fill_keys_mixed::emit_hash_set_cast_key;
 /// Emit array fill with keys helper.
 pub use array_fill_keys_refcounted::emit_array_fill_keys_refcounted;
 /// Emit refcounted array fill with keys helper.

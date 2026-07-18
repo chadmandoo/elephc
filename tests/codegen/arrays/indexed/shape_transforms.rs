@@ -153,6 +153,57 @@ echo count($m);
     assert_eq!(out, "2");
 }
 
+/// Regression: `array_fill_keys()` over a boxed-`Mixed` key array must apply PHP's own key cast
+/// (stringify, then normalize), which is NOT the cast a direct `$a[$k] = $v` assignment uses.
+///
+/// A bare `array` parameter carries no element type, so real call sites reach `array_fill_keys()`
+/// with `Array(Mixed)` key slots. Verified against PHP 8.5.8, the divergent cases are `false`
+/// (key `""`, not `0`) and floats (key `"2.7"`, not `2`) — reusing `__rt_array_set_mixed_key`'s
+/// tag dispatch, which is correct for direct assignment, would silently mis-key both. The
+/// heterogeneous literals below are what give the key arrays their `Mixed` element type.
+#[test]
+fn test_array_fill_keys_over_boxed_mixed_keys_uses_php_key_cast() {
+    let out = compile_and_run(
+        r#"<?php
+function dump(array $m): string {
+    $out = "";
+    foreach ($m as $k => $v) {
+        $out .= gettype($k) . ":" . $k . ";";
+    }
+    return $out;
+}
+echo dump(array_fill_keys(["x", 5, "5", null, true], true)), "|";
+echo dump(array_fill_keys([2.7, -2.7, false], true)), "|";
+echo dump(array_fill_keys(["7", "008", "-3"], true)), "|";
+$active = ["alpha" => 1, "beta" => 2];
+echo dump(array_fill_keys(array_keys($active), true)), "|";
+$set = array_fill_keys(["editor", "administrator", 7], true);
+echo array_key_exists("administrator", $set) ? "y" : "n";
+echo array_key_exists("missing", $set) ? "y" : "n";
+echo array_key_exists(7, $set) ? "y" : "n";
+"#,
+    );
+    assert_eq!(
+        out,
+        "string:x;integer:5;string:;integer:1;|string:2.7;string:-2.7;string:;|\
+integer:7;string:008;integer:-3;|string:alpha;string:beta;|yny"
+    );
+}
+
+/// Regression: a scalar fill payload must stay its own static type through the boxed-`Mixed` key
+/// path — the helper forwards `(value_lo, value_hi, value_tag)` untouched rather than boxing the
+/// value as a Mixed cell, so a strict comparison against the original literal still holds.
+#[test]
+fn test_array_fill_keys_over_boxed_mixed_keys_keeps_value_type() {
+    let out = compile_and_run(
+        r#"<?php
+$filled = array_fill_keys(["a", 1, null], 42);
+echo count($filled), var_export($filled["a"] === 42, true);
+"#,
+    );
+    assert_eq!(out, "3true");
+}
+
 /// Regression: `array_fill`/`array_chunk`/`array_pad`/`array_splice` must unbox a `Mixed`/`Union`
 /// integer argument (start index, chunk size, target size, offset, length) instead of using the
 /// boxed heap pointer as a raw int. Each int arg here is read from a heterogeneous (Mixed-valued)

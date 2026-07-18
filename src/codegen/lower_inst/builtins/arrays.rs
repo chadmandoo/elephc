@@ -145,14 +145,14 @@ pub(crate) fn lower_array_fill_keys(
     let value = expect_operand(inst, 1)?;
     let key_elem_ty = array_fill_keys_key_element_type(ctx.value_php_type(keys)?)?;
     let value_ty = ctx.value_php_type(value)?.codegen_repr();
-    require_array_fill_keys_key_layout(&key_elem_ty)?;
+    require_array_fill_keys_key_layout(&key_elem_ty, &value_ty)?;
     require_array_fill_keys_value_type(&value_ty)?;
     require_array_fill_keys_result_type(
         &key_elem_ty,
         &value_ty,
         &inst.result_php_type.codegen_repr(),
     )?;
-    lower_array_fill_keys_call(ctx, keys, value, &value_ty)?;
+    lower_array_fill_keys_call(ctx, keys, value, &key_elem_ty, &value_ty)?;
     store_if_result(ctx, inst)
 }
 
@@ -4523,9 +4523,18 @@ fn array_combine_value_element_type(ty: PhpType) -> Result<PhpType> {
     }
 }
 
-/// Verifies the key array uses the string-slot layout expected by the runtime helper.
-fn require_array_fill_keys_key_layout(key_elem_ty: &PhpType) -> Result<()> {
+/// Verifies the key array uses a slot layout one of the runtime helpers can read.
+///
+/// `Str` keys use the 16-byte `(ptr, len)` descriptor slots `__rt_array_fill_keys` walks. `Mixed`
+/// keys — the common shape, because a bare `array` parameter carries no element type — are
+/// pointer-wide boxed cells handled by `__rt_array_fill_keys_mixed`, which unboxes each key and
+/// applies PHP's array-key normalization. The boxed-key helper inserts the fill payload without
+/// retaining it, so a refcounted value stays rejected rather than silently under-retained.
+fn require_array_fill_keys_key_layout(key_elem_ty: &PhpType, value_ty: &PhpType) -> Result<()> {
     if matches!(key_elem_ty, PhpType::Str | PhpType::Void | PhpType::Never) {
+        return Ok(());
+    }
+    if *key_elem_ty == PhpType::Mixed && !value_ty.is_refcounted() {
         return Ok(());
     }
     Err(CodegenIrError::unsupported(format!(
@@ -4788,6 +4797,7 @@ fn lower_array_fill_keys_call(
     ctx: &mut FunctionContext<'_>,
     keys: ValueId,
     value: ValueId,
+    key_elem_ty: &PhpType,
     value_ty: &PhpType,
 ) -> Result<()> {
     let value_tag = runtime_value_tag("array_fill_keys", value_ty)? as i64;
@@ -4803,7 +4813,10 @@ fn lower_array_fill_keys_call(
             abi::emit_load_int_immediate(ctx.emitter, "rdx", value_tag);
         }
     }
-    abi::emit_call_label(ctx.emitter, array_fill_keys_runtime_helper(value_ty));
+    abi::emit_call_label(
+        ctx.emitter,
+        array_fill_keys_runtime_helper(key_elem_ty, value_ty),
+    );
     Ok(())
 }
 
@@ -4831,8 +4844,16 @@ fn lower_array_combine_call(
     Ok(())
 }
 
-/// Returns the helper matching the fill-keys value ownership representation.
-fn array_fill_keys_runtime_helper(value_ty: &PhpType) -> &'static str {
+/// Returns the helper matching the fill-keys key slot layout and value ownership representation.
+///
+/// A `Mixed` key element means pointer-wide boxed key cells rather than 16-byte string
+/// descriptors, so it selects the unboxing sibling. `require_array_fill_keys_key_layout` admits
+/// that combination only for a non-refcounted value, so the boxed-key helper never has to retain
+/// the fill payload.
+fn array_fill_keys_runtime_helper(key_elem_ty: &PhpType, value_ty: &PhpType) -> &'static str {
+    if *key_elem_ty == PhpType::Mixed {
+        return "__rt_array_fill_keys_mixed";
+    }
     if value_ty.is_refcounted() {
         "__rt_array_fill_keys_refcounted"
     } else {

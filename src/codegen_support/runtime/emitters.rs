@@ -270,6 +270,8 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     arrays::emit_array_combine(emitter);
     arrays::emit_array_combine_refcounted(emitter);
     arrays::emit_array_fill_keys(emitter);
+    arrays::emit_array_fill_keys_mixed(emitter);
+    arrays::emit_hash_set_cast_key(emitter);
     arrays::emit_array_fill_keys_refcounted(emitter);
     arrays::emit_array_chunk(emitter);
     arrays::emit_array_chunk_refcounted(emitter);
