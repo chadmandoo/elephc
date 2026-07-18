@@ -976,7 +976,14 @@ fn emit_static_property_initializers(ctx: &mut FunctionContext<'_>) -> Result<()
             let default = class_info
                 .static_defaults
                 .get(index)
-                .and_then(Option::as_ref);
+                .and_then(Option::as_ref)
+                // A null default whose slot cannot represent null (a scalar slot
+                // rebound by later type refinement) is skipped; the slot is always
+                // written before an observable read on those paths.
+                .filter(|default_expr| {
+                    !matches!(default_expr.kind, crate::parser::ast::ExprKind::Null)
+                        || php_type.null_property_default_required()
+                });
             if let Some(default_expr) = default {
                 default_initializers.push((
                     class_name.clone(),
