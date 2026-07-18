@@ -965,6 +965,82 @@ echo (in_array("hello", $a) ? "y" : "n"),
     assert_eq!(out, "yyn");
 }
 
+/// Regression (#623): strict `in_array()` with a boxed-Mixed NEEDLE over a boxed-Mixed array.
+///
+/// `array_keys()` yields boxed Mixed cells by design, so collecting them produces both an
+/// `array<Mixed>` haystack and a Mixed needle. Before the fix the backend rejected the pair with
+/// "in_array needle PHP type Mixed for indexed-array element PHP type Mixed"; membership now
+/// compares cell-to-cell through `__rt_mixed_strict_eq`, which implements PHP's `===` per tag.
+#[test]
+fn test_in_array_mixed_needle_over_mixed_array_strict() {
+    let out = compile_and_run(
+        r#"<?php
+$src = ["a" => 1, "b" => 2, "zz" => 3];
+$hay = [];
+foreach (array_keys($src) as $k) { $hay[] = $k; }
+$out = "";
+foreach (array_keys(["a" => 0, "q" => 0, "zz" => 0]) as $n) {
+    $out .= in_array($n, $hay, true) ? "y" : "n";
+}
+echo $out;
+"#,
+    );
+    assert_eq!(out, "yny");
+}
+
+/// Regression (#623): strict `in_array()` with a boxed-Mixed needle over a concrete string array.
+///
+/// Before the fix the backend rejected this with "in_array needle PHP type Mixed for string
+/// indexed-array". A string-tagged needle now scans byte-for-byte via `__rt_str_eq`, and a needle
+/// that unboxes to any other tag short-circuits to false — PHP's `===` never matches an int key
+/// against a string element, even when the digits agree.
+#[test]
+fn test_in_array_mixed_needle_over_string_array_strict() {
+    let out = compile_and_run(
+        r#"<?php
+$hay = [".", "..", "abc"];
+$found = "";
+foreach (array_keys(["." => 0, "x" => 0, ".." => 0, "abc" => 0, "ab" => 0]) as $n) {
+    $found .= in_array($n, $hay, true) ? "y" : "n";
+}
+$digits = ["1", "2", "0"];
+$ints = "";
+foreach (array_keys([1 => "a", 2 => "b", 7 => "c"]) as $n) {
+    $ints .= in_array($n, $digits, true) ? "y" : "n";
+}
+echo $found, "|", $ints;
+"#,
+    );
+    assert_eq!(out, "ynyyn|nnn");
+}
+
+/// Regression (#623): a literal `$strict` argument folds to a single lowered mode.
+///
+/// `in_array($x, $xs, true)` used to lower BOTH modes behind a runtime branch, so a strict call
+/// was rejected whenever the *loose* path lacked support for the operand types — the reason the
+/// boxed-Mixed needle cases above failed with a "loose in_array" error despite being strict. The
+/// fold must not disturb a dynamic flag, which still needs both modes emitted.
+#[test]
+fn test_in_array_literal_strict_flag_folds_without_changing_semantics() {
+    let out = compile_and_run(
+        r#"<?php
+function dyn(bool $b): bool { return $b; }
+$ints = [1, 2, 3];
+$strs = ["a", "b"];
+$folded = (in_array("2", $ints, true) ? "y" : "n")
+        . (in_array("2", $ints, false) ? "y" : "n")
+        . (in_array(2, $ints, true) ? "y" : "n");
+$dynamic = "";
+foreach ([true, false] as $s) {
+    $dynamic .= in_array("2", $ints, dyn($s)) ? "y" : "n";
+    $dynamic .= in_array("a", $strs, dyn($s)) ? "y" : "n";
+}
+echo $folded, "|", $dynamic;
+"#,
+    );
+    assert_eq!(out, "nyy|nyyy");
+}
+
 /// EC-2 (#485): verifies `in_array()` accepts the optional 3rd `strict` argument
 /// and preserves exact membership for same-typed string and int arrays.
 #[test]

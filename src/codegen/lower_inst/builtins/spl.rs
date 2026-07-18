@@ -819,32 +819,7 @@ fn static_preserve_keys_operand(
     ctx: &FunctionContext<'_>,
     value: ValueId,
 ) -> Result<Option<bool>> {
-    let Some(value_ref) = ctx.function.value(value) else {
-        return Err(CodegenIrError::missing_entry("value", value.as_raw()));
-    };
-    let ValueDef::Instruction { inst, .. } = value_ref.def else {
-        return Ok(None);
-    };
-    let inst_ref = ctx
-        .function
-        .instruction(inst)
-        .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
-    match (inst_ref.op, inst_ref.immediate.as_ref()) {
-        (Op::ConstBool, Some(Immediate::Bool(value))) => Ok(Some(*value)),
-        (Op::ConstI64, Some(Immediate::I64(value))) => Ok(Some(*value != 0)),
-        (Op::ConstF64, Some(Immediate::F64(value))) => Ok(Some(*value != 0.0)),
-        (Op::ConstNull, _) => Ok(Some(false)),
-        (Op::ConstStr, Some(Immediate::Data(data))) => {
-            let value = ctx
-                .module
-                .data
-                .strings
-                .get(data.as_raw() as usize)
-                .ok_or_else(|| CodegenIrError::missing_entry("data string", data.as_raw()))?;
-            Ok(Some(!value.is_empty() && value != "0"))
-        }
-        _ => Ok(None),
-    }
+    super::static_bool_operand(ctx, value)
 }
 
 /// Materializes PHP truthiness for a dynamic preserve-keys operand.
