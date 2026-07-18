@@ -78,12 +78,14 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
                     cb_env,
                     "array_map() callback",
                 )?;
-            let result_elem_ty = if callback_ret_ty == PhpType::Mixed {
-                Box::new(PhpType::Mixed)
-            } else {
-                elem_ty
-            };
-            Ok(PhpType::Array(result_elem_ty))
+            // `array_map` maps every element through the callback, so the result element
+            // type is the CALLBACK's return type — not the source element type. Using
+            // `elem_ty` here mistyped `array_map(fn (int $n): Foo => ..., $ints)` as
+            // `array<int>` instead of `array<Foo>`, which then denied a later
+            // `usort($mapped, fn (Foo $a, Foo $b) => ...)` its element type ("usort()
+            // callback parameter expects Object(Foo), got Int") (#643). It is invisible when
+            // the callback returns the source element type (the two coincide).
+            Ok(PhpType::Array(Box::new(callback_ret_ty)))
         }
         _ => Err(CompileError::new(
             cx.span,

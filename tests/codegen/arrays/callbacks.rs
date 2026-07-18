@@ -1319,3 +1319,20 @@ echo $out;
     );
     assert_eq!(out, "123");
 }
+
+/// Verifies array_map's result element type is the CALLBACK's return type, not the source
+/// element type. Regression for #643: `array_map(fn (int): Foo, $ints)` was mistyped
+/// `array<int>` (source) instead of `array<Foo>`, so property access on a mapped element —
+/// and a later typed usort — saw Int. Pre-fix this failed the checker (`$a[0]` typed int,
+/// rejecting `->w`); post-fix the mapped Foo objects are typed and readable.
+#[test]
+fn test_array_map_result_typed_by_callback_return() {
+    let out = compile_and_run(
+        r#"<?php
+final class Foo { public function __construct(public int $w) {} }
+$a = array_map(static fn (int $n): Foo => new Foo($n * 2), [5, 6]);
+echo $a[0]->w, ',', $a[1]->w;
+"#,
+    );
+    assert_eq!(out, "10,12");
+}
