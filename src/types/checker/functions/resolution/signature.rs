@@ -125,14 +125,23 @@ impl Checker {
         self.resolving_functions.insert(function_key.clone());
         let body_check_result = self.with_local_storage_context(ref_param_names, |checker| {
             for stmt in &decl.body {
+                // Snapshot the env BEFORE `check_stmt` mutates it. `check_stmt` leaks the
+                // post-`if` complement of a diverging guard into the outer env (correct for the
+                // statements that follow the `if`), but `collect_return_infos` re-walks the SAME
+                // `if` and re-applies the guard: fed the post-complement env it would narrow a
+                // `return $v` inside `if ($v !== null)` against an already-`Void` `$v` and report
+                // the return type as `Void`. The pre-mutation snapshot still carries every prior
+                // statement's assignments (accumulated across iterations), so return collection
+                // sees the binding's type as of this statement's position.
+                let pre_env = local_env.clone();
                 if let Err(error) = checker.check_stmt(stmt, &mut local_env) {
                     errors.extend(error.flatten());
                 }
-                checker.collect_return_infos(stmt, &local_env, &mut all_return_infos);
-                checker.collect_return_callable_sigs(stmt, &local_env, &mut callable_return_sigs);
+                checker.collect_return_infos(stmt, &pre_env, &mut all_return_infos);
+                checker.collect_return_callable_sigs(stmt, &pre_env, &mut callable_return_sigs);
                 checker.collect_return_callable_array_sigs(
                     stmt,
-                    &local_env,
+                    &pre_env,
                     &mut callable_array_return_sigs,
                 );
             }

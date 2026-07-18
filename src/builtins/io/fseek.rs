@@ -7,9 +7,12 @@
 //!
 //! Key details:
 //! - `check` calls `ensure_stream_resource` on the stream argument for validation and
-//!   returns `Union(Int, Bool)`. `returns: Mixed` is used because the union cannot be
-//!   expressed through the scalar `returns:` field. Arguments are pre-inferred by the
-//!   registry before the hook runs.
+//!   returns `Int`. PHP declares `fseek(): int` — 0 on success, -1 on failure, never `false`
+//!   (`ReflectionFunction('fseek')->getReturnType()` is `int`), and `lower_fseek` already
+//!   emits exactly that (`mov x0, #-1` / `mov rax, -1` on the failure path, 0 on success).
+//!   It previously declared `Union(Int, False)`, which forced every caller passing a seek
+//!   result into an `int` parameter through a spurious union. Arguments are pre-inferred by
+//!   the registry before the hook runs.
 //! - `lower` is a thin wrapper over `io::lower_fseek` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
@@ -23,14 +26,14 @@ builtin! {
     name: "fseek",
     area: Io,
     params: [stream: Mixed, offset: Int, whence: Int = DefaultSpec::Int(0)],
-    returns: Mixed,
+    returns: Int,
     check: check,
     lower: lower,
     summary: "Seeks on a file pointer.",
     php_manual: "function.fseek",
 }
 
-/// Validates the stream argument and returns `Union(Int, Bool)` for the seek result.
+/// Validates the stream argument and returns `Int` for the seek result (0 success, -1 failure).
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     crate::types::checker::builtins::io::common::ensure_stream_resource(
         cx.checker,
@@ -38,7 +41,7 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         &cx.args[0],
         cx.env,
     )?;
-    Ok(cx.checker.normalize_union_type(vec![PhpType::Int, PhpType::False]))
+    Ok(PhpType::Int)
 }
 
 /// Lowers an `fseek` call by dispatching to the shared io emitter.

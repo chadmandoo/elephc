@@ -7194,3 +7194,27 @@ echo "n=" . $n . " kept=" . count($r);
     );
     assert_eq!(out, "n=0 kept=0");
 }
+
+/// Regression: `fseek()` is typed `Int`, not `Union([Int, False])`.
+///
+/// PHP declares `fseek(): int` — 0 on success, -1 on failure, never `false` — and
+/// `lower_fseek` already emits exactly that. Declaring the union forced every caller that
+/// passes a seek result into an `int` parameter through a spurious union, which is one of the
+/// shapes the any-member union compatibility arm existed to paper over. Passing the result
+/// straight into an `int` parameter fails to type-check if the union ever comes back.
+#[test]
+fn test_fseek_result_is_int_not_union_with_false() {
+    let out = compile_and_run(
+        r#"<?php
+function requireZero(int $value, string $message): int {
+    if ($value !== 0) { throw new RuntimeException($message); }
+    return $value;
+}
+$f = fopen('php://temp', 'r+b');
+fwrite($f, 'abcdef');
+echo requireZero(fseek($f, 2), 'seek failed'), ':', fread($f, 3), ':';
+var_dump(fseek($f, -100, 0));
+"#,
+    );
+    assert_eq!(out, "0:cde:int(-1)\n");
+}

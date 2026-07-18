@@ -37,7 +37,7 @@ pub(crate) struct GuardNarrowing {
 impl Checker {
     /// Detects a type-predicate guard in an `if`/ternary condition and computes the then/else
     /// narrowing for the guarded binding against the current environment. Handles the scalar
-    /// `is_*` predicates, `is_null`, `instanceof Class`, and `=== false` / `=== null`, each with an
+    /// `is_*` predicates, `is_null`, `instanceof Class`, and `===`/`!==` against `false` / `null`, each with an
     /// optional leading `!` that swaps the branches. The guarded receiver may be a variable
     /// (narrowed under its name) or a simple property access `$var->prop` / `$this->prop`
     /// (narrowed under a synthetic key that `infer_property_access_type` consults). Returns
@@ -70,9 +70,12 @@ impl Checker {
             ExprKind::Not(inner) => (inner.as_ref(), true),
             _ => (condition, false),
         };
-        let Some((receiver, target)) = guard_receiver_and_type(cond) else {
+        let Some((receiver, target, inverted)) = guard_receiver_and_type(cond) else {
             return Ok(None);
         };
+        // `!==` is the complement of `===`, so it composes with a leading `!` by XOR:
+        // `!($x !== null)` narrows the then-branch exactly like `$x === null`.
+        let negated = negated ^ inverted;
         let Some(key) = Self::guard_env_key(receiver) else {
             return Ok(None);
         };
@@ -252,9 +255,10 @@ impl Checker {
 
 /// Extracts the guarded receiver expression and the target type from a (non-negated) guard
 /// expression. Recognizes the scalar `is_*` predicates, `is_callable`, `is_null`, `instanceof <Name>`, and
-/// `=== false` / `=== null`. The receiver may be any expression here — `guard_env_key` decides
+/// `===`/`!==` against `false` / `null` (the third tuple element reports comparison polarity).
+/// The receiver may be any expression here — `guard_env_key` decides
 /// which receivers narrowing can actually key (variables and simple property accesses).
-fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
+fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType, bool)> {
     match &cond.kind {
         ExprKind::FunctionCall { name, args } if args.len() == 1 => {
             let target = match name.as_str().to_ascii_lowercase().as_str() {
@@ -284,19 +288,28 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 "is_null" => PhpType::Void,
                 _ => return None,
             };
-            Some((&args[0], target))
+            Some((&args[0], target, false))
         }
         ExprKind::InstanceOf { value, target } => {
             let InstanceOfTarget::Name(class) = target else {
                 return None;
             };
-            Some((value, PhpType::Object(class.as_str().to_string())))
+            Some((value, PhpType::Object(class.as_str().to_string()), false))
         }
         // `$var === false` / `false === $var`: narrow to the literal False subtype in the
         // then-branch; the else-branch strips only that member (e.g. int|false → int) while a full
         // `bool` member remains. Enables the common
         // `if ($x === false) { throw; } return $x;` guard (ward-http StreamGuards::requireInt etc.).
-        ExprKind::BinaryOp { left, op: BinOp::StrictEq, right } => {
+        // `$var === false` / `false === $var`: narrow to the literal False subtype in the
+        // then-branch; the else-branch strips only that member (e.g. int|false → int) while a full
+        // `bool` member remains.
+        //
+        // `!==` is accepted as the same guard with inverted polarity, which is what makes the
+        // POSITIVE form work: `if ($error !== null) { f($error); }` strips the null-ish member
+        // inside the body, so a `?string` parameter satisfies a `string` parameter there. Without
+        // it only the early-return form (`if ($x === null) { throw; }`) narrowed, and the positive
+        // form was the shape AIC actually writes.
+        ExprKind::BinaryOp { left, op: op @ (BinOp::StrictEq | BinOp::StrictNotEq), right } => {
             let (receiver, lit) = match (&left.kind, &right.kind) {
                 (ExprKind::Variable(_) | ExprKind::PropertyAccess { .. }, _) => {
                     (left.as_ref(), &right.kind)
@@ -306,15 +319,46 @@ fn guard_receiver_and_type(cond: &Expr) -> Option<(&Expr, PhpType)> {
                 }
                 _ => return None,
             };
+            let inverted = matches!(op, BinOp::StrictNotEq);
             match lit {
-                ExprKind::BoolLiteral(false) => Some((receiver, PhpType::False)),
+                ExprKind::BoolLiteral(false) => Some((receiver, PhpType::False, inverted)),
                 // `$x === null`: strip the null-ish member (elephc models a `?T` value's null as
                 // Void), e.g. `?self` / self|null → self after `if ($x === null) { throw; }`.
-                ExprKind::Null => Some((receiver, PhpType::Void)),
+                ExprKind::Null => Some((receiver, PhpType::Void, inverted)),
                 _ => None,
             }
         }
         _ => None,
+    }
+}
+
+impl Checker {
+    /// Applies the narrowing implied by a bare `assert(<guard>)` statement to the rest of the
+    /// scope, so `assert(is_string($x)); return $x;` type-checks against a `string` return.
+    ///
+    /// PHP's `assert()` is a developer contract rather than a runtime guarantee — it is compiled
+    /// out under `zend.assertions=-1`, and elephc's own `assert` builtin is documented as a no-op
+    /// under production settings — so this trusts the declaration rather than proving it. That is
+    /// the same posture PHPStan takes, and it is what the assertion is written to express. Only
+    /// the guard forms `guard_narrowing` already recognizes narrow; anything else is left alone.
+    ///
+    /// # Errors
+    /// Propagates inference errors raised while evaluating the guard condition.
+    pub(crate) fn apply_assert_narrowing(
+        &mut self,
+        expr: &Expr,
+        env: &mut TypeEnv,
+    ) -> Result<(), CompileError> {
+        let ExprKind::FunctionCall { name, args } = &expr.kind else {
+            return Ok(());
+        };
+        if !name.eq_ignore_ascii_case("assert") || args.is_empty() {
+            return Ok(());
+        }
+        if let Some(narrowing) = self.guard_narrowing(&args[0], env)? {
+            env.insert(narrowing.var, narrowing.then_ty);
+        }
+        Ok(())
     }
 }
 

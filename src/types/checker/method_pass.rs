@@ -137,11 +137,33 @@ impl Checker {
                         .map(|(name, _, _, _)| name.clone())
                         .collect();
                     let mut method_errors = Vec::new();
+                    let mut return_infos = Vec::new();
+                    let mut callable_return_sigs = Vec::new();
+                    let mut callable_array_return_sigs = Vec::new();
                     self.with_local_storage_context(method_ref_params, |checker| {
                         for s in &method.body {
+                            // Snapshot the env BEFORE `check_stmt` mutates it, then collect return
+                            // infos against that snapshot — the same interleave `resolution::
+                            // signature` uses for free functions. `check_stmt` leaks a diverging
+                            // guard's post-`if` complement into `method_env`; re-walking the same
+                            // `if` for return collection against that polluted env would narrow a
+                            // `return $v` inside `if ($v !== null)` against an already-`Void` `$v`.
+                            // The snapshot still carries prior statements' assignments.
+                            let pre_env = method_env.clone();
                             if let Err(error) = checker.check_stmt(s, &mut method_env) {
                                 method_errors.extend(error.flatten());
                             }
+                            checker.collect_return_infos(s, &pre_env, &mut return_infos);
+                            checker.collect_return_callable_sigs(
+                                s,
+                                &pre_env,
+                                &mut callable_return_sigs,
+                            );
+                            checker.collect_return_callable_array_sigs(
+                                s,
+                                &pre_env,
+                                &mut callable_array_return_sigs,
+                            );
                         }
                         Ok(())
                     })?;
@@ -149,7 +171,14 @@ impl Checker {
                     pass_errors.extend(method_errors);
 
                     if !method_has_errors {
-                        self.update_method_return_type(class, method, &method_env, &mut pass_errors);
+                        self.update_method_return_type(
+                            class,
+                            method,
+                            return_infos,
+                            callable_return_sigs,
+                            callable_array_return_sigs,
+                            &mut pass_errors,
+                        );
                     }
                     self.current_class = None;
                     self.current_method = None;
@@ -225,21 +254,14 @@ impl Checker {
         &mut self,
         class: &FlattenedClass,
         method: &ClassMethod,
-        method_env: &TypeEnv,
+        return_infos: Vec<crate::types::checker::functions::returns::ReturnInfo>,
+        callable_return_sigs: Vec<FunctionSig>,
+        callable_array_return_sigs: Vec<FunctionSig>,
         pass_errors: &mut Vec<CompileError>,
     ) {
-        let mut return_infos = Vec::new();
-        let mut callable_return_sigs = Vec::new();
-        let mut callable_array_return_sigs = Vec::new();
-        for stmt in &method.body {
-            self.collect_return_infos(stmt, method_env, &mut return_infos);
-            self.collect_return_callable_sigs(stmt, method_env, &mut callable_return_sigs);
-            self.collect_return_callable_array_sigs(
-                stmt,
-                method_env,
-                &mut callable_array_return_sigs,
-            );
-        }
+        // Return infos are collected by the caller interleaved with `check_stmt`, each against
+        // the pre-mutation env snapshot, so a diverging guard's leaked complement never reaches
+        // return typing (see the call site).
         let raw_inferred = if return_infos.is_empty() {
             None
         } else {

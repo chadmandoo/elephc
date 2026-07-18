@@ -93,6 +93,7 @@ impl Checker {
             StmtKind::Continue(levels) => self.check_loop_exit(stmt.span, "continue", *levels),
             StmtKind::ExprStmt(expr) => {
                 self.infer_type_with_assignment_effects(expr, env)?;
+                self.apply_assert_narrowing(expr, env)?;
                 Ok(())
             }
             StmtKind::FunctionDecl { .. } => Ok(()),

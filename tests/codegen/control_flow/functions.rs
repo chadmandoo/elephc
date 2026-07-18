@@ -167,3 +167,57 @@ fn test_property_throw_guard_narrowing() {
     );
     assert_eq!(out, "x");
 }
+
+/// Regression: the POSITIVE `!== null` guard narrows inside its own body.
+///
+/// This is the shape AIC actually writes — `if ($error !== null) { f($error); }` with a
+/// `?string $error` parameter — and before `guard_receiver_and_type` reported comparison
+/// polarity only the early-return form (`if ($x === null) { throw; }`) narrowed. Without it a
+/// `?string` never satisfied a `string` parameter inside its own null check, which is one of
+/// the shapes the any-member union compatibility arm existed to paper over. Covers the
+/// reversed-operand form and the double negation, whose polarity must XOR back to `=== null`.
+#[test]
+fn test_strict_not_null_guard_narrows_in_then_branch() {
+    let out = compile_and_run(
+        r#"<?php
+function alert(string $error): string { return "[$error]"; }
+function depth(int $d): string { return "<$d>"; }
+function createForm(string $title, ?string $error): string {
+    $out = $title;
+    if ($error !== null) { $out .= alert($error); }
+    return $out;
+}
+function rev(?string $e): string { return (null !== $e) ? alert($e) : 'none'; }
+function dbl(?int $d): string { if (!($d !== null)) { return 'nil'; } return depth($d); }
+function ebranch(?string $e): string { if ($e !== null) { return alert($e); } return 'empty'; }
+echo createForm('A', null), '|', createForm('B', 'boom'), '|';
+echo rev(null), '|', rev('x'), '|';
+echo dbl(null), '|', dbl(7), '|';
+echo ebranch(null), '|', ebranch('z');
+"#,
+    );
+    assert_eq!(out, "A|B[boom]|none|[x]|nil|<7>|empty|[z]");
+}
+
+/// Regression: a bare `assert(<guard>)` statement narrows the rest of the scope.
+///
+/// `hash_file()` returns `string|false`; AIC's AssetHasher asserts it to a string and returns
+/// it from a `: string` method. PHP compiles `assert()` out under `zend.assertions=-1`, so this
+/// trusts the developer's contract rather than proving it — the same posture PHPStan takes.
+#[test]
+fn test_assert_guard_narrows_following_statements() {
+    let out = compile_and_run(
+        r#"<?php
+function hashFile(string $algo, string $path): string {
+    $hexDigest = hash_file($algo, $path);
+    assert(is_string($hexDigest));
+    return $hexDigest;
+}
+$tmp = tempnam(sys_get_temp_dir(), 'ah');
+file_put_contents($tmp, 'hello');
+echo strlen(hashFile('sha256', $tmp)), ':', hashFile('md5', $tmp);
+unlink($tmp);
+"#,
+    );
+    assert_eq!(out, "64:5d41402abc4b2a76b9719d911017c592");
+}
