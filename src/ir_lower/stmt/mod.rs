@@ -914,9 +914,11 @@ fn lower_nested_array_assign(
         );
         release_persisted_string_operand(ctx, key, span);
         release_persisted_string_operand(ctx, value, span);
-        // Intermediate reads of a deeper chain return an owned box (fresh or
-        // retained); the borrowed `ArrayGet` parent of the two-level form is
-        // not an owning temporary and stays untouched.
+        // Parent subscript reads of Mixed/refcounted elements are owning
+        // temporaries (`ArrayGet`/`HashGet`/`RuntimeCall` return a +1 caller
+        // reference). The set helper mutates through the cell/object without
+        // consuming that reference, so release it here. Non-owning parents
+        // (plain locals, `$this`) are left to normal scope cleanup.
         if ctx.value_is_owning_temporary(parent) {
             crate::ir_lower::ownership::release_if_owned(ctx, parent, Some(span));
         }

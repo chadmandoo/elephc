@@ -1,7 +1,8 @@
 //! Purpose:
 //! Regression coverage for nested writes through an `Array(Mixed)` element
-//! (`$a[$i][$j] = ...`), the only nested-write shape the checker accepts for
-//! plain arrays (issue #529).
+//! (`$a[$i][$j] = ...`) and through an `ArrayAccess` object parent
+//! (`$objects[$i][$key] = ...`) — the nested-write shapes the checker accepts
+//! (issue #529).
 //!
 //! Called from:
 //! - `cargo test --test codegen_tests arrays::nested_mixed_write`.
@@ -15,8 +16,9 @@
 //!   replacement payload. When the slot WAS a boxed cell the write landed, but
 //!   the retained cell returned by the read was never released (leak).
 //! - The fix writes through the parent cell instead (three-operand
-//!   `Op::RuntimeCall` → `__rt_mixed_array_set`/`offsetSet`), which mutates the
-//!   aliased container for every slot representation.
+//!   `Op::RuntimeCall` → `__rt_mixed_array_set` for Mixed parents,
+//!   `offsetSet` for `ArrayAccess` object parents), which mutates the aliased
+//!   container for every slot representation.
 
 use crate::support::compile_and_run_with_heap_debug;
 
@@ -165,6 +167,52 @@ echo $r[1][1] . "\n";
 "#,
     );
     assert_eq!(out.stdout, "patched\n");
+    assert!(
+        out.stderr.contains("HEAP DEBUG: leak summary: clean"),
+        "expected clean heap, got: {}",
+        out.stderr
+    );
+}
+
+/// Object `ArrayAccess` parent: `$boxes[0]` is a concrete object, so the
+/// three-operand nested write must dispatch to `offsetSet` (not Mixed cell
+/// replacement) and persist into the stored instance.
+#[test]
+fn test_nested_write_array_access_object_parent() {
+    let out = compile_and_run_with_heap_debug(
+        r#"<?php
+class Box implements ArrayAccess {
+    private string $x = 'old';
+    private int $y = 1;
+    public function offsetExists(mixed $offset): bool {
+        return $offset === 'x' || $offset === 'y';
+    }
+    public function offsetGet(mixed $offset): mixed {
+        if ($offset === 'x') {
+            return $this->x;
+        }
+        if ($offset === 'y') {
+            return $this->y;
+        }
+        return null;
+    }
+    public function offsetSet(mixed $offset, mixed $value): void {
+        if ($offset === 'x') {
+            $this->x = (string)$value;
+        }
+        if ($offset === 'y') {
+            $this->y = (int)$value;
+        }
+    }
+    public function offsetUnset(mixed $offset): void {}
+}
+$boxes = [new Box()];
+$boxes[0]['x'] = 'patched';
+echo $boxes[0]['x'] . "\n";
+echo $boxes[0]['y'] . "\n";
+"#,
+    );
+    assert_eq!(out.stdout, "patched\n1\n");
     assert!(
         out.stderr.contains("HEAP DEBUG: leak summary: clean"),
         "expected clean heap, got: {}",
