@@ -9,7 +9,7 @@
 //! - Modifier and member parsing must preserve PHP visibility and abstract/static/final/readonly rules.
 
 use crate::errors::CompileError;
-use crate::lexer::Token;
+use crate::lexer::{SpannedToken, Token};
 use crate::names::{property_hook_get_method, property_hook_set_method};
 use crate::parser::ast::{
     ClassConst, ClassMethod, ClassProperty, EnumCaseDecl, Expr, ExprKind, PropertyHooks, Stmt,
@@ -27,7 +27,7 @@ use super::traits::parse_trait_use;
 /// Consumes the `interface` keyword and expects a name followed by optional `extends` parents
 /// and a body containing constants, properties, and method signatures.
 pub(in crate::parser::stmt) fn parse_interface_decl(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {
@@ -88,7 +88,7 @@ pub(in crate::parser::stmt) fn parse_interface_decl(
 /// Parses a `trait` declaration, consuming the `trait` keyword, name, and body.
 /// Trait bodies support `use` trait statements, properties, methods, and constants.
 pub(in crate::parser::stmt) fn parse_trait_decl(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {
@@ -127,7 +127,7 @@ pub(in crate::parser::stmt) fn parse_trait_decl(
 /// `owner_kind` is used only for error messages (e.g., "class", "trait").
 /// `enclosing_is_abstract` controls whether abstract property declarations are permitted.
 pub(in crate::parser::stmt) fn parse_class_like_body(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     owner_kind: &str,
     enclosing_is_abstract: bool,
@@ -154,7 +154,7 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
         if *pos >= tokens.len() || matches!(tokens[*pos].0, Token::RBrace | Token::Eof) {
             break;
         }
-        let member_span = tokens[*pos].1;
+        let member_span = tokens[*pos].1.span;
         if tokens[*pos].0 == Token::Use {
             if !member_attributes.is_empty() {
                 return Err(CompileError::new(
@@ -177,8 +177,24 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
             }
             *pos += 1; // consume 'case'
             let case_name = match tokens.get(*pos).map(|(t, _)| t) {
-                Some(Token::Identifier(name)) => {
-                    let name = name.clone();
+                Some(Token::Class) => {
+                    return Err(CompileError::new(
+                        member_span,
+                        "Cannot use 'class' as an enum case name",
+                    ))
+                }
+                Some(t)
+                    if crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .is_some() =>
+                {
+                    let name = crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .unwrap();
                     *pos += 1;
                     name
                 }
@@ -238,8 +254,18 @@ pub(in crate::parser::stmt) fn parse_class_like_body(
                         "Cannot use 'class' as a class constant name",
                     ))
                 }
-                Some(t) if crate::parser::keyword_name::bareword_name_from_token(t).is_some() => {
-                    let n = crate::parser::keyword_name::bareword_name_from_token(t).unwrap();
+                Some(t)
+                    if crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .is_some() =>
+                {
+                    let n = crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .unwrap();
                     *pos += 1;
                     n
                 }
@@ -445,7 +471,7 @@ fn append_promoted_properties(
 /// Returns `None` if the next token is a variable (no type given), or a `Some(TypeExpr)` otherwise.
 /// Does not consume the variable token itself; the caller handles that.
 fn parse_optional_property_type(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Option<TypeExpr>, CompileError> {
@@ -465,7 +491,7 @@ fn parse_optional_property_type(
 /// A token followed immediately by `=` is the untyped constant name, including
 /// semi-reserved names such as `string`.
 fn parse_optional_class_const_type(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Option<TypeExpr> {
@@ -498,7 +524,7 @@ pub(super) struct MemberModifiers {
 /// Scans tokens to collect member modifiers (visibility, static, readonly, abstract, final).
 /// Consumes any matching modifier tokens and returns a `MemberModifiers` struct.
 /// Default visibility is `Public` if no visibility modifier is present.
-fn parse_member_modifiers(tokens: &[(Token, Span)], pos: &mut usize) -> MemberModifiers {
+fn parse_member_modifiers(tokens: &[SpannedToken], pos: &mut usize) -> MemberModifiers {
     let mut visibility = Visibility::Public;
     let mut set_visibility = None;
     let mut is_static = false;
@@ -558,7 +584,7 @@ fn parse_member_modifiers(tokens: &[(Token, Span)], pos: &mut usize) -> MemberMo
 /// Consumes a `(set)` marker at `*pos` (an `LParen`, the `set` identifier, and an `RParen`),
 /// returning `true` when one was present. Leaves `*pos` unchanged otherwise. `set` is matched
 /// case-insensitively, mirroring PHP's case-insensitive modifier keywords.
-fn consume_set_marker(tokens: &[(Token, Span)], pos: &mut usize) -> bool {
+fn consume_set_marker(tokens: &[SpannedToken], pos: &mut usize) -> bool {
     let is_set_ident = matches!(
         tokens.get(*pos + 1).map(|(t, _)| t),
         Some(Token::Identifier(name)) if name.eq_ignore_ascii_case("set")
@@ -580,7 +606,7 @@ fn consume_set_marker(tokens: &[(Token, Span)], pos: &mut usize) -> bool {
 /// Modifier flags (visibility, static, abstract, final) are passed in and stored on the method;
 /// the function itself only consumes the `function` keyword and subsequent syntax.
 fn parse_class_like_method(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
     visibility: Visibility,
@@ -598,7 +624,9 @@ fn parse_class_like_method(
     // `parent`, `static`, `list`, `print`).
     let method_name = match tokens
         .get(*pos)
-        .and_then(|(t, _)| crate::parser::keyword_name::bareword_name_from_token(t))
+        .and_then(|(token, metadata)| {
+            crate::parser::keyword_name::bareword_name_from_token(token, metadata)
+        })
     {
         Some(n) => {
             *pos += 1;
@@ -682,7 +710,7 @@ fn parse_class_like_method(
 /// Interface bodies may only contain constants, hooked properties, and method signatures (no bodies).
 /// All properties are implicitly abstract and public; modifiers are validated but not stored as-is.
 fn parse_interface_body(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
 ) -> Result<(Vec<ClassProperty>, Vec<ClassMethod>, Vec<ClassConst>), CompileError> {
     let mut properties = Vec::new();
@@ -695,7 +723,7 @@ fn parse_interface_body(
         if *pos >= tokens.len() || matches!(tokens[*pos].0, Token::RBrace | Token::Eof) {
             break;
         }
-        let member_span = tokens[*pos].1;
+        let member_span = tokens[*pos].1.span;
         let modifiers = parse_member_modifiers(tokens, pos);
         if *pos >= tokens.len() {
             return Err(CompileError::new(
@@ -715,8 +743,18 @@ fn parse_interface_body(
                         "Cannot use 'class' as a class constant name",
                     ))
                 }
-                Some(t) if crate::parser::keyword_name::bareword_name_from_token(t).is_some() => {
-                    let n = crate::parser::keyword_name::bareword_name_from_token(t).unwrap();
+                Some(t)
+                    if crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .is_some() =>
+                {
+                    let n = crate::parser::keyword_name::bareword_name_from_token(
+                        t,
+                        &tokens[*pos].1,
+                    )
+                    .unwrap();
                     *pos += 1;
                     n
                 }
@@ -873,7 +911,7 @@ fn parse_interface_body(
 /// accessor receives it. Abstract/interface hooked properties (a hook ending in `;`) produce flags
 /// but no accessor methods.
 fn parse_property_hooks(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
     prop_name: &str,
@@ -894,7 +932,7 @@ fn parse_property_hooks(
     let mut hooks = PropertyHooks::none();
     let mut accessors: Vec<ClassMethod> = Vec::new();
     while *pos < tokens.len() && !matches!(tokens[*pos].0, Token::RBrace | Token::Eof) {
-        let hook_span = tokens[*pos].1;
+        let hook_span = tokens[*pos].1.span;
         let get_by_ref = if tokens[*pos].0 == Token::Ampersand {
             *pos += 1;
             true

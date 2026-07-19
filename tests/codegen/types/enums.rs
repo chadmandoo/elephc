@@ -867,6 +867,30 @@ fn test_backed_int_enum_from_mixed_untyped_param() {
     assert_eq!(out, "LowHighHigh");
 }
 
+/// Verifies keyword-named enum cases remain distinct by exact case, resolve only through their
+/// declared spelling, and expose that spelling through the PHP `->name` property.
+#[test]
+fn test_keyword_named_enum_cases_preserve_case_and_name() {
+    let out = compile_and_run(
+        "<?php
+        enum KeywordCase: string {
+            case Default = 'default';
+            case DEFAULT = 'upper-default';
+            case Match = 'match';
+            case MATCH = 'upper-match';
+            case Print = 'print';
+        }
+        foreach (KeywordCase::cases() as $case) {
+            echo $case->name, '=', $case->value, ';';
+        }
+        ",
+    );
+    assert_eq!(
+        out,
+        "Default=default;DEFAULT=upper-default;Match=match;MATCH=upper-match;Print=print;"
+    );
+}
+
 /// Regression for #449: a heterogeneous (`Mixed`) array mixing coercible and non-coercible
 /// values dispatches per element — integers and numeric strings resolve, a non-numeric
 /// string and an array each throw `TypeError` with PHP's runtime-type message.

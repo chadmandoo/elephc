@@ -9,7 +9,7 @@
 //! - Typed local syntax is a parser-level distinction that later passes use for declaration semantics.
 
 use crate::errors::CompileError;
-use crate::lexer::Token;
+use crate::lexer::{SpannedToken, Token};
 use crate::parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 use crate::parser::expr::parse_assignment_value_expr;
 use crate::span::Span;
@@ -20,7 +20,7 @@ use super::super::{expect_semicolon, expect_token};
 /// Handle ++$var; or --$var; as standalone statements. Also handles ++A::$x and --A::$x
 /// (prefix increment/decrement on static properties) by desugaring to a compound assignment.
 pub(in crate::parser::stmt) fn parse_incdec_stmt(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {
@@ -89,7 +89,7 @@ pub(in crate::parser::stmt) fn parse_incdec_stmt(
 /// Consumes the `global` keyword, then collects a comma-separated list of variable names
 /// until a semicolon. Returns a `StmtKind::Global` node.
 pub(in crate::parser::stmt) fn parse_global(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {
@@ -120,7 +120,7 @@ pub(in crate::parser::stmt) fn parse_global(
 /// `=` and an initializer expression; a missing initializer desugars to `= null` (PHP treats
 /// both forms identically). Returns a `StmtKind::StaticVar` node.
 pub(in crate::parser::stmt) fn parse_static_var(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {
@@ -146,9 +146,9 @@ pub(in crate::parser::stmt) fn parse_static_var(
 /// Returns true if the token sequence at `pos` looks like a typed local assignment:
 /// a type expression followed by a variable name. Performs a lookahead parse of the type
 /// expression only; does not consume any tokens.
-pub(in crate::parser::stmt) fn looks_like_typed_assign(tokens: &[(Token, Span)], pos: usize) -> bool {
+pub(in crate::parser::stmt) fn looks_like_typed_assign(tokens: &[SpannedToken], pos: usize) -> bool {
     let mut probe = pos;
-    match parse_type_expr(tokens, &mut probe, tokens[pos].1) {
+    match parse_type_expr(tokens, &mut probe, tokens[pos].1.span) {
         Ok(_) => matches!(tokens.get(probe).map(|(t, _)| t), Some(Token::Variable(_))),
         Err(_) => false,
     }
@@ -158,7 +158,7 @@ pub(in crate::parser::stmt) fn looks_like_typed_assign(tokens: &[(Token, Span)],
 /// Consumes a type expression, a variable name, the `=` token, and an initializer expression.
 /// Returns a `StmtKind::TypedAssign` node.
 pub(in crate::parser::stmt) fn parse_typed_assign(
-    tokens: &[(Token, Span)],
+    tokens: &[SpannedToken],
     pos: &mut usize,
     span: Span,
 ) -> Result<Stmt, CompileError> {

@@ -979,6 +979,43 @@ fn test_error_const_named_class_is_rejected() {
     );
 }
 
+/// Verifies `class` remains reserved for class-name fetching and cannot name an enum case.
+#[test]
+fn test_error_enum_case_named_class_is_rejected() {
+    expect_error(
+        "<?php enum E { case class; }",
+        "Cannot use 'class' as an enum case name",
+    );
+}
+
+/// Verifies enum case lookup stays case-sensitive even when the declared name is a keyword.
+#[test]
+fn test_error_keyword_enum_case_access_with_wrong_case() {
+    expect_error(
+        "<?php enum E { case Default; } echo E::default;",
+        "Undefined enum case: E::default",
+    );
+}
+
+/// Verifies class constant lookup stays case-sensitive instead of compensating for keyword
+/// token folding with a case-insensitive semantic fallback.
+#[test]
+fn test_error_keyword_class_constant_access_with_wrong_case() {
+    expect_error(
+        "<?php class C { const Match = 1; } echo C::match;",
+        "Undefined class constant: C::match",
+    );
+}
+
+/// Verifies builtin keyword-named constants also require their exact declared spelling.
+#[test]
+fn test_error_builtin_keyword_constant_access_with_wrong_case() {
+    expect_error(
+        "<?php echo RegexIterator::match;",
+        "Undefined class constant: RegexIterator::match",
+    );
+}
+
 /// Verifies that a non-name token (an operator) after `->` is still rejected even though
 /// semi-reserved keywords are now accepted as member names.
 #[test]
