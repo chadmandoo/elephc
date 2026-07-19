@@ -160,8 +160,8 @@ pub(super) fn parse_use_stmt(
 
 /// Parses an optional `as Alias` clause after a use item name.
 ///
-/// Returns `None` if no `as` keyword is present. Otherwise consumes `as` and the
-/// following identifier, returning the alias name.
+/// Returns `Ok(None)` if no `as` keyword is present. Otherwise consumes `as` and
+/// the following ordinary or soft-keyword name, returning an error when it is absent.
 fn parse_optional_alias(
     tokens: &[SpannedToken],
     pos: &mut usize,

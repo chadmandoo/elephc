@@ -59,7 +59,7 @@ pub(crate) fn emit_json_throw_error(emitter: &mut Emitter) {
     emitter.instruction("tst x9, x10");                                         // is the throw bit set?
     emitter.instruction("b.eq __rt_json_throw_error_return");                   // bail out when throwing is not requested
 
-    // Allocate a 32-byte JsonException payload (class_id + message ptr/len + code).
+    // Allocate a 56-byte JsonException payload (class_id + message, code, and previous slots).
     emitter.instruction("mov x0, #56");                                         // size = class_id + message + code + previous slots
     emitter.instruction("bl __rt_heap_alloc");                                  // allocate the JsonException payload
     emitter.instruction("mov x9, #6");                                          // heap kind 6 = object
