@@ -17,7 +17,7 @@ use crate::parser::{next_anonymous_class_name, register_anonymous_class};
 use crate::span::Span;
 
 use super::super::params::{parse_name_list, parse_type_expr};
-use super::super::{expect_semicolon, expect_token, parse_name};
+use super::super::{expect_semicolon, expect_token, parse_name, parse_unqualified_name};
 use super::body::parse_class_like_body;
 
 /// Parses a class declaration: `class Name extends Parent { implements Ifaces { body } }`.
@@ -33,21 +33,12 @@ pub(in crate::parser::stmt) fn parse_class_decl(
 ) -> Result<Stmt, CompileError> {
     *pos += 1; // consume 'class'
 
-    let name = match tokens.get(*pos) {
-        Some((Token::Identifier(n), _)) => {
-            let n = n.clone();
-            *pos += 1;
-            n
-        }
-        // `enum` is only a soft keyword — `class Enum {}` is legal PHP (vendor precedent:
-        // marc-mabe/php-enum). Preserve source spelling via token metadata.
-        Some((Token::Enum, meta)) => {
-            *pos += 1;
-            crate::parser::keyword_name::bareword_name_from_token(&Token::Enum, meta)
-                .unwrap_or_else(|| "enum".to_string())
-        }
-        _ => return Err(CompileError::new(span, "Expected class name after 'class'")),
-    };
+    let name = parse_unqualified_name(
+        tokens,
+        pos,
+        span,
+        "Expected class name after 'class'",
+    )?;
 
     let extends = if *pos < tokens.len() && tokens[*pos].0 == Token::Extends {
         *pos += 1;
@@ -195,14 +186,7 @@ pub(in crate::parser::stmt) fn parse_enum_decl(
 ) -> Result<Stmt, CompileError> {
     *pos += 1; // consume 'enum'
 
-    let name = match tokens.get(*pos).map(|(t, _)| t) {
-        Some(Token::Identifier(n)) => {
-            let n = n.clone();
-            *pos += 1;
-            n
-        }
-        _ => return Err(CompileError::new(span, "Expected enum name after 'enum'")),
-    };
+    let name = parse_unqualified_name(tokens, pos, span, "Expected enum name after 'enum'")?;
 
     let backing_type = if *pos < tokens.len() && tokens[*pos].0 == Token::Colon {
         *pos += 1;
@@ -263,19 +247,12 @@ pub(in crate::parser::stmt) fn parse_packed_decl(
         "Expected 'class' after 'packed'",
     )?;
 
-    let name = match tokens.get(*pos).map(|(t, _)| t) {
-        Some(Token::Identifier(n)) => {
-            let n = n.clone();
-            *pos += 1;
-            n
-        }
-        _ => {
-            return Err(CompileError::new(
-                span,
-                "Expected class name after 'packed class'",
-            ))
-        }
-    };
+    let name = parse_unqualified_name(
+        tokens,
+        pos,
+        span,
+        "Expected class name after 'packed class'",
+    )?;
 
     expect_token(
         tokens,

@@ -514,3 +514,32 @@ echo MAX > 0 ? 'ok' : 'no';
     );
     assert_eq!(out, "ok");
 }
+
+/// Imports multiple lexer-tokenized predefined constants in one `use const` declaration.
+#[test]
+fn test_use_const_multiple_lexer_tokenized_constants() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+use const PHP_INT_MAX as MAX, PHP_INT_MIN as MIN;
+echo MAX > 0 && MIN < 0 ? 'ok' : 'no';
+"#,
+    );
+    assert_eq!(out, "ok");
+}
+
+/// Verifies `Enum` is accepted as an import alias, type name, constructor, and scoped receiver.
+#[test]
+fn test_enum_soft_keyword_import_alias() {
+    let out = compile_and_run(
+        r#"<?php
+namespace Vendor { class Legacy {} }
+namespace App {
+    use Vendor\Legacy as Enum;
+    function imported_name(Enum $value): string { return Enum::class; }
+    echo imported_name(new Enum());
+}
+"#,
+    );
+    assert_eq!(out, "Vendor\\Legacy");
+}
