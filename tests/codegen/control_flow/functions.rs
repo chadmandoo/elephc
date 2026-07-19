@@ -221,3 +221,38 @@ unlink($tmp);
     );
     assert_eq!(out, "64:5d41402abc4b2a76b9719d911017c592");
 }
+
+/// Regression: a narrowed nullable object (`?T` → `T`) passed to a typed-object parameter is
+/// unboxed at the call boundary instead of handing the callee the boxed-Mixed cell pointer.
+///
+/// A nullable object has codegen repr `Mixed` (a boxed cell), so `$s` from `?SessionInterface`
+/// narrowed to `SessionInterface` and passed to a `SessionInterface` parameter previously arrived
+/// boxed and was dereferenced as an object → segfault. Covers the `!instanceof || !f($s)` and
+/// `instanceof && f($s)` short-circuit shapes (ward-admin CSRF guards) and the plain
+/// `=== null` early-return form. Byte-parity vs PHP 8.5.
+#[test]
+fn test_narrowed_nullable_object_arg_is_unboxed_for_typed_param() {
+    let out = compile_and_run(
+        r#"<?php
+interface I { public function id(): string; }
+final class R implements I { public function id(): string { return 'sid'; } }
+function tok(I $s, string $t): bool { return $s->id() === $t; }
+function orGuard(?I $s, string $t): string {
+    if (!$s instanceof I || !tok($s, $t)) { return 'no'; }
+    return 'ok:' . $s->id();
+}
+function andGuard(?I $s, string $t): string {
+    if ($s instanceof I && tok($s, $t)) { return 'ok:' . $s->id(); }
+    return 'no';
+}
+function nullGuard(?I $s): string {
+    if ($s === null) { return 'no'; }
+    return $s->id();
+}
+echo orGuard(null, 'sid'), '|', orGuard(new R(), 'sid'), '|', orGuard(new R(), 'x'), ';';
+echo andGuard(null, 'sid'), '|', andGuard(new R(), 'sid'), ';';
+echo nullGuard(null), '|', nullGuard(new R());
+"#,
+    );
+    assert_eq!(out, "no|ok:sid|no;no|ok:sid;no|sid");
+}

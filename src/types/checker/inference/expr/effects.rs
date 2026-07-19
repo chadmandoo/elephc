@@ -93,6 +93,21 @@ impl Checker {
                 self.infer_type_with_assignment_effects(left, env)?;
                 if matches!(op, BinOp::And | BinOp::Or) {
                     let mut right_env = env.clone();
+                    // Short-circuit narrowing: the right operand of `A && B` is only reached when
+                    // A is true, and the right operand of `A || B` only when A is false. When A is
+                    // a recognized type guard, narrow the right operand's env by the outcome that
+                    // reaches it — A's then-type for `&&`, A's else-type for `||`. This lets a call
+                    // inside the short-circuit see the guarded type, e.g. `$session` narrowed to
+                    // `SessionInterface` in `!$session instanceof SessionInterface || f($session)`
+                    // (ward-admin CSRF guards). Only the left operand's own binding is refined;
+                    // everything else keeps its type.
+                    if let Some(guard) = self.guard_narrowing(left, env)? {
+                        let narrowed = match op {
+                            BinOp::And => guard.then_ty,
+                            _ => guard.else_ty,
+                        };
+                        right_env.insert(guard.var, narrowed);
+                    }
                     self.infer_type_with_assignment_effects(right, &mut right_env)?;
                     Ok(PhpType::Bool)
                 } else {

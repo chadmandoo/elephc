@@ -5187,6 +5187,19 @@ fn materialize_direct_call_arg_for_param(
             emit_box_current_value_as_mixed(ctx.emitter, source_ty);
             Ok(PhpType::Mixed)
         }
+        // A boxed-`Mixed` source into an `Object` parameter must be unboxed to the raw object
+        // pointer. A nullable object `?T` has codegen repr `Mixed` (a boxed cell), so a `?T`
+        // value narrowed to `T` and passed to a `T` parameter arrives boxed; without this it was
+        // handed to the callee as the boxed-cell pointer and dereferenced as an object → segfault
+        // (the #650-family boundary: static type says Object, storage is a boxed Mixed). The
+        // narrowing that reaches this point (`!== null` / `instanceof` guard) guarantees the tag
+        // is Object; `__rt_mixed_unbox` returns the object pointer in the payload-lo register.
+        PhpType::Object(_)
+            if matches!(source_ty.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) =>
+        {
+            emit_mixed_unbox_to_object_pointer(ctx.emitter);
+            Ok(param_ty.codegen_repr())
+        }
         PhpType::Array(param_elem) if param_elem.codegen_repr() == PhpType::Mixed => {
             if let PhpType::Array(source_elem) = source_ty.codegen_repr() {
                 let source_elem = source_elem.codegen_repr();
@@ -5199,6 +5212,23 @@ fn materialize_direct_call_arg_for_param(
         }
         target_ty => Ok(target_ty),
     }
+}
+
+/// Unboxes the boxed `Mixed` cell in the result register to the raw object pointer it holds.
+///
+/// `__rt_mixed_unbox` returns the runtime tag in the int-result register and the payload low word
+/// (the object pointer for an object cell) in the target's first payload register (AArch64 `x1`,
+/// x86_64 `rdi`); this moves that pointer into the int-result register so the caller can pass it
+/// where a raw object handle is expected. Callers must have established (by narrowing) that the
+/// cell holds an object.
+fn emit_mixed_unbox_to_object_pointer(emitter: &mut crate::codegen_support::emit::Emitter) {
+    abi::emit_call_label(emitter, "__rt_mixed_unbox");
+    let result_reg = abi::int_result_reg(emitter);
+    let payload_lo_reg = match emitter.target.arch {
+        Arch::AArch64 => "x1",
+        Arch::X86_64 => "rdi",
+    };
+    emitter.instruction(&format!("mov {}, {}", result_reg, payload_lo_reg));
 }
 
 /// Converts the currently loaded result registers into the inline nullable-int shape.
