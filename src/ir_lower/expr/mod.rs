@@ -7784,13 +7784,17 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         "clearstatcache" | "closedir" | "exit" | "die" | "passthru" | "rewinddir"
         | "stream_bucket_append" | "stream_bucket_prepend" | "unset" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
+        // ob_* state mutators return plain PHP bools (false when no buffer is active);
+        // ob_implicit_flush always returns true like PHP 8.
+        "ob_start" | "ob_clean" | "ob_end_clean" | "ob_end_flush" | "ob_flush"
+        | "ob_implicit_flush" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
         | "filesize" | "fprintf" | "fpassthru" | "fputcsv" | "fseek" | "ftell" | "fwrite"
         | "crc32" | "get_resource_id" | "isset" | "linkinfo" | "mktime" | "gmmktime" | "sleep"
         | "__elephc_mktime_raw" | "__elephc_gmmktime_raw"
         | "pclose" | "spl_object_id" | "stream_select" | "stream_set_chunk_size"
         | "stream_set_read_buffer" | "stream_set_write_buffer"
-        | "__elephc_strtotime_raw" | "time"
+        | "__elephc_strtotime_raw" | "time" | "ob_get_level"
         | "umask" | "vfprintf" | "vprintf" | "realpath_cache_size" => {
             Some(PhpType::Int)
         }
@@ -7815,7 +7819,11 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
             key: Box::new(PhpType::Str),
             value: Box::new(PhpType::Mixed),
         }),
-        "getdate" | "localtime" | "hrtime" | "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
+        // ob_* boxed results: string|false getters, int|false length, and the
+        // status hash boxed as a Mixed associative array (like getdate/localtime).
+        "ob_get_contents" | "ob_get_clean" | "ob_get_flush" | "ob_get_length"
+        | "ob_get_status"
+        | "getdate" | "localtime" | "hrtime" | "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
         | "fgetc" | "fgets" | "fopen" | "fstat" | "hash_copy" | "hash_file" | "hash_init"
         | "gethostbyaddr" | "getprotobyname" | "getprotobynumber" | "getservbyname"
@@ -7840,6 +7848,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "get_declared_traits"
         | "glob"
         | "hash_algos"
+        | "ob_list_handlers"
         | "scandir"
         | "spl_classes"
         | "str_split"
@@ -13803,6 +13812,25 @@ fn release_owned_call_arg_temporaries(
     return_alias: &ReturnArgAlias,
     span: Span,
 ) {
+    release_owned_call_arg_temporaries_with_signature(
+        ctx,
+        args,
+        result,
+        return_alias,
+        None,
+        span,
+    );
+}
+
+/// Releases call arguments while accounting for fresh Mixed boxes created by the ABI.
+fn release_owned_call_arg_temporaries_with_signature(
+    ctx: &mut LoweringContext<'_, '_>,
+    args: &[crate::ir::ValueId],
+    result: Option<crate::ir::ValueId>,
+    return_alias: &ReturnArgAlias,
+    signature: Option<&FunctionSig>,
+    span: Span,
+) {
     for (parameter_index, value) in args.iter().enumerate() {
         let php_type = ctx.builder.value_php_type(*value);
         let lowered = LoweredValue {
@@ -13810,7 +13838,11 @@ fn release_owned_call_arg_temporaries(
             ir_type: value_ir_type(&php_type),
         };
         if ctx.value_is_owning_temporary(lowered) {
-            if return_alias.may_alias_parameter(parameter_index)
+            let independently_boxed = signature.is_some_and(|signature| {
+                call_arg_gets_independent_mixed_box(signature, parameter_index, &php_type)
+            });
+            if !independently_boxed
+                && return_alias.may_alias_parameter(parameter_index)
                 && call_result_may_alias_arg(ctx, *value, result)
             {
                 continue;
@@ -13818,6 +13850,32 @@ fn release_owned_call_arg_temporaries(
             crate::ir_lower::ownership::release_if_owned(ctx, lowered, Some(span));
         }
     }
+}
+
+/// Returns true when ABI materialization wraps a concrete argument in fresh Mixed storage.
+fn call_arg_gets_independent_mixed_box(
+    signature: &FunctionSig,
+    parameter_index: usize,
+    source_type: &PhpType,
+) -> bool {
+    if signature
+        .ref_params
+        .get(parameter_index)
+        .copied()
+        .unwrap_or(false)
+    {
+        return false;
+    }
+    signature
+        .params
+        .get(parameter_index)
+        .is_some_and(|(_, parameter_type)| {
+            parameter_type.codegen_repr() == PhpType::Mixed
+                && !matches!(
+                    source_type.codegen_repr(),
+                    PhpType::Mixed | PhpType::Union(_)
+                )
+        })
 }
 
 /// Returns true when a call result can legally be the same refcounted payload as an argument.
@@ -14158,14 +14216,24 @@ fn lower_static_method_call(
                 fallback_expr_type(expr)
             }
         });
-    ctx.emit_value(
+    let call = ctx.emit_value(
         Op::StaticMethodCall,
-        operands,
+        operands.clone(),
         Some(Immediate::Data(data)),
         result_type,
         Op::StaticMethodCall.default_effects(),
         Some(expr.span),
-    )
+    );
+    let return_alias = static_method_return_arg_alias(ctx, receiver, dispatch_method);
+    release_owned_call_arg_temporaries_with_signature(
+        ctx,
+        &operands,
+        Some(call.value),
+        &return_alias,
+        sig.as_ref(),
+        expr.span,
+    );
+    call
 }
 
 /// PHP coerces a numeric string to the integer backing value for an int-backed enum's
@@ -14320,6 +14388,64 @@ fn lower_static_method_descriptor_value_call(
         Op::ExprCall.default_effects(),
         Some(expr.span),
     ))
+}
+
+/// Returns the conservative return-to-argument alias summary for static dispatch.
+fn static_method_return_arg_alias(
+    ctx: &LoweringContext<'_, '_>,
+    receiver: &StaticReceiver,
+    method: &str,
+) -> ReturnArgAlias {
+    let Some(class_name) = static_receiver_class_name(ctx, receiver) else {
+        return ReturnArgAlias::Unknown;
+    };
+    let method_key = php_symbol_key(method);
+    let Some(class_info) = ctx.classes.get(&class_name) else {
+        return ReturnArgAlias::Unknown;
+    };
+    if !matches!(receiver, StaticReceiver::Static)
+        || class_info.is_final
+        || class_info.final_static_methods.contains(&method_key)
+    {
+        return class_static_method_return_arg_alias(ctx, &class_name, &method_key)
+            .unwrap_or(ReturnArgAlias::Unknown);
+    }
+
+    let mut summary: Option<ReturnArgAlias> = None;
+    for candidate in ctx.classes.keys() {
+        if !is_same_or_descendant_class(ctx, candidate, &class_name) {
+            continue;
+        }
+        let Some(alias) = class_static_method_return_arg_alias(ctx, candidate, &method_key) else {
+            continue;
+        };
+        summary = Some(match summary {
+            Some(current) => current.merge(&alias),
+            None => alias,
+        });
+    }
+    summary.unwrap_or(ReturnArgAlias::Unknown)
+}
+
+/// Resolves one class's static implementation and its source alias summary.
+fn class_static_method_return_arg_alias(
+    ctx: &LoweringContext<'_, '_>,
+    class_name: &str,
+    method_key: &str,
+) -> Option<ReturnArgAlias> {
+    let class_info = ctx.classes.get(class_name)?;
+    class_info.static_methods.get(method_key)?;
+    let impl_class = class_info
+        .static_method_impl_classes
+        .get(method_key)
+        .map(String::as_str)
+        .unwrap_or(class_name);
+    Some(
+        ctx.return_alias_summaries
+            .method(impl_class, method_key)
+            .cloned()
+            .unwrap_or(ReturnArgAlias::Unknown),
+    )
 }
 
 /// Returns the implementation signature used by the static method symbol that will run.

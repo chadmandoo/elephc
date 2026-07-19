@@ -2951,18 +2951,20 @@ fn pack_sprintf_arg_x86_64(
 fn emit_printf_write_result(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #1");                              // pass stdout as the destination file descriptor
-            ctx.emitter.syscall(4);
-            ctx.emitter.instruction("mov x0, x2");                              // return the formatted byte count as printf()'s integer result
+            ctx.emitter.instruction("stp x2, xzr, [sp, #-16]!");                // preserve the formatted byte count across the funnel call
+            ctx.emitter.instruction("mov x0, x1");                              // pass the formatted string pointer as the write buffer
+            ctx.emitter.instruction("mov x1, x2");                              // pass the formatted string length as the write byte count
+            abi::emit_call_label(ctx.emitter, "__rt_stdout_write");
+            ctx.emitter.instruction("ldr x0, [sp], #16");                       // return the formatted byte count as printf()'s integer result
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction("mov r8, rdx");                             // preserve the formatted byte count across syscall-clobbered registers
-            ctx.emitter.instruction("mov rsi, rax");                            // pass the formatted string pointer as the write buffer
-            ctx.emitter.instruction("mov rdx, r8");                             // pass the formatted string length as the write byte count
-            ctx.emitter.instruction("mov edi, 1");                              // pass stdout as the destination file descriptor
-            ctx.emitter.instruction("mov eax, 1");                              // select Linux x86_64 syscall 1 for write
-            ctx.emitter.instruction("syscall");                                 // write the formatted printf() result to stdout
-            ctx.emitter.instruction("mov rax, r8");                             // return the formatted byte count as printf()'s integer result
+            ctx.emitter.instruction("push rdx");                                // preserve the formatted byte count across the funnel call
+            ctx.emitter.instruction("push rdx");                                // keep the stack 16-byte aligned for the call
+            ctx.emitter.instruction("mov rdi, rax");                            // pass the formatted string pointer as the write buffer
+            ctx.emitter.instruction("mov rsi, rdx");                            // pass the formatted string length as the write byte count
+            abi::emit_call_label(ctx.emitter, "__rt_stdout_write");
+            ctx.emitter.instruction("pop rax");                                 // drop the alignment copy of the byte count
+            ctx.emitter.instruction("pop rax");                                 // return the formatted byte count as printf()'s integer result
         }
     }
 }

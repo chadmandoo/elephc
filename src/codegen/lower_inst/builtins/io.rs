@@ -313,8 +313,7 @@ pub(crate) fn lower_readline(ctx: &mut FunctionContext<'_>, inst: &Instruction) 
         load_string_to_result(ctx, prompt, "readline prompt")?;
         match ctx.emitter.target.arch {
             Arch::AArch64 => {
-                ctx.emitter.instruction("mov x0, #1");                          // pass stdout as the destination fd for the readline prompt
-                ctx.emitter.syscall(4);                                         // write the prompt before blocking on stdin
+                ctx.emitter.instruction("bl __rt_vd_write");                    // write x1/x2 through the ob/web-aware stdout sink (register-preserving)
             }
             Arch::X86_64 => {
                 ctx.emitter.instruction("mov rsi, rax");                        // pass the prompt pointer as write()'s buffer argument
@@ -3062,8 +3061,7 @@ fn emit_fpassthru_dispatch(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.instruction("ldr x9, [sp, #8]");                        // load the current copied byte total
             ctx.emitter.instruction("add x9, x9, x2");                          // add this chunk's byte length
             ctx.emitter.instruction("str x9, [sp, #8]");                        // store the updated copied byte total
-            ctx.emitter.instruction("mov x0, #1");                              // write wrapper bytes to stdout
-            ctx.emitter.syscall(4);
+            ctx.emitter.instruction("bl __rt_vd_write");                        // write x1/x2 through the ob/web-aware stdout sink (register-preserving)
             ctx.emitter.instruction("ldr x0, [sp, #16]");                       // reload the owned chunk pointer
             abi::emit_call_label(ctx.emitter, "__rt_decref_any");
             ctx.emitter.instruction(&format!("b {}", loop_label));              // continue draining the wrapper stream
@@ -3101,8 +3099,7 @@ fn emit_fpassthru_dispatch(ctx: &mut FunctionContext<'_>) {
             ctx.emitter.instruction("add r8, rdx");                             // add this chunk's byte length
             ctx.emitter.instruction("mov QWORD PTR [rsp + 8], r8");             // store the updated copied byte total
             ctx.emitter.instruction("mov rsi, rax");                            // pass the chunk pointer to write()
-            ctx.emitter.instruction("mov edi, 1");                              // write wrapper bytes to stdout
-            abi::emit_call_label(ctx.emitter, "write");
+            abi::emit_call_label(ctx.emitter, "__rt_vd_write");
             ctx.emitter.instruction("mov rax, QWORD PTR [rsp + 16]");           // reload the owned chunk pointer
             abi::emit_call_label(ctx.emitter, "__rt_decref_any");
             ctx.emitter.instruction(&format!("jmp {}", loop_label));            // continue draining the wrapper stream
