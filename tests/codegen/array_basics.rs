@@ -1116,6 +1116,60 @@ echo $sum;
     assert_eq!(out, "6");
 }
 
+/// Regression for #452: a non-literal in-loop assignment (`$x = get_int()`) is opaque
+/// evidence, but alongside a concrete sibling push (`2.0`) the array must still widen
+/// to mixed — otherwise the opaque site keeps a raw write after promotion and crashes.
+#[test]
+fn test_loop_grown_mixed_array_via_opaque_local() {
+    let out = compile_and_run(
+        r#"<?php
+function get_int(): int { return 1; }
+$vals = [];
+for ($i = 0; $i < 2; $i++) {
+    $x = get_int();
+    $vals[] = $x;
+    $vals[] = 2.0;
+}
+echo $vals[2];
+"#,
+    );
+    assert_eq!(out, "1");
+}
+
+/// Regression for #452: `array_push` is a growth site equivalent to `$a[] =` for the
+/// loop-widening prescan; omitting it left the same raw-into-mixed corruption.
+#[test]
+fn test_loop_grown_mixed_array_via_array_push() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) {
+    array_push($vals, 1);
+    array_push($vals, 2.0);
+}
+echo $vals[2];
+"#,
+    );
+    assert_eq!(out, "1");
+}
+
+/// Regression for #452: indexed writes that grow the array (`$a[count($a)] =`) share the
+/// same single-pass / back-edge representation bug as `$a[] =`.
+#[test]
+fn test_loop_grown_mixed_array_via_index_assign() {
+    let out = compile_and_run(
+        r#"<?php
+$vals = [];
+for ($i = 0; $i < 2; $i++) {
+    $vals[count($vals)] = 1;
+    $vals[count($vals)] = 2.0;
+}
+echo $vals[2];
+"#,
+    );
+    assert_eq!(out, "1");
+}
+
 /// EC-2 (#485): verifies `in_array()` accepts the optional 3rd `strict` argument
 /// and preserves exact membership for same-typed string and int arrays.
 #[test]

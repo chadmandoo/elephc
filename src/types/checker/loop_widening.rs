@@ -1,7 +1,7 @@
 //! Purpose:
-//! Pre-scans a loop body for `$array[] = value` pushes whose element types widen a
-//! local indexed array to `mixed` across the loop back-edge (issue #452), so both the
-//! type checker and EIR lowering can fix the array's element type to `mixed` *before*
+//! Pre-scans a loop body for local-array growth/write sites whose element types widen an
+//! indexed array to `mixed` across the loop back-edge (issue #452), so both the type
+//! checker and EIR lowering can fix the array's element type to `mixed` *before*
 //! processing the body once.
 //!
 //! Called from:
@@ -10,35 +10,35 @@
 //!   promotion before emitting the body).
 //!
 //! Key details:
-//! - Both passes are single-pass over loop bodies; without this scan an early push site
+//! - Both passes are single-pass over loop bodies; without this scan an early write site
 //!   is typed/lowered against the pre-promotion element type and writes an unboxed
 //!   scalar into mixed-element storage on iterations >= 2, corrupting the heap.
+//! - Sites covered: `$name[] =`, `$name[$i] =`, and `array_push($name, ...)`.
 //! - Only the widening-to-`mixed` transition is reported: it is the one that changes the
-//!   element representation (raw scalar slots vs boxed cells). Same-type pushes and
-//!   `never -> T` growth keep their current lowering.
-//! - Value types resolve syntactically (`infer_expr_type_syntactic`); variables resolve
-//!   through the caller-supplied lookup (loop-entry types, e.g. a `foreach` value
-//!   variable's real element type) joined with self-evident literal assignments found
-//!   inside the loop body (`$x = 1; $a[] = $x;`).
-//! - A pushed value with no usable evidence — a variable defined only inside the loop
-//!   from non-literal sources — contributes nothing to the join. Treating it as `mixed`
-//!   would spuriously widen same-typed rebuild loops (e.g. the synthesized
-//!   `MultipleIterator::detachIterator` body, whose `array<Iterator>` rebuild must stay
-//!   assignable to its typed property); genuinely-widening pushes of such values are
-//!   still promoted per-site by the existing lowering.
+//!   element representation (raw scalar slots vs boxed cells). Same-type growth and
+//!   `never -> T` keep their current lowering.
+//! - Concrete evidence comes from literals, casts, and loop-entry/literal-assigned
+//!   variables. Opaque sources (non-literal in-loop assignments, unknown call results,
+//!   property/array reads, …) do *not* force `mixed` alone — that would spuriously widen
+//!   same-typed rebuild loops such as `MultipleIterator::detachIterator`. Opaque evidence
+//!   *alongside* at least one concrete sibling type on the same array does force `mixed`,
+//!   because the back edge can promote storage while the opaque site still emits a raw write.
 
-use crate::parser::ast::{Expr, ExprKind, Stmt, StmtKind};
-use crate::types::checker::infer_expr_type_syntactic;
+use crate::parser::ast::{CastType, Expr, ExprKind, Stmt, StmtKind};
 use crate::types::PhpType;
 
+/// Evidence a growth/write site contributes to the element-type join.
+enum PushEvidence {
+    /// A self-evident concrete element type.
+    Known(PhpType),
+    /// A value whose static type is not safe to treat as concrete join evidence.
+    Opaque,
+}
+
 /// Returns the names of locals that currently hold a non-`mixed` indexed array and whose
-/// element type joins to `mixed` across the `$name[] = value` pushes found in the loop
-/// body (and the optional `for` update statement). `lookup` supplies the current type of
-/// a local at loop entry; names it does not know are skipped as push targets. A pushed
-/// value with no usable type evidence — a variable defined only inside the loop from a
-/// non-literal source, such as `$candidate = $this->iterators[$i]` — contributes nothing
-/// to the join instead of forcing `mixed`, so same-typed rebuild loops (common in
-/// compiler-synthesized SPL method bodies) are not spuriously widened.
+/// element type joins to `mixed` across the local-array growth/write sites found in the
+/// loop body (and the optional `for` update statement). `lookup` supplies the current type
+/// of a local at loop entry; names it does not know are skipped as targets.
 pub fn loop_grown_mixed_array_pushes(
     body: &[Stmt],
     update: Option<&Stmt>,
@@ -65,15 +65,26 @@ pub fn loop_grown_mixed_array_pushes(
         if *elem == PhpType::Mixed {
             continue;
         }
-        let joined = pushes
-            .iter()
-            .filter(|(n, _)| n == name)
-            .fold(*elem, |acc, (_, value)| {
-                match resolve_pushed_value_type(value, lookup, &literal_assignments) {
-                    Some(pushed) => join_pushed_element_type(acc, pushed),
-                    None => acc,
+        let mut joined = (*elem).clone();
+        let mut saw_known = false;
+        let mut saw_opaque = false;
+        for (_, value) in pushes.iter().filter(|(n, _)| n == name) {
+            match resolve_pushed_value_evidence(value, lookup, &literal_assignments) {
+                Some(PushEvidence::Known(pushed)) => {
+                    saw_known = true;
+                    joined = join_pushed_element_type(joined, pushed);
                 }
-            });
+                Some(PushEvidence::Opaque) => {
+                    saw_opaque = true;
+                }
+                None => {}
+            }
+        }
+        // Opaque sibling next to concrete evidence: the opaque site may still emit a raw
+        // write after a concrete site has promoted storage across the back edge.
+        if saw_opaque && saw_known {
+            joined = PhpType::Mixed;
+        }
         if joined == PhpType::Mixed {
             names.push(name.to_string());
         }
@@ -81,29 +92,33 @@ pub fn loop_grown_mixed_array_pushes(
     names
 }
 
-/// Resolves the static type a pushed value contributes to the element join, or `None`
-/// when there is no usable evidence. A pushed variable joins its loop-entry type with any
-/// self-evident literal assignments to it inside the loop body (`$x = 1; $a[] = $x;`);
-/// a variable that is only ever assigned from non-literal sources inside the loop yields
-/// no evidence — the loop-entry lookup is authoritative and unknown stays unknown, never
-/// `mixed`. Non-variable values use the shared syntactic inference as before.
-fn resolve_pushed_value_type(
+/// Resolves the evidence a pushed/written value contributes to the element join.
+fn resolve_pushed_value_evidence(
     value: &Expr,
     lookup: &dyn Fn(&str) -> Option<PhpType>,
     literal_assignments: &[(&str, Option<PhpType>)],
-) -> Option<PhpType> {
+) -> Option<PushEvidence> {
     match &value.kind {
         ExprKind::Variable(name) => {
             let entry = lookup(name);
             let body = joined_literal_assignment_type(name, literal_assignments);
             match (entry, body) {
-                (Some(a), Some(b)) => Some(join_pushed_element_type(a, b)),
-                (Some(a), None) => Some(a),
-                (None, Some(b)) => Some(b),
-                (None, None) => None,
+                (Some(a), Some(b)) => Some(PushEvidence::Known(join_pushed_element_type(a, b))),
+                (Some(a), None) => Some(PushEvidence::Known(a)),
+                (None, Some(b)) => Some(PushEvidence::Known(b)),
+                (None, None) => {
+                    if variable_has_body_assignment(name, literal_assignments) {
+                        Some(PushEvidence::Opaque)
+                    } else {
+                        None
+                    }
+                }
             }
         }
-        _ => Some(infer_expr_type_syntactic(value)),
+        _ => match precise_scalar_expr_type(value) {
+            Some(ty) => Some(PushEvidence::Known(ty)),
+            None => Some(PushEvidence::Opaque),
+        },
     }
 }
 
@@ -130,15 +145,41 @@ fn joined_literal_assignment_type(
     joined
 }
 
-/// Returns the self-evident scalar type of a literal expression, or `None` for anything
-/// that needs real inference (the shared syntactic helper defaults unknown constructs to
-/// `Int`, which is not usable as widening evidence).
-fn literal_expr_type(value: &Expr) -> Option<PhpType> {
+/// Returns true when `name` has any recorded in-loop assignment (literal or poison).
+fn variable_has_body_assignment(
+    name: &str,
+    literal_assignments: &[(&str, Option<PhpType>)],
+) -> bool {
+    literal_assignments.iter().any(|(candidate, _)| *candidate == name)
+}
+
+/// Returns a self-evident concrete scalar type, or `None` when the expression must be
+/// treated as opaque join evidence (the shared syntactic helper defaults too many unknown
+/// constructs to `Int` to be safe here).
+fn precise_scalar_expr_type(value: &Expr) -> Option<PhpType> {
     match &value.kind {
         ExprKind::IntLiteral(_) => Some(PhpType::Int),
         ExprKind::FloatLiteral(_) => Some(PhpType::Float),
         ExprKind::StringLiteral(_) => Some(PhpType::Str),
         ExprKind::BoolLiteral(_) => Some(PhpType::Bool),
+        ExprKind::Null => Some(PhpType::Void),
+        ExprKind::Cast { target, .. } => match target {
+            CastType::Int => Some(PhpType::Int),
+            CastType::Float => Some(PhpType::Float),
+            CastType::String => Some(PhpType::Str),
+            CastType::Bool => Some(PhpType::Bool),
+            _ => None,
+        },
+        ExprKind::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            let then_ty = precise_scalar_expr_type(then_expr)?;
+            let else_ty = precise_scalar_expr_type(else_expr)?;
+            Some(join_pushed_element_type(then_ty, else_ty))
+        }
+        ExprKind::ErrorSuppress(inner) => precise_scalar_expr_type(inner),
         _ => None,
     }
 }
@@ -158,7 +199,8 @@ fn collect_literal_assignments<'a>(stmts: &'a [Stmt], out: &mut Vec<(&'a str, Op
 fn collect_literal_assignment_stmt<'a>(stmt: &'a Stmt, out: &mut Vec<(&'a str, Option<PhpType>)>) {
     match &stmt.kind {
         StmtKind::Assign { name, value } | StmtKind::TypedAssign { name, value, .. } => {
-            out.push((name.as_str(), literal_expr_type(value)));
+            // Precise scalar RHS is positive evidence; anything else poisons the name.
+            out.push((name.as_str(), precise_scalar_expr_type(value)));
         }
         StmtKind::If {
             then_body,
@@ -240,7 +282,7 @@ fn collect_literal_assignment_stmt<'a>(stmt: &'a Stmt, out: &mut Vec<(&'a str, O
     }
 }
 
-/// Joins two indexed-array element types on the widening lattice used by push sites:
+/// Joins two indexed-array element types on the widening lattice used by growth sites:
 /// equal types stay, `never` adopts the other side, and any other combination widens to
 /// `mixed` (the representation-changing transition this scan exists to detect).
 fn join_pushed_element_type(a: PhpType, b: PhpType) -> PhpType {
@@ -255,20 +297,26 @@ fn join_pushed_element_type(a: PhpType, b: PhpType) -> PhpType {
     }
 }
 
-/// Collects `$name[] = value` pushes from every statement in `stmts`, recursively.
+/// Collects local-array growth/write sites from every statement in `stmts`, recursively.
 fn collect_array_pushes<'a>(stmts: &'a [Stmt], out: &mut Vec<(&'a str, &'a Expr)>) {
     for stmt in stmts {
         collect_array_push_stmt(stmt, out);
     }
 }
 
-/// Collects pushes from one statement, recursing into every nested statement body that
-/// executes as part of the enclosing loop iteration. Declaration bodies (functions,
-/// classes) do not execute in the loop and closures capture by value by default, so
-/// neither is descended into.
+/// Collects growth/write sites from one statement, recursing into every nested statement
+/// body that executes as part of the enclosing loop iteration. Declaration bodies
+/// (functions, classes) do not execute in the loop and closures capture by value by
+/// default, so neither is descended into.
 fn collect_array_push_stmt<'a>(stmt: &'a Stmt, out: &mut Vec<(&'a str, &'a Expr)>) {
     match &stmt.kind {
         StmtKind::ArrayPush { array, value } => out.push((array.as_str(), value)),
+        StmtKind::ArrayAssign { array, value, .. } => out.push((array.as_str(), value)),
+        StmtKind::ExprStmt(expr) => collect_growth_calls_from_expr(expr, out),
+        StmtKind::Assign { value, .. } | StmtKind::TypedAssign { value, .. } => {
+            collect_growth_calls_from_expr(value, out);
+        }
+        StmtKind::Echo(expr) => collect_growth_calls_from_expr(expr, out),
         StmtKind::If {
             then_body,
             elseif_clauses,
@@ -334,5 +382,94 @@ fn collect_array_push_stmt<'a>(stmt: &'a Stmt, out: &mut Vec<(&'a str, &'a Expr)
         }
         StmtKind::Synthetic(stmts) => collect_array_pushes(stmts, out),
         _ => {}
+    }
+}
+
+/// Collects `array_push($name, ...)` growth sites from an expression tree.
+fn collect_growth_calls_from_expr<'a>(expr: &'a Expr, out: &mut Vec<(&'a str, &'a Expr)>) {
+    match &expr.kind {
+        ExprKind::FunctionCall { name, args } if name.as_str().eq_ignore_ascii_case("array_push") => {
+            if let Some(array_name) = array_push_target_name(args) {
+                for arg in args.iter().skip(1) {
+                    out.push((array_name, call_arg_value(arg)));
+                }
+            }
+            for arg in args {
+                collect_growth_calls_from_expr(call_arg_value(arg), out);
+            }
+        }
+        ExprKind::FunctionCall { args, .. }
+        | ExprKind::MethodCall { args, .. }
+        | ExprKind::StaticMethodCall { args, .. }
+        | ExprKind::NullsafeMethodCall { args, .. }
+        | ExprKind::ExprCall { args, .. }
+        | ExprKind::ClosureCall { args, .. }
+        | ExprKind::NewObject { args, .. }
+        | ExprKind::NewDynamic { args, .. }
+        | ExprKind::NewDynamicObject { args, .. } => {
+            for arg in args {
+                collect_growth_calls_from_expr(call_arg_value(arg), out);
+            }
+        }
+        ExprKind::NamedArg { value, .. }
+        | ExprKind::Spread(value)
+        | ExprKind::ErrorSuppress(value)
+        | ExprKind::Print(value)
+        | ExprKind::Negate(value)
+        | ExprKind::BitNot(value)
+        | ExprKind::Not(value)
+        | ExprKind::Clone(value)
+        | ExprKind::Throw(value) => collect_growth_calls_from_expr(value, out),
+        ExprKind::Cast { expr: inner, .. } => collect_growth_calls_from_expr(inner, out),
+        ExprKind::BinaryOp { left, right, .. }
+        | ExprKind::NullCoalesce {
+            value: left,
+            default: right,
+        }
+        | ExprKind::ShortTernary {
+            value: left,
+            default: right,
+        } => {
+            collect_growth_calls_from_expr(left, out);
+            collect_growth_calls_from_expr(right, out);
+        }
+        ExprKind::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_growth_calls_from_expr(condition, out);
+            collect_growth_calls_from_expr(then_expr, out);
+            collect_growth_calls_from_expr(else_expr, out);
+        }
+        ExprKind::ArrayLiteral(elems) => {
+            for elem in elems {
+                collect_growth_calls_from_expr(elem, out);
+            }
+        }
+        ExprKind::ArrayLiteralAssoc(entries) => {
+            for (key, value) in entries {
+                collect_growth_calls_from_expr(key, out);
+                collect_growth_calls_from_expr(value, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Returns the local array name targeted by `array_push`'s first argument, if any.
+fn array_push_target_name<'a>(args: &'a [Expr]) -> Option<&'a str> {
+    let first = args.first()?;
+    match &call_arg_value(first).kind {
+        ExprKind::Variable(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+/// Unwraps a possible named argument to its value expression.
+fn call_arg_value(arg: &Expr) -> &Expr {
+    match &arg.kind {
+        ExprKind::NamedArg { value, .. } => value,
+        _ => arg,
     }
 }
