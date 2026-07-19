@@ -10,6 +10,8 @@
 //! - Capture values are loaded from the callable descriptor, not caller frame state.
 //! - Argument materialization supports indexed arrays, associative arrays, defaults, variadics,
 //!   by-reference marker cells, and target-aware ABI calls without depending on `Context`.
+//! - The trampoline preserves the callee-saved registers it scratches (issue #487), including on
+//!   the eval exception-boundary escape path, so allocator-parked caller values survive the invoke.
 
 use crate::codegen::callable_descriptor;
 use crate::codegen::callable_invoker_args::{
@@ -20,27 +22,54 @@ use crate::codegen::data_section::DataSection;
 use crate::codegen::emit::Emitter;
 use crate::codegen::platform::Arch;
 use crate::codegen::{abi, emit_box_current_value_as_mixed, emit_box_runtime_payload_as_mixed};
+use crate::codegen_support::try_handlers::{
+    TRY_HANDLER_DIAG_DEPTH_OFFSET, TRY_HANDLER_JMP_BUF_OFFSET, TRY_HANDLER_SLOT_SIZE,
+};
 use crate::parser::ast::{Expr, ExprKind};
 use crate::types::{FunctionSig, PhpType};
 
 const INVOKER_DESCRIPTOR_OFFSET: usize = 8;
 const INVOKER_CONCAT_OFFSET: usize = 16;
+/// Spill slot for the boxed argument container across the eval exception-boundary `setjmp`.
+const INVOKER_ARG_ARRAY_OFFSET: usize = 24;
 /// First frame slot of the callee-saved register save area (issue #487).
-const INVOKER_SAVED_REGS_OFFSET: usize = 24;
-/// Frame size covering the footer, descriptor/concat slots, and the callee-saved save
-/// area (8 registers × 8 bytes on AArch64).
-const INVOKER_FRAME_SIZE: usize = 96;
+/// Placed after descriptor/concat/arg-array so the eval boundary path can reuse those slots.
+const INVOKER_SAVED_REGS_OFFSET: usize = 32;
+/// AArch64 save-area width (8 callee-saved scratch regs × 8 bytes); sizes the shared frame.
+const INVOKER_CALLEE_SAVE_BYTES: usize = 8 * 8;
+/// Exclusive end of the callee-saved save area (`INVOKER_SAVED_REGS_OFFSET` … end-8).
+const INVOKER_SAVED_REGS_END: usize = INVOKER_SAVED_REGS_OFFSET + INVOKER_CALLEE_SAVE_BYTES;
+/// Frame size covering the footer plus every local slot through the save area.
+/// `frame_size - 16` must cover the last save offset; rounded up to 16 for ABI `sp` alignment.
+const INVOKER_FRAME_SIZE: usize = ((INVOKER_SAVED_REGS_END - 8) + 16 + 15) & !15;
+const INVOKER_BOUNDARY_FRAME_SIZE: usize = INVOKER_FRAME_SIZE + TRY_HANDLER_SLOT_SIZE + 16;
+const INVOKER_BOUNDARY_BASE_OFFSET: usize = INVOKER_BOUNDARY_FRAME_SIZE - 16;
 
-/// Callee-saved registers the invoker body uses as scratch. The invoker is an ordinary
-/// ABI function reached through `blr`/`call`, and the register allocator parks caller
-/// values in these registers across `callable_descriptor_invoke` sites, so the trampoline
-/// must preserve them like any compiled function prologue does (issue #487): without the
-/// save/restore, a value such as the loaded LHS of `$acc += $f()` read back as the
-/// trampoline's leftover scratch (the args-array length) after every indirect call.
+/// Callee-saved registers the invoker body uses as scratch. Must stay in sync with the
+/// hard-coded scratch choices in the indexed/assoc/mixed argument loaders and
+/// `abi::nested_call_reg` (`x19` / `r12`). The register allocator parks caller values in
+/// these registers across `callable_descriptor_invoke`, so the trampoline must preserve
+/// them like any compiled function prologue (issue #487).
 fn invoker_saved_callee_regs(arch: Arch) -> &'static [&'static str] {
     match arch {
         Arch::AArch64 => &["x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26"],
         Arch::X86_64 => &["r12", "rbx", "r13", "r14", "r15"],
+    }
+}
+
+/// Stores the caller's callee-saved registers the invoker body is about to scratch.
+fn emit_invoker_callee_saved_saves(emitter: &mut Emitter) {
+    for (index, reg) in invoker_saved_callee_regs(emitter.target.arch).iter().enumerate() {
+        abi::store_at_offset(emitter, reg, INVOKER_SAVED_REGS_OFFSET + index * 8);
+    }
+}
+
+/// Reloads the caller's callee-saved registers after the invoker body finishes.
+///
+/// The boxed Mixed result travels in the return registers, which these loads never touch.
+fn emit_invoker_callee_saved_restores(emitter: &mut Emitter) {
+    for (index, reg) in invoker_saved_callee_regs(emitter.target.arch).iter().enumerate() {
+        abi::load_at_offset(emitter, reg, INVOKER_SAVED_REGS_OFFSET + index * 8);
     }
 }
 
@@ -94,26 +123,68 @@ pub(super) fn emit_runtime_callable_invoker(
     data: &mut DataSection,
     invoker: &RuntimeCallableInvoker<'_>,
 ) {
+    emit_runtime_callable_invoker_impl(emitter, data, invoker, false);
+}
+
+/// Emits a descriptor invoker wrapper that catches native throws for eval callbacks.
+pub(crate) fn emit_runtime_callable_invoker_with_exception_boundary(
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+    invoker: &RuntimeCallableInvoker<'_>,
+) {
+    emit_runtime_callable_invoker_impl(emitter, data, invoker, true);
+}
+
+/// Emits a descriptor invoker wrapper, optionally bounded by an exception handler.
+fn emit_runtime_callable_invoker_impl(
+    emitter: &mut Emitter,
+    data: &mut DataSection,
+    invoker: &RuntimeCallableInvoker<'_>,
+    catch_native_throws: bool,
+) {
     let mut ctx = InvokerEmitContext::new(invoker.label);
     let call_reg = abi::nested_call_reg(emitter);
+    let escape_label = format!("{}_eval_escape", invoker.label);
+    let frame_size = if catch_native_throws {
+        INVOKER_BOUNDARY_FRAME_SIZE
+    } else {
+        INVOKER_FRAME_SIZE
+    };
 
     emitter.blank();
     emitter.comment(&format!("runtime callable invoker {}", invoker.label));
     emitter.raw(".align 2");
     emitter.label_global(invoker.label);
-    abi::emit_frame_prologue(emitter, INVOKER_FRAME_SIZE);
+    abi::emit_frame_prologue(emitter, frame_size);
     // Preserve the caller's callee-saved registers before the body scratches them: the
     // register allocator keeps values live across the indirect invoke in these registers
     // (issue #487).
-    for (index, reg) in invoker_saved_callee_regs(emitter.target.arch).iter().enumerate() {
-        abi::store_at_offset(emitter, reg, INVOKER_SAVED_REGS_OFFSET + index * 8);
-    }
+    emit_invoker_callee_saved_saves(emitter);
     abi::store_at_offset(
         emitter,
         abi::int_arg_reg_name(emitter.target, 0),
         INVOKER_DESCRIPTOR_OFFSET,
     );
-    emit_descriptor_entry_to_call_reg(emitter, call_reg);
+    if catch_native_throws {
+        abi::store_at_offset(
+            emitter,
+            abi::int_arg_reg_name(emitter.target, 1),
+            INVOKER_ARG_ARRAY_OFFSET,
+        );
+        emit_invoker_exception_boundary_push(
+            emitter,
+            INVOKER_BOUNDARY_BASE_OFFSET,
+            &escape_label,
+        );
+        abi::load_at_offset(
+            emitter,
+            abi::int_arg_reg_name(emitter.target, 1),
+            INVOKER_ARG_ARRAY_OFFSET,
+        );
+        emit_saved_descriptor_entry_to_call_reg(emitter, call_reg);
+    } else {
+        emit_descriptor_entry_to_call_reg(emitter, call_reg);
+    }
 
     let ret_ty = emit_loaded_array_callback_call(
         LoadedArraySource::ArgumentRegister(1),
@@ -126,26 +197,128 @@ pub(super) fn emit_runtime_callable_invoker(
         data,
     );
     emit_box_current_value_as_mixed(emitter, &ret_ty.codegen_repr());
-    // Restore the caller's callee-saved registers (the boxed result travels in the
-    // return registers, which the restore loads never touch).
-    for (index, reg) in invoker_saved_callee_regs(emitter.target.arch).iter().enumerate() {
-        abi::load_at_offset(emitter, reg, INVOKER_SAVED_REGS_OFFSET + index * 8);
+    if catch_native_throws {
+        emit_invoker_exception_boundary_pop(emitter, INVOKER_BOUNDARY_BASE_OFFSET);
     }
-    abi::emit_frame_restore(emitter, INVOKER_FRAME_SIZE);
+    // Restore before tearing down the frame (and on the escape path below): the boxed
+    // Mixed result travels in return registers, which these loads never touch.
+    emit_invoker_callee_saved_restores(emitter);
+    abi::emit_frame_restore(emitter, frame_size);
     abi::emit_return(emitter);
+    if catch_native_throws {
+        emitter.label(&escape_label);
+        emit_invoker_exception_boundary_pop(emitter, INVOKER_BOUNDARY_BASE_OFFSET);
+        emit_null_invoker_result(emitter);
+        emit_invoker_callee_saved_restores(emitter);
+        abi::emit_frame_restore(emitter, frame_size);
+        abi::emit_return(emitter);
+    }
 }
 
 /// Loads the descriptor entry slot from the first invoker argument into `call_reg`.
 fn emit_descriptor_entry_to_call_reg(emitter: &mut Emitter, call_reg: &str) {
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("mov {}, x0", call_reg)); // keep descriptor while loading its native entry
+            emitter.instruction(&format!("mov {}, x0", call_reg));              // keep descriptor while loading its native entry
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("mov {}, rdi", call_reg)); // keep descriptor while loading its native entry
+            emitter.instruction(&format!("mov {}, rdi", call_reg));             // keep descriptor while loading its native entry
         }
     }
     callable_descriptor::emit_load_entry_from_descriptor(emitter, call_reg, call_reg);
+}
+
+/// Loads the saved descriptor entry slot into `call_reg` after a `setjmp` boundary.
+fn emit_saved_descriptor_entry_to_call_reg(emitter: &mut Emitter, call_reg: &str) {
+    abi::load_at_offset(emitter, call_reg, INVOKER_DESCRIPTOR_OFFSET);
+    callable_descriptor::emit_load_entry_from_descriptor(emitter, call_reg, call_reg);
+}
+
+/// Pushes a native exception boundary around an eval-owned descriptor invoker call.
+fn emit_invoker_exception_boundary_push(
+    emitter: &mut Emitter,
+    handler_base: usize,
+    escape_label: &str,
+) {
+    emitter.comment("push eval callable exception boundary");
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_symbol_to_reg(emitter, "x10", "_exc_handler_top", 0);
+            emitter.instruction(&format!("stur x10, [x29, #-{}]", handler_base)); // save the previous native exception-handler head
+            abi::emit_load_symbol_to_reg(emitter, "x10", "_exc_call_frame_top", 0);
+            emitter.instruction(&format!("stur x10, [x29, #-{}]", handler_base - 8)); // preserve the caller activation frame across callable unwinding
+            abi::emit_load_symbol_to_reg(emitter, "x10", "_rt_diag_suppression", 0);
+            emitter.instruction(&format!(
+                "stur x10, [x29, #-{}]",
+                handler_base - TRY_HANDLER_DIAG_DEPTH_OFFSET
+            )); // save diagnostic suppression depth for restoration
+            emitter.instruction(&format!("sub x10, x29, #{}", handler_base)); // compute the boundary handler record address
+            abi::emit_store_reg_to_symbol(emitter, "x10", "_exc_handler_top", 0);
+            emitter.instruction(&format!(
+                "sub x0, x29, #{}",
+                handler_base - TRY_HANDLER_JMP_BUF_OFFSET
+            )); // pass the boundary jmp_buf to setjmp
+            emitter.bl_c("setjmp"); // snapshot the bridge stack before entering the callable
+            emitter.instruction(&format!("cbnz x0, {}", escape_label)); // non-zero setjmp result means a callable Throwable escaped
+        }
+        Arch::X86_64 => {
+            abi::emit_load_symbol_to_reg(emitter, "r10", "_exc_handler_top", 0);
+            emitter.instruction(&format!("mov QWORD PTR [rbp - {}], r10", handler_base)); // save the previous native exception-handler head
+            abi::emit_load_symbol_to_reg(emitter, "r10", "_exc_call_frame_top", 0);
+            emitter.instruction(&format!("mov QWORD PTR [rbp - {}], r10", handler_base - 8)); // preserve the caller activation frame across callable unwinding
+            abi::emit_load_symbol_to_reg(emitter, "r10", "_rt_diag_suppression", 0);
+            emitter.instruction(&format!(
+                "mov QWORD PTR [rbp - {}], r10",
+                handler_base - TRY_HANDLER_DIAG_DEPTH_OFFSET
+            )); // save diagnostic suppression depth for restoration
+            emitter.instruction(&format!("lea r10, [rbp - {}]", handler_base)); // compute the boundary handler record address
+            abi::emit_store_reg_to_symbol(emitter, "r10", "_exc_handler_top", 0);
+            emitter.instruction(&format!(
+                "lea rdi, [rbp - {}]",
+                handler_base - TRY_HANDLER_JMP_BUF_OFFSET
+            )); // pass the boundary jmp_buf to setjmp
+            emitter.bl_c("setjmp"); // snapshot the bridge stack before entering the callable
+            emitter.instruction("test eax, eax"); // did control arrive through longjmp?
+            emitter.instruction(&format!("jne {}", escape_label)); // non-zero setjmp result means a callable Throwable escaped
+        }
+    }
+}
+
+/// Pops the native exception boundary around an eval-owned descriptor invoker call.
+fn emit_invoker_exception_boundary_pop(emitter: &mut Emitter, handler_base: usize) {
+    emitter.comment("pop eval callable exception boundary");
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("ldur x10, [x29, #-{}]", handler_base)); // reload the previous native exception-handler head
+            abi::emit_store_reg_to_symbol(emitter, "x10", "_exc_handler_top", 0);
+            emitter.instruction(&format!(
+                "ldur x10, [x29, #-{}]",
+                handler_base - TRY_HANDLER_DIAG_DEPTH_OFFSET
+            )); // reload the saved diagnostic suppression depth
+            abi::emit_store_reg_to_symbol(emitter, "x10", "_rt_diag_suppression", 0);
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("mov r10, QWORD PTR [rbp - {}]", handler_base)); // reload the previous native exception-handler head
+            abi::emit_store_reg_to_symbol(emitter, "r10", "_exc_handler_top", 0);
+            emitter.instruction(&format!(
+                "mov r10, QWORD PTR [rbp - {}]",
+                handler_base - TRY_HANDLER_DIAG_DEPTH_OFFSET
+            )); // reload the saved diagnostic suppression depth
+            abi::emit_store_reg_to_symbol(emitter, "r10", "_rt_diag_suppression", 0);
+        }
+    }
+}
+
+/// Leaves a null boxed-Mixed result for Rust to translate into a pending throwable.
+fn emit_null_invoker_result(emitter: &mut Emitter) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction("mov x0, xzr"); // return null so magician takes the pending Throwable
+        }
+        Arch::X86_64 => {
+            emitter.instruction("xor eax, eax"); // return null so magician takes the pending Throwable
+        }
+    }
 }
 
 /// Source location for a callback argument array already materialized by caller code.
@@ -451,7 +624,13 @@ fn emit_loaded_indexed_array_callback_call(
         abi::emit_jump(emitter, &loop_label);
         emitter.label(&loop_done_label);
         emitter.label(&done_label);
-        arg_types.push(PhpType::Array(Box::new(variadic_elem_ty)));
+        let variadic_ty = PhpType::Array(Box::new(variadic_elem_ty));
+        if variadic_param_is_by_ref(sig) {
+            wrap_pushed_value_in_ref_cell(emitter, &variadic_ty);
+            arg_types.push(PhpType::Int);
+        } else {
+            arg_types.push(variadic_ty);
+        }
     }
 
     push_descriptor_captures_as_hidden_args(captures, emitter, &mut arg_types);
@@ -556,7 +735,12 @@ fn emit_loaded_assoc_array_callback_call(
             ctx,
             data,
         );
-        arg_types.push(variadic_ty);
+        if variadic_param_is_by_ref(sig) {
+            wrap_pushed_value_in_ref_cell(emitter, &variadic_ty);
+            arg_types.push(PhpType::Int);
+        } else {
+            arg_types.push(variadic_ty);
+        }
     }
 
     push_descriptor_captures_as_hidden_args(captures, emitter, &mut arg_types);
@@ -579,6 +763,16 @@ fn callback_arg_target_ty<'a>(
     } else {
         None
     }
+}
+
+/// Returns whether the visible variadic parameter is declared by-reference.
+fn variadic_param_is_by_ref(sig: &FunctionSig) -> bool {
+    sig.variadic.is_some()
+        && sig
+            .ref_params
+            .get(sig.params.len().saturating_sub(1))
+            .copied()
+            .unwrap_or(false)
 }
 
 /// Returns the declared target PHP type for a parameter.
@@ -622,11 +816,11 @@ fn emit_indexed_required_arg_count_check(
 fn emit_compare_len_ge(emitter: &mut Emitter, len_reg: &str, value: usize, label: &str) {
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("cmp {}, #{}", len_reg, value)); // compare runtime argument count against required bound
+            emitter.instruction(&format!("cmp {}, #{}", len_reg, value));       // compare runtime argument count against required bound
             emitter.instruction(&format!("b.ge {}", label));
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("cmp {}, {}", len_reg, value)); // compare runtime argument count against required bound
+            emitter.instruction(&format!("cmp {}, {}", len_reg, value));        // compare runtime argument count against required bound
             emitter.instruction(&format!("jge {}", label));
         }
     }
@@ -636,11 +830,11 @@ fn emit_compare_len_ge(emitter: &mut Emitter, len_reg: &str, value: usize, label
 fn emit_compare_len_gt(emitter: &mut Emitter, len_reg: &str, value: usize, label: &str) {
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("cmp {}, #{}", len_reg, value)); // compare runtime argument count against fixed prefix length
+            emitter.instruction(&format!("cmp {}, #{}", len_reg, value));       // compare runtime argument count against fixed prefix length
             emitter.instruction(&format!("b.gt {}", label));
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("cmp {}, {}", len_reg, value)); // compare runtime argument count against fixed prefix length
+            emitter.instruction(&format!("cmp {}, {}", len_reg, value));        // compare runtime argument count against fixed prefix length
             emitter.instruction(&format!("jg {}", label));
         }
     }
@@ -650,11 +844,11 @@ fn emit_compare_len_gt(emitter: &mut Emitter, len_reg: &str, value: usize, label
 fn emit_compare_reg_ge(emitter: &mut Emitter, left_reg: &str, right_reg: &str, label: &str) {
     match emitter.target.arch {
         Arch::AArch64 => {
-            emitter.instruction(&format!("cmp {}, {}", left_reg, right_reg)); // compare variadic loop index against tail count
+            emitter.instruction(&format!("cmp {}, {}", left_reg, right_reg));   // compare variadic loop index against tail count
             emitter.instruction(&format!("b.ge {}", label));
         }
         Arch::X86_64 => {
-            emitter.instruction(&format!("cmp {}, {}", left_reg, right_reg)); // compare variadic loop index against tail count
+            emitter.instruction(&format!("cmp {}, {}", left_reg, right_reg));   // compare variadic loop index against tail count
             emitter.instruction(&format!("jge {}", label));
         }
     }
@@ -1048,11 +1242,26 @@ fn push_current_result_ref_arg_address(
     PhpType::Int
 }
 
+/// Wraps the value currently on top of the invoker stack in a heap reference cell.
+fn wrap_pushed_value_in_ref_cell(emitter: &mut Emitter, val_ty: &PhpType) {
+    abi::emit_load_int_immediate(emitter, abi::int_result_reg(emitter), 16);
+    abi::emit_call_label(emitter, "__rt_heap_alloc");
+    let cell_reg = abi::symbol_scratch_reg(emitter);
+    emitter.instruction(&format!(
+        "mov {}, {}",
+        cell_reg,
+        abi::int_result_reg(emitter)
+    ));
+    store_pushed_value_to_ref_cell(emitter, cell_reg, val_ty);
+    abi::emit_push_reg(emitter, cell_reg);
+}
+
 /// Stores a just-pushed value into a heap reference cell.
 fn store_pushed_value_to_ref_cell(emitter: &mut Emitter, cell_reg: &str, val_ty: &PhpType) {
     let temp_reg = abi::temp_int_reg(emitter.target);
     match val_ty.codegen_repr() {
         PhpType::Bool
+        | PhpType::False
         | PhpType::Int
         | PhpType::Callable
         | PhpType::Pointer(_)
