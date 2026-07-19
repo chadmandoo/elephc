@@ -30,6 +30,7 @@ mod http_response;
 mod php_input;
 mod stdout_write;
 mod ob_buffer;
+mod ob_handler;
 mod ob_status;
 mod phar_read;
 mod phar_write;
@@ -257,8 +258,12 @@ pub(crate) use print_r_walk::{
 };
 pub(crate) use print_r_buffer::{emit_pr_append, emit_pr_finish, emit_pr_write};
 pub(crate) use ob_buffer::{
-    emit_ob_append, emit_ob_clean, emit_ob_contents, emit_ob_end_clean, emit_ob_end_flush,
-    emit_ob_flush, emit_ob_flush_all, emit_ob_queries, emit_ob_start,
+    emit_ob_append, emit_ob_contents, emit_ob_flush_all, emit_ob_gated_ops, emit_ob_get_pop_ops,
+    emit_ob_pop_free, emit_ob_process_and_write, emit_ob_queries, emit_ob_start,
+};
+pub(crate) use ob_handler::{
+    emit_ob_apply_handler, emit_ob_eval_trampoline, emit_ob_invoke_descriptor,
+    emit_ob_notice_named, emit_ob_result_to_bytes,
 };
 pub(crate) use ob_status::{emit_ob_get_status, emit_ob_list_handlers, emit_ob_status_entry};
 pub(crate) use var_dump_walk::{

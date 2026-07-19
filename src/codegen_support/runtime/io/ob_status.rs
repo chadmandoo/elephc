@@ -23,12 +23,6 @@
 use crate::codegen_support::abi;
 use crate::codegen_support::{emit::Emitter, platform::Arch};
 
-/// PHP's `PHP_OUTPUT_HANDLER_STDFLAGS` value reported in the status `flags` field.
-const OB_STDFLAGS: i64 = 112;
-
-/// Byte length of the "default output handler" name constant.
-const OB_HANDLER_NAME_LEN: i64 = 22;
-
 /// The `ob_get_status()` entry keys with their symbol names and byte lengths.
 #[cfg(test)]
 const OB_STATUS_KEYS: [(&str, i64); 7] = [
@@ -63,9 +57,12 @@ pub fn emit_ob_status_entry(emitter: &mut Emitter) {
     emitter.instruction("mov x1, #7");                                          // value type = mixed (int and string values)
     emitter.instruction("bl __rt_hash_new");                                    // allocate the status hash
     emitter.instruction("str x0, [sp, #8]");                                    // save the hash pointer
-    // -- "name" → persisted "default output handler" string --
-    abi::emit_symbol_address(emitter, "x1", "_ob_handler_name");                // load the default handler-name constant address
-    emitter.instruction(&format!("mov x2, #{}", OB_HANDLER_NAME_LEN));          // handler-name byte length
+    // -- "name" → persisted copy of the slot's handler display name --
+    emitter.instruction("ldr x9, [sp, #0]");                                    // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "x10", "_ob_name_ptrs");                  // materialize the handler-name pointer array
+    emitter.instruction("ldr x1, [x10, x9, lsl #3]");                           // load the slot's display-name pointer
+    abi::emit_symbol_address(emitter, "x10", "_ob_name_lens");                  // materialize the handler-name length array
+    emitter.instruction("ldr x2, [x10, x9, lsl #3]");                           // load the slot's display-name length
     emitter.instruction("bl __rt_str_persist");                                 // copy the name to the heap → x1=ptr, x2=len
     emitter.instruction("mov x3, x1");                                          // value_lo = heap string pointer
     emitter.instruction("mov x4, x2");                                          // value_hi = string length
@@ -75,8 +72,12 @@ pub fn emit_ob_status_entry(emitter: &mut Emitter) {
     emitter.instruction("ldr x0, [sp, #8]");                                    // reload the hash pointer
     emitter.instruction("bl __rt_hash_set");                                    // insert "name" → handler-name string
     emitter.instruction("str x0, [sp, #8]");                                    // save the (possibly reallocated) hash pointer
-    // -- "type" → 0 (internal handler) --
-    emitter.instruction("mov x3, #0");                                          // value_lo = handler type 0
+    // -- "type" → 1 for user handlers, 0 for the default handler --
+    emitter.instruction("ldr x9, [sp, #0]");                                    // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "x10", "_ob_handler_stubs");              // materialize the handler-stub slot array
+    emitter.instruction("ldr x3, [x10, x9, lsl #3]");                           // load the slot's handler stub
+    emitter.instruction("cmp x3, #0");                                          // is a user handler installed?
+    emitter.instruction("cset x3, ne");                                         // value_lo = 1 (user) or 0 (internal)
     emitter.instruction("mov x4, #0");                                          // value_hi = 0
     emitter.instruction("mov x5, #0");                                          // value tag = int
     abi::emit_symbol_address(emitter, "x1", "_ob_k_type");                      // key = "type"
@@ -84,8 +85,21 @@ pub fn emit_ob_status_entry(emitter: &mut Emitter) {
     emitter.instruction("ldr x0, [sp, #8]");                                    // reload the hash pointer
     emitter.instruction("bl __rt_hash_set");                                    // insert "type" → 0
     emitter.instruction("str x0, [sp, #8]");                                    // save the (possibly reallocated) hash pointer
-    // -- "flags" → PHP_OUTPUT_HANDLER_STDFLAGS --
-    emitter.instruction(&format!("mov x3, #{}", OB_STDFLAGS));                  // value_lo = the standard handler flags
+    // -- "flags" → stored flags | user bit | PHP started/processed bits --
+    emitter.instruction("ldr x9, [sp, #0]");                                    // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "x10", "_ob_flags");                      // materialize the flags slot array
+    emitter.instruction("ldr x3, [x10, x9, lsl #3]");                           // load the slot's stored flags word
+    abi::emit_symbol_address(emitter, "x10", "_ob_handler_stubs");              // materialize the handler-stub slot array
+    emitter.instruction("ldr x11, [x10, x9, lsl #3]");                          // load the slot's handler stub
+    emitter.instruction("cmp x11, #0");                                         // is a user handler installed?
+    emitter.instruction("cset x11, ne");                                        // user handlers add PHP's user-handler bit
+    emitter.instruction("orr x3, x3, x11");                                     // fold the user-handler bit into the flags
+    abi::emit_symbol_address(emitter, "x10", "_ob_started");                    // materialize the started-flag slot array
+    emitter.instruction("ldr x11, [x10, x9, lsl #3]");                          // load the slot's started flag
+    emitter.instruction("cbz x11, __rt_ob_status_flags_ready");                 // an unstarted handler keeps the base flags
+    emitter.instruction("mov x11, #0x5000");                                    // PHP's STARTED (0x1000) | PROCESSED (0x4000) bits
+    emitter.instruction("orr x3, x3, x11");                                     // fold the started/processed bits into the flags
+    emitter.label("__rt_ob_status_flags_ready");
     emitter.instruction("mov x4, #0");                                          // value_hi = 0
     emitter.instruction("mov x5, #0");                                          // value tag = int
     abi::emit_symbol_address(emitter, "x1", "_ob_k_flags");                     // key = "flags"
@@ -102,8 +116,10 @@ pub fn emit_ob_status_entry(emitter: &mut Emitter) {
     emitter.instruction("ldr x0, [sp, #8]");                                    // reload the hash pointer
     emitter.instruction("bl __rt_hash_set");                                    // insert "level" → index
     emitter.instruction("str x0, [sp, #8]");                                    // save the (possibly reallocated) hash pointer
-    // -- "chunk_size" → 0 (chunked flushing unsupported) --
-    emitter.instruction("mov x3, #0");                                          // value_lo = chunk size 0
+    // -- "chunk_size" → the slot's stored chunk size --
+    emitter.instruction("ldr x9, [sp, #0]");                                    // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "x10", "_ob_chunk_sizes");                // materialize the chunk-size slot array
+    emitter.instruction("ldr x3, [x10, x9, lsl #3]");                           // value_lo = the stored chunk size
     emitter.instruction("mov x4, #0");                                          // value_hi = 0
     emitter.instruction("mov x5, #0");                                          // value tag = int
     abi::emit_symbol_address(emitter, "x1", "_ob_k_chunk_size");                // key = "chunk_size"
@@ -153,9 +169,12 @@ fn emit_ob_status_entry_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rsi, 7");                                          // value type = mixed (int and string values)
     emitter.instruction("call __rt_hash_new");                                  // allocate the status hash
     emitter.instruction("mov QWORD PTR [rbp - 16], rax");                       // save the hash pointer
-    // -- "name" → persisted "default output handler" string --
-    abi::emit_symbol_address(emitter, "rax", "_ob_handler_name");               // load the default handler-name constant address
-    emitter.instruction(&format!("mov rdx, {}", OB_HANDLER_NAME_LEN));          // handler-name byte length
+    // -- "name" → persisted copy of the slot's handler display name --
+    emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "r11", "_ob_name_ptrs");                  // materialize the handler-name pointer array
+    emitter.instruction("mov rax, QWORD PTR [r11 + r10*8]");                    // load the slot's display-name pointer
+    abi::emit_symbol_address(emitter, "r11", "_ob_name_lens");                  // materialize the handler-name length array
+    emitter.instruction("mov rdx, QWORD PTR [r11 + r10*8]");                    // load the slot's display-name length
     emitter.instruction("call __rt_str_persist");                               // copy the name to the heap → rax=ptr, rdx=len
     emitter.instruction("mov rcx, rax");                                        // value_lo = heap string pointer
     emitter.instruction("mov r8, rdx");                                         // value_hi = string length
@@ -165,8 +184,13 @@ fn emit_ob_status_entry_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // reload the hash pointer
     emitter.instruction("call __rt_hash_set");                                  // insert "name" → handler-name string
     emitter.instruction("mov QWORD PTR [rbp - 16], rax");                       // save the (possibly reallocated) hash pointer
-    // -- "type" → 0 (internal handler) --
-    emitter.instruction("mov rcx, 0");                                          // value_lo = handler type 0
+    // -- "type" → 1 for user handlers, 0 for the default handler --
+    emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "r11", "_ob_handler_stubs");              // materialize the handler-stub slot array
+    emitter.instruction("mov rcx, QWORD PTR [r11 + r10*8]");                    // load the slot's handler stub
+    emitter.instruction("test rcx, rcx");                                       // is a user handler installed?
+    emitter.instruction("setnz cl");                                            // low byte = 1 (user) or 0 (internal)
+    emitter.instruction("movzx rcx, cl");                                       // value_lo = the zero-extended handler type
     emitter.instruction("mov r8, 0");                                           // value_hi = 0
     emitter.instruction("mov r9, 0");                                           // value tag = int
     abi::emit_symbol_address(emitter, "rsi", "_ob_k_type");                     // key = "type"
@@ -174,8 +198,22 @@ fn emit_ob_status_entry_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // reload the hash pointer
     emitter.instruction("call __rt_hash_set");                                  // insert "type" → 0
     emitter.instruction("mov QWORD PTR [rbp - 16], rax");                       // save the (possibly reallocated) hash pointer
-    // -- "flags" → PHP_OUTPUT_HANDLER_STDFLAGS --
-    emitter.instruction(&format!("mov rcx, {}", OB_STDFLAGS));                  // value_lo = the standard handler flags
+    // -- "flags" → stored flags | user bit | PHP started/processed bits --
+    emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "r11", "_ob_flags");                      // materialize the flags slot array
+    emitter.instruction("mov rcx, QWORD PTR [r11 + r10*8]");                    // load the slot's stored flags word
+    abi::emit_symbol_address(emitter, "r11", "_ob_handler_stubs");              // materialize the handler-stub slot array
+    emitter.instruction("mov rax, QWORD PTR [r11 + r10*8]");                    // load the slot's handler stub
+    emitter.instruction("test rax, rax");                                       // is a user handler installed?
+    emitter.instruction("setnz al");                                            // user handlers add PHP's user-handler bit
+    emitter.instruction("movzx rax, al");                                       // zero-extend the user-handler bit
+    emitter.instruction("or rcx, rax");                                         // fold the user-handler bit into the flags
+    abi::emit_symbol_address(emitter, "r11", "_ob_started");                    // materialize the started-flag slot array
+    emitter.instruction("mov rax, QWORD PTR [r11 + r10*8]");                    // load the slot's started flag
+    emitter.instruction("test rax, rax");                                       // has the handler run at least once?
+    emitter.instruction("jz __rt_ob_status_flags_ready_x86");                   // an unstarted handler keeps the base flags
+    emitter.instruction("or rcx, 0x5000");                                      // fold PHP's STARTED|PROCESSED bits into the flags
+    emitter.label("__rt_ob_status_flags_ready_x86");
     emitter.instruction("mov r8, 0");                                           // value_hi = 0
     emitter.instruction("mov r9, 0");                                           // value tag = int
     abi::emit_symbol_address(emitter, "rsi", "_ob_k_flags");                    // key = "flags"
@@ -192,8 +230,10 @@ fn emit_ob_status_entry_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov rdi, QWORD PTR [rbp - 16]");                       // reload the hash pointer
     emitter.instruction("call __rt_hash_set");                                  // insert "level" → index
     emitter.instruction("mov QWORD PTR [rbp - 16], rax");                       // save the (possibly reallocated) hash pointer
-    // -- "chunk_size" → 0 (chunked flushing unsupported) --
-    emitter.instruction("mov rcx, 0");                                          // value_lo = chunk size 0
+    // -- "chunk_size" → the slot's stored chunk size --
+    emitter.instruction("mov r10, QWORD PTR [rbp - 8]");                        // reload the buffer slot index
+    abi::emit_symbol_address(emitter, "r11", "_ob_chunk_sizes");                // materialize the chunk-size slot array
+    emitter.instruction("mov rcx, QWORD PTR [r11 + r10*8]");                    // value_lo = the stored chunk size
     emitter.instruction("mov r8, 0");                                           // value_hi = 0
     emitter.instruction("mov r9, 0");                                           // value tag = int
     abi::emit_symbol_address(emitter, "rsi", "_ob_k_chunk_size");               // key = "chunk_size"
@@ -386,8 +426,11 @@ pub fn emit_ob_list_handlers(emitter: &mut Emitter) {
     emitter.instruction("ldr x10, [sp, #16]");                                  // reload the buffer count
     emitter.instruction("cmp x9, x10");                                         // pushed one name per level?
     emitter.instruction("b.ge __rt_ob_list_handlers_done");                     // yes — return the array
-    abi::emit_symbol_address(emitter, "x1", "_ob_handler_name");                // element = the default handler-name constant
-    emitter.instruction(&format!("mov x2, #{}", OB_HANDLER_NAME_LEN));          // handler-name byte length
+    emitter.instruction("ldr x9, [sp, #8]");                                    // reload the level cursor (the slot index)
+    abi::emit_symbol_address(emitter, "x10", "_ob_name_ptrs");                  // materialize the handler-name pointer array
+    emitter.instruction("ldr x1, [x10, x9, lsl #3]");                           // element = the slot's display-name pointer
+    abi::emit_symbol_address(emitter, "x10", "_ob_name_lens");                  // materialize the handler-name length array
+    emitter.instruction("ldr x2, [x10, x9, lsl #3]");                           // element length = the slot's display-name length
     emitter.instruction("ldr x0, [sp, #0]");                                    // reload the array pointer
     emitter.instruction("bl __rt_array_push_str");                              // append the handler name (push_str persists the bytes)
     emitter.instruction("str x0, [sp, #0]");                                    // save the possibly-grown array pointer
@@ -427,8 +470,11 @@ fn emit_ob_list_handlers_x86_64(emitter: &mut Emitter) {
     emitter.instruction("mov r10, QWORD PTR [rbp - 16]");                       // reload the level cursor
     emitter.instruction("cmp r10, QWORD PTR [rbp - 24]");                       // pushed one name per level?
     emitter.instruction("jge __rt_ob_list_handlers_done_x86");                  // yes — return the array
-    abi::emit_symbol_address(emitter, "rsi", "_ob_handler_name");               // element = the default handler-name constant
-    emitter.instruction(&format!("mov rdx, {}", OB_HANDLER_NAME_LEN));          // handler-name byte length
+    emitter.instruction("mov r10, QWORD PTR [rbp - 16]");                       // reload the level cursor (the slot index)
+    abi::emit_symbol_address(emitter, "r11", "_ob_name_ptrs");                  // materialize the handler-name pointer array
+    emitter.instruction("mov rsi, QWORD PTR [r11 + r10*8]");                    // element = the slot's display-name pointer
+    abi::emit_symbol_address(emitter, "r11", "_ob_name_lens");                  // materialize the handler-name length array
+    emitter.instruction("mov rdx, QWORD PTR [r11 + r10*8]");                    // element length = the slot's display-name length
     emitter.instruction("mov rdi, QWORD PTR [rbp - 8]");                        // reload the array pointer
     emitter.instruction("call __rt_array_push_str");                            // append the handler name (push_str persists the bytes)
     emitter.instruction("mov QWORD PTR [rbp - 8], rax");                        // save the possibly-grown array pointer

@@ -168,6 +168,9 @@ pub fn emit_pr_write(emitter: &mut Emitter) {
     //    output buffer instead of issuing the write(1, …) syscall so print_r's
     //    structural output is captured like every other terminal write. --
     emitter.label("__rt_pr_write_syscall");
+    abi::emit_symbol_address(emitter, "x9", "_ob_in_handler");                  // materialize the address of the in-handler flag
+    emitter.instruction("ldr x9, [x9]");                                        // load the in-handler flag
+    emitter.instruction("cbnz x9, __rt_pr_write_done");                         // inside a handler — discard the bytes entirely
     abi::emit_symbol_address(emitter, "x9", "_ob_level");                       // materialize the address of the output-buffer stack depth
     emitter.instruction("ldr x9, [x9]");                                        // load the output-buffer stack depth
     emitter.instruction("cbz x9, __rt_pr_write_raw");                           // no active output buffer — take the raw syscall path
@@ -206,6 +209,10 @@ fn emit_pr_write_linux_x86_64(emitter: &mut Emitter) {
     //    output buffer instead of issuing the write(1, …) syscall so print_r's
     //    structural output is captured like every other terminal write. --
     emitter.label("__rt_pr_write_syscall");
+    abi::emit_symbol_address(emitter, "r11", "_ob_in_handler");                 // materialize the address of the in-handler flag
+    emitter.instruction("mov r11, QWORD PTR [r11]");                            // load the in-handler flag
+    emitter.instruction("test r11, r11");                                       // is a user output handler running?
+    emitter.instruction("jnz __rt_pr_write_done");                              // inside a handler — discard the bytes entirely
     abi::emit_symbol_address(emitter, "r11", "_ob_level");                      // materialize the address of the output-buffer stack depth
     emitter.instruction("mov r11, QWORD PTR [r11]");                            // load the output-buffer stack depth
     emitter.instruction("test r11, r11");                                       // is any output buffer active?

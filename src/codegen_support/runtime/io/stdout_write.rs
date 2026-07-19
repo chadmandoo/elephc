@@ -57,6 +57,12 @@ pub fn emit_stdout_write(emitter: &mut Emitter, web: bool) {
     emitter.instruction("b __rt_stdout_write_done");                            // capture handled the bytes — skip the syscall path
     emitter.label("__rt_stdout_write_pr_inactive");
 
+    // -- user output-handler guard: PHP discards output produced inside an
+    //    ob_start() handler; drop the bytes while _ob_in_handler is set. --
+    crate::codegen::abi::emit_symbol_address(emitter, "x9", "_ob_in_handler");  // materialize the address of the in-handler flag
+    emitter.instruction("ldr x9, [x9]");                                        // load the in-handler flag
+    emitter.instruction("cbnz x9, __rt_stdout_write_done");                     // inside a handler — discard the bytes entirely
+
     // -- output-buffering capture: while the ob_* stack is non-empty, append the
     //    bytes to the top output buffer instead of writing to the terminal. The
     //    flush helpers temporarily decrement _ob_level before re-entering this
@@ -114,6 +120,13 @@ fn emit_stdout_write_x86_64(emitter: &mut Emitter, web: bool) {
     emitter.instruction("call __rt_pr_append");                                 // capture enabled — append the bytes (ptr=rdi, len=rsi) to the capture buffer
     emitter.instruction("jmp __rt_stdout_write_done");                          // capture handled the bytes — skip the syscall path
     emitter.label("__rt_stdout_write_pr_inactive");
+
+    // -- user output-handler guard: PHP discards output produced inside an
+    //    ob_start() handler; drop the bytes while _ob_in_handler is set. --
+    crate::codegen::abi::emit_symbol_address(emitter, "r11", "_ob_in_handler"); // materialize the address of the in-handler flag
+    emitter.instruction("mov r11, QWORD PTR [r11]");                            // load the in-handler flag
+    emitter.instruction("test r11, r11");                                       // is a user output handler running?
+    emitter.instruction("jnz __rt_stdout_write_done");                          // inside a handler — discard the bytes entirely
 
     // -- output-buffering capture: while the ob_* stack is non-empty, append the
     //    bytes to the top output buffer instead of writing to the terminal. --
