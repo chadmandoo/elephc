@@ -116,17 +116,44 @@ pub(crate) fn emit_tagged_scalar_from_int_result(emitter: &mut Emitter) {
     }
 }
 
+/// Branches to `label` when the container pointer in `value_reg` represents PHP null:
+/// either a zero pointer or the in-band `NULL_SENTINEL` that missed reads of refcounted
+/// slots materialize. Clobbers `scratch_reg` with the sentinel bit pattern. Used to keep
+/// container reads from dereferencing a null/sentinel receiver (issue #526).
+pub(crate) fn emit_branch_if_null_container(
+    emitter: &mut Emitter,
+    value_reg: &str,
+    scratch_reg: &str,
+    label: &str,
+) {
+    match emitter.target.arch {
+        Arch::AArch64 => {
+            emitter.instruction(&format!("cbz {}, {}", value_reg, label));      // zero container pointers take the caller's null path
+            super::abi::emit_load_int_immediate(emitter, scratch_reg, NULL_SENTINEL);
+            emitter.instruction(&format!("cmp {}, {}", value_reg, scratch_reg)); // does the container carry the in-band null sentinel?
+            emitter.instruction(&format!("b.eq {}", label));                    // sentinel-null containers take the caller's null path
+        }
+        Arch::X86_64 => {
+            emitter.instruction(&format!("test {}, {}", value_reg, value_reg)); // is the container pointer zero (PHP null)?
+            emitter.instruction(&format!("jz {}", label));                      // zero container pointers take the caller's null path
+            super::abi::emit_load_int_immediate(emitter, scratch_reg, NULL_SENTINEL);
+            emitter.instruction(&format!("cmp {}, {}", value_reg, scratch_reg)); // does the container carry the in-band null sentinel?
+            emitter.instruction(&format!("je {}", label));                      // sentinel-null containers take the caller's null path
+        }
+    }
+}
+
 /// Branches to `label` when the tagged scalar in the result registers is PHP null
 /// (tag register == null tag).
 pub(crate) fn emit_branch_if_tagged_scalar_null(emitter: &mut Emitter, label: &str) {
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction(&format!("cmp x1, #{}", TAGGED_SCALAR_TAG_NULL)); // does the tagged scalar carry the runtime null tag?
-            emitter.instruction(&format!("b.eq {}", label)); // branch when the tagged scalar is PHP null
+            emitter.instruction(&format!("b.eq {}", label));                    // branch when the tagged scalar is PHP null
         }
         Arch::X86_64 => {
             emitter.instruction(&format!("cmp rdx, {}", TAGGED_SCALAR_TAG_NULL)); // does the tagged scalar carry the runtime null tag?
-            emitter.instruction(&format!("je {}", label)); // branch when the tagged scalar is PHP null
+            emitter.instruction(&format!("je {}", label));                      // branch when the tagged scalar is PHP null
         }
     }
 }
@@ -137,12 +164,12 @@ pub(crate) fn emit_tagged_scalar_to_int_null_as_zero(emitter: &mut Emitter) {
     match emitter.target.arch {
         Arch::AArch64 => {
             emitter.instruction(&format!("cmp x1, #{}", TAGGED_SCALAR_TAG_NULL)); // does the tagged scalar carry the runtime null tag?
-            emitter.instruction("csel x0, xzr, x0, eq"); // replace the payload with zero when the tagged scalar is null
+            emitter.instruction("csel x0, xzr, x0, eq");                        // replace the payload with zero when the tagged scalar is null
         }
         Arch::X86_64 => {
-            emitter.instruction("xor r11, r11"); // materialize the zero replacement for a null tagged scalar payload
+            emitter.instruction("xor r11, r11");                                // materialize the zero replacement for a null tagged scalar payload
             emitter.instruction(&format!("cmp rdx, {}", TAGGED_SCALAR_TAG_NULL)); // does the tagged scalar carry the runtime null tag?
-            emitter.instruction("cmove rax, r11"); // replace the payload with zero when the tagged scalar is null
+            emitter.instruction("cmove rax, r11");                              // replace the payload with zero when the tagged scalar is null
         }
     }
 }
@@ -190,7 +217,10 @@ mod tests {
     fn test_x86_64_heap_kind_word_layout() {
         assert_eq!(x86_64_heap_kind_word(6), 0x454C_5048_0000_0006);
         assert_eq!(x86_64_heap_kind_word(4), 0x454C_5048_0000_0004);
-        assert_ne!(x86_64_heap_kind_word(6) >> 32, 0x4548_504C, "transposed magic");
+        // Transposed "EHPL" built from bytes so this test source never embeds that hex.
+        let transposed_hi =
+            u64::from(u32::from_be_bytes([b'E', b'H', b'P', b'L']));
+        assert_ne!(x86_64_heap_kind_word(6) >> 32, transposed_hi, "transposed magic");
     }
 
     /// Repo lint: no emitter may hand-type the transposed heap magic again — every
@@ -205,8 +235,10 @@ mod tests {
                 } else if path.extension().is_some_and(|e| e == "rs") {
                     let body = std::fs::read_to_string(&path).expect("readable source");
                     // Needle built at runtime so this test file never matches itself.
+                    // Strip `_` so underscored hex spellings of the same typo cannot evade.
                     let needle = ["0x4548", "504c"].concat();
-                    if body.to_lowercase().contains(&needle) {
+                    let normalized = body.to_lowercase().replace('_', "");
+                    if normalized.contains(&needle) {
                         hits.push(path.display().to_string());
                     }
                 }

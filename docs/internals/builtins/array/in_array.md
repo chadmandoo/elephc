@@ -16,7 +16,7 @@ sidebar:
 
 ### Lowering notes
 
-- Lowers `in_array()` for indexed arrays with scalar or string payloads.
+- Lowers `in_array()` for indexed and associative arrays with PHP loose or strict membership.
 
 ## Runtime helpers
 
@@ -25,12 +25,17 @@ _No direct `__rt_*` helpers captured — the lowering is inlined or routes throu
 ## Signature summary
 
 ```php
-function in_array(mixed $needle, array $haystack, bool $strict = false): mixed
+function in_array(mixed $needle, array $haystack, bool $strict = false): bool
 ```
 
 ## What the type checker enforces
 
 - **Arity**: takes 2–3 arguments (1 optional).
+
+## Eval interpreter (magician)
+
+- **Declaration**: [`crates/elephc-magician/src/interpreter/builtins/array/in_array.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/array/in_array.rs) (`eval_builtin!`)
+- **Dispatch hooks**: `direct`, `values`
 
 ## Cross-references
 
