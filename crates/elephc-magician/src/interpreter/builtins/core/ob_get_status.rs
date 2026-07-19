@@ -67,7 +67,7 @@ pub(in crate::interpreter) fn eval_ob_get_status_result(
     Ok(result)
 }
 
-/// Builds the PHP status entry (default-handler shape) for one buffer level.
+/// Builds the PHP status entry for one buffer level from its stored metadata.
 fn eval_ob_status_entry(
     index: i64,
     values: &mut impl RuntimeValueOps,
@@ -75,12 +75,24 @@ fn eval_ob_status_entry(
     let Some((buffer_used, buffer_size)) = values.ob_stats(index)? else {
         return Err(EvalStatus::RuntimeFatal);
     };
+    let Some((chunk_size, stored_flags, is_user, started)) = values.ob_slot_meta(index)? else {
+        return Err(EvalStatus::RuntimeFatal);
+    };
+    let name_bytes = values.ob_slot_name(index)?.unwrap_or_default();
+    let name = String::from_utf8_lossy(&name_bytes).into_owned();
+    let mut flags = stored_flags;
+    if is_user {
+        flags |= 1;
+    }
+    if started {
+        flags |= 0x5000;
+    }
     let mut entry = values.assoc_new(8)?;
-    entry = eval_array_set_string_str(entry, "name", "default output handler", values)?;
-    entry = eval_array_set_string_int(entry, "type", 0, values)?;
-    entry = eval_array_set_string_int(entry, "flags", 112, values)?;
+    entry = eval_array_set_string_str(entry, "name", &name, values)?;
+    entry = eval_array_set_string_int(entry, "type", i64::from(is_user), values)?;
+    entry = eval_array_set_string_int(entry, "flags", flags, values)?;
     entry = eval_array_set_string_int(entry, "level", index, values)?;
-    entry = eval_array_set_string_int(entry, "chunk_size", 0, values)?;
+    entry = eval_array_set_string_int(entry, "chunk_size", chunk_size, values)?;
     entry = eval_array_set_string_int(entry, "buffer_size", buffer_size, values)?;
     eval_array_set_string_int(entry, "buffer_used", buffer_used, values)
 }

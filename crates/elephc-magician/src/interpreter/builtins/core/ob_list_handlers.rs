@@ -43,8 +43,10 @@ pub(in crate::interpreter) fn eval_ob_list_handlers_result(
     let level = values.ob_level()?;
     let capacity = usize::try_from(level).unwrap_or(0).max(1);
     let mut handlers = values.string_array_new(capacity)?;
-    for _ in 0..level {
-        handlers = values.string_array_push(handlers, "default output handler")?;
+    for index in 0..level {
+        let name_bytes = values.ob_slot_name(index)?.unwrap_or_default();
+        let name = String::from_utf8_lossy(&name_bytes).into_owned();
+        handlers = values.string_array_push(handlers, &name)?;
     }
     Ok(handlers)
 }

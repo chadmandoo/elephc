@@ -92,23 +92,31 @@ return true;"#,
     assert_eq!(values.output, "default output handler:0:3:1");
 }
 
-/// Verifies ob_start rejects a non-null handler callback with a warning.
+/// Verifies ob_start rejects plain-scalar callbacks with PHP's warning lines
+/// and registers callable handlers with their display name.
 #[test]
-fn execute_program_rejects_ob_start_handler_callback() {
+fn execute_program_handles_ob_start_callback_shapes() {
     let program = parse_fragment(
-        br#"$r = ob_start("strtoupper");
-echo $r === false ? "rejected" : "started";
-echo ":", ob_get_level();
+        br#"$bad = ob_start(42);
+echo $bad === false ? "rejected" : "started";
+echo ":", ob_get_level(), ";";
+$ok = ob_start("strtoupper");
+$name = ob_list_handlers()[0];
+ob_end_clean();
+echo $ok === true ? "named" : "bad", ":", $name;
 return true;"#,
     )
     .expect("parse eval fragment");
     let mut scope = ElephcEvalScope::new();
     let mut values = FakeOps::default();
     execute_program(&program, &mut scope, &mut values).expect("execute eval ir");
-    assert_eq!(values.output, "rejected:0");
     assert_eq!(
-        values.warnings,
-        vec!["ob_start(): output handler callbacks are not supported; pass null".to_string()]
+        values.output,
+        concat!(
+            "Warning: ob_start(): no array or string given\n",
+            "Notice: ob_start(): Failed to create buffer\n",
+            "rejected:0;named:strtoupper"
+        )
     );
 }
 

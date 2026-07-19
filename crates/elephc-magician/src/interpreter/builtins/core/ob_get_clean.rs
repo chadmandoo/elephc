@@ -40,11 +40,8 @@ pub(in crate::interpreter) fn eval_ob_get_clean_result(
     if !evaluated_args.is_empty() {
         return Err(EvalStatus::RuntimeFatal);
     }
-    match values.ob_contents()? {
-        Some(bytes) => {
-            values.ob_end(false)?;
-            values.string_bytes_value(&bytes)
-        }
+    match values.ob_get_end(false)? {
+        Some(bytes) => values.string_bytes_value(&bytes),
         None => values.bool_value(false),
     }
 }

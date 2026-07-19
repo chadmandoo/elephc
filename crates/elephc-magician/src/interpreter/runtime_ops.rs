@@ -578,8 +578,29 @@ pub trait RuntimeValueOps {
     /// Converts one runtime cell to PHP boolean truthiness.
     fn truthy(&mut self, value: RuntimeCellHandle) -> Result<bool, EvalStatus>;
 
-    /// Pushes a new output buffer onto the ob_* stack; false when the nesting limit is hit.
-    fn ob_start(&mut self) -> Result<bool, EvalStatus>;
+    /// Pushes a new output buffer with handler metadata; false when refused.
+    /// `handler_id` is a magician ob-handler registry id (None = default handler),
+    /// `name` the PHP-visible display name, `chunk_size`/`flags` PHP's ob_start
+    /// parameters.
+    fn ob_start_ex(
+        &mut self,
+        handler_id: Option<u64>,
+        name: &str,
+        chunk_size: i64,
+        flags: i64,
+    ) -> Result<bool, EvalStatus>;
+
+    /// Pops the top output buffer and returns its raw bytes (handler applied and
+    /// contents flushed to the parent sink when `flush`); None when refused.
+    fn ob_get_end(&mut self, flush: bool) -> Result<Option<Vec<u8>>, EvalStatus>;
+
+    /// Returns `(chunk_size, stored_flags, is_user_handler, started)` for the
+    /// 0-based buffer index, if it exists.
+    fn ob_slot_meta(&mut self, index: i64)
+        -> Result<Option<(i64, i64, bool, bool)>, EvalStatus>;
+
+    /// Returns a copy of one buffer's handler display name, if the slot exists.
+    fn ob_slot_name(&mut self, index: i64) -> Result<Option<Vec<u8>>, EvalStatus>;
 
     /// Returns the current output-buffer nesting depth (0 = no buffering).
     fn ob_level(&mut self) -> Result<i64, EvalStatus>;

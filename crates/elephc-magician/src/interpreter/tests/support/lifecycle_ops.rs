@@ -31,7 +31,7 @@ impl FakeOps {
     pub(super) fn runtime_echo(&mut self, value: RuntimeCellHandle) -> Result<(), EvalStatus> {
         let value = self.stringify(value);
         match self.ob_stack.last_mut() {
-            Some(buffer) => buffer.push_str(&value),
+            Some(level) => level.buffer.push_str(&value),
             None => self.output.push_str(&value),
         }
         Ok(())
