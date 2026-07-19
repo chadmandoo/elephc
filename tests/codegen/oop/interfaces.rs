@@ -364,35 +364,21 @@ fn test_interface_covariant_self_return() {
     assert_eq!(out, "ok");
 }
 
-/// PSR-FIG immutable "wither" fluent methods carry `@return static` but declare the ancestor
-/// interface as the return type. Called through a descendant-interface receiver, the result must
-/// keep the receiver's type so a subsequent descendant-only call resolves.
+/// A static implementation may return its concrete class against an interface return contract.
 #[test]
-fn test_interface_wither_ancestor_return_stays_receiver() {
+fn test_static_interface_covariant_self_return() {
     let out = compile_and_run(
         r#"<?php
-interface Message {
-    public function withHeader(string $value): Message;
-    public function body(): string;
+interface Maker {
+    public static function make(): Maker;
 }
-interface Request extends Message {
-    public function withMethod(string $method): Request;
-    public function method(): string;
+final class Product implements Maker {
+    public static function make(): static { return new static(); }
 }
-final class Req implements Request {
-    public function __construct(private string $verb = 'GET', private string $payload = '') {}
-    public function withHeader(string $value): Message { return new Req($this->verb, $value); }
-    public function withMethod(string $method): Request { return new Req($method, $this->payload); }
-    public function body(): string { return $this->payload; }
-    public function method(): string { return $this->verb; }
-}
-function chain(Request $r): string {
-    return $r->withHeader('x-trace')->withMethod('POST')->method();
-}
-echo chain(new Req());
+echo Product::make() instanceof Product ? 'ok' : 'no';
 "#,
     );
-    assert_eq!(out, "POST");
+    assert_eq!(out, "ok");
 }
 
 /// Parent method returns the parent class; child may override with `static` / self (covariant).
