@@ -189,12 +189,15 @@ impl Checker {
             // the runtime's boxed-Mixed representation funnels at the boundary.
             (_, PhpType::Mixed) => true,
             (_, PhpType::Never) => true, // never is the bottom type — compatible with any expected type
-            // A union VALUE with at least one member the declaration accepts is likewise
-            // runtime-enforced PHP (e.g. an `int|false` seek result passed to an `int` param on
-            // the success path). A union with NO compatible member stays rejected.
-            (_, PhpType::Union(members)) if !matches!(expected, PhpType::Union(_)) => {
-                members.iter().any(|m| Self::types_compatible(expected, m))
-            }
+            // Deliberately NO "a union VALUE with ANY compatible member satisfies a narrower
+            // declaration" arm. It reads as tolerance for runtime-enforced PHP, but it accepts a
+            // genuinely-incompatible value (`file_get_contents(): string|false` into a declared
+            // `string`) and silently disables the false-return and narrowing guard suites — 9
+            // checker guard tests, including the `=== false` guard shipped upstream as #463
+            // (#652). A value that legitimately crosses such a boundary reaches it by NARROWING —
+            // a `!== null` / `=== false` / `instanceof` guard, `assert(is_*(...))`, a correct
+            // builtin signature, or the nested-call memo (#653) — each of which removes the
+            // incompatible member rather than ignoring it. Do not restore this arm.
             (PhpType::Bool, PhpType::False) => true,
             (PhpType::Iterable, PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable) => true,
             (PhpType::Union(expected_members), PhpType::Union(actual_members)) => actual_members
