@@ -7784,13 +7784,17 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         "clearstatcache" | "closedir" | "exit" | "die" | "passthru" | "rewinddir"
         | "stream_bucket_append" | "stream_bucket_prepend" | "unset" => Some(PhpType::Void),
         "fclose" | "feof" | "rewind" => Some(PhpType::Bool),
+        // ob_* state mutators return plain PHP bools (false when no buffer is active);
+        // ob_implicit_flush always returns true like PHP 8.
+        "ob_start" | "ob_clean" | "ob_end_clean" | "ob_end_flush" | "ob_flush"
+        | "ob_implicit_flush" => Some(PhpType::Bool),
         "printf" | "array_rand" | "array_unshift" | "file_put_contents" | "filemtime"
         | "filesize" | "fprintf" | "fpassthru" | "fputcsv" | "fseek" | "ftell" | "fwrite"
         | "crc32" | "get_resource_id" | "isset" | "linkinfo" | "mktime" | "gmmktime" | "sleep"
         | "__elephc_mktime_raw" | "__elephc_gmmktime_raw"
         | "pclose" | "spl_object_id" | "stream_select" | "stream_set_chunk_size"
         | "stream_set_read_buffer" | "stream_set_write_buffer"
-        | "__elephc_strtotime_raw" | "time"
+        | "__elephc_strtotime_raw" | "time" | "ob_get_level"
         | "umask" | "vfprintf" | "vprintf" | "realpath_cache_size" => {
             Some(PhpType::Int)
         }
@@ -7815,7 +7819,11 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
             key: Box::new(PhpType::Str),
             value: Box::new(PhpType::Mixed),
         }),
-        "getdate" | "localtime" | "hrtime" | "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
+        // ob_* boxed results: string|false getters, int|false length, and the
+        // status hash boxed as a Mixed associative array (like getdate/localtime).
+        "ob_get_contents" | "ob_get_clean" | "ob_get_flush" | "ob_get_length"
+        | "ob_get_status"
+        | "getdate" | "localtime" | "hrtime" | "file_get_contents" | "fileatime" | "filectime" | "filegroup" | "fileinode"
         | "fileowner" | "fileperms" | "filetype" | "readfile" | "readlink" | "realpath"
         | "fgetc" | "fgets" | "fopen" | "fstat" | "hash_copy" | "hash_file" | "hash_init"
         | "gethostbyaddr" | "getprotobyname" | "getprotobynumber" | "getservbyname"
@@ -7840,6 +7848,7 @@ fn builtin_return_type_override(name: &str) -> Option<PhpType> {
         | "get_declared_traits"
         | "glob"
         | "hash_algos"
+        | "ob_list_handlers"
         | "scandir"
         | "spl_classes"
         | "str_split"
