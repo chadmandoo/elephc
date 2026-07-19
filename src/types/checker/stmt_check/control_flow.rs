@@ -276,7 +276,29 @@ impl Checker {
             }
             StmtKind::While { condition, body } => {
                 self.infer_type_with_assignment_effects(condition, env)?;
+                // The body runs only when the condition holds, so narrow it by the condition's
+                // then-type — `while (is_string($x)) { f($x); }` sees `$x` as string. Sound for
+                // `while` because the condition is re-tested before every iteration (unlike
+                // `do-while`, whose first pass runs before any test). The body's own assignments
+                // update `env` directly, so a variable reassigned mid-body widens from there;
+                // the pre-loop type is restored afterward so code after the loop sees the join.
+                let while_guard = self.guard_narrowing(condition, env)?;
+                let restore = while_guard.as_ref().map(|guard| {
+                    let prev = env.get(&guard.var).cloned();
+                    env.insert(guard.var.clone(), guard.then_ty.clone());
+                    (guard.var.clone(), prev)
+                });
                 let errors = self.check_break_continue_target_body(body, env);
+                if let Some((var, prev)) = restore {
+                    match prev {
+                        Some(ty) => {
+                            env.insert(var, ty);
+                        }
+                        None => {
+                            env.remove(&var);
+                        }
+                    }
+                }
                 if errors.is_empty() {
                     Ok(())
                 } else {

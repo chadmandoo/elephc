@@ -256,3 +256,29 @@ echo nullGuard(null), '|', nullGuard(new R());
     );
     assert_eq!(out, "no|ok:sid|no;no|ok:sid;no|sid");
 }
+
+/// Regression: a `while (is_string($x))` condition narrows `$x` to `string` inside the loop
+/// body, so a call taking a `string` parameter type-checks. The body may reassign `$x` to a
+/// wider type (here `parentClass()` returns `?string`); the next iteration re-tests the
+/// condition, so entry-narrowing is sound. Byte-parity vs PHP 8.5.
+#[test]
+fn test_while_condition_narrows_loop_body() {
+    let out = compile_and_run(
+        r#"<?php
+interface Reg { public function parentClass(string $c): ?string; }
+final class R implements Reg {
+    public function parentClass(string $c): ?string { return $c === 'A' ? 'B' : ($c === 'B' ? 'C' : null); }
+}
+function depth(Reg $reg, ?string $parent): int {
+    $n = 0;
+    while (is_string($parent)) {
+        $n++;
+        $parent = $reg->parentClass($parent);
+    }
+    return $n;
+}
+echo depth(new R(), 'A'), '|', depth(new R(), 'B'), '|', depth(new R(), null);
+"#,
+    );
+    assert_eq!(out, "3|2|0");
+}
