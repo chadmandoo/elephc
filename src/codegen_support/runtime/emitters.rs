@@ -495,6 +495,21 @@ pub(crate) fn emit_runtime(emitter: &mut Emitter, features: RuntimeFeatures) {
     io::emit_pr_append(emitter);
     io::emit_pr_write(emitter);
     io::emit_pr_finish(emitter);
+    // Output-buffering (ob_*) stack helpers. Always emitted: __rt_stdout_write,
+    // __rt_pr_write, and the process-exit paths reference them unconditionally.
+    io::emit_var_dump_write(emitter);
+    io::emit_ob_start(emitter);
+    io::emit_ob_append(emitter);
+    io::emit_ob_contents(emitter);
+    io::emit_ob_queries(emitter);
+    io::emit_ob_clean(emitter);
+    io::emit_ob_end_clean(emitter);
+    io::emit_ob_flush(emitter);
+    io::emit_ob_end_flush(emitter);
+    io::emit_ob_flush_all(emitter);
+    io::emit_ob_status_entry(emitter);
+    io::emit_ob_get_status(emitter);
+    io::emit_ob_list_handlers(emitter);
     io::emit_file_get_contents(emitter);
     io::emit_file_put_contents(emitter);
     io::emit_file(emitter);

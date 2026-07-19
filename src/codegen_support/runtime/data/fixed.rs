@@ -45,6 +45,35 @@ pub(crate) fn emit_runtime_data_fixed(heap_size: usize, target: Target) -> Strin
     out.push_str(".comm _print_r_mode, 8, 3\n");
     out.push_str(".comm _print_r_off, 8, 3\n");
     out.push_str(".comm _print_r_buf, 65536, 3\n");
+    // Output-buffering (ob_*) stack state. _ob_level is the active nesting depth
+    // (0 = no buffering) consulted by __rt_stdout_write and __rt_pr_write before
+    // the terminal write syscall; _ob_ptrs/_ob_lens/_ob_caps are 64-slot parallel
+    // arrays (heap buffer base pointer, used bytes, capacity) indexed by level-1.
+    // Buffers are heap-allocated by __rt_ob_start, grown by __rt_ob_append, and
+    // written to the terminal sink by __rt_ob_flush_all at process exit.
+    out.push_str(".comm _ob_level, 8, 3\n");
+    out.push_str(".comm _ob_ptrs, 512, 3\n");
+    out.push_str(".comm _ob_lens, 512, 3\n");
+    out.push_str(".comm _ob_caps, 512, 3\n");
+    // ob_implicit_flush() stored flag. Semantically inert in elephc: terminal
+    // writes are unbuffered syscalls, so implicit flushing is always on.
+    out.push_str(".comm _ob_implicit_flush, 8, 3\n");
+    // ob_get_status()/ob_list_handlers() string constants: PHP's default handler
+    // name and the status-array key strings read by __rt_ob_get_status.
+    out.push_str(
+        ".globl _ob_handler_name\n_ob_handler_name:\n    .ascii \"default output handler\"\n",
+    );
+    for (sym, key) in [
+        ("_ob_k_name", "name"),
+        ("_ob_k_type", "type"),
+        ("_ob_k_flags", "flags"),
+        ("_ob_k_level", "level"),
+        ("_ob_k_chunk_size", "chunk_size"),
+        ("_ob_k_buffer_size", "buffer_size"),
+        ("_ob_k_buffer_used", "buffer_used"),
+    ] {
+        out.push_str(&format!(".globl {sym}\n{sym}:\n    .ascii \"{key}\"\n"));
+    }
     // serialize()/unserialize() reference tracking (PHP r:/R: back-references).
     // serialize: a global value counter (every serialized value consumes the next
     // index, keys excluded) plus a pointer->index map of already-serialized objects
