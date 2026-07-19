@@ -50,7 +50,6 @@ use crate::codegen::{CodegenIrError, Result};
 
 mod reflection;
 
-const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
 const RUNTIME_NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 const ITERATOR_ITERATOR_DOWNCAST_MESSAGE: &str =
     "Class to downcast to not found or not base class or does not implement Traversable";
@@ -1011,7 +1010,7 @@ fn emit_throwable_allocation(ctx: &mut FunctionContext<'_>, class_id: u64) {
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction(&format!(
                 "mov r10, 0x{:x}",
-                (X86_64_HEAP_MAGIC_HI32 << 32) | 6
+                crate::codegen_support::sentinels::x86_64_heap_kind_word(6)
             )); // materialize the x86_64 Throwable heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10"); // stamp the heap header before the Throwable payload
             ctx.emitter.instruction(&format!("mov r10, {}", class_id)); // materialize the Throwable runtime class id
@@ -4319,7 +4318,7 @@ fn emit_object_allocation(
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction(&format!(
                 "mov r10, 0x{:x}",
-                (X86_64_HEAP_MAGIC_HI32 << 32) | 4
+                crate::codegen_support::sentinels::x86_64_heap_kind_word(4)
             )); // materialize the x86_64 object heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10"); // stamp the heap header before the object payload
             ctx.emitter.instruction(&format!("mov r10, {}", class_id)); // materialize the compile-time class id
