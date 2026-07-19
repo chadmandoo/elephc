@@ -749,7 +749,7 @@ echo Color::Red->name;           // Red
 echo Color::Red->value;          // 1
 echo Color::from(2) === Color::Green; // 1
 ```
-Pure and backed enums. Every case exposes the read-only `->name` property (the case identifier); backed cases also expose `->value`. Plus `::from()`, `::tryFrom()`, `::cases()`. Only `int` and `string` backing types.
+Pure and backed enums. Every case exposes the read-only `->name` property (the case identifier); backed cases also expose `->value`. Case names are case-sensitive and may use PHP keywords other than the reserved `class` name; their exact declaration spelling is retained, so `case Match` and `case MATCH` are distinct and report `Match` / `MATCH` through `->name`. Plus `::from()`, `::tryFrom()`, `::cases()`. Only `int` and `string` backing types.
 
 Like PHP, an `int`-backed enum's `::from()` / `::tryFrom()` accept a numeric string and coerce it to the integer backing value (`Color::from("2")` returns `Color::Green`). A numeric string with no matching case throws `ValueError`; a non-numeric string (e.g. `"x"`, `"1abc"`, `"0x1"`, `"INF"`, or `"NAN"`) throws `TypeError`, matching PHP's coercive typing.
 
@@ -1445,7 +1445,7 @@ class Bound implements Limits {
 }
 ```
 
-Class constants (PHP 7.1+ visibility, PHP 8.1+ `final`, PHP 8.3+ declared types) live on classes, interfaces, traits, and enums. Declared types are enforced on initializer values, and an overriding constant must preserve or narrow an inherited class/interface type. PHP-forbidden constant types (`void`, `never`, and `callable`) are rejected. Typed constants expose their declared named, nullable, union, or intersection metadata through `ReflectionClassConstant::hasType()` and `getType()`; untyped constants and enum cases continue to report `false` and `null`.
+Class constants (PHP 7.1+ visibility, PHP 8.1+ `final`, PHP 8.3+ declared types) live on classes, interfaces, traits, and enums. Names are case-sensitive and may use PHP keywords other than the reserved `class` name; exact declaration and access spelling is preserved. Declared types are enforced on initializer values, and an overriding constant must preserve or narrow an inherited class/interface type. PHP-forbidden constant types (`void`, `never`, and `callable`) are rejected. Typed constants expose their declared named, nullable, union, or intersection metadata through `ReflectionClassConstant::hasType()` and `getType()`; untyped constants and enum cases continue to report `false` and `null`.
 
 Constants are inherited from parents and implemented interfaces (transitively). At codegen time elephc inlines the constant's foldable value at every access site — there is no runtime lookup. Class constant expressions may reference other class constants through `ClassName::CONST`, `self::CONST`, or `parent::CONST`; `self::class` and `parent::class` are also accepted. `self::` and `parent::` are early-bound to the declaring class, matching PHP. `static::CONST` is rejected in class constant expressions because PHP does not allow late-static binding in compile-time constants. Attributes on class constants are accepted and retained for reflection.
 

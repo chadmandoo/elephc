@@ -322,7 +322,10 @@ fn test_enum_from_string_failure_throws_value_error() {
 #[test]
 fn test_example_enums_compiles_and_runs() {
     let out = compile_and_run(include_str!("../../../examples/enums/main.php"));
-    assert_eq!(out, "1\n2\n3\nRed=1 Green=2 Blue=3 \nDESC");
+    assert_eq!(
+        out,
+        "1\n2\n3\nRed=1 Green=2 Blue=3 \nDefault=default Match=match MATCH=upper-match \nDESC"
+    );
 }
 
 /// Verifies `Color::tryFrom(2)` returns a non-null value and `Color::tryFrom(99)` returns `null`,
@@ -954,6 +957,30 @@ fn test_backed_int_enum_from_mixed_untyped_param() {
         ",
     );
     assert_eq!(out, "LowHighHigh");
+}
+
+/// Verifies keyword-named enum cases remain distinct by exact case, resolve only through their
+/// declared spelling, and expose that spelling through the PHP `->name` property.
+#[test]
+fn test_keyword_named_enum_cases_preserve_case_and_name() {
+    let out = compile_and_run(
+        "<?php
+        enum KeywordCase: string {
+            case Default = 'default';
+            case DEFAULT = 'upper-default';
+            case Match = 'match';
+            case MATCH = 'upper-match';
+            case Print = 'print';
+        }
+        foreach (KeywordCase::cases() as $case) {
+            echo $case->name, '=', $case->value, ';';
+        }
+        ",
+    );
+    assert_eq!(
+        out,
+        "Default=default;DEFAULT=upper-default;Match=match;MATCH=upper-match;Print=print;"
+    );
 }
 
 /// Regression for #449: a heterogeneous (`Mixed`) array mixing coercible and non-coercible
