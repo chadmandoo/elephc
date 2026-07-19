@@ -282,3 +282,39 @@ echo depth(new R(), 'A'), '|', depth(new R(), 'B'), '|', depth(new R(), null);
     );
     assert_eq!(out, "3|2|0");
 }
+
+/// Regression: a property narrowing survives being read as an argument to a call NESTED inside
+/// another call's arguments. `if ($this->p instanceof I) return; ... wrap(fop($this->p))` — the
+/// property is read once (before either callee runs) so narrowing it to the complement is sound.
+/// The checker previously double-evaluated the args (the nested call's inference purged property
+/// narrowings, then the enclosing call re-validated the same node against the purged env) and
+/// spuriously rejected `$this->p`. Covers static and instance nesting plus triple nesting.
+/// Byte-parity vs PHP 8.5. See #653.
+#[test]
+fn test_property_narrowing_survives_nested_call_argument() {
+    let out = compile_and_run(
+        r#"<?php
+interface I { public function l(): string; }
+final class S {
+    public function __construct(private readonly I|string $p) {}
+    private static function fop(string $f): string { return "o:$f"; }
+    private static function wrap(string $r): string { return "[$r]"; }
+    public function g(): string {
+        if ($this->p instanceof I) { return 'i'; }
+        return self::wrap(self::fop($this->p));
+    }
+}
+final class N {
+    public function __construct(private readonly I|string $p) {}
+    private function a(string $s): string { return "a$s"; }
+    private function b(string $s): string { return "b$s"; }
+    public function g(): string {
+        if ($this->p instanceof I) { return 'i'; }
+        return $this->a($this->b($this->p));
+    }
+}
+echo (new S('x'))->g(), '|', (new N('y'))->g();
+"#,
+    );
+    assert_eq!(out, "[o:x]|aby");
+}

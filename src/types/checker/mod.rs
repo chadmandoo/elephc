@@ -170,6 +170,16 @@ pub(crate) struct Checker {
     /// `instanceof`-narrowed method-call receiver types, keyed by method-call
     /// expression span. See `CheckResult::narrowed_call_receivers`.
     pub narrowed_call_receivers: HashMap<Span, PhpType>,
+    /// Per-statement memo of a call expression's validated result type, keyed by its span
+    /// (#653). The assignment-effect pass validates each call against the correct progressive
+    /// env — arguments in evaluation order, with a sibling/nested call's property-narrowing
+    /// purge applied only to reads that follow it. When `infer_type` later revisits the same
+    /// call node while typing an enclosing call, it reuses the memoized type instead of
+    /// re-validating the node's arguments against the order-collapsed post-pass env, which would
+    /// spuriously reject an argument whose narrowing was still live when the node was first
+    /// evaluated. Only call expressions are memoized, and the memo is cleared at the start of
+    /// every statement.
+    pub call_type_memo: HashMap<Span, PhpType>,
 }
 
 #[derive(Clone)]

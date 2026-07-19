@@ -30,7 +30,34 @@ impl Checker {
     /// returned for type mismatches (e.g. negating a string) or undefined
     /// references. The result feeds statement checking, function call
     /// validation, and optimizer-visible type metadata.
+    /// Call expression kinds whose validated result type is memoized per statement (#653).
+    /// These are the nodes whose inference re-reads (and re-validates) their operands, so a
+    /// redundant re-inference during an enclosing call's typing must not re-check them.
+    fn is_memoizable_call(kind: &ExprKind) -> bool {
+        matches!(
+            kind,
+            ExprKind::FunctionCall { .. }
+                | ExprKind::StaticMethodCall { .. }
+                | ExprKind::MethodCall { .. }
+                | ExprKind::NullsafeMethodCall { .. }
+                | ExprKind::NewObject { .. }
+                | ExprKind::NewScopedObject { .. }
+                | ExprKind::ClosureCall { .. }
+                | ExprKind::ExprCall { .. }
+        )
+    }
+
     pub fn infer_type(&mut self, expr: &Expr, env: &TypeEnv) -> Result<PhpType, CompileError> {
+        // #653: reuse a call node's type validated earlier in this statement's effect pass,
+        // instead of re-validating its arguments against an env whose property narrowings a
+        // sibling/nested call has since purged. The pass populated the memo against the correct
+        // progressive env; a bare (non-call) argument is never memoized, so it is still validated
+        // fresh against the post-purge env and an unsound narrowing stays rejected.
+        if Self::is_memoizable_call(&expr.kind) {
+            if let Some(ty) = self.call_type_memo.get(&expr.span) {
+                return Ok(ty.clone());
+            }
+        }
         match &expr.kind {
             // `IncludeValue` is a transient parser node fully expanded by the resolver;
             // it can never reach this pass.

@@ -64,3 +64,17 @@ fn test_magic_get_property_is_not_persistently_narrowed() {
         "return type expects Object(\"W\"), got Union",
     );
 }
+
+/// Soundness guard for #653: the nested-call narrowing memo must NOT revive a narrowing that a
+/// mutating sibling argument invalidated. In `two($this->mutate(), $this->p)` the instance call
+/// `$this->mutate()` runs before `$this->p` is read (and here sets it to an object), so `$this->p`
+/// must be seen as the un-narrowed union at the `two()` argument — not the `string` complement.
+/// Only nested-CALL arguments are memoized; a bare property argument after a mutating sibling is
+/// still validated fresh, so this stays rejected.
+#[test]
+fn test_nested_call_memo_does_not_revive_narrowing_after_sibling_mutation() {
+    expect_error(
+        "<?php interface I { public function l(): string; } class R implements I { public function l(): string { return 'r'; } } class C { private I|string $p; public function __construct(I|string $p) { $this->p = $p; } private function mutate(): string { $this->p = new R(); return 'm'; } private static function two(string $a, string $b): string { return $a . $b; } public function g(): string { if ($this->p instanceof I) { return 'i'; } return self::two($this->mutate(), $this->p); } }",
+        "parameter $b expects Str",
+    );
+}

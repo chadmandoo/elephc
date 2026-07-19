@@ -32,6 +32,10 @@ impl Checker {
     /// Returns an error for unresolved conditionals, namespace/use directives,
     /// includes, or invalid break/continue levels.
     pub fn check_stmt(&mut self, stmt: &Stmt, env: &mut TypeEnv) -> Result<(), CompileError> {
+        // #653: the call-type memo is scoped to a single statement's expression evaluation —
+        // spans are unique per source position, but clearing here keeps a call node from ever
+        // reusing a type computed under a different statement's narrowing context.
+        self.call_type_memo.clear();
         match &stmt.kind {
             StmtKind::Synthetic(stmts) => {
                 for stmt in stmts {

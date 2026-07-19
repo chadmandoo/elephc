@@ -267,6 +267,7 @@ impl Checker {
                     }
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 // The callee may mutate any reachable object; drop property narrowings. (The
                 // call's own argument checking above still saw them.)
                 Self::purge_property_narrowings(env);
@@ -290,6 +291,7 @@ impl Checker {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 Self::purge_property_narrowings(env);
                 Ok(ty)
             }
@@ -304,6 +306,7 @@ impl Checker {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 Self::purge_property_narrowings(env);
                 Ok(ty)
             }
@@ -319,6 +322,7 @@ impl Checker {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 Self::purge_property_narrowings(env);
                 Ok(ty)
             }
@@ -345,6 +349,7 @@ impl Checker {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 Self::purge_property_narrowings(env);
                 Ok(ty)
             }
@@ -358,6 +363,7 @@ impl Checker {
                     self.infer_type_with_assignment_effects(arg, env)?;
                 }
                 let ty = self.infer_type(expr, env)?;
+                self.call_type_memo.insert(expr.span, ty.clone());
                 Self::purge_property_narrowings(env);
                 Ok(ty)
             }
