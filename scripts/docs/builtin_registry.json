@@ -4784,7 +4784,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_boolval",
-      "codegen_line": 1190,
+      "codegen_line": 1193,
       "notes": [
         "Lowers `boolval()` using the same concrete scalar PHP truthiness rules as `IsTruthy`."
       ],
@@ -6032,7 +6032,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 581,
+      "codegen_line": 584,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal or dynamic string names."
       ],
@@ -6712,7 +6712,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_count",
-      "codegen_line": 1023,
+      "codegen_line": 1026,
       "notes": [
         "Lowers `count(array)` for concrete array values by reading the runtime length header.",
         "Called from `crate::builtins::array::count` (the registry home) via a thin wrapper.",
@@ -7345,7 +7345,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_defined",
-      "codegen_line": 549,
+      "codegen_line": 552,
       "notes": [
         "Lowers `defined(\"NAME\")` for compile-time string constant names."
       ],
@@ -7717,7 +7717,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_empty",
-      "codegen_line": 1232,
+      "codegen_line": 1235,
       "notes": [
         "Lowers `empty()` for concrete scalar and array-like operands."
       ],
@@ -7784,7 +7784,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 581,
+      "codegen_line": 584,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal or dynamic string names."
       ],
@@ -9476,7 +9476,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_floatval",
-      "codegen_line": 1156,
+      "codegen_line": 1159,
       "notes": [
         "Lowers `floatval()` for concrete scalar operands."
       ],
@@ -10774,7 +10774,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_function_exists",
-      "codegen_line": 564,
+      "codegen_line": 567,
       "notes": [
         "Lowers `function_exists(\"name\")` for compile-time string names.",
         "Recognizes user functions, externs, catalog builtins, and the date/time procedural aliases",
@@ -14443,7 +14443,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 581,
+      "codegen_line": 584,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal or dynamic string names."
       ],
@@ -14509,7 +14509,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_intval",
-      "codegen_line": 1123,
+      "codegen_line": 1126,
       "notes": [
         "Lowers `intval()` for concrete scalar operands."
       ],
@@ -14718,7 +14718,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_array",
-      "codegen_line": 1617,
+      "codegen_line": 1620,
       "notes": [
         "Lowers `is_array()`: true for statically-known arrays/hashes, or a boxed Mixed/Union value",
         "whose runtime tag is an indexed (4) or associative (5) array. An `iterable`-typed value is",
@@ -14779,7 +14779,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 1350,
+      "codegen_line": 1353,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -14850,7 +14850,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_callable",
-      "codegen_line": 710,
+      "codegen_line": 713,
       "notes": [
         "Lowers `is_callable(value)` through static lookup or runtime callable-shape helpers."
       ],
@@ -15161,7 +15161,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 1350,
+      "codegen_line": 1353,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -15279,7 +15279,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 1350,
+      "codegen_line": 1353,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -15338,7 +15338,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_iterable",
-      "codegen_line": 1408,
+      "codegen_line": 1411,
       "notes": [
         "Lowers `is_iterable()` for concrete values and boxed Mixed payloads."
       ],
@@ -15520,7 +15520,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_null_builtin",
-      "codegen_line": 1607,
+      "codegen_line": 1610,
       "notes": [
         "Lowers `is_null()` for concrete scalar values and boxed Mixed payloads."
       ],
@@ -15638,7 +15638,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_object",
-      "codegen_line": 1632,
+      "codegen_line": 1635,
       "notes": [
         "Lowers `is_object()`: true for statically-known objects, or a boxed Mixed/Union value whose",
         "runtime tag is an object (6)."
@@ -15820,7 +15820,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_is_scalar",
-      "codegen_line": 1648,
+      "codegen_line": 1651,
       "notes": [
         "Lowers `is_scalar()`: true for int/float/string/bool, a non-null tagged scalar, or a boxed",
         "Mixed/Union value whose runtime tag is int (0), string (1), float (2), or bool (3). Null,",
@@ -15881,7 +15881,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_static_type_predicate",
-      "codegen_line": 1350,
+      "codegen_line": 1353,
       "notes": [
         "Lowers a static `is_*` predicate for concrete non-Mixed values."
       ],
@@ -19198,7 +19198,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_phpversion",
-      "codegen_line": 539,
+      "codegen_line": 542,
       "notes": [
         "Lowers `phpversion()` as the compiler package version string."
       ],
@@ -27868,7 +27868,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_strlen",
-      "codegen_line": 1093,
+      "codegen_line": 1096,
       "notes": [
         "Lowers `strlen()` by coercing string-like values and returning the byte length."
       ],
@@ -29198,7 +29198,7 @@
       "checker_line": null,
       "codegen_file": "src/codegen/lower_inst/builtins.rs",
       "codegen_function": "lower_class_like_exists",
-      "codegen_line": 581,
+      "codegen_line": 584,
       "notes": [
         "Lowers AOT class/interface/enum existence checks for literal or dynamic string names."
       ],
