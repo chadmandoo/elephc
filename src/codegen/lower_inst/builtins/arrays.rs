@@ -3,7 +3,7 @@
 //! Delegates aggregate iteration, set operations, and key checks to existing runtime helpers.
 //!
 //! Called from:
-//! - `crate::codegen::lower_inst::builtins::lower_builtin_call()`.
+//! - `crate::codegen::lower_inst::builtins::lower_language_construct_call()`.
 //!
 //! Key details:
 //! - Aggregate helpers accept indexed arrays with 8-byte payload slots, and

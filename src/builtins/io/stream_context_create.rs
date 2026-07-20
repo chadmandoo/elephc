@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `stream_context_create` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_context_create` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `PhpType::stream_resource()` which is not scalar-expressible, so
 //!   `returns: Mixed` is used and the hook overrides the return type.
 //! - Arguments are pre-inferred by the registry before the hook runs; the hook does NOT
 //!   re-infer them.
-//! - `lower` is a thin wrapper over `io::lower_stream_context_create` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamContextCreate,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

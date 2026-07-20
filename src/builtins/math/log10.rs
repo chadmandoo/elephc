@@ -2,8 +2,8 @@
 //! Home of the PHP `log10` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `log10` is a pure-data builtin whose return type
@@ -16,7 +16,7 @@ builtin! {
     area: Math,
     params: [num: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Log10,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

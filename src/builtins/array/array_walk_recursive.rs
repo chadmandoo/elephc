@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_walk_recursive` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_walk_recursive` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `first_param_ref(fixed(["array", "callback"]))`: exactly 2
@@ -11,7 +10,6 @@
 //!   mutation (ir_lower reads `ref_params` from the registry sig).
 //! - `check` validates the array and callback arguments using the contextual element type.
 //!   Returns `Void`.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_walk_recursive` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     params: [ref array: Mixed, callback: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayWalkRecursive,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

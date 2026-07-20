@@ -2,8 +2,8 @@
 //! Home of the internal `__elephc_strtotime_raw` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - This is an internal builtin (`internal: true`) not exposed as a PHP-visible function.
@@ -18,7 +18,7 @@ builtin! {
     params: [datetime: Str, baseTimestamp: Int = DefaultSpec::Null],
     arity_error: "strtotime() takes 1 or 2 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ElephcStrtotimeRaw,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

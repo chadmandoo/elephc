@@ -2,8 +2,8 @@
 //! Home of the PHP `date_default_timezone_set` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `date_default_timezone_set` is a pure-data builtin
@@ -15,7 +15,7 @@ builtin! {
     area: System,
     params: [timezoneId: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::DateDefaultTimezoneSet,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

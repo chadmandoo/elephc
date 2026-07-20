@@ -2,13 +2,11 @@
 //! Home of the PHP `ob_get_length` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook when present),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(Int, False)`: the buffered byte count, or `false` when
-//! -   no output buffer is active (runtime -1 sentinel boxed by the lowering).
-//! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_length`.
+//!   no output buffer is active (runtime -1 sentinel boxed by the lowering).
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -19,9 +17,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Mixed,
-    returns_fresh_storage: true,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ObGetLength,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

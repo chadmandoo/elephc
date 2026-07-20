@@ -1,6 +1,6 @@
 //! Purpose:
 //! Home of the internal `__elephc_ptr_is_null` builtin: the compiler-prelude
-//! alias of `ptr_is_null`, sharing its check hook and lowering.
+//! alias of `ptr_is_null`, sharing its checker contract and semantic target.
 //!
 //! Called from:
 //! - Injected prelude PHP sources (`src/image_prelude.rs`) through the builtin
@@ -20,7 +20,7 @@ builtin! {
     params: [pointer: Mixed],
     returns: Bool,
     check: crate::builtins::pointers::ptr_is_null::check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ElephcPtrIsNull,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

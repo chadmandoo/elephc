@@ -4,7 +4,7 @@
 //!
 //! Called from:
 //! - The per-builtin `lower` hooks in `crate::builtins::io::ob_*`, via
-//!   `crate::codegen::lower_inst::builtins::lower_builtin_call()`.
+//!   `crate::codegen::lower_inst::builtins::lower_language_construct_call()`.
 //!
 //! Key details:
 //! - `ob_start` ignores its already-evaluated operands: the checker rejects a

@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `php_uname` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `php_uname` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the optional `mode` argument, when present, is a string type.
 //! - `arity_error` overrides the default "takes at most 1 argument" message to match
 //!   the legacy phrasing "takes 0 or 1 arguments".
-//! - `lower` is a thin wrapper over `system::lower_php_uname` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -22,7 +20,7 @@ builtin! {
     arity_error: "php_uname() takes 0 or 1 arguments",
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PhpUname,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

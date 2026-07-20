@@ -2,8 +2,8 @@
 //! Home of the PHP `log` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `log` is a pure-data builtin whose return type
@@ -18,7 +18,7 @@ builtin! {
     area: Math,
     params: [num: Float, base: Float = DefaultSpec::Float(std::f64::consts::E)],
     returns: Float,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Log,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

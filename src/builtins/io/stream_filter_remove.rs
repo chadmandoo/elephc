@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `stream_filter_remove` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_filter_remove` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is a stream resource before returning `Bool`.
 //! - Arguments are pre-inferred by the registry before the hook runs; the hook does NOT
 //!   re-infer them.
-//! - `lower` is a thin wrapper over `io::lower_stream_filter_remove` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [stream_filter: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamFilterRemove,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

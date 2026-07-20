@@ -9,9 +9,6 @@
 //! Key details:
 //! - Semantic hooks only see PHP types, AST arguments, EIR values/opcodes, and source spans.
 //! - Assembly contexts, physical registers, frame layout, ABI details, and raw symbols are absent.
-//! - `LEGACY` is a migration-only marker and is rejected by the final structural audit.
-
-#![allow(dead_code)]
 
 use std::fmt;
 
@@ -21,13 +18,20 @@ use crate::parser::ast::Expr;
 use crate::span::Span;
 use crate::types::PhpType;
 
+pub use crate::builtins::requirements::{
+    file_get_contents_requirements, file_put_contents_requirements, fopen_requirements,
+    stream_filter_requirements, unlink_requirements, BuiltinRequirement,
+    BuiltinRequirementInput, BuiltinRequirements, RequirementsFn,
+};
+
 /// Inputs shared by backend-neutral validation, result-type, and effect resolvers.
+#[allow(dead_code)]
 pub struct BuiltinSemanticInput<'a> {
     /// Canonical lower-case PHP builtin name.
     pub name: &'a str,
-    /// Source-order argument expressions after common call-argument normalization.
+    /// Source-order argument expressions after common call normalization.
     pub args: &'a [Expr],
-    /// Inferred PHP types in the same order as `args`.
+    /// Inferred PHP types in normalized source order.
     pub arg_types: &'a [PhpType],
     /// Source span of the complete call expression.
     pub span: Span,
@@ -45,8 +49,13 @@ pub type EffectsFn = for<'a> fn(&BuiltinSemanticInput<'a>) -> Effects;
 /// Describes how checker validation is provided for a builtin.
 #[derive(Clone, Copy)]
 pub enum BuiltinValidation {
-    /// Migration adapter: use the old checker hook stored on `BuiltinSpec`.
-    LegacyCheckerHook,
+    /// Run the registry-owned checker hook for validation and result inference.
+    CheckerHook {
+        /// Checker hook embedded in the shared semantic descriptor.
+        check: crate::builtins::spec::CheckFn,
+        /// Whether the hook controls argument inference order itself.
+        lazy: bool,
+    },
     /// Signature/arity validation is sufficient.
     SignatureOnly,
     /// Run one backend-neutral semantic validator after inferring arguments once.
@@ -54,10 +63,11 @@ pub enum BuiltinValidation {
 }
 
 /// Describes the single authoritative return-type resolver for a builtin.
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub enum BuiltinResultType {
-    /// Migration adapter: checker and EIR still use their historical paths.
-    LegacySplit,
+    /// Use the result recorded by the checker for this exact call site.
+    Checked,
     /// Use the registry's declared `returns` type in checker and EIR.
     Declared,
     /// Resolve from normalized argument types and source constants in both consumers.
@@ -67,8 +77,6 @@ pub enum BuiltinResultType {
 /// Describes the single authoritative effect resolver for a builtin.
 #[derive(Clone, Copy)]
 pub enum BuiltinEffects {
-    /// Migration adapter: use the old AST list and pessimistic EIR fallback.
-    LegacySplit,
     /// The builtin always has this precise conservative effect summary.
     Static(Effects),
     /// Resolve effects from normalized argument types and source constants.
@@ -76,10 +84,9 @@ pub enum BuiltinEffects {
 }
 
 /// Describes ownership and argument-aliasing of the builtin result.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinResultOwnership {
-    /// Migration adapter: use `returns_fresh_storage`/`returns_independent_storage`.
-    LegacyFlags,
     /// Scalar or otherwise non-refcounted result.
     NonHeap,
     /// Fresh caller-owned result that aliases no argument.
@@ -90,6 +97,8 @@ pub enum BuiltinResultOwnership {
     Independent,
     /// Result may alias the listed zero-based argument positions.
     Aliases(&'static [usize]),
+    /// Result may conservatively alias any argument storage.
+    MayAliasArguments,
 }
 
 /// Explains whether and how a builtin participates in dynamic callable dispatch.
@@ -98,32 +107,17 @@ pub type CallableSourceFn = for<'a> fn(Option<&'a PhpType>) -> bool;
 /// Explains whether and how a builtin participates in dynamic callable dispatch.
 #[derive(Clone, Copy, Debug)]
 pub enum BuiltinCallablePolicy {
-    /// Migration adapter: consult the historical codegen allowlists.
-    Legacy,
     /// Direct, first-class, and runtime-known dynamic callable paths are supported.
     Dynamic(CallableSourceFn),
-    /// Only statically resolved direct calls are meaningful for this builtin.
-    DirectOnly(&'static str),
-}
-
-/// Explicit runtime or linker requirement declared by builtin semantics.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BuiltinRequirement {
-    /// Link a bridge/static library on demand.
-    Bridge(&'static str),
-    /// Link a target-neutral system library on demand.
-    SystemLibrary(&'static str),
-    /// Link a macOS-only system library while Linux resolves the API from libc.
-    MacOsLibrary(&'static str),
-    /// Enable a named runtime feature collected from the final EIR module.
-    RuntimeFeature(&'static str),
+    /// Dynamic dispatch eligibility is defined by the typed builtin target descriptor.
+    DynamicTarget(BuiltinRuntimeTarget),
+    /// Direct and first-class calls work, but runtime-selected names are unsupported.
+    StaticOnly(&'static str),
 }
 
 /// Declares the backend-neutral implementation shape selected for a builtin.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinTargetStrategy {
-    /// Migration adapter: infer behavior from the historical assembly hook.
-    LegacyAssembly,
     /// Lower directly to one existing general-purpose EIR operation.
     EirPrimitive,
     /// Lower to a graph of reusable EIR operations and control flow.
@@ -137,8 +131,6 @@ pub enum BuiltinTargetStrategy {
 /// Declares which supported compiler targets implement the builtin semantics.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BuiltinTargetSupport {
-    /// Migration adapter: support is implicit in historical backend code.
-    LegacyImplicit,
     /// The semantic strategy is valid on macOS AArch64, Linux AArch64, and Linux x86_64.
     All,
 }
@@ -207,8 +199,6 @@ pub struct NormalizedBuiltinCall<'a> {
     pub operands: &'a [ValueId],
     /// Authoritative PHP result type resolved from the registry.
     pub result_type: &'a PhpType,
-    /// Authoritative conservative effects resolved from the registry semantics.
-    pub effects: Effects,
     /// Source span of the complete call expression.
     pub span: Span,
 }
@@ -236,8 +226,6 @@ pub type BuiltinLowerFn = for<'a> fn(
 /// Selects the active lowering path for a registry-backed builtin.
 #[derive(Clone, Copy)]
 pub enum BuiltinLowering {
-    /// Migration adapter: emit `Op::BuiltinCall` and use the assembly hook.
-    LegacyAssembly,
     /// Emit backend-neutral EIR through the registered semantic hook.
     Eir(BuiltinLowerFn),
     /// Emit one typed runtime operation using the call's normalized operands.
@@ -256,7 +244,7 @@ pub struct BuiltinSemantics {
     /// Result ownership and aliasing contract.
     pub result_ownership: BuiltinResultOwnership,
     /// Runtime/link requirements visible without inspecting a PHP function name.
-    pub requirements: &'static [BuiltinRequirement],
+    pub requirements: BuiltinRequirements,
     /// Backend-neutral implementation shape used after call normalization.
     pub target_strategy: BuiltinTargetStrategy,
     /// Explicit supported-target coverage contract.
@@ -267,31 +255,28 @@ pub struct BuiltinSemantics {
     pub lowering: BuiltinLowering,
 }
 
-impl BuiltinSemantics {
-    /// Migration-only descriptor used until a builtin family receives complete metadata.
-    pub const LEGACY: Self = Self {
-        validation: BuiltinValidation::LegacyCheckerHook,
-        result_type: BuiltinResultType::LegacySplit,
-        effects: BuiltinEffects::LegacySplit,
-        result_ownership: BuiltinResultOwnership::LegacyFlags,
-        requirements: &[],
-        target_strategy: BuiltinTargetStrategy::LegacyAssembly,
-        target_support: BuiltinTargetSupport::LegacyImplicit,
-        callable: BuiltinCallablePolicy::Legacy,
-        lowering: BuiltinLowering::LegacyAssembly,
-    };
-
-    /// Returns true when every semantic surface has migrated off compatibility paths.
-    pub fn is_complete(self) -> bool {
-        !matches!(self.validation, BuiltinValidation::LegacyCheckerHook)
-            && !matches!(self.result_type, BuiltinResultType::LegacySplit)
-            && !matches!(self.effects, BuiltinEffects::LegacySplit)
-            && !matches!(self.result_ownership, BuiltinResultOwnership::LegacyFlags)
-            && !matches!(self.target_strategy, BuiltinTargetStrategy::LegacyAssembly)
-            && !matches!(self.target_support, BuiltinTargetSupport::LegacyImplicit)
-            && !matches!(self.callable, BuiltinCallablePolicy::Legacy)
-            && !matches!(self.lowering, BuiltinLowering::LegacyAssembly)
+/// Embeds the registry checker contract into the shared semantic descriptor.
+pub const fn with_registry_checker_contract(
+    mut semantics: BuiltinSemantics,
+    check: Option<crate::builtins::spec::CheckFn>,
+    lazy: bool,
+) -> BuiltinSemantics {
+    if let Some(check) = check {
+        semantics.validation = BuiltinValidation::CheckerHook { check, lazy };
+        semantics.result_type = BuiltinResultType::Checked;
     }
+    semantics
+}
+
+/// Overrides a target's fixed requirements with a source-dependent resolver.
+pub const fn with_registry_requirement_resolver(
+    mut semantics: BuiltinSemantics,
+    resolver: Option<RequirementsFn>,
+) -> BuiltinSemantics {
+    if let Some(resolver) = resolver {
+        semantics.requirements = BuiltinRequirements::Shared(resolver);
+    }
+    semantics
 }
 
 /// Builds the complete semantic descriptor for a fresh `Str -> Str` runtime transform.
@@ -304,7 +289,7 @@ pub const fn unary_string_runtime(
         result_type: BuiltinResultType::Declared,
         effects: BuiltinEffects::Static(effects),
         result_ownership: BuiltinResultOwnership::Fresh,
-        requirements: &[],
+        requirements: BuiltinRequirements::Static(&[]),
         target_strategy: BuiltinTargetStrategy::RuntimeCall,
         target_support: BuiltinTargetSupport::All,
         callable: BuiltinCallablePolicy::Dynamic(callable_accepts_string_source),
@@ -312,20 +297,26 @@ pub const fn unary_string_runtime(
     }
 }
 
-/// Builds a transitional typed backend target while semantic metadata migrates family by family.
-pub const fn backend_target_adapter(
+/// Builds the complete shared descriptor for one typed builtin backend target.
+pub const fn runtime_target_semantics(
     target: BuiltinRuntimeTarget,
     strategy: BuiltinTargetStrategy,
 ) -> BuiltinSemantics {
     BuiltinSemantics {
-        validation: BuiltinValidation::LegacyCheckerHook,
-        result_type: BuiltinResultType::LegacySplit,
-        effects: BuiltinEffects::LegacySplit,
-        result_ownership: BuiltinResultOwnership::LegacyFlags,
-        requirements: &[],
+        validation: BuiltinValidation::SignatureOnly,
+        result_type: BuiltinResultType::Declared,
+        effects: BuiltinEffects::Static(target.effects()),
+        result_ownership: target.result_ownership(),
+        requirements: BuiltinRequirements::Static(target.requirements()),
         target_strategy: strategy,
         target_support: BuiltinTargetSupport::All,
-        callable: BuiltinCallablePolicy::Legacy,
+        callable: if target.runtime_callable_supported() {
+            BuiltinCallablePolicy::DynamicTarget(target)
+        } else {
+            BuiltinCallablePolicy::StaticOnly(
+                "typed backend operation has no runtime-selected wrapper contract",
+            )
+        },
         lowering: BuiltinLowering::Runtime(RuntimeCallTarget::Builtin(target)),
     }
 }
@@ -348,17 +339,11 @@ pub fn callable_accepts_strlen_source(source: Option<&PhpType>) -> bool {
 /// Lowers one registry builtin through its complete backend-neutral semantic descriptor.
 pub fn lower_registry_call(
     ctx: &mut dyn BuiltinLoweringContext,
-    name: &str,
+    def: &crate::builtins::registry::BuiltinDef,
     operands: &[ValueId],
     result_type: &PhpType,
     span: Span,
-) -> Result<Option<LoweredBuiltinValue>, BuiltinLoweringError> {
-    let Some(def) = crate::builtins::registry::lookup(name) else {
-        return Ok(None);
-    };
-    if matches!(def.spec.semantics.lowering, BuiltinLowering::LegacyAssembly) {
-        return Ok(None);
-    }
+) -> Result<LoweredBuiltinValue, BuiltinLoweringError> {
     let arg_types = operands
         .iter()
         .map(|operand| ctx.value_php_type(*operand))
@@ -372,24 +357,21 @@ pub fn lower_registry_call(
     let effects = match def.spec.semantics.effects {
         BuiltinEffects::Static(effects) => effects,
         BuiltinEffects::Shared(resolve) => resolve(&semantic_input),
-        BuiltinEffects::LegacySplit => Op::RuntimeCall.default_effects(),
     };
     let normalized = NormalizedBuiltinCall {
         name: def.name,
         operands,
         result_type,
-        effects,
         span,
     };
     match def.spec.semantics.lowering {
-        BuiltinLowering::Eir(lower) => lower(ctx, &normalized).map(Some),
-        BuiltinLowering::Runtime(target) => Ok(Some(ctx.emit_runtime_call(
+        BuiltinLowering::Eir(lower) => lower(ctx, &normalized),
+        BuiltinLowering::Runtime(target) => Ok(ctx.emit_runtime_call(
             target,
             operands.to_vec(),
             result_type.clone(),
             effects,
             Some(span),
-        ))),
-        BuiltinLowering::LegacyAssembly => Ok(None),
+        )),
     }
 }

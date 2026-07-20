@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `hash_init` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `hash_init` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `hash_init` accepts only 1 argument (the algorithm name). The `flags`/`key`
@@ -11,13 +10,9 @@
 //!   mode requires passing a secret key and is blocked by `arity_error` and `max_args`.
 //! - `min_args: 1, max_args: 1` enforces exactly 1 arg in `check_arity`. The custom
 //!   `arity_error` message explains the HMAC streaming restriction to the caller.
-//! - `check` records the elephc-crypto bridge requirement via `require_builtin_library`
-//!   so the linker pulls in the hash algorithm set.
 //! - Arity validation runs before the `check` hook fires.
 
-use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::errors::CompileError;
-use crate::types::PhpType;
+use crate::builtins::spec::DefaultSpec;
 
 builtin! {
     name: "hash_init",
@@ -27,20 +22,10 @@ builtin! {
     max_args: 1,
     arity_error: "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
     returns: Mixed,
-    check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::HashInit,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),
     summary: "Initialize an incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-init.php",
-}
-
-/// Records the elephc-crypto bridge requirement and returns `PhpType::Mixed`.
-///
-/// Arity (exactly 1 arg) is pre-validated by `check_arity`; the custom `arity_error`
-/// message on the spec fires instead of the standard phrasing.
-fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    cx.checker.require_builtin_library("elephc_crypto");
-    Ok(PhpType::Mixed)
 }

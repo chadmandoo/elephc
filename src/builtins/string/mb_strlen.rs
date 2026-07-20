@@ -2,7 +2,7 @@
 //! Home of the PHP `mb_strlen` builtin: declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), both via
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
 //!   `crate::builtins::registry`.
 //!
 //! Key details:
@@ -23,7 +23,7 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::MbStrlen,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),
@@ -33,7 +33,6 @@ builtin! {
 
 /// Validates PHP's string plus nullable optional encoding parameter surface.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    cx.checker.require_macos_builtin_library("iconv");
     let string_ty = cx.checker.infer_type(&cx.args[0], cx.env)?;
     if string_ty != PhpType::Str {
         return Err(CompileError::new(

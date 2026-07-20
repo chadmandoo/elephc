@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_unshift` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_unshift` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `first_param_ref(variadic(["array"], "values"))`: `array`
@@ -13,7 +12,6 @@
 //! - The `ref` marker on `array` is mandatory — it is what makes by-reference mutation
 //!   lower correctly (ir_lower reads `ref_params` from the registry sig).
 //! - Returns `Int` — the new number of elements in the array.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_unshift` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -28,7 +26,7 @@ builtin! {
     max_args: 2,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayUnshift,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

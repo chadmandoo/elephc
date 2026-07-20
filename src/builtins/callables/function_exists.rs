@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `function_exists` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `function_exists` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `lazy_check: true` so the hook controls inference: it infers the single argument
@@ -11,7 +10,6 @@
 //!   declaration or variant group (matching legacy behaviour exactly).
 //! - The actual check logic lives in `callables::check_function_exists` (in the checker
 //!   module tree) because it accesses checker internals unavailable from here.
-//! - `lower` is a thin wrapper over `lower_function_exists` (not parameterized).
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -24,7 +22,7 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::FunctionExists,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

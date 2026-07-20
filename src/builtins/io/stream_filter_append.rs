@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `stream_filter_append` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_filter_append` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates stream resource arg[0], then matches on a literal filter name
@@ -11,7 +10,6 @@
 //! - Arguments are pre-inferred by the registry before the hook runs; the hook does NOT
 //!   re-infer args[2..]. The source deliberately does not infer arg[1] in the
 //!   StringLiteral branch (harmless since the common path infers it side-effect-free).
-//! - `lower` dispatches to `io::lower_stream_filter_attach` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -29,10 +27,11 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamFilterAppend,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),
+    requirements: crate::builtins::semantics::stream_filter_requirements,
     summary: "Attaches a filter to a stream.",
     php_manual: "function.stream-filter-append",
 }
@@ -50,25 +49,7 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         cx.env,
     )?;
     match &cx.args[1].kind {
-        ExprKind::StringLiteral(filter) => {
-            // The zlib.* filters call into the system zlib, so any
-            // program that attaches one must link against libz.
-            if filter.as_str() == "zlib.deflate" || filter.as_str() == "zlib.inflate" {
-                cx.checker.require_builtin_library("z");
-            }
-            // convert.iconv.* uses libc iconv: in libc on Linux
-            // (glibc/musl) but a separate library on macOS, so only
-            // macOS needs explicit -liconv linkage.
-            if filter.starts_with("convert.iconv.") {
-                cx.checker.require_macos_builtin_library("iconv");
-            }
-            // The bzip2.* filters call into libbz2 (BZ2_bz*), so any
-            // program that attaches one must link against -lbz2. The
-            // existing compress.bzip2:// require fires only on the fopen
-            // path, not here, so this is the filter path's own wiring.
-            if filter.as_str() == "bzip2.compress" || filter.as_str() == "bzip2.decompress" {
-                cx.checker.require_builtin_library("bz2");
-            }
+        ExprKind::StringLiteral(_) => {
             // Unknown built-in names are routed through the user
             // filter registry at runtime (Phase 10 tier 3); the
             // helper returns PHP false for unregistered names.

@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `microtime` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `microtime` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` inspects the literal value of the `as_float` argument to refine the return
 //!   type: `true` → `Float`, `false` → `Str`, non-literal → `Union(Str, Float)`.
 //!   The registry's common path pre-infers arguments; the hook must not call `infer_type`.
-//! - `lower` is a thin wrapper over the shared `system::lower_microtime` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     arity_error: "microtime() takes 0 or 1 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Microtime,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -2,13 +2,11 @@
 //! Home of the PHP `ob_end_clean` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook when present),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Discards the top buffer and pops the stack.
 //! - Pure-data builtin: returns `Bool` (`false` when no output buffer is active).
-//! - `lower` is a thin wrapper over `output_buffering::lower_ob_end_clean`.
 
 
 builtin! {
@@ -16,7 +14,7 @@ builtin! {
     area: Io,
     params: [],
     returns: Bool,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ObEndClean,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

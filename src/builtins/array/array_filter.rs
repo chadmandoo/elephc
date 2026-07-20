@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_filter` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_filter` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `optional(&["array","callback","mode"], 1, &[null, 0])`.
@@ -13,7 +12,6 @@
 //! - `check` validates the first argument is an indexed array, derives callback argument types
 //!   from the static mode value, and validates the callback signature. The return type
 //!   preserves the input array element type.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_filter` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     min_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayFilter,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

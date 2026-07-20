@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_intersect_assoc` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_intersect_assoc` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `variadic(&["array"], "arrays")` (one regular `array`
@@ -13,7 +12,6 @@
 //! - `check` reproduces the legacy rule: both arguments must be associative arrays or
 //!   indexed arrays of scalars, and the result is the two-input hash result type. A
 //!   check hook is required because the return type depends on the inferred arguments.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_intersect_assoc` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -28,7 +26,7 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayIntersectAssoc,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

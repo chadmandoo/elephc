@@ -12,6 +12,25 @@
 
 use crate::ir::IrType;
 
+/// Logical storage signature enforced for a typed runtime operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeCallSignature {
+    /// One fixed list of storage-level parameters and one fixed result type.
+    Fixed {
+        /// Operand storage types in source-independent logical order.
+        parameters: &'static [IrType],
+        /// Storage type produced by the operation.
+        result: IrType,
+    },
+    /// A registry builtin whose values carry their polymorphic logical types in EIR.
+    Polymorphic {
+        /// Minimum accepted operand count after call-argument normalization.
+        min_operands: usize,
+        /// Maximum accepted operand count, or `None` for a variadic operation.
+        max_operands: Option<usize>,
+    },
+}
+
 /// Typed runtime operation selected by backend-neutral EIR lowering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RuntimeCallTarget {
@@ -22,19 +41,21 @@ pub enum RuntimeCallTarget {
 }
 
 impl RuntimeCallTarget {
-    /// Returns the storage-level operand types required by this runtime operation.
-    pub fn parameter_types(self) -> Option<&'static [IrType]> {
+    /// Returns the logical signature shared by EIR validation and backend lowering.
+    pub fn signature(self) -> Option<RuntimeCallSignature> {
         match self {
-            RuntimeCallTarget::UnaryString(_) => Some(&[IrType::Str]),
-            RuntimeCallTarget::Builtin(_) => None,
-        }
-    }
-
-    /// Returns the storage-level result type produced by this runtime operation.
-    pub fn result_type(self) -> Option<IrType> {
-        match self {
-            RuntimeCallTarget::UnaryString(_) => Some(IrType::Str),
-            RuntimeCallTarget::Builtin(_) => None,
+            RuntimeCallTarget::UnaryString(_) => Some(RuntimeCallSignature::Fixed {
+                parameters: &[IrType::Str],
+                result: IrType::Str,
+            }),
+            RuntimeCallTarget::Builtin(target) => {
+                let (min_operands, max_operands) =
+                    crate::builtins::registry::enforced_arity_bounds(target.as_eir())?;
+                Some(RuntimeCallSignature::Polymorphic {
+                    min_operands,
+                    max_operands,
+                })
+            }
         }
     }
 

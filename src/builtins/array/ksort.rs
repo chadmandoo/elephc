@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `ksort` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `ksort` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `first_param_ref(fixed(["array"]))`: exactly 1 argument,
 //!   the `array` param is by-reference. The `ref` marker is mandatory — it is what makes
 //!   by-reference mutation lower correctly (ir_lower reads `ref_params` from the registry sig).
 //! - `check` requires the argument be an Array or AssocArray, returning Void.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_ksort` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -22,7 +20,7 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Ksort,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -12,7 +12,7 @@ pub(crate) mod arrays;
 mod callables;
 pub(crate) mod catalog;
 pub(crate) mod io;
-mod numeric;
+mod language_constructs;
 pub(crate) mod spl;
 
 use crate::errors::CompileError;
@@ -111,9 +111,32 @@ impl Checker {
         // Falls through to the legacy per-area dispatch when the name is not registered.
         if let Some(def) = crate::builtins::registry::lookup(name) {
             crate::builtins::registry::check_arity(name, args.len(), span)?;
+            let requirement_input = crate::builtins::semantics::BuiltinRequirementInput {
+                args,
+            };
+            let requirements = match def.spec.semantics.requirements {
+                crate::builtins::semantics::BuiltinRequirements::Static(requirements) => {
+                    requirements.to_vec()
+                }
+                crate::builtins::semantics::BuiltinRequirements::Shared(resolve) => {
+                    resolve(&requirement_input)
+                }
+            };
+            for requirement in requirements {
+                match requirement {
+                    crate::builtins::semantics::BuiltinRequirement::Bridge(library)
+                    | crate::builtins::semantics::BuiltinRequirement::SystemLibrary(library) => {
+                        self.require_builtin_library(library);
+                    }
+                    crate::builtins::semantics::BuiltinRequirement::MacOsLibrary(library) => {
+                        self.require_macos_builtin_library(library);
+                    }
+                    crate::builtins::semantics::BuiltinRequirement::RuntimeFeature(_) => {}
+                }
+            }
             if !matches!(
                 def.spec.semantics.validation,
-                crate::builtins::semantics::BuiltinValidation::LegacyCheckerHook
+                crate::builtins::semantics::BuiltinValidation::CheckerHook { .. }
             ) {
                 let mut arg_types = Vec::with_capacity(args.len());
                 for arg in args {
@@ -130,18 +153,6 @@ impl Checker {
                 {
                     validate(&semantic_input)?;
                 }
-                for requirement in def.spec.semantics.requirements {
-                    match requirement {
-                        crate::builtins::semantics::BuiltinRequirement::Bridge(library)
-                        | crate::builtins::semantics::BuiltinRequirement::SystemLibrary(library) => {
-                            self.require_builtin_library(library);
-                        }
-                        crate::builtins::semantics::BuiltinRequirement::MacOsLibrary(library) => {
-                            self.require_macos_builtin_library(library);
-                        }
-                        crate::builtins::semantics::BuiltinRequirement::RuntimeFeature(_) => {}
-                    }
-                }
                 let ret = match def.spec.semantics.result_type {
                     crate::builtins::semantics::BuiltinResultType::Declared => {
                         def.return_type.clone()
@@ -149,10 +160,10 @@ impl Checker {
                     crate::builtins::semantics::BuiltinResultType::Shared(resolve) => {
                         resolve(&semantic_input)
                     }
-                    crate::builtins::semantics::BuiltinResultType::LegacySplit => {
+                    crate::builtins::semantics::BuiltinResultType::Checked => {
                         return Err(CompileError::new(
                             span,
-                            "builtin semantic metadata mixes migrated validation with legacy result typing",
+                            "shared builtin validation must define a shared or declared result type",
                         ));
                     }
                 };
@@ -164,35 +175,35 @@ impl Checker {
             // Check hooks may still inspect inferred types; they should not call
             // infer_type again on the same args to avoid redundant inference.
             //
-            // Exception: `lazy_check` builtins skip pre-inference so the check hook can
+            // Exception: lazy checker hooks skip pre-inference so the hook can
             // control argument inference order (e.g., to supply object-element type hints
             // to an unannotated closure before `infer_type` is called on it). These hooks
             // are responsible for calling `infer_type` on each argument themselves.
-            if !def.spec.lazy_check {
+            let crate::builtins::semantics::BuiltinValidation::CheckerHook {
+                check,
+                lazy,
+            } = def.spec.semantics.validation
+            else {
+                unreachable!("non-checker builtin returned from semantic validation branch");
+            };
+            if !lazy {
                 for arg in args.iter() {
                     self.infer_type(arg, env)?;
                 }
             }
-            let ret = if let Some(check) = def.spec.check {
-                let mut cx = crate::builtins::spec::BuiltinCheckCtx {
-                    checker: self,
-                    name,
-                    args,
-                    span,
-                    env,
-                };
-                check(&mut cx)?
-            } else {
-                def.return_type.clone()
+            let mut cx = crate::builtins::spec::BuiltinCheckCtx {
+                checker: self,
+                name,
+                args,
+                span,
+                env,
             };
+            let ret = check(&mut cx)?;
             return Ok(Some(ret));
         }
 
-        if let Some(result) = numeric::check_builtin(self, name, args, span, env)? {
-            return Ok(Some(result));
-        }
-        if let Some(result) = arrays::check_builtin(self, name, args, span, env)? {
-            return Ok(Some(result));
+        if matches!(builtin_key.as_str(), "exit" | "die" | "empty" | "unset" | "isset") {
+            return language_constructs::check(self, &builtin_key, args, span, env).map(Some);
         }
         Ok(None)
     }

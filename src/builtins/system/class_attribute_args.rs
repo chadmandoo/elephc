@@ -1,17 +1,14 @@
 //! Purpose:
-//! Home of the PHP `class_attribute_args` builtin: its declaration, type-check hook,
-//! and lowering.
+//! Home of the PHP `class_attribute_args` builtin: its declaration, type-check hook, and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that both arguments are string literals, resolves the class at
 //!   compile time, verifies the attribute is supported by the flat helper, and returns
 //!   `Array(Mixed)`.
 //! - Dynamic class or attribute names are not yet supported; only string literals are accepted.
-//! - `lower` delegates to `attributes::lower_class_attribute_args` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::builtins::system::attr_support::{class_attribute_args_unsupported, resolve_class_name};
@@ -25,7 +22,7 @@ builtin! {
     params: [class_name: Str, attribute_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ClassAttributeArgs,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

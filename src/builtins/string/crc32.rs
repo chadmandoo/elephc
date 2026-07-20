@@ -2,7 +2,7 @@
 //! Home of the PHP `crc32` builtin: declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), both via
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
 //!   `crate::builtins::registry`.
 //!
 //! Key details:
@@ -16,7 +16,7 @@ builtin! {
     area: String,
     params: [string: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Crc32,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

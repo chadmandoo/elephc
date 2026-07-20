@@ -2,13 +2,12 @@
 //! Home of the PHP `str_pad` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Accepts required `string` and `length` params, plus optional `pad_string`
 //!   and `pad_type` params with PHP-compatible defaults.
-//! - `lower` is a thin wrapper over the shared `lower_str_pad` emitter.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -22,7 +21,7 @@ builtin! {
         pad_type: Int = DefaultSpec::Int(1)
     ],
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StrPad,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

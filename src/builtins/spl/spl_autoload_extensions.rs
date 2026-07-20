@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `spl_autoload_extensions` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `spl_autoload_extensions` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - A `check` hook is required to validate that the optional argument, when present,
@@ -21,7 +20,7 @@ builtin! {
     params: [file_extensions: Mixed = DefaultSpec::Null],
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::SplAutoloadExtensions,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

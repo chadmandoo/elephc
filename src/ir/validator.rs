@@ -58,6 +58,7 @@ pub enum ValidationError {
         expected: &'static str,
     },
     UnexpectedImmediate(InstId),
+    UnknownRuntimeCallSignature(InstId),
     EffectMismatch {
         inst: InstId,
         expected: Effects,
@@ -544,33 +545,47 @@ fn validate_typed_runtime_call(
     let Some(Immediate::RuntimeCall(target)) = inst.immediate else {
         return Ok(());
     };
-    let Some(params) = target.parameter_types() else {
-        return Ok(());
-    };
-    if inst.operands.len() != params.len() {
-        return Err(ValidationError::OperandCountMismatch {
-            inst: inst_id,
-            expected: "typed runtime signature",
-            actual: inst.operands.len(),
-        });
-    }
-    for (index, expected) in params.iter().copied().enumerate() {
-        check_operand_type(
-            function,
-            inst_id,
-            inst,
-            index,
-            expected,
-            ir_type_label(expected),
-        )?;
-    }
-    if target
-        .result_type()
-        .is_some_and(|result_type| inst.result_type != result_type)
-    {
-        return Err(ValidationError::ResultTypeMismatch(
-            inst.result.expect("typed runtime call must have a result"),
-        ));
+    let signature = target
+        .signature()
+        .ok_or(ValidationError::UnknownRuntimeCallSignature(inst_id))?;
+    match signature {
+        crate::ir::RuntimeCallSignature::Fixed { parameters, result } => {
+            if inst.operands.len() != parameters.len() {
+                return Err(ValidationError::OperandCountMismatch {
+                    inst: inst_id,
+                    expected: "typed runtime signature",
+                    actual: inst.operands.len(),
+                });
+            }
+            for (index, expected) in parameters.iter().copied().enumerate() {
+                check_operand_type(
+                    function,
+                    inst_id,
+                    inst,
+                    index,
+                    expected,
+                    ir_type_label(expected),
+                )?;
+            }
+            if inst.result_type != result {
+                return Err(ValidationError::ResultTypeMismatch(
+                    inst.result.expect("typed runtime call must have a result"),
+                ));
+            }
+        }
+        crate::ir::RuntimeCallSignature::Polymorphic {
+            min_operands,
+            max_operands,
+        } => {
+            let actual = inst.operands.len();
+            if actual < min_operands || max_operands.is_some_and(|maximum| actual > maximum) {
+                return Err(ValidationError::OperandCountMismatch {
+                    inst: inst_id,
+                    expected: "registry runtime signature",
+                    actual,
+                });
+            }
+        }
     }
     Ok(())
 }

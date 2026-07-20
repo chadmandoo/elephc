@@ -2,14 +2,12 @@
 //! Home of the PHP `get_class` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No check hook: the registry common path infers the optional argument and
 //!   returns the declared `Str` type.
-//! - `lower` is a thin wrapper over `types::lower_class_name_lookup` parameterized
-//!   with this builtin's name.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -18,7 +16,7 @@ builtin! {
     area: Callables,
     params: [object: Mixed = DefaultSpec::Null],
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::GetClass,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

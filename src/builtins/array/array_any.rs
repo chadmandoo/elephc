@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `array_any` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_any` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `fixed(&["array","callback"])` (exactly 2 required params).
 //!   The legacy CHECK arm also required exactly 2 arguments; no arity override is needed.
 //! - `check` validates the first argument is an indexed array and validates the predicate
 //!   callback with its contextual element type. Returns `PhpType::Bool`.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_any` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -22,7 +20,7 @@ builtin! {
     params: [array: Mixed, callback: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayAny,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

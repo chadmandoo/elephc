@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_shift` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_shift` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `first_param_ref(fixed(["array"]))`: exactly 1 argument,
@@ -11,7 +10,6 @@
 //!   by-reference mutation lower correctly (ir_lower reads `ref_params` from the registry sig).
 //! - `check` reproduces the legacy rule: `Array(elem)` yields the element type,
 //!   `AssocArray { value, .. }` yields the value type, any other type is an error.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_shift` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     params: [ref array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayShift,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

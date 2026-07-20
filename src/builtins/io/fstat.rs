@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `fstat` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `fstat` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the `stream` argument is a stream resource via
@@ -14,7 +13,6 @@
 //!   `streams.rs` also uses it; it is widened to `pub(crate)` for access here.
 //! - The registry pre-infers arguments before calling this hook (idempotent with
 //!   the infer call inside `ensure_stream_resource`).
-//! - `lower` is a thin wrapper over `io::lower_fstat` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     params: [stream: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Fstat,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

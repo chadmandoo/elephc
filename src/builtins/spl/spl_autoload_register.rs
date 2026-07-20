@@ -2,8 +2,8 @@
 //! Home of the PHP `spl_autoload_register` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The autoload registration is an AOT stub: all three parameters are optional
@@ -20,7 +20,7 @@ builtin! {
         prepend: Bool = DefaultSpec::Bool(false),
     ],
     returns: Bool,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::SplAutoloadRegister,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,6 +1,6 @@
 //! Purpose:
-//! Lowers the first scalar PHP builtin calls emitted as EIR `BuiltinCall` instructions.
-//! Covers concrete scalar casts, type predicates, selected Mixed tag predicates, and string length.
+//! Owns target-aware builtin emitters plus the small set of PHP language constructs
+//! represented by EIR `LanguageConstructCall` instructions.
 //!
 //! Called from:
 //! - `crate::codegen::lower_inst::lower_instruction()`.
@@ -50,40 +50,17 @@ pub(crate) mod types;
 const DEFINE_ALREADY_DEFINED_WARNING: &str =
     "Warning: define(): Constant already defined\n";
 
-/// Lowers a scalar builtin call by matching the canonical PHP function name.
-///
-/// Consults the builtin registry first using the canonical key, then handles
-/// compiler-resident language constructs that are not registry builtins.
-pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+/// Lowers one compiler-resident PHP language construct by its canonical name.
+pub(super) fn lower_language_construct_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let name = ctx.function_name_data(expect_data(inst)?)?;
     let key = php_symbol_key(name.trim_start_matches('\\'));
-    // Registry-first: if the builtin is registered, invoke its lowering hook.
-    // Falls through to compiler-resident constructs when the name is not registered.
-    if let Some(def) = crate::builtins::registry::lookup(key.as_str()) {
-        let Some(lower) = def.spec.lower else {
-            return Err(CodegenIrError::unsupported(format!(
-                "legacy BuiltinCall reached codegen for migrated builtin {}",
-                def.name,
-            )));
-        };
-        return lower(ctx, inst);
-    }
     match key.as_str() {
-        "closure_bind" => lower_closure_bind(ctx, inst),
         "eval" => eval::lower_eval(ctx, inst),
-        "strval" => lower_strval(ctx, inst),
-        "method_exists" | "property_exists" => lower_member_exists(ctx, inst, key.as_str()),
-        "is_integer" | "is_long" => {
-            lower_static_type_predicate(ctx, inst, key.as_str(), PhpType::Int)
-        }
-        "is_double" | "is_real" => {
-            lower_static_type_predicate(ctx, inst, key.as_str(), PhpType::Float)
-        }
         "empty" => lower_empty(ctx, inst),
         "unset" => types::lower_unset_builtin(ctx, inst),
         "isset" => isset::lower_isset(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
-        _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
+        _ => Err(CodegenIrError::unsupported(format!("language construct {}", name))),
     }
 }
 
@@ -799,7 +776,7 @@ fn emit_is_callable_dynamic_string_lookup(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Lowers `method_exists()` and `property_exists()` through eval or static metadata.
-fn lower_member_exists(
+pub(super) fn lower_member_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -1081,7 +1058,7 @@ pub(crate) fn lower_count(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 /// Lowers the synthetic `closure_bind` call: rebinds a closure's captured
 /// `$this` to a new receiver via `__rt_closure_bind(descriptor, new_this)`,
 /// returning the rebound closure descriptor.
-fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(super) fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "closure_bind", 2)?;
     let descriptor = expect_operand(inst, 0)?;
     let new_this = expect_operand(inst, 1)?;
@@ -1203,7 +1180,7 @@ pub(crate) fn lower_boolval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
 }
 
 /// Lowers `strval()` through the same semantics as an explicit PHP string cast.
-fn lower_strval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(super) fn lower_strval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "strval", 1)?;
     conversions::lower_cast_to_string(ctx, inst)
 }

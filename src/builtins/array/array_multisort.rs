@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `array_multisort` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_multisort` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `fixed(["array1","array2"])` with `ref_params = [true, true]`:
 //!   exactly 2 by-ref params. The `ref` markers are mandatory for in-place mutation.
 //! - `check` requires BOTH arguments are indexed `Array(_)` types, returning Bool.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_multisort` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [ref array1: Mixed, ref array2: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayMultisort,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

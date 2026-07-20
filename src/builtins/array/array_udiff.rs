@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_udiff` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_udiff` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `fixed(&["array1","array2","callback"])` (exactly 3
@@ -12,7 +11,6 @@
 //! - `check` validates the first argument is an indexed array, derives one contextual
 //!   comparator type from each input array, and validates the comparator
 //!   callback. Returns the first-argument array type.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_udiff` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -24,7 +22,7 @@ builtin! {
     params: [array1: Mixed, array2: Mixed, callback: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayUdiff,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

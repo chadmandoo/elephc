@@ -2,8 +2,8 @@
 //! Home of the PHP `chr` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `chr` is a pure-data builtin whose return type
@@ -13,7 +13,6 @@
 //!   reflecting PHP's `chr(int $codepoint): string`. The dedicated `lower_chr` emitter
 //!   coerces the operand to an integer via `load_as_int`, so the declared `Int` type
 //!   is consistent with the existing lowering.
-//! - `lower` is a thin wrapper over the dedicated `lower_chr` emitter.
 
 
 builtin! {
@@ -21,7 +20,7 @@ builtin! {
     area: String,
     params: [codepoint: Int],
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Chr,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

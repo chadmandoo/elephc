@@ -2,14 +2,12 @@
 //! Home of the PHP `phpversion` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Pure-data builtin with zero parameters: return type (`Str`) is fully determined
 //!   by the declaration. elephc returns the compiler package version string.
-//! - `lower` delegates to the module-level `lower_phpversion` in
-//!   `src/codegen/lower_inst/builtins.rs`.
 
 
 builtin! {
@@ -17,7 +15,7 @@ builtin! {
     area: System,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Phpversion,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

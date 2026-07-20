@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `tmpfile` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `tmpfile` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `tmpfile` takes no PHP-visible arguments but the legacy allows `tmpfile(...[])`,
@@ -16,7 +15,6 @@
 //! - `is_empty_static_array_spread` is relocated here from `streams.rs` (its only caller).
 //! - `returns: Mixed` is used because the union involves a resource type that the
 //!   scalar `returns:` field cannot express.
-//! - `lower` is a thin wrapper over `io::lower_tmpfile` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -31,7 +29,7 @@ builtin! {
     arity_error: "tmpfile() takes no arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Tmpfile,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

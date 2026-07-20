@@ -1,17 +1,14 @@
 //! Purpose:
-//! Home of the PHP `class_uses` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `class_uses` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook via support),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `lazy_check: true` so the hook infers each argument exactly once in source order,
 //!   matching the legacy arm.
 //! - The check hook validates that the first argument is an object or string literal
 //!   and that the optional autoload arg is a literal bool or int.
-//! - `lower` is a thin wrapper over `class_relations::lower_class_relation` parameterized
-//!   with this builtin's name.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -22,7 +19,7 @@ builtin! {
     returns: Mixed,
     check: crate::builtins::callables::support::check_class_relation,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ClassUses,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

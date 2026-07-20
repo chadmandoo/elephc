@@ -2,13 +2,11 @@
 //! Home of the PHP `ob_get_level` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook when present),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Pure-data builtin: return type (`Int`, the nesting depth, 0 = no buffering)
-//! -   is fully determined by the declaration.
-//! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_level`.
+//!   is fully determined by the declaration.
 
 
 builtin! {
@@ -16,7 +14,7 @@ builtin! {
     area: Io,
     params: [],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ObGetLevel,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

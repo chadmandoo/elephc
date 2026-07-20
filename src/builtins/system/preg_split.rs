@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `preg_split` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `preg_split` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Return element type is `Mixed` when `flags` is supplied (4 args), `Str` otherwise.
@@ -11,7 +10,6 @@
 //!   2 and 4 arguments" (the registry default for min=2/max=4 produces "2 to 4 arguments").
 //! - The registry pre-infers arguments before calling the hook; the hook must not
 //!   call `infer_type` again.
-//! - `lower` is a thin wrapper over `regex::lower_preg_split` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -24,7 +22,7 @@ builtin! {
     arity_error: "preg_split() takes between 2 and 4 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PregSplit,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

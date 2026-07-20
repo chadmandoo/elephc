@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_pad` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_pad` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` reproduces the legacy rule: padding preserves the array shape, so the
@@ -11,7 +10,6 @@
 //!   required both to reject a non-array first argument and to echo its type back.
 //! - Arity (exactly 3 arguments) is validated by the registry's `check_arity` before
 //!   the hook fires; the inline arity check from the legacy arm is not reproduced here.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_pad` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     params: [array: Mixed, length: Mixed, value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayPad,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `count` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `count` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the argument type (Array, AssocArray, Mixed, Union-of-countable, or
@@ -13,8 +12,6 @@
 //!   default so `min` derives to 1; capping `max` at 1 yields the standard
 //!   "count() takes exactly 1 argument" diagnostic. The 2-param golden is preserved for
 //!   FCC and parity.
-//! - `lower` is a thin wrapper over the module-level `lower_count` emitter in
-//!   `crate::codegen::lower_inst::builtins`.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -28,7 +25,7 @@ builtin! {
     max_args: 1,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Count,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -12,12 +12,9 @@
 use super::*;
 
 mod aliases;
-mod builtins;
 mod calls;
 
 use aliases::apply_stmt_callable_aliases;
-#[cfg(test)]
-pub(super) use builtins::is_pure_non_throwing_builtin;
 pub(super) use calls::{
     callable_alias_effect,
     expr_call_effect,

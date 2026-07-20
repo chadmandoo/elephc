@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `rand` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `rand` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `min_args: 0` allows 0-arg calls (returns a raw random u32) in addition to
@@ -21,7 +20,7 @@ builtin! {
     min_args: 0,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Rand,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

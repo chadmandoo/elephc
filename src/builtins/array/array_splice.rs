@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_splice` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_splice` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The golden signature is `first_param_ref(optional(["array","offset","length"], required=2, [null]))`:
@@ -13,7 +12,6 @@
 //! - `check` reproduces the legacy rule: `Mixed`/`Union` first arg yields `Mixed`; `Array`
 //!   or `AssocArray` yields the first-arg type; any other type is an error. All remaining
 //!   args are inferred for side effects.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_splice` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     params: [ref array: Mixed, offset: Int, length: Mixed = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArraySplice,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

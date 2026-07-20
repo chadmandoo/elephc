@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `fprintf` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `fprintf` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` calls `ensure_stream_resource` on the stream argument for validation and
 //!   returns `Int`. Arguments are pre-inferred by the registry before the hook runs.
 //! - The variadic `values` parameter accepts zero or more format arguments after the
 //!   stream and format string.
-//! - `lower` is a thin wrapper over `io::lower_fprintf` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     variadic: "values",
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Fprintf,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

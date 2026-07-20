@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_diff` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_diff` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `variadic(&["array"], "arrays")` (one regular `array`
@@ -13,7 +12,6 @@
 //! - `check` reproduces the legacy rule: the first argument must be an indexed or
 //!   associative array, and the result preserves that first-operand type. A check hook
 //!   is required because the return type depends on the inferred first-argument type.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_diff` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -28,7 +26,7 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayDiff,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

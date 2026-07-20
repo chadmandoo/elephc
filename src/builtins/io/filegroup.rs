@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `filegroup` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `filegroup` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(Int, Bool)` reflecting PHP behaviour where `filegroup`
 //!   returns the numeric group ID of the file owner on success or `false` on failure.
 //! - The registry pre-infers arguments before calling this hook.
-//! - `lower` is a thin wrapper over `io::lower_filegroup` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Filegroup,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

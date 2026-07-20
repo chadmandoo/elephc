@@ -2,13 +2,12 @@
 //! Home of the PHP `stream_context_set_option` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No check hook: the common registry path infers all arguments and returns `Bool`.
 //!   PHP accepts two call shapes — (ctx, options_array) or (ctx, wrapper, option, value) —
 //!   both accepted inertly.
-//! - `lower` is a thin wrapper over `io::lower_stream_context_set_option` in the EIR backend.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -22,7 +21,7 @@ builtin! {
         value: Mixed = DefaultSpec::Null
     ],
     returns: Bool,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamContextSetOption,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

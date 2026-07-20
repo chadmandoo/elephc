@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_reduce` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_reduce` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `optional(&["array","callback","initial"], 2, &[null])`.
@@ -11,7 +10,6 @@
 //!   reproduce that enforcement in `check_arity` only.
 //! - `check` validates the callback with the inferred initial and array-element types.
 //!   The return type is `PhpType::Int`, matching the legacy arm.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_reduce` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     max_args: 3,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayReduce,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

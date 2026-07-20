@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_map` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_map` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The PHP golden signature is `variadic(&["callback","array"], "arrays")` (two
@@ -13,7 +12,6 @@
 //! - `check` validates that the second argument is an indexed array and infers the
 //!   callback return element type; the result preserves the input array element type
 //!   unless the callback returns Mixed.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_map` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -28,7 +26,7 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayMap,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

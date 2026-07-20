@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `array_product` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_product` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` computes the actual return type (Int or Float) based on the element type
 //!   of the argument array. The declared `returns: Int` is only used as the FCC type.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_product` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -20,7 +18,7 @@ builtin! {
     params: [array: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayProduct,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

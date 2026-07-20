@@ -384,7 +384,8 @@ pub enum Op {
     InstanceOfDynamic,
     Call,
     FunctionVariantCall,
-    BuiltinCall,
+    ClosureBind,
+    LanguageConstructCall,
     EvalLiteralCall,
     EvalScopeGet,
     EvalScopeSet,
@@ -601,7 +602,8 @@ impl Op {
             }
             Call
             | FunctionVariantCall
-            | BuiltinCall
+            | ClosureBind
+            | LanguageConstructCall
             | EvalLiteralCall
             | EvalFunctionCall
             | EvalFunctionCallArray
@@ -639,7 +641,8 @@ impl Op {
             self,
             Op::Call
                 | Op::FunctionVariantCall
-                | Op::BuiltinCall
+                | Op::ClosureBind
+                | Op::LanguageConstructCall
                 | Op::EvalLiteralCall
                 | Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
@@ -830,7 +833,8 @@ impl Op {
             InstanceOfDynamic => "instance_of_dynamic",
             Call => "call",
             FunctionVariantCall => "function_variant_call",
-            BuiltinCall => "builtin_call",
+            ClosureBind => "closure_bind",
+            LanguageConstructCall => "language_construct_call",
             EvalLiteralCall => "eval_literal_call",
             EvalScopeGet => "eval_scope_get",
             EvalScopeSet => "eval_scope_set",

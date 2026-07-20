@@ -211,62 +211,22 @@ def build_inventory() -> dict[str, Any]:
     home_map = docs_extract.build_home_lowering_map(REPO)
     all_aot_names = [record["name"] for record in registry_records + resident_records]
     test_index = build_test_index(all_aot_names, source_files_with_tests())
-    ops = eir_op_names()
-
-    codegen_root = REPO / "src" / "codegen" / "lower_inst"
-    codegen_sources = [(path, read(path)) for path in sorted(codegen_root.rglob("*.rs"))]
-    ir_return_source = read(REPO / "src" / "ir_lower" / "expr" / "mod.rs")
-    ast_effect_source = read(REPO / "src" / "optimize" / "effects" / "builtins.rs")
-    ast_pure_body = function_body(ast_effect_source, "is_pure_non_throwing_builtin")
-    callable_source = read(REPO / "src" / "codegen_support" / "callable_dispatch.rs")
-    runtime_callable_body = function_body(callable_source, "runtime_builtin_name_supported")
 
     records: list[dict[str, Any]] = []
     for exported_record in sorted(registry_records, key=lambda item: item["name"].lower()):
         name = exported_record["name"]
         canonical = name.lower()
-        emitter_name, _, home_relative = home_map.get(canonical, ("", "", ""))
+        _, _, home_relative = home_map.get(canonical, ("", "", ""))
         home_source = read(REPO / home_relative) if home_relative else ""
         block = builtin_macro_block(home_source)
-        semantic_descriptor = field_value(block, "semantics")
-        declared_strategy = field_value(block, "target_strategy")
-        declared_target_support = field_value(block, "target_support")
-        if semantic_descriptor and "unary_string_runtime" in semantic_descriptor:
-            declared_strategy = "BuiltinTargetStrategy::RuntimeCall"
-            declared_target_support = "BuiltinTargetSupport::All"
-
-        docs_lowering = docs_extract.resolve_lowering(
-            REPO,
-            read,
-            REPO / "src" / "codegen" / "lower_inst" / "builtins.rs",
-            REPO / "src" / "codegen" / "lower_inst" / "builtins",
-            emitter_name,
-            home_relative or None,
-        )
-        emitter_file, emitter_line, emitter_body = find_emitter(
-            emitter_name,
-            docs_lowering.codegen_file,
-            codegen_sources,
-        )
-        runtime_helpers = sorted(
-            set(docs_lowering.runtime_helpers)
-            | set(re.findall(r"\b__rt_[A-Za-z0-9_]+", emitter_body))
-        )
-        requirements = sorted(
-            set(rust_string_calls(home_source, "require_builtin_library"))
-            | {
-                f"macos:{library}"
-                for library in rust_string_calls(home_source, "require_macos_builtin_library")
-            }
-        )
-        category, strategy, category_evidence = classify_strategy(
-            name, emitter_body, runtime_helpers, requirements, ops
-        )
-        return_lines = [
-            index
-            for index, line in enumerate(ir_return_source.splitlines(), start=1)
-            if f'"{canonical}"' in line
-        ]
+        semantics = exported_record.get("semantics", {})
+        strategy = semantics.get("target_strategy")
+        category = {
+            "eir_primitive": 1,
+            "eir_graph": 2,
+            "runtime_call": 3,
+            "conditional": 4,
+        }.get(strategy, 0)
         params = exported_record.get("params", [])
         records.append(
             {
@@ -288,52 +248,40 @@ def build_inventory() -> dict[str, Any]:
                     "by_ref_return": bool(exported_record.get("by_ref_return")),
                 },
                 "validation": {
-                    "hook": field_value(block, "check"),
-                    "lazy": field_value(block, "lazy_check") == "true",
-                    "semantic_descriptor": semantic_descriptor,
+                    **semantics.get("validation", {}),
                 },
                 "result_type": {
                     "registry_checker_default": exported_record.get("returns"),
-                    "checker_hook_can_override": field_value(block, "check") is not None,
-                    "separate_eir_name_override_lines": return_lines,
+                    "resolver": semantics.get("result_type"),
+                    "separate_eir_name_override_lines": [],
                 },
-                "effects": {
-                    "ast_pure_non_throwing_allowlist": f'"{canonical}"' in ast_pure_body,
-                    "eir_source": "effects_lookup::builtin_effects(name) -> Op::BuiltinCall.default_effects()",
-                },
+                "effects": semantics.get("effects"),
                 "ownership": {
-                    "returns_fresh_storage": field_value(block, "returns_fresh_storage") == "true",
-                    "returns_independent_storage": field_value(block, "returns_independent_storage") == "true",
+                    **semantics.get("ownership", {}),
                     "by_ref_param_indexes": [
                         index for index, param in enumerate(params) if param.get("by_ref")
                     ],
                 },
                 "lowering": {
                     "legacy_hook": field_value(block, "lower"),
-                    "semantic_descriptor": semantic_descriptor,
-                    "emitter_function": emitter_name or None,
-                    "emitter_file": emitter_file,
-                    "emitter_line": emitter_line,
-                    "runtime_helpers": runtime_helpers,
+                    **semantics.get("lowering", {}),
                     "target_category": category,
-                    "target_strategy": declared_strategy or strategy,
-                    "category_evidence": category_evidence,
+                    "target_strategy": strategy,
                 },
-                "requirements": requirements,
+                "requirements": semantics.get("requirements"),
                 "lookup": {
                     "case_insensitive": True,
                     "namespace_fallback": True,
                 },
                 "callable": {
                     "first_class_signature_from_registry": True,
-                    "runtime_string_wrapper_allowlisted": f'"{canonical}"' in runtime_callable_body,
+                    **semantics.get("callable", {}),
                 },
                 "eval": exported_record.get("eval"),
                 "targets": {
                     "required": SUPPORTED_TARGETS,
-                    "explicit_emitter_mentions": target_mentions(emitter_body),
-                    "declared_support": declared_target_support,
-                    "verified": declared_target_support == "BuiltinTargetSupport::All",
+                    "declared_support": semantics.get("target_support", []),
+                    "verified": semantics.get("target_support", []) == SUPPORTED_TARGETS,
                 },
                 "tests": test_index.get(canonical, []),
             }
@@ -366,11 +314,8 @@ def build_inventory() -> dict[str, Any]:
         "invariants": {
             "duplicate_registry_names": duplicate_names,
             "missing_home_files": sorted(record["name"] for record in records if not record["home_file"]),
-            "missing_legacy_emitters": sorted(
-                record["name"]
-                for record in records
-                if record["lowering"]["legacy_hook"] is not None
-                and not record["lowering"]["emitter_function"]
+            "missing_semantic_descriptors": sorted(
+                record["name"] for record in records if not record["lowering"].get("kind")
             ),
         },
     }
@@ -384,14 +329,27 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
     )
     for path in sorted((REPO / "src" / "builtins").rglob("*.rs")):
         for line_number, line in enumerate(read(path).splitlines(), start=1):
-            if forbidden_builtins.search(line):
+            if not line.lstrip().startswith("//") and forbidden_builtins.search(line):
                 errors.append(f"{path.relative_to(REPO)}:{line_number}: backend dependency")
+            if not line.lstrip().startswith("//") and re.search(
+                r"require_(?:macos_)?builtin_library\s*\(", line
+            ):
+                errors.append(
+                    f"{path.relative_to(REPO)}:{line_number}: checker-side requirement mutation"
+                )
 
     required_absences = {
         "src/ir/instr.rs": [r"\bBuiltinCall\b"],
         "src/types/signatures.rs": [r"\blegacy_builtin_call_sig\b"],
         "src/ir_lower/effects_lookup.rs": [r"fn builtin_effects\s*\("],
         "src/codegen_support/callable_dispatch.rs": [r"fn runtime_builtin_name_supported\s*\("],
+        "src/builtins/spec.rs": [
+            r"pub\s+returns_fresh_storage\s*:",
+            r"pub\s+returns_independent_storage\s*:",
+            r"pub\s+check\s*:",
+            r"pub\s+lazy_check\s*:",
+        ],
+        "src/ir_lower/expr/mod.rs": [r"fn\s+builtin_return_type_override\s*\("],
     }
     for relative, patterns in required_absences.items():
         source = read(REPO / relative)
@@ -408,6 +366,39 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
     for record in inventory["compiler_resident"]:
         if record["kind"] == "ordinary_builtin_legacy":
             errors.append(f"{record['name']}: ordinary builtin remains outside the registry")
+
+    target_source = read(REPO / "src" / "ir" / "builtin_runtime_target.rs")
+    builtin_target_variants = dict(
+        re.findall(r'BuiltinRuntimeTarget::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"', target_source)
+    )
+    builtin_variant_by_name = {name: variant for variant, name in builtin_target_variants.items()}
+    builtin_backend_source = "\n".join(
+        read(path)
+        for path in sorted(
+            (REPO / "src" / "codegen" / "lower_inst" / "builtin_runtime_targets").glob("group_*.rs")
+        )
+    )
+    unary_source = read(REPO / "src" / "ir" / "runtime_call.rs")
+    unary_variants = dict(
+        re.findall(r'UnaryStringRuntime::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"', unary_source)
+    )
+    unary_variant_by_name = {name: variant for variant, name in unary_variants.items()}
+    unary_backend_source = read(REPO / "src" / "codegen" / "lower_inst" / "runtime_calls.rs")
+    for record in inventory["registry_builtins"]:
+        lowering = record["lowering"]
+        if lowering.get("kind") != "runtime_call":
+            continue
+        target = lowering.get("target")
+        if target in builtin_variant_by_name:
+            variant = builtin_variant_by_name[target]
+            if f"BuiltinRuntimeTarget::{variant}" not in builtin_backend_source:
+                errors.append(f"{record['name']}: typed target {target} has no backend arm")
+        elif target in unary_variant_by_name:
+            variant = unary_variant_by_name[target]
+            if f"UnaryStringRuntime::{variant}" not in unary_backend_source:
+                errors.append(f"{record['name']}: unary runtime target {target} has no backend arm")
+        else:
+            errors.append(f"{record['name']}: unknown typed runtime target {target}")
     return errors
 
 

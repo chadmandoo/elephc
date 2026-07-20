@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `str_split` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `str_split` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `PhpType::Array(Box::new(PhpType::Str))`. A check hook is
@@ -12,7 +11,6 @@
 //!   inferred by the common registry dispatch path before the hook fires.
 //! - Arity is validated by the registry's `check_arity` before the check hook fires;
 //!   the inline arity check from the legacy arm is therefore not reproduced here.
-//! - `lower` is a thin wrapper over the shared `lower_str_split` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::builtins::spec::DefaultSpec;
@@ -28,7 +26,7 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StrSplit,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

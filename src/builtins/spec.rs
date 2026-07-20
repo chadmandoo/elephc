@@ -1,6 +1,6 @@
 //! Purpose:
 //! Defines the `BuiltinSpec` type that describes a single PHP builtin function:
-//! its name, arity, type signature, shared semantics, and temporary legacy lowering hook.
+//! its name, arity, type signature, and shared backend-neutral semantics.
 //!
 //! Called from:
 //! - `crate::builtins::registry` (collected via `inventory`).
@@ -13,11 +13,9 @@
 //! - All `BuiltinSpec` fields are `'static` so the struct can be used in `const` context
 //!   and stored in the `inventory`-collected registry without allocation.
 
-// These new types reference pub(crate) types (Checker, FunctionContext) through their
-// pub interfaces; that mismatch is intentional and will be resolved when the migration
-// elevates or unifies those visibilities. Dead-code warnings are expected during the
-// multi-task migration before the registry wires the types into active code paths.
-#![allow(dead_code, private_interfaces)]
+// Checker hooks are public registry metadata but intentionally receive the crate-private
+// checker implementation rather than exposing compiler internals as public API.
+#![allow(private_interfaces)]
 
 /// Categorises a builtin by functional area, used for documentation grouping
 /// and future area-scoped registry queries.
@@ -41,8 +39,6 @@ pub enum Area {
     Spl,
     /// Pointer and buffer builtins (elephc extensions).
     Pointers,
-    /// Internal compiler builtins not exposed as PHP-visible functions.
-    Internal,
 }
 
 /// Describes the PHP-level type of a parameter or return value at the `BuiltinSpec`
@@ -62,16 +58,8 @@ pub enum TypeSpec {
     Bool,
     /// PHP `mixed`.
     Mixed,
-    /// PHP `null`.
-    Null,
     /// PHP `void` (return position only).
     Void,
-    /// A homogeneous PHP array with element type `T` (`T[]`).
-    ArrayOf(&'static TypeSpec),
-    /// A PHP associative array with value type `T`.
-    AssocOf(&'static TypeSpec),
-    /// A union of two or more PHP types.
-    Union(&'static [TypeSpec]),
 }
 
 /// Describes the default value for an optional parameter at the `BuiltinSpec`
@@ -90,8 +78,6 @@ pub enum DefaultSpec {
     Str(&'static str),
     /// `PHP_INT_MAX` sentinel.
     IntMax,
-    /// `PHP_INT_MIN` sentinel.
-    IntMin,
     /// An empty array `[]` default.
     EmptyArray,
 }
@@ -134,16 +120,6 @@ pub struct BuiltinCheckCtx<'a> {
 pub type CheckFn = for<'ctx, 'a> fn(
     &'ctx mut BuiltinCheckCtx<'a>,
 ) -> Result<crate::types::PhpType, crate::errors::CompileError>;
-
-/// The assembly-lowering hook for a builtin, called by the EIR backend.
-///
-/// Receives the active per-function backend context and the `BuiltinCall` instruction,
-/// and emits the required assembly. Returns a `CodegenIrError` if the lowering path
-/// is not yet implemented for this target.
-pub type LowerFn = for<'ctx, 'f, 'i> fn(
-    &'ctx mut crate::codegen::context::FunctionContext<'f>,
-    &'i crate::ir::Instruction,
-) -> Result<(), crate::codegen::CodegenIrError>;
 
 /// Complete static descriptor for one PHP builtin function.
 ///
@@ -193,46 +169,11 @@ pub struct BuiltinSpec {
     /// matching EIR return-type arm, or the checker and EIR will disagree on the
     /// value's type at the use site.
     pub returns: TypeSpec,
-    /// Whether every refcounted result variant is freshly allocated for the caller.
-    ///
-    /// EIR ownership lowering uses this contract to release a builtin result after a
-    /// retaining consumer has copied or retained it. Leave this `false` for borrowed
-    /// results that can alias argument or runtime storage; releasing those would corrupt
-    /// their original owner. Non-refcounted result variants are unaffected.
-    pub returns_fresh_storage: bool,
-    /// Whether a non-fresh result is guaranteed not to reuse any argument's storage.
-    ///
-    /// Fresh heap ownership implies independence without this flag; this field
-    /// covers scratch-backed independent results. EIR uses the effective contract
-    /// to release owning argument temporaries after the call and to derive
-    /// return/argument alias summaries for source wrappers.
-    pub returns_independent_storage: bool,
     /// Whether the function returns by reference.
     pub by_ref_return: bool,
-    /// An optional type-checking hook for builtins whose return type depends
-    /// on the argument types or values. When present, its returned `PhpType` is
-    /// authoritative for the type CHECKER (it overrides `returns`). It is NOT
-    /// consulted by the EIR backend — see the note on `returns`.
-    pub check: Option<CheckFn>,
-    /// When `true`, the registry's `check_builtin` dispatcher skips the standard
-    /// argument pre-inference loop before calling the `check` hook. The check hook
-    /// is then responsible for calling `infer_type` on each argument as needed.
-    ///
-    /// This is required for builtins like `usort`/`uasort` whose check hook uses
-    /// `infer_closure_type_with_param_hints` to supply object-element type hints to
-    /// an unannotated callback closure: the standard pre-inference loop would call
-    /// `infer_type` on the closure without hints first, causing the closure body to
-    /// be checked with default `Int` parameter types — making `$a->property` fail
-    /// before the hook can supply the correct hints.
-    pub lazy_check: bool,
     /// Shared backend-neutral semantics consumed by checker, optimizer, EIR, ownership,
-    /// requirements, and callable paths. `BuiltinSemantics::LEGACY` is temporary.
+    /// requirements, and callable paths.
     pub semantics: crate::builtins::semantics::BuiltinSemantics,
-    /// Temporary assembly-lowering hook for an unmigrated builtin.
-    ///
-    /// Complete semantic entries leave this `None`; the field is deleted after the
-    /// last legacy family migrates.
-    pub lower: Option<LowerFn>,
     /// A short one-line summary for generated documentation.
     pub summary: &'static str,
     /// Example PHP snippets demonstrating the builtin, for generated documentation.
@@ -258,33 +199,20 @@ inventory::collect!(BuiltinSpec);
 #[cfg(test)]
 mod macro_tests {
     use crate::builtins::spec::*;
-    /// No-op `LowerFn` used to satisfy the `builtin!` macro in this test module.
-    fn lower(_c: &mut crate::codegen::context::FunctionContext, _i: &crate::ir::Instruction)
-        -> Result<(), crate::codegen::CodegenIrError> { Ok(()) }
-    builtin! { name: "__macro_probe", area: Internal, params: [x: Int], returns: Int, lower: lower, summary: "probe", internal: true }
-    builtin! { name: "__macro_owned_probe", area: Internal, params: [], returns: Mixed, returns_fresh_storage: true, lower: lower, summary: "owned probe", internal: true }
-    builtin! { name: "__macro_independent_probe", area: Internal, params: [value: Str], returns: Str, returns_independent_storage: true, lower: lower, summary: "independent probe", internal: true }
-    builtin! { name: "__macro_ext_probe", area: Internal, params: [], returns: Null, lower: lower, summary: "extension probe", extension: true, internal: true }
+    builtin! { name: "__macro_probe", area: Types, params: [x: Int], returns: Int, summary: "probe", internal: true }
+    builtin! { name: "__macro_ext_probe", area: Types, params: [], returns: Void, summary: "extension probe", extension: true, internal: true }
 
-    /// Verifies macro registration and the fresh/independent storage metadata defaults.
+    /// Verifies the macro registers a builtin with its semantic descriptor.
     #[test]
     fn macro_registers_builtin() {
         let default_spec = inventory::iter::<BuiltinSpec>
             .into_iter()
             .find(|s| s.name == "__macro_probe")
             .expect("macro probe must be registered");
-        let owned_spec = inventory::iter::<BuiltinSpec>
-            .into_iter()
-            .find(|s| s.name == "__macro_owned_probe")
-            .expect("owned macro probe must be registered");
-        let independent_spec = inventory::iter::<BuiltinSpec>
-            .into_iter()
-            .find(|s| s.name == "__macro_independent_probe")
-            .expect("independent macro probe must be registered");
-        assert!(!default_spec.returns_fresh_storage);
-        assert!(!default_spec.returns_independent_storage);
-        assert!(owned_spec.returns_fresh_storage);
-        assert!(independent_spec.returns_independent_storage);
+        assert!(matches!(
+            default_spec.semantics.result_ownership,
+            crate::builtins::semantics::BuiltinResultOwnership::MayAliasArguments
+        ));
     }
 
     /// Verifies the `extension` flag defaults to false and is set by the macro arm,
@@ -315,19 +243,20 @@ mod tests {
         const S: BuiltinSpec = BuiltinSpec {
             name: "strlen", area: Area::String, params: P, variadic: None,
             max_args: None, min_args: None, arity_error: None,
-            returns: TypeSpec::Int, returns_fresh_storage: false,
-            returns_independent_storage: false,
-            by_ref_return: false, check: None, lazy_check: false,
-            semantics: crate::builtins::semantics::BuiltinSemantics::LEGACY,
-            lower: Some(noop_lower), summary: "len", examples: &[], php_manual: None,
+            returns: TypeSpec::Int,
+            by_ref_return: false,
+            semantics: crate::builtins::semantics::runtime_target_semantics(
+                crate::ir::BuiltinRuntimeTarget::IsInt,
+                crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+            ),
+            summary: "len", examples: &[], php_manual: None,
             deprecation: None, extension: false, internal: false,
         };
         assert_eq!(S.name, "strlen");
         assert_eq!(S.params.len(), 1);
-        assert!(!S.returns_fresh_storage);
-        assert!(!S.returns_independent_storage);
+        assert!(matches!(
+            S.semantics.result_ownership,
+            crate::builtins::semantics::BuiltinResultOwnership::MayAliasArguments
+        ));
     }
-    /// No-op `LowerFn` used to satisfy the `BuiltinSpec` struct literal in this test module.
-    fn noop_lower(_c: &mut crate::codegen::context::FunctionContext, _i: &crate::ir::Instruction)
-        -> Result<(), crate::codegen::CodegenIrError> { Ok(()) }
 }

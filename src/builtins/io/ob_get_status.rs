@@ -2,14 +2,12 @@
 //! Home of the PHP `ob_get_status` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook when present),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `AssocArray<Mixed, Mixed>`: simple mode yields the top
-//! -   buffer's status (string keys), full mode a list of per-level status arrays.
+//!   buffer's status (string keys), full mode a list of per-level status arrays.
 //! - Every entry reports the default output handler (user handlers unsupported).
-//! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_status`.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -20,9 +18,8 @@ builtin! {
     area: Io,
     params: [full_status: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
-    returns_fresh_storage: true,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ObGetStatus,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

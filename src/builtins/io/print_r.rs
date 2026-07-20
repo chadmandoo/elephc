@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `print_r` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `print_r` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` refines the return type from the literal `$return` flag:
@@ -13,7 +12,6 @@
 //!   `crate::ir_lower::expr::print_r_builtin_return_type_for_args` and the codegen
 //!   dispatch in `debug::lower_print_r` follows the same result type — the three
 //!   must stay aligned.
-//! - `lower` is a thin wrapper over `debug::lower_print_r` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     params: [value: Mixed, r#return: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PrintR,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

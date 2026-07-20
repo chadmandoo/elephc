@@ -1,16 +1,13 @@
 //! Purpose:
-//! Home of the PHP `class_attribute_names` builtin: its declaration, type-check hook,
-//! and lowering.
+//! Home of the PHP `class_attribute_names` builtin: its declaration, type-check hook, and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is a string literal class name, resolves the
 //!   class at compile time, and returns `Array(Str)`.
 //! - Dynamic class names are not yet supported; only string literals are accepted.
-//! - `lower` delegates to `attributes::lower_class_attribute_names` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::builtins::system::attr_support::resolve_class_name;
@@ -24,7 +21,7 @@ builtin! {
     params: [class_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ClassAttributeNames,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

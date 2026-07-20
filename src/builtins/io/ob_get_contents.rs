@@ -2,15 +2,13 @@
 //! Home of the PHP `ob_get_contents` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook when present),
-//!   and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Read-only query: the buffer stays active and untouched.
 //! - `check` returns `Union(Str, False)`: the captured contents, or `false` when
-//! -   no output buffer is active.
-//! - `returns_fresh_storage` marks both result branches as caller-owned fresh boxes.
-//! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_contents`.
+//!   no output buffer is active.
+//! - The typed runtime target marks both result branches as caller-owned fresh boxes.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,9 +19,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Mixed,
-    returns_fresh_storage: true,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ObGetContents,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

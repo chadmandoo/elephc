@@ -2,8 +2,8 @@
 //! Home of the PHP `hrtime` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `hrtime` is a pure-data builtin whose return type
@@ -17,7 +17,7 @@ builtin! {
     area: System,
     params: [as_number: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Hrtime,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

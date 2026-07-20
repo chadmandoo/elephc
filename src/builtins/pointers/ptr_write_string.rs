@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `ptr_write_string` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `ptr_write_string` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates pointer and string arguments and returns `PhpType::Int`
 //!   (the number of bytes written).
-//! - `lower` is a thin wrapper over the shared `pointers::lower_ptr_write_string` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -20,7 +18,7 @@ builtin! {
     params: [pointer: Mixed, string: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PtrWriteString,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

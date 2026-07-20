@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `readline` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `readline` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(Str, Bool)` to match PHP's false-on-failure pattern for
@@ -13,7 +12,6 @@
 //!   match the legacy error text.
 //! - `returns: Mixed` is used because the union cannot be expressed through the scalar
 //!   `returns:` field.
-//! - `lower` is a thin wrapper over `io::lower_readline` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     arity_error: "readline() takes 0 or 1 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Readline,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

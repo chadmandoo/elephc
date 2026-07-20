@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `getenv` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `getenv` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(Str, Bool)` to reflect PHP's behaviour where `getenv`
 //!   returns the value string on success or `false` if the variable is unset.
-//! - `lower` is a thin wrapper over `system::lower_getenv` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -20,7 +18,7 @@ builtin! {
     params: [name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Getenv,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

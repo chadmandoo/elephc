@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `fgetcsv` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `fgetcsv` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the `stream` argument is a stream resource and returns `Array<Str>`.
 //! - `returns: Mixed` is used because the array type cannot be expressed through the
 //!   scalar `returns:` field. Arguments are pre-inferred by the registry before the hook runs.
-//! - `lower` is a thin wrapper over `io::lower_fgetcsv` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [stream: Mixed, length: Int = DefaultSpec::Null, separator: Str = DefaultSpec::Str(",")],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Fgetcsv,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

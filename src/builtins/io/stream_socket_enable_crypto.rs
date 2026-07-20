@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `stream_socket_enable_crypto` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_socket_enable_crypto` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates arg[0] is a stream resource and requires the `elephc_tls` library.
 //! - Arguments are pre-inferred by the registry before the hook runs.
-//! - `lower` dispatches to `io::lower_stream_socket_enable_crypto` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     ],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamSocketEnableCrypto,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),
@@ -36,6 +34,5 @@ builtin! {
 /// Validates arg[0] is a stream resource, links the TLS library, and returns `Bool`.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     crate::types::checker::builtins::io::common::ensure_stream_resource(cx.checker, cx.name, &cx.args[0], cx.env)?;
-    cx.checker.require_builtin_library("elephc_tls");
     Ok(PhpType::Bool)
 }

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_column` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_column` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` reproduces the legacy rule: the first argument must be an `Array` of
@@ -13,7 +12,6 @@
 //! - Arity (exactly 2 arguments) is validated by the registry's `check_arity` before
 //!   the hook fires; the inline arity check from the legacy arm is not reproduced here.
 //!   Note elephc only supports the 2-argument form (`array`, `column_key`).
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_column` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     params: [array: Mixed, column_key: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayColumn,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

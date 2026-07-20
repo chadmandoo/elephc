@@ -1,40 +1,22 @@
 //! Purpose:
-//! Home of the PHP `hash_update` builtin: declaration, type-check hook, and lowering.
+//! Home of the PHP `hash_update` builtin: single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
-//! - `check` records the elephc-crypto bridge requirement via `require_builtin_library`
-//!   so the linker pulls in the incremental hashing context implementation.
-//! - Argument types are inferred by the common registry dispatch path before the hook fires.
 //! - Arity (exactly 2 args) is validated by the registry's `check_arity` before the hook fires.
 
-use crate::builtins::spec::BuiltinCheckCtx;
-use crate::errors::CompileError;
-use crate::types::PhpType;
 
 builtin! {
     name: "hash_update",
     area: String,
     params: [context: Mixed, data: Str],
     returns: Bool,
-    check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::HashUpdate,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),
     summary: "Pumps data into an active incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-update.php",
-}
-
-/// Returns `PhpType::Bool` for a `hash_update` call and records the elephc-crypto bridge requirement.
-///
-/// `require_builtin_library` ensures the linker pulls in the incremental hashing context
-/// implementation. Argument types are inferred by the common registry dispatch path before
-/// this hook fires; arity (exactly 2 args) is pre-validated by the registry.
-fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    cx.checker.require_builtin_library("elephc_crypto");
-    Ok(PhpType::Bool)
 }

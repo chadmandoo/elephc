@@ -1,17 +1,14 @@
 //! Purpose:
-//! Home of the PHP `class_get_attributes` builtin: its declaration, type-check hook,
-//! and lowering.
+//! Home of the PHP `class_get_attributes` builtin: its declaration, type-check hook, and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is a string literal class name, resolves the
 //!   class at compile time, checks that all attributes are supported, and returns
 //!   `Array(Object("ReflectionAttribute"))`.
 //! - Dynamic class names are not yet supported; only string literals are accepted.
-//! - `lower` delegates to `attributes::lower_class_get_attributes` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::builtins::system::attr_support::{class_get_attributes_unsupported, resolve_class_name};
@@ -25,7 +22,7 @@ builtin! {
     params: [class_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ClassGetAttributes,
             crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
     ),

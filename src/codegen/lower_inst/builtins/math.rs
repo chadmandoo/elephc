@@ -2,7 +2,7 @@
 //! Lowers simple scalar math builtins for the EIR backend.
 //!
 //! Called from:
-//! - `crate::codegen::lower_inst::builtins::lower_builtin_call()`.
+//! - `crate::codegen::lower_inst::builtins::lower_language_construct_call()`.
 //!
 //! Key details:
 //! - Supports concrete integer/boolean, floating-point, and boxed Mixed numeric operands.

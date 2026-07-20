@@ -1,6 +1,6 @@
 //! Purpose:
 //! Home of the internal `__elephc_ptr_read_string` builtin: the compiler-prelude
-//! alias of `ptr_read_string`, sharing its check hook and lowering.
+//! alias of `ptr_read_string`, sharing its checker contract and semantic target.
 //!
 //! Called from:
 //! - Injected prelude PHP sources (`src/image_prelude.rs`, `src/web_prelude.rs`)
@@ -20,7 +20,7 @@ builtin! {
     params: [pointer: Mixed, length: Mixed],
     returns: Str,
     check: crate::builtins::pointers::ptr_read_string::check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ElephcPtrReadString,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `stream_get_contents` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_get_contents` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the stream resource, then validates `length` (int|null) and `offset`
 //!   (int) via `stream_support` helpers. Returns `Union(Str, Bool)`.
 //! - `length` and `offset` are optional with defaults `null` and `-1` respectively.
 //! - `returns: Mixed` is used because the union cannot be expressed through the scalar field.
-//! - `lower` is a thin wrapper over `io::lower_stream_get_contents` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::builtins::io::stream_support;
@@ -28,7 +26,7 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamGetContents,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

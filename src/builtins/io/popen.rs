@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `popen` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `popen` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(stream_resource, Bool)` to reflect PHP's false-on-failure
@@ -11,7 +10,6 @@
 //!   are pre-inferred by the registry and no resource validation is performed.
 //! - `returns: Mixed` is used because the union involves a resource type that the
 //!   scalar `returns:` field cannot express.
-//! - `lower` is a thin wrapper over `io::lower_popen` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     params: [command: Str, mode: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Popen,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `iterator_to_array` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `iterator_to_array` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - A `check` hook is required because the return type depends on the source type and
@@ -22,7 +21,7 @@ builtin! {
     params: [iterator: Mixed, preserve_keys: Bool = DefaultSpec::Bool(true)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::IteratorToArray,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

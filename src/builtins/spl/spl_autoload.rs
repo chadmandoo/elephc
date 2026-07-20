@@ -2,8 +2,8 @@
 //! Home of the PHP `spl_autoload` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Accepts 1 required argument (`class`) and 1 optional argument (`file_extensions`).
@@ -16,7 +16,7 @@ builtin! {
     area: Spl,
     params: [class: Mixed, file_extensions: Mixed = DefaultSpec::Null],
     returns: Void,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::SplAutoload,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

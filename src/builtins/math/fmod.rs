@@ -2,8 +2,8 @@
 //! Home of the PHP `fmod` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `fmod` is a pure-data builtin whose return type
@@ -15,7 +15,7 @@ builtin! {
     area: Math,
     params: [num1: Float, num2: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Fmod,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

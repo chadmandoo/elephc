@@ -115,6 +115,8 @@ pub(crate) struct LoweringContext<'m, 'f> {
     /// Statically-decided access violations lowered to runtime `Error` throws,
     /// keyed by the source span of the offending call/assignment.
     pub throw_access_sites: &'m HashMap<Span, ThrowAccessInfo>,
+    /// Authoritative checker result types for builtin calls in this source module.
+    pub builtin_call_types: &'m HashMap<Span, PhpType>,
     pub constants: HashMap<String, (ExprKind, PhpType)>,
     pub top_level_env: TypeEnv,
     pub current_class: Option<String>,
@@ -182,6 +184,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         interfaces: &'m HashMap<String, InterfaceInfo>,
         packed_classes: &'m HashMap<String, PackedClassInfo>,
         throw_access_sites: &'m HashMap<Span, ThrowAccessInfo>,
+        builtin_call_types: &'m HashMap<Span, PhpType>,
         constants: &'m HashMap<String, (ExprKind, PhpType)>,
         top_level_env: TypeEnv,
         current_class: Option<String>,
@@ -211,6 +214,7 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
             interfaces,
             packed_classes,
             throw_access_sites,
+            builtin_call_types,
             constants: constants.clone(),
             top_level_env,
             current_class,
@@ -1782,21 +1786,26 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
         )
     }
 
-    /// Returns true for builtin calls whose return value is newly allocated for the caller.
+    /// Returns true for typed builtin calls whose result is newly allocated for the caller.
     fn value_is_owning_builtin_temporary(&self, value: ValueId) -> bool {
         let Some(inst) = self.builder.value_defining_instruction(value) else {
             return false;
         };
-        if inst.op != Op::BuiltinCall {
-            return false;
+        match inst.immediate {
+            Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::Builtin(target))) => {
+                matches!(
+                    target.result_ownership(),
+                    crate::builtins::semantics::BuiltinResultOwnership::Fresh
+                )
+            }
+            Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::UnaryString(_))) => true,
+            Some(Immediate::Data(name_id)) if inst.op == Op::LanguageConstructCall => self
+                .data
+                .function_names
+                .get(name_id.as_raw() as usize)
+                .is_some_and(|name| php_symbol_key(name.trim_start_matches('\\')) == "eval"),
+            _ => false,
         }
-        let Some(Immediate::Data(name_id)) = inst.immediate else {
-            return false;
-        };
-        let Some(name) = self.data.function_names.get(name_id.as_raw() as usize) else {
-            return false;
-        };
-        builtin_call_result_owns_storage_as_temporary(name)
     }
 
     /// Returns true when straight-line callable binding metadata is safe for a local.
@@ -2221,60 +2230,6 @@ fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
             | LocalKind::HiddenTemp
             | LocalKind::OwnedTemp
             | LocalKind::NamedArgTemp
-    )
-}
-
-/// Returns true when a builtin result must be released after a retaining consumer.
-///
-/// The result of a `BuiltinCall` is only released as a temporary when the callee OWNS its
-/// storage — i.e. it returns a freshly allocated refcounted value (array/string) whose
-/// lifetime is independent of its arguments. Adding a builtin here must not include any
-/// BORROWING builtin (current/end/reset/next/prev/key/each and similar element-access
-/// helpers return a pointer into a live argument array); releasing such a result would
-/// free storage still owned by the caller and corrupt the heap.
-fn builtin_call_result_owns_storage_as_temporary(name: &str) -> bool {
-    let name = php_symbol_key(name.trim_start_matches('\\'));
-    if crate::builtins::registry::returns_fresh_storage(&name) {
-        return true;
-    }
-    matches!(
-        name.as_str(),
-        // Legacy classifications that have not yet migrated into BuiltinSpec metadata.
-        // Array/mixed-returning builtins that allocate fresh result storage.
-        "array_chunk"
-            | "array_column"
-            | "array_combine"
-            | "array_diff"
-            | "eval"
-            | "array_fill"
-            | "array_fill_keys"
-            | "array_intersect"
-            | "array_keys"
-            | "array_map"
-            | "array_merge"
-            | "array_pad"
-            | "array_pop"
-            | "array_replace"
-            | "array_replace_recursive"
-            | "array_reverse"
-            | "array_shift"
-            | "array_slice"
-            | "array_unique"
-            | "array_values"
-            | "explode"
-            | "iterator_to_array"
-            | "preg_split"
-            | "range"
-            | "str_split"
-            // String-returning builtins that allocate fresh owned string storage.
-            | "ptr_read_string"
-            | "strpos"
-            | "strrpos"
-            // zval bridge: `zval_unpack` rebuilds a fresh owned value (scalars box a
-            // new Mixed cell; strings persist an owned copy; arrays own-transfer the
-            // freshly rebuilt array into the cell with refcount 1), so its Mixed result
-            // is an owning temporary that must be released after a retaining insert.
-            | "zval_unpack"
     )
 }
 

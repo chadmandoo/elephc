@@ -2,12 +2,11 @@
 //! Home of the PHP `get_resource_id` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Pure-data builtin with no check hook; arity and arg inference are handled by the registry common path.
 //! - The parameter is named `resource` (matching the PHP golden signature).
-//! - `lower` is a thin wrapper over the EIR types-module resource-id emitter.
 
 
 builtin! {
@@ -15,7 +14,7 @@ builtin! {
     area: Types,
     params: [resource: Mixed],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::GetResourceId,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

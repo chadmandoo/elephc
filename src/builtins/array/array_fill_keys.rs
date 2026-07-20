@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `array_fill_keys` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_fill_keys` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the first argument is an indexed array and returns an
 //!   associative array whose key type is derived from the element type of `keys`
 //!   and whose value type matches `value`.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_fill_keys` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [keys: Mixed, value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayFillKeys,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

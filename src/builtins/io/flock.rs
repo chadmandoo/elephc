@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `flock` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `flock` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the stream resource, checks that `operation` is strictly `Int`
@@ -13,7 +12,6 @@
 //!   variable check is in addition to, not instead of, the ref-ness.
 //! - Arguments are pre-inferred by the registry before the hook runs; `operation` is
 //!   re-inferred inside the hook to obtain its type for validation.
-//! - `lower` is a thin wrapper over `io::lower_flock` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     params: [stream: Mixed, operation: Int, ref would_block: Mixed = DefaultSpec::Null],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Flock,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

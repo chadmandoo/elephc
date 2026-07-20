@@ -91,7 +91,9 @@ pub enum BuiltinRuntimeTarget {
     InterfaceExists,
     IsA,
     IsSubclassOf,
+    MethodExists,
     PregReplaceCallback,
+    PropertyExists,
     TraitExists,
     ElephcPharBzip2Archive,
     ElephcPharDecompressArchive,
@@ -459,9 +461,439 @@ pub enum BuiltinRuntimeTarget {
     IsScalar,
     IsString,
     Settype,
+    Strval,
 }
 
 impl BuiltinRuntimeTarget {
+    /// Refines the first-class callable ABI where the direct PHP signature is broader.
+    pub fn refine_first_class_callable_sig(self, sig: &mut crate::types::FunctionSig) {
+        use crate::types::PhpType;
+        match self {
+            BuiltinRuntimeTarget::PregReplaceCallback => {
+                if let Some((_, callback_ty)) = sig.params.get_mut(1) {
+                    *callback_ty = PhpType::Callable;
+                }
+            }
+            BuiltinRuntimeTarget::ZvalPack => {
+                if let Some((_, value_ty)) = sig.params.get_mut(0) {
+                    *value_ty = PhpType::Mixed;
+                }
+                sig.return_type = PhpType::Pointer(None);
+            }
+            BuiltinRuntimeTarget::ZvalUnpack => {
+                if let Some((_, zval_ty)) = sig.params.get_mut(0) {
+                    *zval_ty = PhpType::Pointer(None);
+                }
+                sig.return_type = PhpType::Mixed;
+            }
+            BuiltinRuntimeTarget::ZvalType => {
+                if let Some((_, zval_ty)) = sig.params.get_mut(0) {
+                    *zval_ty = PhpType::Pointer(None);
+                }
+                sig.return_type = PhpType::Int;
+            }
+            BuiltinRuntimeTarget::ZvalFree => {
+                if let Some((_, zval_ty)) = sig.params.get_mut(0) {
+                    *zval_ty = PhpType::Pointer(None);
+                }
+                sig.return_type = PhpType::Void;
+            }
+            BuiltinRuntimeTarget::BufferLen => {
+                if let Some((_, buffer_ty)) = sig.params.get_mut(0) {
+                    *buffer_ty = PhpType::Buffer(Box::new(PhpType::Int));
+                }
+                sig.return_type = PhpType::Int;
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns the conservative observable effects for this typed backend operation.
+    pub const fn effects(self) -> crate::ir::Effects {
+        match self {
+            BuiltinRuntimeTarget::Abs |
+            BuiltinRuntimeTarget::Acos |
+            BuiltinRuntimeTarget::ArrayChunk |
+            BuiltinRuntimeTarget::ArrayColumn |
+            BuiltinRuntimeTarget::ArrayCombine |
+            BuiltinRuntimeTarget::ArrayDiff |
+            BuiltinRuntimeTarget::ArrayDiffAssoc |
+            BuiltinRuntimeTarget::ArrayDiffKey |
+            BuiltinRuntimeTarget::ArrayFill |
+            BuiltinRuntimeTarget::ArrayFillKeys |
+            BuiltinRuntimeTarget::ArrayFlip |
+            BuiltinRuntimeTarget::ArrayIntersect |
+            BuiltinRuntimeTarget::ArrayIntersectAssoc |
+            BuiltinRuntimeTarget::ArrayIntersectKey |
+            BuiltinRuntimeTarget::ArrayIsList |
+            BuiltinRuntimeTarget::ArrayKeyExists |
+            BuiltinRuntimeTarget::ArrayKeyFirst |
+            BuiltinRuntimeTarget::ArrayKeyLast |
+            BuiltinRuntimeTarget::ArrayKeys |
+            BuiltinRuntimeTarget::ArrayMerge |
+            BuiltinRuntimeTarget::ArrayMergeRecursive |
+            BuiltinRuntimeTarget::ArrayPad |
+            BuiltinRuntimeTarget::ArrayProduct |
+            BuiltinRuntimeTarget::ArrayReplace |
+            BuiltinRuntimeTarget::ArrayReplaceRecursive |
+            BuiltinRuntimeTarget::ArrayReverse |
+            BuiltinRuntimeTarget::ArraySearch |
+            BuiltinRuntimeTarget::ArraySlice |
+            BuiltinRuntimeTarget::ArraySum |
+            BuiltinRuntimeTarget::ArrayUnique |
+            BuiltinRuntimeTarget::ArrayValues |
+            BuiltinRuntimeTarget::Asin |
+            BuiltinRuntimeTarget::Atan |
+            BuiltinRuntimeTarget::Atan2 |
+            BuiltinRuntimeTarget::Boolval |
+            BuiltinRuntimeTarget::Ceil |
+            BuiltinRuntimeTarget::Chop |
+            BuiltinRuntimeTarget::Chr |
+            BuiltinRuntimeTarget::Cos |
+            BuiltinRuntimeTarget::Cosh |
+            BuiltinRuntimeTarget::Count |
+            BuiltinRuntimeTarget::Crc32 |
+            BuiltinRuntimeTarget::CtypeAlnum |
+            BuiltinRuntimeTarget::CtypeAlpha |
+            BuiltinRuntimeTarget::CtypeDigit |
+            BuiltinRuntimeTarget::CtypeSpace |
+            BuiltinRuntimeTarget::Deg2rad |
+            BuiltinRuntimeTarget::Exp |
+            BuiltinRuntimeTarget::Explode |
+            BuiltinRuntimeTarget::Fdiv |
+            BuiltinRuntimeTarget::Floatval |
+            BuiltinRuntimeTarget::Floor |
+            BuiltinRuntimeTarget::Fmod |
+            BuiltinRuntimeTarget::GetResourceId |
+            BuiltinRuntimeTarget::GetResourceType |
+            BuiltinRuntimeTarget::Gettype |
+            BuiltinRuntimeTarget::GraphemeStrrev |
+            BuiltinRuntimeTarget::HashAlgos |
+            BuiltinRuntimeTarget::HashEquals |
+            BuiltinRuntimeTarget::Htmlentities |
+            BuiltinRuntimeTarget::Htmlspecialchars |
+            BuiltinRuntimeTarget::Hypot |
+            BuiltinRuntimeTarget::Implode |
+            BuiltinRuntimeTarget::InetNtop |
+            BuiltinRuntimeTarget::InetPton |
+            BuiltinRuntimeTarget::Intval |
+            BuiltinRuntimeTarget::Ip2long |
+            BuiltinRuntimeTarget::IsArray |
+            BuiltinRuntimeTarget::IsBool |
+            BuiltinRuntimeTarget::IsFloat |
+            BuiltinRuntimeTarget::IsInt |
+            BuiltinRuntimeTarget::IsNull |
+            BuiltinRuntimeTarget::IsNumeric |
+            BuiltinRuntimeTarget::IsObject |
+            BuiltinRuntimeTarget::IsResource |
+            BuiltinRuntimeTarget::IsScalar |
+            BuiltinRuntimeTarget::IsString |
+            BuiltinRuntimeTarget::Lcfirst |
+            BuiltinRuntimeTarget::Log |
+            BuiltinRuntimeTarget::Log10 |
+            BuiltinRuntimeTarget::Log2 |
+            BuiltinRuntimeTarget::Long2ip |
+            BuiltinRuntimeTarget::Ltrim |
+            BuiltinRuntimeTarget::Max |
+            BuiltinRuntimeTarget::Md5 |
+            BuiltinRuntimeTarget::Min |
+            BuiltinRuntimeTarget::NumberFormat |
+            BuiltinRuntimeTarget::Ord |
+            BuiltinRuntimeTarget::Pi |
+            BuiltinRuntimeTarget::Pow |
+            BuiltinRuntimeTarget::Rad2deg |
+            BuiltinRuntimeTarget::Range |
+            BuiltinRuntimeTarget::Round |
+            BuiltinRuntimeTarget::Rtrim |
+            BuiltinRuntimeTarget::Sha1 |
+            BuiltinRuntimeTarget::Sin |
+            BuiltinRuntimeTarget::Sinh |
+            BuiltinRuntimeTarget::Sqrt |
+            BuiltinRuntimeTarget::StrContains |
+            BuiltinRuntimeTarget::StrEndsWith |
+            BuiltinRuntimeTarget::StrIreplace |
+            BuiltinRuntimeTarget::StrPad |
+            BuiltinRuntimeTarget::StrRepeat |
+            BuiltinRuntimeTarget::StrReplace |
+            BuiltinRuntimeTarget::StrSplit |
+            BuiltinRuntimeTarget::StrStartsWith |
+            BuiltinRuntimeTarget::Strcasecmp |
+            BuiltinRuntimeTarget::Strcmp |
+            BuiltinRuntimeTarget::Strpos |
+            BuiltinRuntimeTarget::Strrpos |
+            BuiltinRuntimeTarget::Strstr |
+            BuiltinRuntimeTarget::Strval |
+            BuiltinRuntimeTarget::Substr |
+            BuiltinRuntimeTarget::SubstrReplace |
+            BuiltinRuntimeTarget::Tan |
+            BuiltinRuntimeTarget::Tanh |
+            BuiltinRuntimeTarget::Trim |
+            BuiltinRuntimeTarget::Ucfirst |
+            BuiltinRuntimeTarget::Ucwords |
+            BuiltinRuntimeTarget::Wordwrap => crate::ir::Effects::empty(),
+            _ => crate::ir::Effects::from_bits_retain(
+                crate::ir::Effects::all().bits()
+                    & !crate::ir::Effects::REFCOUNT_OP.bits()
+                    & !crate::ir::Effects::WRITES_GLOBAL.bits(),
+            ),
+        }
+    }
+
+    /// Returns runtime and linker requirements declared by this typed operation.
+    pub const fn requirements(
+        self,
+    ) -> &'static [crate::builtins::semantics::BuiltinRequirement] {
+        use crate::builtins::semantics::BuiltinRequirement;
+        match self {
+            BuiltinRuntimeTarget::ElephcPharBzip2Archive => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharDecompressArchive => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGetFileMetadata => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGetMetadata => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGetSignatureHash => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGetSignatureType => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGetStub => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharGzipArchive => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharListEntries => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSetCompression => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSetFileMetadata => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSetMetadata => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSetStub => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSetZipPassword => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSignHash => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::ElephcPharSignOpenssl => &[BuiltinRequirement::Bridge("elephc_phar")],
+            BuiltinRuntimeTarget::Gzcompress => &[BuiltinRequirement::SystemLibrary("z")],
+            BuiltinRuntimeTarget::Gzdeflate => &[BuiltinRequirement::SystemLibrary("z")],
+            BuiltinRuntimeTarget::Gzinflate => &[BuiltinRequirement::SystemLibrary("z")],
+            BuiltinRuntimeTarget::Gzuncompress => &[BuiltinRequirement::SystemLibrary("z")],
+            BuiltinRuntimeTarget::Hash => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashCopy => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashFile => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashFinal => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashHmac => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashInit => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::HashUpdate => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::MbStrlen => &[BuiltinRequirement::MacOsLibrary("iconv")],
+            BuiltinRuntimeTarget::Md5 => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::Sha1 => &[BuiltinRequirement::Bridge("elephc_crypto")],
+            BuiltinRuntimeTarget::StreamSocketEnableCrypto => &[BuiltinRequirement::Bridge("elephc_tls")],
+            _ => &[],
+        }
+    }
+
+    /// Returns whether the operation has a proven generic runtime-callable wrapper.
+    pub const fn runtime_callable_supported(self) -> bool {
+        matches!(
+            self,
+            BuiltinRuntimeTarget::Abs
+                | BuiltinRuntimeTarget::Boolval
+                | BuiltinRuntimeTarget::Floatval
+                | BuiltinRuntimeTarget::Gettype
+                | BuiltinRuntimeTarget::Intval
+                | BuiltinRuntimeTarget::IsArray
+                | BuiltinRuntimeTarget::Trim
+        )
+    }
+
+    /// Returns whether a dynamic source value can use this target's generic wrapper.
+    pub fn callable_accepts(self, source: Option<&crate::types::PhpType>) -> bool {
+        use crate::types::PhpType;
+        let source = source.map(PhpType::codegen_repr);
+        match self {
+            BuiltinRuntimeTarget::Abs => source.is_none_or(|ty| {
+                matches!(
+                    ty,
+                    PhpType::Bool
+                        | PhpType::Float
+                        | PhpType::Int
+                        | PhpType::Mixed
+                        | PhpType::Never
+                        | PhpType::TaggedScalar
+                        | PhpType::Union(_)
+                        | PhpType::Void
+                )
+            }),
+            BuiltinRuntimeTarget::Boolval => source.is_some_and(|ty| {
+                matches!(
+                    ty,
+                    PhpType::AssocArray { .. }
+                        | PhpType::Array(_)
+                        | PhpType::Bool
+                        | PhpType::Float
+                        | PhpType::Int
+                        | PhpType::Iterable
+                        | PhpType::Never
+                        | PhpType::Str
+                        | PhpType::Void
+                )
+            }),
+            BuiltinRuntimeTarget::Floatval => source.is_some_and(|ty| {
+                matches!(
+                    ty,
+                    PhpType::Bool
+                        | PhpType::Float
+                        | PhpType::Int
+                        | PhpType::Never
+                        | PhpType::Str
+                        | PhpType::Void
+                )
+            }),
+            BuiltinRuntimeTarget::Intval => source.is_none_or(|ty| {
+                matches!(
+                    ty,
+                    PhpType::Bool
+                        | PhpType::Float
+                        | PhpType::Int
+                        | PhpType::Mixed
+                        | PhpType::Never
+                        | PhpType::Str
+                        | PhpType::Union(_)
+                        | PhpType::Void
+                )
+            }),
+            BuiltinRuntimeTarget::Gettype | BuiltinRuntimeTarget::IsArray => true,
+            BuiltinRuntimeTarget::Trim => source.is_none_or(|ty| matches!(ty, PhpType::Str)),
+            _ => false,
+        }
+    }
+
+    /// Returns whether this operation requires the optional regex runtime family.
+    pub const fn uses_regex_runtime(self) -> bool {
+        matches!(
+            self,
+            BuiltinRuntimeTarget::PregMatch
+                | BuiltinRuntimeTarget::PregMatchAll
+                | BuiltinRuntimeTarget::PregReplace
+                | BuiltinRuntimeTarget::PregReplaceCallback
+                | BuiltinRuntimeTarget::PregSplit
+        )
+    }
+
+    /// Returns whether this operation requires the optional multibyte-length runtime.
+    pub const fn uses_mb_strlen_runtime(self) -> bool {
+        matches!(self, BuiltinRuntimeTarget::MbStrlen)
+    }
+
+    /// Returns whether this operation can publish PHAR bridge helper symbols.
+    pub const fn publishes_phar_symbols(self) -> bool {
+        matches!(
+            self,
+            BuiltinRuntimeTarget::ElephcPharListEntries
+                | BuiltinRuntimeTarget::ElephcPharGetMetadata
+                | BuiltinRuntimeTarget::ElephcPharGetStub
+                | BuiltinRuntimeTarget::ElephcPharSetMetadata
+                | BuiltinRuntimeTarget::ElephcPharSetStub
+                | BuiltinRuntimeTarget::ElephcPharGetFileMetadata
+                | BuiltinRuntimeTarget::ElephcPharSetFileMetadata
+                | BuiltinRuntimeTarget::ElephcPharGzipArchive
+                | BuiltinRuntimeTarget::ElephcPharBzip2Archive
+                | BuiltinRuntimeTarget::ElephcPharDecompressArchive
+                | BuiltinRuntimeTarget::ElephcPharSignOpenssl
+                | BuiltinRuntimeTarget::ElephcPharSignHash
+                | BuiltinRuntimeTarget::ElephcPharSetZipPassword
+                | BuiltinRuntimeTarget::ElephcPharGetSignatureHash
+                | BuiltinRuntimeTarget::ElephcPharGetSignatureType
+                | BuiltinRuntimeTarget::FileGetContents
+                | BuiltinRuntimeTarget::FilePutContents
+                | BuiltinRuntimeTarget::Fopen
+        )
+    }
+
+    /// Returns the callback operand inspected for runtime string dispatch, if any.
+    pub const fn string_callback_operand_index(self) -> Option<usize> {
+        match self {
+            BuiltinRuntimeTarget::ArrayMap => Some(0),
+            BuiltinRuntimeTarget::ArrayFilter
+            | BuiltinRuntimeTarget::ArrayReduce
+            | BuiltinRuntimeTarget::ArrayWalk
+            | BuiltinRuntimeTarget::ArrayWalkRecursive
+            | BuiltinRuntimeTarget::Usort
+            | BuiltinRuntimeTarget::Uksort
+            | BuiltinRuntimeTarget::Uasort
+            | BuiltinRuntimeTarget::IteratorApply
+            | BuiltinRuntimeTarget::PregReplaceCallback
+            | BuiltinRuntimeTarget::ArrayFind
+            | BuiltinRuntimeTarget::ArrayAny
+            | BuiltinRuntimeTarget::ArrayAll => Some(1),
+            BuiltinRuntimeTarget::ArrayUdiff | BuiltinRuntimeTarget::ArrayUintersect => Some(2),
+            _ => None,
+        }
+    }
+
+    /// Returns whether this operation performs dynamic callable lookup.
+    pub const fn is_callable_lookup(self) -> bool {
+        matches!(self, BuiltinRuntimeTarget::IsCallable)
+    }
+
+    /// Returns whether this operation reads a class name from object metadata.
+    pub const fn is_class_name_lookup(self) -> bool {
+        matches!(self, BuiltinRuntimeTarget::GetClass | BuiltinRuntimeTarget::GetParentClass)
+    }
+
+    /// Returns whether this operation registers a stream wrapper or filter class.
+    pub const fn is_stream_registration(self) -> bool {
+        matches!(
+            self,
+            BuiltinRuntimeTarget::StreamWrapperRegister
+                | BuiltinRuntimeTarget::StreamFilterRegister
+        )
+    }
+
+    /// Returns the ownership and argument-aliasing contract for this operation.
+    pub const fn result_ownership(
+        self,
+    ) -> crate::builtins::semantics::BuiltinResultOwnership {
+        use crate::builtins::semantics::BuiltinResultOwnership;
+        if matches!(
+            self,
+            BuiltinRuntimeTarget::ArrayChunk
+                | BuiltinRuntimeTarget::ArrayColumn
+                | BuiltinRuntimeTarget::ArrayCombine
+                | BuiltinRuntimeTarget::ArrayDiff
+                | BuiltinRuntimeTarget::ArrayFill
+                | BuiltinRuntimeTarget::ArrayFillKeys
+                | BuiltinRuntimeTarget::ArrayIntersect
+                | BuiltinRuntimeTarget::ArrayKeys
+                | BuiltinRuntimeTarget::ArrayMap
+                | BuiltinRuntimeTarget::ArrayMerge
+                | BuiltinRuntimeTarget::ArrayPad
+                | BuiltinRuntimeTarget::ArrayPop
+                | BuiltinRuntimeTarget::ArrayReplace
+                | BuiltinRuntimeTarget::ArrayReplaceRecursive
+                | BuiltinRuntimeTarget::ArrayReverse
+                | BuiltinRuntimeTarget::ArrayShift
+                | BuiltinRuntimeTarget::ArraySlice
+                | BuiltinRuntimeTarget::ArrayUnique
+                | BuiltinRuntimeTarget::ArrayValues
+                | BuiltinRuntimeTarget::Explode
+                | BuiltinRuntimeTarget::FileGetContents
+                | BuiltinRuntimeTarget::IteratorToArray
+                | BuiltinRuntimeTarget::ObGetClean
+                | BuiltinRuntimeTarget::ObGetContents
+                | BuiltinRuntimeTarget::ObGetFlush
+                | BuiltinRuntimeTarget::ObGetLength
+                | BuiltinRuntimeTarget::ObGetStatus
+                | BuiltinRuntimeTarget::ObListHandlers
+                | BuiltinRuntimeTarget::PregSplit
+                | BuiltinRuntimeTarget::PtrReadString
+                | BuiltinRuntimeTarget::Range
+                | BuiltinRuntimeTarget::StrSplit
+                | BuiltinRuntimeTarget::Strpos
+                | BuiltinRuntimeTarget::Strrpos
+                | BuiltinRuntimeTarget::ZvalUnpack
+        ) {
+            BuiltinResultOwnership::Fresh
+        } else if matches!(
+            self,
+            BuiltinRuntimeTarget::Htmlentities
+                | BuiltinRuntimeTarget::Htmlspecialchars
+                | BuiltinRuntimeTarget::Implode
+        ) {
+            BuiltinResultOwnership::Independent
+        } else {
+            BuiltinResultOwnership::MayAliasArguments
+        }
+    }
+
     /// Returns the stable textual EIR spelling for diagnostics and snapshots.
     pub fn as_eir(self) -> &'static str {
         match self {
@@ -543,7 +975,9 @@ impl BuiltinRuntimeTarget {
             BuiltinRuntimeTarget::InterfaceExists => "interface_exists",
             BuiltinRuntimeTarget::IsA => "is_a",
             BuiltinRuntimeTarget::IsSubclassOf => "is_subclass_of",
+            BuiltinRuntimeTarget::MethodExists => "method_exists",
             BuiltinRuntimeTarget::PregReplaceCallback => "preg_replace_callback",
+            BuiltinRuntimeTarget::PropertyExists => "property_exists",
             BuiltinRuntimeTarget::TraitExists => "trait_exists",
             BuiltinRuntimeTarget::ElephcPharBzip2Archive => "__elephc_phar_bzip2_archive",
             BuiltinRuntimeTarget::ElephcPharDecompressArchive => "__elephc_phar_decompress_archive",
@@ -911,6 +1345,7 @@ impl BuiltinRuntimeTarget {
             BuiltinRuntimeTarget::IsScalar => "is_scalar",
             BuiltinRuntimeTarget::IsString => "is_string",
             BuiltinRuntimeTarget::Settype => "settype",
+            BuiltinRuntimeTarget::Strval => "strval",
         }
     }
 }

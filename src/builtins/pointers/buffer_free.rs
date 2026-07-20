@@ -1,17 +1,14 @@
 //! Purpose:
-//! Home of the `buffer_free` builtin (elephc extension): its declaration,
-//! type-check hook, and lowering.
+//! Home of the `buffer_free` builtin (elephc extension): its declaration, checker contract, and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` enforces the legacy checker-resident rules verbatim: the argument must
 //!   be a plain local variable (never `$this`, a by-ref parameter, a `global`, or a
 //!   `static`) of type `buffer<T>`, because lowering nulls the local slot after the
 //!   free so use-after-free traps deterministically.
-//! - `lower` is a thin wrapper over the shared `buffers::lower_buffer_free` emitter.
 //! - `extension: true`: buffers have no PHP equivalent, so `--strict-php` hides this
 //!   builtin from user programs.
 
@@ -26,7 +23,7 @@ builtin! {
     params: [buffer: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::BufferFree,
             crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
     ),

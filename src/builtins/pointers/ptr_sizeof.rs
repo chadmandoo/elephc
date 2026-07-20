@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `ptr_sizeof` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `ptr_sizeof` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is a known string literal type name and
 //!   returns `PhpType::Int` (the byte size of the named type).
-//! - `lower` is a thin wrapper over the shared `pointers::lower_ptr_sizeof` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [r#type: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PtrSizeof,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

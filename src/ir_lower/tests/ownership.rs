@@ -54,7 +54,9 @@ $names = array_column($users, "name");
 "#,
     );
     let text = print_module(&module);
-    let builtin = text.find("builtin_call").expect("expected array_column call in lowered IR");
+    let builtin = text
+        .find("runtime.array_column")
+        .expect("expected typed array_column runtime call in lowered IR");
     let tail = &text[builtin..];
     let store = tail.find("store_local").expect("expected local store after array_column");
     let release = tail.find("release").expect("expected release after array_column store");
@@ -129,8 +131,8 @@ echo normalize("  hi  ");
     let text = print_module(&module);
     let function = named_function_text(&text, "normalize");
     let builtin = function
-        .find("builtin_call")
-        .expect("expected trim builtin call");
+        .find("runtime.trim")
+        .expect("expected typed trim runtime call");
     let assignment = &function[builtin..];
     let acquire = assignment.find("acquire").expect("expected retained trim result");
     let release = assignment

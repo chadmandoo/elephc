@@ -2,13 +2,12 @@
 //! Home of the PHP `stream_select` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No check hook: the common registry path infers all arguments and returns `Int`.
 //! - `read`, `write`, and `except` are by-reference parameters (`ref` marker) for parity
 //!   with PHP's mutating select semantics and EIR by-ref lowering.
-//! - `lower` is a thin wrapper over `io::lower_stream_select` in the EIR backend.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -23,7 +22,7 @@ builtin! {
         microseconds: Int = DefaultSpec::Int(0)
     ],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamSelect,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

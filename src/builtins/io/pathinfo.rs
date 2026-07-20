@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `pathinfo` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `pathinfo` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the optional `flags` argument is `Int`, evaluates it statically
@@ -13,7 +12,6 @@
 //!   at compile time; it was relocated verbatim from `src/types/checker/builtins/io/paths.rs`.
 //! - The registry pre-infers arguments before calling the hook; the hook re-infers the
 //!   optional `flags` argument (idempotent) to obtain its resolved type.
-//! - `lower` is a thin wrapper over `io::lower_pathinfo` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,7 +24,7 @@ builtin! {
     params: [path: Str, flags: Int = DefaultSpec::Int(15)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Pathinfo,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

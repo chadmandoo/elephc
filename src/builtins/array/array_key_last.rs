@@ -1,13 +1,11 @@
 //! Purpose:
-//! Home of the PHP `array_key_last` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_key_last` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is an array (or Mixed) and returns `Mixed`.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_key_last` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -19,7 +17,7 @@ builtin! {
     params: [array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayKeyLast,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

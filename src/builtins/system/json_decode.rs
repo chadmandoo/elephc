@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `json_decode` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `json_decode` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The check hook validates the json argument type, the optional associative
@@ -26,7 +25,7 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::JsonDecode,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

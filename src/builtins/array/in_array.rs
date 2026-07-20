@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `in_array` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `in_array` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the second argument is an array and returns `Bool`.
 //! - The optional `strict` (3rd) argument selects PHP `===` membership; omitted or
 //!   false strictness uses PHP `==` semantics for the supported scalar/string paths.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_in_array` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [needle: Mixed, haystack: Mixed, strict: Bool = DefaultSpec::Bool(false)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::InArray,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -42,7 +42,7 @@ pub use module::{
     Module, PackedLayoutTable, TraitMethodInfo,
 };
 pub use print::{print_function, print_module};
-pub use runtime_call::{RuntimeCallTarget, UnaryStringRuntime};
+pub use runtime_call::{RuntimeCallSignature, RuntimeCallTarget, UnaryStringRuntime};
 pub use types::{IrHeapKind, IrType};
 pub use validator::{validate_function, validate_module, ValidationError};
 pub use function_variants::{

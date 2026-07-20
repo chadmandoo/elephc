@@ -1,42 +1,23 @@
 //! Purpose:
-//! Home of the PHP `substr` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `substr` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
-//! - `check` returns `PhpType::Str`. Argument type inference happens in the common
-//!   registry dispatch path (`check_builtin` in `src/types/checker/builtins/mod.rs`)
-//!   before the hook fires, so the hook does not need to call `infer_type` again.
-//! - `lower` is a thin wrapper over the shared per-arch `lower_substr` emitters.
 //! - Arity is validated by the registry's `check_arity` before the check hook fires;
 //!   the inline arity check from the legacy arm is therefore not reproduced here.
 
-use crate::builtins::spec::BuiltinCheckCtx;
-use crate::errors::CompileError;
-use crate::types::PhpType;
 
 builtin! {
     name: "substr",
     area: String,
     params: [string: Str, offset: Int, length: Int = crate::builtins::spec::DefaultSpec::Null],
     returns: Str,
-    check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Substr,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),
     summary: "Returns a portion of a string specified by the offset and length.",
     php_manual: "https://www.php.net/manual/en/function.substr.php",
-}
-
-/// Returns `PhpType::Str` for a `substr` call.
-///
-/// Argument types are inferred by the common registry dispatch path in
-/// `check_builtin` before this hook fires; the hook only needs to return
-/// the correct return type. Arity is pre-validated by the registry before
-/// the hook fires, so no inline count check is needed.
-fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
-    Ok(PhpType::Str)
 }

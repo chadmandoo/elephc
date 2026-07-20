@@ -2,14 +2,13 @@
 //! Home of the PHP `disk_total_space` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `disk_total_space` is a pure-data builtin whose return
 //!   type (`Float`) is fully determined by its declaration. The registry common path
 //!   infers the argument and enforces arity before falling back to `returns`.
-//! - `lower` is a thin wrapper over `io::lower_disk_total_space` in the EIR backend.
 
 
 builtin! {
@@ -17,7 +16,7 @@ builtin! {
     area: Io,
     params: [directory: Str],
     returns: Float,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::DiskTotalSpace,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

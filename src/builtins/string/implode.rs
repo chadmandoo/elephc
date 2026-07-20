@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `implode` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `implode` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `implode` is the one migrated builtin whose legacy CHECK arm (exactly 2 arguments)
@@ -13,8 +12,6 @@
 //!   the exact-2 requirement is therefore re-enforced inside the `check` hook to keep the
 //!   legacy `"implode() takes exactly 2 arguments"` diagnostic for the tested 1-arg call.
 //! - `check` returns `PhpType::Str`.
-//! - `lower` is a thin wrapper over the shared `lower_implode` emitter, which itself
-//!   requires exactly two operands.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -26,9 +23,8 @@ builtin! {
     params: [separator: Str, array: Mixed = DefaultSpec::Null],
     max_args: 2,
     returns: Str,
-    returns_independent_storage: true,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Implode,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

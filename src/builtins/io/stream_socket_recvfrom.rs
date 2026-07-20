@@ -1,16 +1,14 @@
 //! Purpose:
-//! Home of the PHP `stream_socket_recvfrom` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_socket_recvfrom` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates arg[0] is a stream resource and that `address` (arg[3]), if provided,
 //!   is a plain string variable (it is written by reference). The double-infer of arg[3]
 //!   matches the legacy behavior.
 //! - Arguments are pre-inferred by the registry before the hook runs.
-//! - `lower` dispatches to `io::lower_stream_socket_recvfrom` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -28,7 +26,7 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamSocketRecvfrom,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

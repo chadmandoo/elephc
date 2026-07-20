@@ -2,8 +2,8 @@
 //! Home of the PHP `umask` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook: `umask` is a pure-data builtin whose `Int` return type is
@@ -12,7 +12,6 @@
 //! - `arity_error` is overridden to preserve the legacy message
 //!   "umask() takes 0 or 1 arguments" (the registry default for a 0-required,
 //!   1-optional builtin produces "takes at most 1 argument").
-//! - `lower` is a thin wrapper over `io::lower_umask` in the EIR backend.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -22,7 +21,7 @@ builtin! {
     params: [mask: Int = DefaultSpec::Null],
     arity_error: "umask() takes 0 or 1 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Umask,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `spl_autoload_functions` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `spl_autoload_functions` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - A `check` hook is required because the return type `Array<Mixed>` cannot be
@@ -20,7 +19,7 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::SplAutoloadFunctions,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

@@ -2,12 +2,11 @@
 //! Home of the PHP `intval` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Pure-data builtin with no check hook; arity and arg inference are handled by the registry common path.
 //! - Declared with exactly one parameter `value` (no `base` param) matching the legacy golden signature.
-//! - `lower` is a thin wrapper over the shared intval emitter.
 
 
 builtin! {
@@ -15,7 +14,7 @@ builtin! {
     area: Types,
     params: [value: Mixed],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Intval,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_slice` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_slice` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` reproduces the legacy rule: a slice preserves the array shape, so the
@@ -13,7 +12,6 @@
 //! - The declared signature carries the golden param list (`array`, `offset`,
 //!   `length`), with `length` optional (default `null`), so the registry's
 //!   `check_arity` accepts 2 or 3 arguments — matching the legacy CHECK arm.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_slice` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     params: [array: Mixed, offset: Mixed, length: Mixed = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArraySlice,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

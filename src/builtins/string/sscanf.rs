@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `sscanf` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `sscanf` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - Accepts required `string` and `format` params plus a variadic `vars` list.
 //! - `check` returns `PhpType::Array(Box::new(PhpType::Str))` because the macro
 //!   `returns:` field cannot express a parameterized array type inline.
-//! - `lower` is a thin wrapper over the shared `lower_sscanf` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -22,7 +20,7 @@ builtin! {
     variadic: "vars",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Sscanf,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

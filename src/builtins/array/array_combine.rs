@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_combine` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_combine` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` reproduces the legacy rule: the result is an associative array whose key
@@ -13,7 +12,6 @@
 //!   return type depends on the two inferred argument types.
 //! - Arity (exactly 2 arguments) is validated by the registry's `check_arity` before
 //!   the hook fires; the inline arity check from the legacy arm is not reproduced here.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_combine` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     params: [keys: Mixed, values: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayCombine,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

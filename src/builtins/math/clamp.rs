@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `clamp` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `clamp` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - A `check` hook is required because the return type depends on all three argument
@@ -20,7 +19,7 @@ builtin! {
     params: [value: Mixed, min: Mixed, max: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Clamp,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

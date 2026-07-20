@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `scandir` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `scandir` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Array<Str>` (the directory entries). A check hook is required
 //!   because the array return type cannot be expressed through the scalar `returns:`
 //!   field.
-//! - `lower` is a thin wrapper over `io::lower_scandir` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [directory: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Scandir,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

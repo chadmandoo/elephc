@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `stream_set_timeout` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_set_timeout` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the first argument is a stream resource before returning `Bool`.
 //! - `microseconds` is optional (defaults to 0). Arguments are pre-inferred by the registry.
-//! - `lower` is a thin wrapper over `io::lower_stream_set_timeout` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -20,7 +18,7 @@ builtin! {
     params: [stream: Mixed, seconds: Int, microseconds: Int = DefaultSpec::Int(0)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamSetTimeout,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -2,13 +2,12 @@
 //! Home of the PHP `str_replace` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The declared signature includes an optional `count` param, but `max_args: 3`
 //!   caps arity so only three arguments are accepted, matching PHP's practical use.
-//! - `lower` is a thin wrapper over the shared `lower_string_replace` emitter.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -18,7 +17,7 @@ builtin! {
     params: [search: Str, replace: Str, subject: Str, count: Mixed = DefaultSpec::Null],
     max_args: 3,
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StrReplace,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

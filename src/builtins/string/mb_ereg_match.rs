@@ -2,7 +2,7 @@
 //! Home of the PHP `mb_ereg_match` builtin: declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), both via
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
 //!   `crate::builtins::registry`.
 //!
 //! Key details:
@@ -27,7 +27,7 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::MbEregMatch,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

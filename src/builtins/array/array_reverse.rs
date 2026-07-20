@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_reverse` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_reverse` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` reproduces the legacy rule: reversing preserves the array shape, so the
@@ -11,7 +10,6 @@
 //!   required both to reject non-array arguments and to echo the input type back.
 //! - Arity (exactly 1 argument) is validated by the registry's `check_arity` before
 //!   the hook fires; the inline arity check from the legacy arm is not reproduced here.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_reverse` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -23,7 +21,7 @@ builtin! {
     params: [array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArrayReverse,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

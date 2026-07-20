@@ -9,14 +9,12 @@
 //! - Effect summaries must account for globals, heap/runtime state, output, throws, and by-reference mutation.
 
 use super::*;
-use super::builtins::is_pure_non_throwing_builtin;
 use crate::types::PhpType;
 
 /// Looks up the effect for a named function call.
 ///
 /// Uses thread-local `ACTIVE_FUNCTION_EFFECTS` for user-defined functions. Falls back to
-/// `is_pure_non_throwing_builtin` for builtins; all other calls default to `Effect::PURE` with
-/// side effects and may-throw, conservatively modeling unknown behavior.
+/// Registry builtins consume their shared descriptor; unknown calls remain conservative.
 pub(in crate::optimize) fn function_call_effect(name: &str, args: &[Expr]) -> Effect {
     ACTIVE_FUNCTION_EFFECTS.with(|slot| {
         slot.borrow()
@@ -26,42 +24,22 @@ pub(in crate::optimize) fn function_call_effect(name: &str, args: &[Expr]) -> Ef
     .unwrap_or_else(|| {
         if let Some(def) = crate::builtins::registry::lookup(name) {
             let semantics = def.spec.semantics;
-            if semantics.is_complete() {
-                let arg_types = semantic_optimizer_arg_types(def, args);
-                let input = crate::builtins::semantics::BuiltinSemanticInput {
-                    name: def.name,
-                    args,
-                    arg_types: &arg_types,
-                    span: crate::span::Span::dummy(),
-                };
-                let effects = match semantics.effects {
-                    crate::builtins::semantics::BuiltinEffects::Static(effects) => effects,
-                    crate::builtins::semantics::BuiltinEffects::Shared(resolve) => resolve(&input),
-                    crate::builtins::semantics::BuiltinEffects::LegacySplit => unreachable!(
-                        "complete builtin semantics cannot retain split legacy effects"
-                    ),
-                };
-                let effect = Effect::from_eir(effects);
-                if builtin_invokes_callbacks(name) {
-                    return effect.with_side_effects().with_may_throw().with_writes_globals();
-                }
-                return effect;
-            }
-        }
-        if is_pure_non_throwing_builtin(name) {
-            Effect::PURE
-        } else if crate::builtins::registry::lookup(name).is_some() {
-            // A known builtin can mutate by-ref arguments, heap state, or
-            // emit output, but it can never write PHP `global` storage —
-            // unless it invokes a user callback, which can.
+            let arg_types = semantic_optimizer_arg_types(def, args);
+            let input = crate::builtins::semantics::BuiltinSemanticInput {
+                name: def.name,
+                args,
+                arg_types: &arg_types,
+                span: crate::span::Span::dummy(),
+            };
+            let effects = match semantics.effects {
+                crate::builtins::semantics::BuiltinEffects::Static(effects) => effects,
+                crate::builtins::semantics::BuiltinEffects::Shared(resolve) => resolve(&input),
+            };
+            let effect = Effect::from_eir(effects);
             if builtin_invokes_callbacks(name) {
-                Effect::PURE
-                    .with_side_effects()
-                    .with_may_throw()
-                    .with_writes_globals()
-            } else {
-                Effect::PURE.with_side_effects().with_may_throw()
+                return effect.with_side_effects().with_may_throw().with_writes_globals();
             }
+            effect
         } else {
             Effect::PURE
                 .with_side_effects()

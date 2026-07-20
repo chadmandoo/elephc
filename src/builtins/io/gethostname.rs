@@ -2,11 +2,10 @@
 //! Home of the PHP `gethostname` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No check hook: the common registry path infers no arguments and returns `Str`.
-//! - `lower` dispatches to `io::lower_gethostname` in the EIR backend.
 
 
 builtin! {
@@ -14,7 +13,7 @@ builtin! {
     area: Io,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Gethostname,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

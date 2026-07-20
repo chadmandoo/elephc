@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `preg_replace_callback` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `preg_replace_callback` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `lazy_check: true` is required: `contextual_closure_sig` injects `array<string>` for the
@@ -12,7 +11,6 @@
 //! - The actual check logic lives in the checker submodule
 //!   `crate::types::checker::builtins::callables::preg_replace_callback::check`, which also
 //!   enforces the arity guard independently (needed for the first-class-callable path).
-//! - `lower` is a thin wrapper over `lower_preg_replace_callback` (not parameterized).
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -25,7 +23,7 @@ builtin! {
     returns: Str,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PregReplaceCallback,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

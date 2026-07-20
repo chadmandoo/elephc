@@ -2,8 +2,8 @@
 //! Home of the PHP `json_last_error` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `json_last_error` takes no arguments and always
@@ -16,7 +16,7 @@ builtin! {
     area: System,
     params: [],
     returns: Int,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::JsonLastError,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

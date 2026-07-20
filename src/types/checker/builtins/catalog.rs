@@ -24,14 +24,7 @@ const SUPPORTED_BUILTIN_FUNCTIONS: &[&str] = &[
     "die",
     "empty",
     "exit",
-    "is_double",
-    "is_integer",
-    "is_long",
-    "is_real",
     "isset",
-    "method_exists",
-    "property_exists",
-    "strval",
     "unset",
 ];
 
@@ -159,23 +152,14 @@ mod tests {
     use super::*;
     use crate::builtin;
 
-    /// No-op lowering hook for test probe; does nothing and succeeds.
-    fn noop_lower(
-        _c: &mut crate::codegen::context::FunctionContext,
-        _i: &crate::ir::Instruction,
-    ) -> Result<(), crate::codegen::CodegenIrError> {
-        Ok(())
-    }
-
     // Register a PHP-visible (non-internal) probe to exercise the catalog API.
     // This verifies that `supported_builtin_function_names` and the catalog
     // lookup functions include registry entries with `internal: false`.
     builtin! {
         name: "__catalog_probe_visible",
-        area: Internal,
+        area: Types,
         params: [x: Int],
         returns: Bool,
-        lower: noop_lower,
         summary: "catalog probe for PHP-visibility test",
         internal: false,
     }

@@ -2,8 +2,8 @@
 //! Home of the PHP `strstr` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The declared signature carries the full golden param list (`haystack`, `needle`,
@@ -12,7 +12,6 @@
 //! - No `check` hook is needed: the return type (`Str`) is fully determined by the
 //!   declaration. The registry dispatch still infers each argument unconditionally, so
 //!   undefined-variable diagnostics fire exactly as the legacy arm produced them.
-//! - `lower` is a thin wrapper over the shared `lower_strstr` emitter.
 
 
 builtin! {
@@ -21,7 +20,7 @@ builtin! {
     params: [haystack: Str, needle: Str, before_needle: Bool = crate::builtins::spec::DefaultSpec::Bool(false)],
     max_args: 2,
     returns: Str,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Strstr,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

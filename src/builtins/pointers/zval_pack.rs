@@ -1,13 +1,11 @@
 //! Purpose:
-//! Home of the PHP `zval_pack` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `zval_pack` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` accepts any value and returns `PhpType::Pointer(None)`.
-//! - `lower` boxes the value as Mixed and dispatches to the shared zval runtime bridge.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -19,7 +17,7 @@ builtin! {
     params: [value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ZvalPack,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

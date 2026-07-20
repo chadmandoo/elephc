@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `min` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `min` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - A `check` hook is required because the return type depends on argument types:
@@ -23,7 +22,7 @@ builtin! {
     arity_error: "min() requires at least 2 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Min,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -2,8 +2,8 @@
 //! Home of the PHP `var_dump` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `var_dump` is a pure-data builtin whose return type
@@ -11,7 +11,6 @@
 //!   infers every argument and enforces arity before falling back to `returns`.
 //! - `var_dump` is variadic (`var_dump($value, ...$values)`): each argument is
 //!   dumped independently in source order, matching PHP.
-//! - `lower` is a thin wrapper over `debug::lower_var_dump` in the EIR backend.
 
 
 builtin! {
@@ -20,7 +19,7 @@ builtin! {
     params: [value: Mixed],
     variadic: "values",
     returns: Void,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::VarDump,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

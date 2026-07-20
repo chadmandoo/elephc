@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `preg_match` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `preg_match` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The third param `matches` is by-reference (`ref matches: Mixed = DefaultSpec::EmptyArray`),
@@ -15,7 +14,6 @@
 //!   "Undefined variable" error.
 //! - `check` validates that args[2] (when present) is a `Variable` expression; passing
 //!   a non-variable to the by-ref `$matches` param is a compile error.
-//! - `lower` is a thin wrapper over `regex::lower_preg_match` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -29,7 +27,7 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::PregMatch,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

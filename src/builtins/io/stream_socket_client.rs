@@ -1,14 +1,12 @@
 //! Purpose:
-//! Home of the PHP `stream_socket_client` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `stream_socket_client` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(stream_resource, Bool)` reflecting PHP's false-on-failure return.
 //! - `returns: Mixed` is used because the union cannot be expressed through the scalar field.
-//! - `lower` dispatches to `io::lower_stream_socket_client` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -20,7 +18,7 @@ builtin! {
     params: [address: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::StreamSocketClient,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

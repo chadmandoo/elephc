@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `strrpos` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `strrpos` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The declared signature carries the full golden param list (`haystack`, `needle`,
@@ -13,8 +12,6 @@
 //!   A check hook is required because the `builtin!` macro `returns:` field only accepts
 //!   a simple type identifier and cannot express a union inline. Argument types are
 //!   inferred by the common registry dispatch path before the hook fires.
-//! - `lower` is a thin wrapper over the shared `lower_string_position` emitter, passing
-//!   the `__rt_strrpos` runtime helper.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -27,7 +24,7 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Strrpos,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

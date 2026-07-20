@@ -1,17 +1,14 @@
 //! Purpose:
-//! Home of the PHP `call_user_func_array` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `call_user_func_array` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `lazy_check: true` so the hook controls all inference: the eager `for arg in args`
 //!   loop is the single inference pass, matching legacy behaviour exactly.
 //! - The actual check logic lives in `callables::check_call_user_func_array` (in the
 //!   checker module tree) because it accesses checker internals unavailable from here.
-//! - `lower` is a thin wrapper over `lower_call_user_func_builtin_escape`, parameterized
-//!   with the canonical function name.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -24,7 +21,7 @@ builtin! {
     returns: Mixed,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::CallUserFuncArray,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `grapheme_strrev` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `grapheme_strrev` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `PhpType::Union([Str, Bool])` (the reversed string, or `false`).
@@ -15,8 +14,6 @@
 //!   must re-infer the argument type here. Arity (exactly 1, from the param list) is
 //!   pre-validated by the registry's `check_arity` before the hook fires, so the single
 //!   operand index is always present.
-//! - `lower` is a thin wrapper over the dedicated `lower_grapheme_strrev` emitter, which
-//!   boxes the `string|false` runtime result as `Mixed`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -28,7 +25,7 @@ builtin! {
     params: [string: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::GraphemeStrrev,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

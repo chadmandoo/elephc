@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `array_search` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `array_search` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates the second argument is an array and returns a union of the
@@ -14,7 +13,6 @@
 //!   `check_arity` only; `function_sig` and the parity gate keep the full param-derived
 //!   bounds from the golden. This keeps the clean "takes exactly 2 arguments" checker
 //!   diagnostic for a 3-arg call instead of an EIR backend error.
-//! - `lower` is a thin wrapper over the shared `arrays::lower_array_search` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::errors::CompileError;
@@ -27,7 +25,7 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::ArraySearch,
             crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
     ),

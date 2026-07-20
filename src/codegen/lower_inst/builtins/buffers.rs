@@ -1,5 +1,5 @@
 //! Purpose:
-//! Routes PHP buffer builtins emitted as EIR `BuiltinCall` instructions.
+//! Routes PHP buffer builtins emitted as EIR `LanguageConstructCall` instructions.
 //! Keeps builtin-name dispatch separate from direct buffer opcodes like `BufferNew`.
 //!
 //! Called from:

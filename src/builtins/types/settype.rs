@@ -1,9 +1,8 @@
 //! Purpose:
-//! Home of the PHP `settype` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `settype` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - The first parameter `var` is passed by reference (mutating builtin); `ref_params[0]`
@@ -11,7 +10,6 @@
 //! - `lazy_check: true` so the check hook controls argument inference order: it infers
 //!   `var` then `type` in source order (once each), matching legacy exactly-once inference.
 //! - `check` validates that the second argument is a string and returns `Bool`.
-//! - `lower` is a thin wrapper over the EIR types-module settype emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -24,7 +22,7 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Settype,
             crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
     ),

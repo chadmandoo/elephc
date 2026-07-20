@@ -1,15 +1,13 @@
 //! Purpose:
-//! Home of the PHP `realpath` builtin: its declaration, type-check hook, and lowering.
+//! Home of the PHP `realpath` builtin: its single-source registry declaration and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` returns `Union(Str, Bool)` to reflect PHP's behaviour where `realpath`
 //!   returns the resolved path on success or `false` if the path cannot be resolved.
 //! - The registry pre-infers arguments before calling this hook.
-//! - `lower` is a thin wrapper over `io::lower_realpath` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::errors::CompileError;
@@ -21,7 +19,7 @@ builtin! {
     params: [path: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Realpath,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

@@ -2,8 +2,8 @@
 //! Home of the PHP `clearstatcache` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
-//! - The builtin registry (declaration) and the EIR backend (lower hook),
-//!   both via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through
+//!   `crate::builtins::registry`.
 //!
 //! Key details:
 //! - No `check` hook is needed: `clearstatcache` is a pure-data builtin whose return
@@ -11,7 +11,6 @@
 //!   infers arguments and enforces arity before falling back to `returns`.
 //! - PHP accepts up to 2 optional arguments; elephc has no stat cache but accepts
 //!   and ignores them (matching legacy behavior).
-//! - `lower` is a thin wrapper over `io::lower_clearstatcache` in the EIR backend.
 
 use crate::builtins::spec::DefaultSpec;
 
@@ -23,7 +22,7 @@ builtin! {
         filename: Str = DefaultSpec::Str("")
     ],
     returns: Void,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::Clearstatcache,
             crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
     ),

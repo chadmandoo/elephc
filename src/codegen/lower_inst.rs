@@ -207,6 +207,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
             static_properties::lower_store_reflection_static_property(ctx, &inst)
         }
         Op::Call => lower_direct_call(ctx, &inst),
+        Op::ClosureBind => builtins::lower_closure_bind(ctx, &inst),
         Op::ClosureCall => callables::lower_closure_call(ctx, &inst),
         Op::ExprCall => callables::lower_expr_call(ctx, &inst),
         Op::CallableDescriptorInvoke => callables::lower_callable_descriptor_invoke(ctx, &inst),
@@ -218,7 +219,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::EnumBackingStringToInt => enums::lower_enum_backing_string_to_int(ctx, &inst),
         Op::EnumBackingMixedToInt => enums::lower_enum_backing_mixed_to_int(ctx, &inst),
         Op::ExternCall => externs::lower_extern_call(ctx, &inst),
-        Op::BuiltinCall => builtins::lower_builtin_call(ctx, &inst),
+        Op::LanguageConstructCall => builtins::lower_language_construct_call(ctx, &inst),
         Op::EvalLiteralCall => builtins::lower_eval_literal_call(ctx, &inst),
         Op::EvalScopeGet => builtins::lower_eval_scope_get(ctx, &inst),
         Op::EvalScopeSet => builtins::lower_eval_scope_set(ctx, &inst),
@@ -1683,12 +1684,18 @@ fn build_runtime_call_wrapper_function(
     let operands = wrapper_param_operands(&mut builder, sig);
     let result = match kind {
         RuntimeCallWrapperKind::Builtin => {
+            let def = crate::builtins::registry::lookup(name).ok_or_else(|| {
+                CodegenIrError::invalid_module(format!(
+                    "callable wrapper {} is not registry-backed",
+                    name,
+                ))
+            })?;
             let mut lowering = WrapperBuiltinLoweringContext {
                 builder: &mut builder,
             };
-            match crate::builtins::semantics::lower_registry_call(
+            Some(crate::builtins::semantics::lower_registry_call(
                 &mut lowering,
-                name,
+                def,
                 &operands,
                 &return_php_type,
                 crate::span::Span::dummy(),
@@ -1698,17 +1705,8 @@ fn build_runtime_call_wrapper_function(
                     "callable wrapper lowering for {} failed: {}",
                     name, error,
                 ))
-            })? {
-                Some(lowered) => Some(lowered.value),
-                None => builder.emit(
-                    Op::BuiltinCall,
-                    operands,
-                    Some(Immediate::Data(data)),
-                    wrapper_return_ir_type(&return_php_type),
-                    return_php_type.clone(),
-                    Ownership::for_php_type(&return_php_type),
-                ),
-            }
+            })?
+            .value)
         }
         RuntimeCallWrapperKind::Extern => builder.emit(
             Op::ExternCall,

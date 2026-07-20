@@ -896,7 +896,7 @@ impl<'a> FunctionContext<'a> {
                 | Op::CatchBind
                 | Op::Call
                 | Op::FunctionVariantCall
-                | Op::BuiltinCall
+                | Op::LanguageConstructCall
                 | Op::EvalFunctionCall
                 | Op::EvalFunctionCallArray
                 | Op::EvalConstantFetch

@@ -1,15 +1,12 @@
 //! Purpose:
-//! Home of the `buffer_len` builtin (elephc extension): its declaration,
-//! type-check hook, and lowering.
+//! Home of the `buffer_len` builtin (elephc extension): its declaration, checker contract, and semantic target.
 //!
 //! Called from:
-//! - The builtin registry (declaration), the type checker (check hook), and the EIR
-//!   backend (lower hook), all via `crate::builtins::registry`.
+//! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
 //! - `check` validates that the argument is a `buffer<T>` and returns `PhpType::Int`,
 //!   preserving the legacy checker-resident arm's message verbatim.
-//! - `lower` is a thin wrapper over the shared `buffers::lower_buffer_len` emitter.
 //! - `extension: true`: buffers have no PHP equivalent, so `--strict-php` hides this
 //!   builtin from user programs.
 
@@ -23,7 +20,7 @@ builtin! {
     params: [buffer: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::backend_target_adapter(
+    semantics: crate::builtins::semantics::runtime_target_semantics(
             crate::ir::BuiltinRuntimeTarget::BufferLen,
             crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
     ),
