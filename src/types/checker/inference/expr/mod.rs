@@ -831,10 +831,10 @@ fn is_valid_string_offset_index(index: &Expr, idx_ty: &PhpType) -> bool {
 /// `Never`-typed arms (`throw`, normalized at the call site) defer to the
 /// other arm's type, `Void`-typed arms (checker `null`) keep the merge
 /// nullable so the null arm's value survives return-type-driven coercion.
-/// Object-only pairs retain a normalized object union so declared object-union
-/// returns and member validation remain precise; every other heterogeneous
-/// pair widens to `Mixed` so each arm's runtime value survives instead of being
-/// coerced to the first arm's type.
+/// Object pairs, including supported `false`/null sentinels, retain a normalized
+/// union so declared object-union returns and member validation remain precise;
+/// every other heterogeneous pair widens to `Mixed` so each arm's runtime value
+/// survives instead of being coerced to the first arm's type.
 fn merge_match_arm_result_type(checker: &Checker, acc: PhpType, next: PhpType) -> PhpType {
     if acc == next {
         return acc;
@@ -851,16 +851,20 @@ fn merge_match_arm_result_type(checker: &Checker, acc: PhpType, next: PhpType) -
     if next == PhpType::Void {
         return nullable_match_arm_type(acc);
     }
-    if object_match_arm_type(&acc) && object_match_arm_type(&next) {
-        return merge_object_match_arm_types(checker, acc, next);
+    if object_union_match_arm_type(&acc) && object_union_match_arm_type(&next) {
+        return merge_object_union_match_arm_types(checker, acc, next);
     }
     PhpType::Mixed
 }
 
-/// Joins object-only branch types at their existing compatible supertype when
-/// one accepts the other, otherwise retaining a normalized object union. A
-/// null member from either side is restored after comparing the object types.
-fn merge_object_match_arm_types(checker: &Checker, acc: PhpType, next: PhpType) -> PhpType {
+/// Joins object/sentinel branch types at their existing compatible supertype
+/// when one accepts the other, otherwise retaining a normalized union. A null
+/// member from either side is restored after comparing the non-null members.
+fn merge_object_union_match_arm_types(
+    checker: &Checker,
+    acc: PhpType,
+    next: PhpType,
+) -> PhpType {
     let nullable = Checker::union_contains_void(&acc) || Checker::union_contains_void(&next);
     let acc_object = checker.strip_void_from_union(&acc);
     let next_object = checker.strip_void_from_union(&next);
@@ -878,15 +882,15 @@ fn merge_object_match_arm_types(checker: &Checker, acc: PhpType, next: PhpType) 
     }
 }
 
-/// Returns whether a branch type contains only concrete objects plus an
-/// optional null member, which can be preserved as a checker-level union even
-/// though codegen materializes the value through boxed `Mixed` storage.
-fn object_match_arm_type(ty: &PhpType) -> bool {
+/// Returns whether a branch type contains only concrete objects plus supported
+/// `false`/null sentinel members, which can be preserved as a checker-level
+/// union even though codegen materializes it through boxed `Mixed` storage.
+fn object_union_match_arm_type(ty: &PhpType) -> bool {
     match ty {
-        PhpType::Object(_) => true,
+        PhpType::Object(_) | PhpType::False => true,
         PhpType::Union(members) => members
             .iter()
-            .all(|member| matches!(member, PhpType::Object(_) | PhpType::Void)),
+            .all(|member| matches!(member, PhpType::Object(_) | PhpType::False | PhpType::Void)),
         _ => false,
     }
 }
