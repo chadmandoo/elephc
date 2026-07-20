@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/types/is_object.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/is_object.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1633](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1633) (`lower_is_object`)
+- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1636](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1636) (`lower_is_object`)
 - **Function symbol**: `lower_is_object()`
 
 
