@@ -10,7 +10,7 @@ sidebar:
 ## Where it lives
 
 - **Signature**: [`src/builtins/types/intval.rs`](https://github.com/illegalstudio/elephc/blob/main/src/builtins/types/intval.rs)
-- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1127](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1127) (`lower_intval`)
+- **Lowering**: [`src/codegen/lower_inst/builtins.rs`:1135](https://github.com/illegalstudio/elephc/blob/main/src/codegen/lower_inst/builtins.rs#L1135) (`lower_intval`)
 - **Function symbol**: `lower_intval()`
 
 
