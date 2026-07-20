@@ -12,6 +12,10 @@
 //!   call `infer_type` again.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
+use crate::builtins::semantics::{
+    runtime_fn_semantics, with_argument_lowering, BuiltinArgumentLowering, BuiltinResultType,
+    BuiltinSemanticInput, BuiltinSemantics,
+};
 use crate::errors::CompileError;
 use crate::types::PhpType;
 
@@ -22,10 +26,23 @@ builtin! {
     arity_error: "preg_split() takes between 2 and 4 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_fn_semantics(
-        crate::ir::RuntimeFnId::PregSplit,
-    ),
+    semantics: preg_split_semantics(),
     summary: "Splits a string by a regular expression.",
+}
+
+/// Builds regex-split semantics with the boxed-Mixed EIR array layout expected by the runtime.
+const fn preg_split_semantics() -> BuiltinSemantics {
+    let mut semantics = with_argument_lowering(
+        runtime_fn_semantics(crate::ir::RuntimeFnId::PregSplit),
+        BuiltinArgumentLowering::PositionalRegex,
+    );
+    semantics.result_type = BuiltinResultType::Shared(eir_result_type);
+    semantics
+}
+
+/// Returns the conservative EIR container type used by the regex split runtime ABI.
+fn eir_result_type(_input: &BuiltinSemanticInput<'_>) -> PhpType {
+    PhpType::Array(Box::new(PhpType::Mixed))
 }
 
 /// Returns the split result array type, refining the element type based on argument count.

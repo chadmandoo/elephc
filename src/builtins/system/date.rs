@@ -17,8 +17,9 @@ builtin! {
     area: System,
     params: [format: Str, timestamp: Int = DefaultSpec::Null],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_fn_semantics(
-        crate::ir::RuntimeFnId::Date,
+    semantics: crate::builtins::semantics::with_argument_lowering(
+        crate::builtins::semantics::runtime_fn_semantics(crate::ir::RuntimeFnId::Date),
+        crate::builtins::semantics::BuiltinArgumentLowering::Date,
     ),
     summary: "Formats a local time/date.",
 }

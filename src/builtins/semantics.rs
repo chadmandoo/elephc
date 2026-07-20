@@ -146,6 +146,25 @@ pub enum BuiltinRuntimeFunctions {
     One(RuntimeFnId),
 }
 
+/// Selects source-order argument preparation needed before semantic EIR lowering.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinArgumentLowering {
+    /// Use shared signature planning and ordinary source-order evaluation.
+    Standard,
+    /// Drop the unsupported statically-default count mode after shared planning.
+    Count,
+    /// Preserve date's literal-format specialization inputs.
+    Date,
+    /// Preserve JSON decode's source-sensitive option handling.
+    JsonDecode,
+    /// Lower a statically known callback descriptor before its subject.
+    PregReplaceCallback,
+    /// Keep positional regex operands in raw source order.
+    PositionalRegex,
+    /// Preserve by-reference array storage while lowering user-comparator sorts.
+    UserValueSort,
+}
+
 impl BuiltinRuntimeFunctions {
     /// Returns whether this semantic descriptor may emit the requested runtime function.
     pub fn contains(self, runtime_fn: RuntimeFnId) -> bool {
@@ -274,6 +293,8 @@ pub struct BuiltinSemantics {
     pub target_support: BuiltinTargetSupport,
     /// Runtime functions the backend-neutral lowering may emit.
     pub runtime_functions: BuiltinRuntimeFunctions,
+    /// Source-order argument preparation used before normalized semantic lowering.
+    pub argument_lowering: BuiltinArgumentLowering,
     /// Callable availability contract.
     pub callable: BuiltinCallablePolicy,
     /// Backend-neutral lowering strategy.
@@ -288,7 +309,9 @@ pub const fn with_registry_checker_contract(
 ) -> BuiltinSemantics {
     if let Some(check) = check {
         semantics.validation = BuiltinValidation::CheckerHook { check, lazy };
-        semantics.result_type = BuiltinResultType::Checked;
+        if matches!(semantics.result_type, BuiltinResultType::Declared) {
+            semantics.result_type = BuiltinResultType::Checked;
+        }
     }
     semantics
 }
@@ -301,6 +324,15 @@ pub const fn with_registry_requirement_resolver(
     if let Some(resolver) = resolver {
         semantics.requirements = BuiltinRequirements::Shared(resolver);
     }
+    semantics
+}
+
+/// Overrides ordinary source-order argument lowering with a registry-owned strategy.
+pub const fn with_argument_lowering(
+    mut semantics: BuiltinSemantics,
+    argument_lowering: BuiltinArgumentLowering,
+) -> BuiltinSemantics {
+    semantics.argument_lowering = argument_lowering;
     semantics
 }
 
@@ -318,6 +350,7 @@ pub const fn unary_string_runtime(
         target_strategy: BuiltinTargetStrategy::RuntimeCall,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: BuiltinArgumentLowering::Standard,
         callable: BuiltinCallablePolicy::Dynamic(callable_accepts_string_source),
         lowering: BuiltinLowering::Runtime(target),
     }
@@ -334,6 +367,7 @@ pub const fn runtime_fn_semantics(target: RuntimeFnId) -> BuiltinSemantics {
         target_strategy: BuiltinTargetStrategy::RuntimeCall,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::One(target),
+        argument_lowering: BuiltinArgumentLowering::Standard,
         callable: if target.runtime_callable_supported() {
             BuiltinCallablePolicy::DynamicRuntime(target)
         } else {
@@ -359,6 +393,7 @@ pub const fn type_predicate_semantics(
         target_strategy: BuiltinTargetStrategy::EirPrimitive,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: BuiltinArgumentLowering::Standard,
         callable: if runtime_callable {
             BuiltinCallablePolicy::Dynamic(callable_accepts_any_source)
         } else {
@@ -460,6 +495,7 @@ pub(crate) const fn test_probe_semantics() -> BuiltinSemantics {
         target_strategy: BuiltinTargetStrategy::EirGraph,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: BuiltinArgumentLowering::Standard,
         callable: BuiltinCallablePolicy::StaticOnly("test-only registry probe"),
         lowering: BuiltinLowering::Eir(lower_test_probe),
     }

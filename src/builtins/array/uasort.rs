@@ -22,8 +22,9 @@ builtin! {
     returns: Void,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_fn_semantics(
-        crate::ir::RuntimeFnId::Uasort,
+    semantics: crate::builtins::semantics::with_argument_lowering(
+        crate::builtins::semantics::runtime_fn_semantics(crate::ir::RuntimeFnId::Uasort),
+        crate::builtins::semantics::BuiltinArgumentLowering::UserValueSort,
     ),
     summary: "Sorts an array with a user-defined comparison function and maintains index association.",
     php_manual: "https://www.php.net/manual/en/function.uasort.php",

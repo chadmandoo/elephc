@@ -350,7 +350,12 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
             r"pub\s+check\s*:",
             r"pub\s+lazy_check\s*:",
         ],
-        "src/ir_lower/expr/mod.rs": [r"fn\s+builtin_return_type_override\s*\("],
+        "src/ir_lower/expr/mod.rs": [
+            r"fn\s+builtin_return_type_override\s*\(",
+            r'"count"\s*=>\s*lower_count_args',
+            r'"date"\s*=>\s*lower_date_args',
+            r'"json_decode"\s*=>\s*lower_json_decode_args',
+        ],
         "src/ir/runtime_call.rs": [r"enforced_arity_bounds\s*\(\s*target\.as_eir"],
     }
     for relative, patterns in required_absences.items():

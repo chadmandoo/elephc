@@ -27,8 +27,9 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_fn_semantics(
-        crate::ir::RuntimeFnId::PregMatch,
+    semantics: crate::builtins::semantics::with_argument_lowering(
+        crate::builtins::semantics::runtime_fn_semantics(crate::ir::RuntimeFnId::PregMatch),
+        crate::builtins::semantics::BuiltinArgumentLowering::PositionalRegex,
     ),
     summary: "Performs a regular expression match.",
 }

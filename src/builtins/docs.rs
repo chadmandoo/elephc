@@ -17,9 +17,9 @@
 
 use crate::builtins::registry::{lookup, names};
 use crate::builtins::semantics::{
-    BuiltinCallablePolicy, BuiltinEffects, BuiltinLowering, BuiltinRequirement,
-    BuiltinRequirements, BuiltinResultOwnership, BuiltinResultType, BuiltinRuntimeFunctions,
-    BuiltinSemantics, BuiltinTargetStrategy, BuiltinValidation,
+    BuiltinArgumentLowering, BuiltinCallablePolicy, BuiltinEffects, BuiltinLowering,
+    BuiltinRequirement, BuiltinRequirements, BuiltinResultOwnership, BuiltinResultType,
+    BuiltinRuntimeFunctions, BuiltinSemantics, BuiltinTargetStrategy, BuiltinValidation,
 };
 use crate::builtins::spec::{Area, DefaultSpec, TypeSpec};
 use serde_json::{json, Value};
@@ -138,6 +138,15 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
         BuiltinRuntimeFunctions::None => Vec::new(),
         BuiltinRuntimeFunctions::One(runtime_fn) => vec![runtime_fn.as_eir()],
     };
+    let argument_lowering = match semantics.argument_lowering {
+        BuiltinArgumentLowering::Standard => "standard",
+        BuiltinArgumentLowering::Count => "count",
+        BuiltinArgumentLowering::Date => "date",
+        BuiltinArgumentLowering::JsonDecode => "json_decode",
+        BuiltinArgumentLowering::PregReplaceCallback => "preg_replace_callback",
+        BuiltinArgumentLowering::PositionalRegex => "positional_regex",
+        BuiltinArgumentLowering::UserValueSort => "user_value_sort",
+    };
     let callable = match semantics.callable {
         BuiltinCallablePolicy::Dynamic(_) => json!({"kind": "dynamic"}),
         BuiltinCallablePolicy::DynamicRuntime(target) => {
@@ -162,6 +171,7 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
         "target_strategy": target_strategy,
         "target_support": target_support,
         "runtime_functions": runtime_functions,
+        "argument_lowering": argument_lowering,
         "callable": callable,
         "lowering": lowering,
     })
@@ -169,7 +179,7 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
 
 /// Returns true when a PHP-visible builtin exists in the static AOT surface:
 /// `builtin!` registry entries plus compiler-resident constructs (`isset`,
-/// `strval`, predicate aliases, ...). Documentation tooling uses this to tell
+/// `unset`, `empty`, `exit`, `die`, and dedicated `buffer_new`). Documentation tooling uses this to tell
 /// resident names apart from genuinely eval-only builtins.
 pub fn aot_php_visible_builtin_exists(name: &str) -> bool {
     crate::types::checker::builtins::is_php_visible_builtin_function(name)

@@ -18,9 +18,10 @@
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::builtins::semantics::{
     BuiltinCallablePolicy, BuiltinEffects, BuiltinLowering, BuiltinLoweringContext,
-    BuiltinLoweringError, BuiltinRequirements, BuiltinResultOwnership, BuiltinResultType,
-    BuiltinRuntimeFunctions, BuiltinSemanticInput, BuiltinSemantics, BuiltinTargetStrategy,
-    BuiltinTargetSupport, BuiltinValidation, LoweredBuiltinValue, NormalizedBuiltinCall,
+    BuiltinArgumentLowering, BuiltinLoweringError, BuiltinRequirements,
+    BuiltinResultOwnership, BuiltinResultType, BuiltinRuntimeFunctions, BuiltinSemanticInput,
+    BuiltinSemantics, BuiltinTargetStrategy, BuiltinTargetSupport, BuiltinValidation,
+    LoweredBuiltinValue, NormalizedBuiltinCall,
 };
 use crate::errors::CompileError;
 use crate::ir::{Effects, Op, RuntimeCallTarget, RuntimeFnId};
@@ -43,6 +44,7 @@ builtin! {
         target_strategy: BuiltinTargetStrategy::Conditional,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::One(RuntimeFnId::Count),
+        argument_lowering: BuiltinArgumentLowering::Count,
         callable: BuiltinCallablePolicy::StaticOnly(
             "runtime-selected count requires a statically typed Countable source",
         ),

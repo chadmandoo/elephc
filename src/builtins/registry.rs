@@ -752,6 +752,49 @@ mod tests {
         assert_eq!(sort.params[0].1, PhpType::Array(Box::new(PhpType::Int)));
     }
 
+    /// Verifies source-order argument strategies are registry metadata rather than name dispatch.
+    #[test]
+    fn specialized_argument_lowering_is_registry_owned() {
+        use crate::builtins::semantics::BuiltinArgumentLowering;
+        for (name, expected) in [
+            ("count", BuiltinArgumentLowering::Count),
+            ("date", BuiltinArgumentLowering::Date),
+            ("json_decode", BuiltinArgumentLowering::JsonDecode),
+            (
+                "preg_replace_callback",
+                BuiltinArgumentLowering::PregReplaceCallback,
+            ),
+            ("preg_match", BuiltinArgumentLowering::PositionalRegex),
+            ("preg_split", BuiltinArgumentLowering::PositionalRegex),
+            ("usort", BuiltinArgumentLowering::UserValueSort),
+            ("uasort", BuiltinArgumentLowering::UserValueSort),
+        ] {
+            let def = lookup(name).expect("specialized builtin must be registered");
+            assert_eq!(def.spec.semantics.argument_lowering, expected, "{name}");
+        }
+        assert_eq!(
+            lookup("strlen")
+                .expect("strlen must be registered")
+                .spec
+                .semantics
+                .argument_lowering,
+            BuiltinArgumentLowering::Standard,
+        );
+    }
+
+    /// Verifies checker hooks can retain a representation-safe result resolver for EIR lowering.
+    #[test]
+    fn checker_hook_preserves_shared_eir_result_metadata() {
+        assert!(matches!(
+            lookup("preg_split")
+                .expect("preg_split must be registered")
+                .spec
+                .semantics
+                .result_type,
+            crate::builtins::semantics::BuiltinResultType::Shared(_)
+        ));
+    }
+
     /// Verifies conditional EIR lowering exposes its runtime fallback contract by typed ID.
     #[test]
     fn conditional_runtime_function_arity_comes_from_registry_semantics() {

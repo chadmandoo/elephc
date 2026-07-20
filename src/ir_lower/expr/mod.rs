@@ -5365,24 +5365,36 @@ fn lower_builtin_call_args(
     if is_empty_static_indexed_spread_arg(args) && zero_arity_call_signature(name, sig) {
         return Vec::new();
     }
-    match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "count" => lower_count_args(ctx, sig, args),
-        "date" => lower_date_args(ctx, sig, args),
-        "eval" => lower_eval_args(ctx, sig, args),
-        "json_decode" => lower_json_decode_args(ctx, sig, args),
-        "preg_replace_callback"
+    let canonical = php_symbol_key(name.trim_start_matches('\\'));
+    if canonical == "eval" {
+        return lower_eval_args(ctx, sig, args);
+    }
+    let argument_lowering = crate::builtins::registry::lookup(&canonical)
+        .map(|def| def.spec.semantics.argument_lowering)
+        .unwrap_or(crate::builtins::semantics::BuiltinArgumentLowering::Standard);
+    match argument_lowering {
+        crate::builtins::semantics::BuiltinArgumentLowering::Count => {
+            lower_count_args(ctx, sig, args)
+        }
+        crate::builtins::semantics::BuiltinArgumentLowering::Date => {
+            lower_date_args(ctx, sig, args)
+        }
+        crate::builtins::semantics::BuiltinArgumentLowering::JsonDecode => {
+            lower_json_decode_args(ctx, sig, args)
+        }
+        crate::builtins::semantics::BuiltinArgumentLowering::PregReplaceCallback
             if !crate::types::call_args::has_named_args(args)
                 && !args.iter().any(is_spread_arg) =>
         {
             lower_preg_replace_callback_args(ctx, sig, args)
         }
-        "preg_match" | "preg_split"
+        crate::builtins::semantics::BuiltinArgumentLowering::PositionalRegex
             if !crate::types::call_args::has_named_args(args)
                 && !args.iter().any(is_spread_arg) =>
         {
             lower_args(ctx, args)
         }
-        "usort" | "uasort"
+        crate::builtins::semantics::BuiltinArgumentLowering::UserValueSort
             if !crate::types::call_args::has_named_args(args)
                 && !args.iter().any(is_spread_arg) =>
         {

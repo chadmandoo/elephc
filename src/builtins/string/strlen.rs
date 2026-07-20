@@ -33,6 +33,7 @@ builtin! {
         target_strategy: BuiltinTargetStrategy::EirGraph,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: crate::builtins::semantics::BuiltinArgumentLowering::Standard,
         callable: BuiltinCallablePolicy::Dynamic(
             crate::builtins::semantics::callable_accepts_strlen_source,
         ),

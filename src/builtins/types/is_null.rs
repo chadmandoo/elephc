@@ -30,6 +30,7 @@ builtin! {
         target_strategy: BuiltinTargetStrategy::EirPrimitive,
         target_support: BuiltinTargetSupport::All,
         runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: crate::builtins::semantics::BuiltinArgumentLowering::Standard,
         callable: BuiltinCallablePolicy::StaticOnly(
             "runtime-selected is_null requires a statically represented source value",
         ),

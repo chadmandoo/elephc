@@ -25,8 +25,9 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_fn_semantics(
-        crate::ir::RuntimeFnId::JsonDecode,
+    semantics: crate::builtins::semantics::with_argument_lowering(
+        crate::builtins::semantics::runtime_fn_semantics(crate::ir::RuntimeFnId::JsonDecode),
+        crate::builtins::semantics::BuiltinArgumentLowering::JsonDecode,
     ),
     summary: "Decodes a JSON string.",
 }
