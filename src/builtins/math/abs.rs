@@ -11,10 +11,7 @@
 //!   and all other inputs return `Int`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [num: Mixed],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Abs,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Absolute value.",
     php_manual: "https://www.php.net/manual/en/function.abs.php",
 }
@@ -42,9 +42,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         }
         _ => PhpType::Int,
     })
-}
-
-/// Lowers an `abs` call by dispatching to the shared absolute-value emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::math::lower_abs(ctx, inst)
 }

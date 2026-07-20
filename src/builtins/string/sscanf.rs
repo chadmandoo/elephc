@@ -12,10 +12,7 @@
 //! - `lower` is a thin wrapper over the shared `lower_sscanf` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     variadic: "vars",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Sscanf,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Parses a string according to a format.",
     php_manual: "https://www.php.net/manual/en/function.sscanf.php",
 }
@@ -36,9 +36,4 @@ builtin! {
 /// parameterized array return type inline.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Array(Box::new(PhpType::Str)))
-}
-
-/// Lowers a `sscanf` call by dispatching to the shared sscanf emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_sscanf(ctx, inst)
 }

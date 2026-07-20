@@ -12,10 +12,7 @@
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::builtins::system::json_support;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -29,7 +26,10 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::JsonDecode,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Decodes a JSON string.",
 }
 
@@ -64,9 +64,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         }
     }
     Ok(PhpType::Mixed)
-}
-
-/// Lowers a `json_decode` call by dispatching to the shared JSON emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::json::lower_json_decode(ctx, inst)
 }

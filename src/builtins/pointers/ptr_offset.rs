@@ -11,10 +11,7 @@
 //! - `lower` is a thin wrapper over the shared `pointers::lower_ptr_offset` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [pointer: Mixed, offset: Mixed],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PtrOffset,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns a new pointer offset from the given pointer by the given byte count.",
     extension: true,
 }
@@ -47,9 +47,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(ptr_ty)
-}
-
-/// Lowers a `ptr_offset` call by dispatching to the shared pointer emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::pointers::lower_ptr_offset(ctx, inst)
 }

@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `get_resource_id` builtin: its declaration and lowering.
+//! Home of the PHP `get_resource_id` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook), via `crate::builtins::registry`.
@@ -9,21 +9,16 @@
 //! - The parameter is named `resource` (matching the PHP golden signature).
 //! - `lower` is a thin wrapper over the EIR types-module resource-id emitter.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "get_resource_id",
     area: Types,
     params: [resource: Mixed],
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::GetResourceId,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns an integer identifier for the given resource.",
     php_manual: "function.get-resource-id",
-}
-
-/// Lowers a `get_resource_id` call by dispatching to the EIR types-module emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::types::lower_get_resource_id(ctx, inst)
 }

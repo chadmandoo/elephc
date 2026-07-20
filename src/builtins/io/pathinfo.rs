@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over `io::lower_pathinfo` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::{BinOp, Expr, ExprKind};
 use crate::types::PhpType;
 
@@ -29,7 +26,10 @@ builtin! {
     params: [path: Str, flags: Int = DefaultSpec::Int(15)],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Pathinfo,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns information about a file path.",
     php_manual: "function.pathinfo",
 }
@@ -102,9 +102,4 @@ fn pathinfo_static_flag_value(flag: &Expr) -> Option<i64> {
         }
         _ => None,
     }
-}
-
-/// Lowers a `pathinfo` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_pathinfo(ctx, inst)
 }

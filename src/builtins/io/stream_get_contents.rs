@@ -14,10 +14,7 @@
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::builtins::io::stream_support;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 use crate::types::checker::builtins::io::common;
 
@@ -31,7 +28,10 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::StreamGetContents,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Reads remainder of a stream into a string.",
     php_manual: "function.stream-get-contents",
 }
@@ -47,9 +47,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         stream_support::ensure_int(cx.checker, cx.name, "offset", offset, cx.env)?;
     }
     Ok(cx.checker.normalize_union_type(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers a `stream_get_contents` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_stream_get_contents(ctx, inst)
 }

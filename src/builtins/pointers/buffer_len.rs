@@ -14,10 +14,7 @@
 //!   builtin from user programs.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -26,7 +23,10 @@ builtin! {
     params: [buffer: Mixed],
     returns: Int,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::BufferLen,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    ),
     summary: "Returns the logical element count of a buffer<T>.",
     extension: true,
 }
@@ -43,9 +43,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Int)
-}
-
-/// Lowers a `buffer_len` call by dispatching to the shared buffers emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::buffers::lower_buffer_len(ctx, inst)
 }

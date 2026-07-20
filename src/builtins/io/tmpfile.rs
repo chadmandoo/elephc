@@ -19,10 +19,7 @@
 //! - `lower` is a thin wrapper over `io::lower_tmpfile` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -34,7 +31,10 @@ builtin! {
     arity_error: "tmpfile() takes no arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Tmpfile,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Creates a temporary file.",
     php_manual: "function.tmpfile",
 }
@@ -65,9 +65,4 @@ fn is_empty_static_array_spread(args: &[crate::parser::ast::Expr]) -> bool {
         return false;
     };
     matches!(&inner.kind, ExprKind::ArrayLiteral(items) if items.is_empty())
-}
-
-/// Lowers a `tmpfile` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_tmpfile(ctx, inst)
 }

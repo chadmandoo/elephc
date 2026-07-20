@@ -12,10 +12,7 @@
 //! - `lower` is a thin wrapper over the shared `system::lower_microtime` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -26,7 +23,10 @@ builtin! {
     arity_error: "microtime() takes 0 or 1 arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Microtime,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the current Unix timestamp with microseconds.",
 }
 
@@ -44,9 +44,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         },
         None => PhpType::Str,
     })
-}
-
-/// Lowers a `microtime` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_microtime(ctx, inst)
 }

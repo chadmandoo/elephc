@@ -17,10 +17,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_flip` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::{array_key_type_from_value_type, PhpType};
 
 builtin! {
@@ -29,7 +26,10 @@ builtin! {
     params: [array: Mixed],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayFlip,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Exchanges all keys with their associated values in an array.",
     php_manual: "https://www.php.net/manual/en/function.array-flip.php",
 }
@@ -56,9 +56,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             "array_flip() argument must be array",
         )),
     }
-}
-
-/// Lowers an `array_flip` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_flip(ctx, inst)
 }

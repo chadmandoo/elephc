@@ -60,7 +60,13 @@ pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instructi
     // Registry-first: if the builtin is registered, invoke its lowering hook.
     // Falls through to compiler-resident constructs when the name is not registered.
     if let Some(def) = crate::builtins::registry::lookup(key.as_str()) {
-        return (def.spec.lower)(ctx, inst);
+        let Some(lower) = def.spec.lower else {
+            return Err(CodegenIrError::unsupported(format!(
+                "legacy BuiltinCall reached codegen for migrated builtin {}",
+                def.name,
+            )));
+        };
+        return lower(ctx, inst);
     }
     match key.as_str() {
         "closure_bind" => lower_closure_bind(ctx, inst),
@@ -1090,36 +1096,6 @@ fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_closure_bind");
-    store_if_result(ctx, inst)
-}
-
-/// Lowers `strlen()` by coercing string-like values and returning the byte length.
-pub(crate) fn lower_strlen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "strlen", 1)?;
-    let value = expect_operand(inst, 0)?;
-    let ty = ctx.load_value_to_result(value)?;
-    match ty.codegen_repr() {
-        PhpType::Str => {}
-        PhpType::Mixed | PhpType::Union(_) => {
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
-        }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "strlen for PHP type {:?}",
-                other
-            )));
-        }
-    }
-    let result_reg = abi::int_result_reg(ctx.emitter);
-    let len_reg = abi::string_result_regs(ctx.emitter).1;
-    match ctx.emitter.target.arch {
-        Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, len_reg)); // return the byte length of the loaded PHP string
-        }
-        Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, len_reg)); // return the byte length of the loaded PHP string
-        }
-    }
     store_if_result(ctx, inst)
 }
 

@@ -10,10 +10,7 @@
 //! - The hash is derived from the object's heap pointer stringified via `__rt_itoa`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -22,7 +19,10 @@ builtin! {
     params: [object: Mixed],
     returns: Str,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::SplObjectHash,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Return hash id for given object.",
     php_manual: "https://www.php.net/manual/en/function.spl-object-hash.php",
 }
@@ -37,9 +37,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Str)
-}
-
-/// Lowers `spl_object_hash()` by delegating to the object-pointer-to-string emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::spl::lower_spl_object_hash(ctx, inst)
 }

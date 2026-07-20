@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_natcasesort` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Natcasesort,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Sorts an array using a case-insensitive natural order algorithm.",
     php_manual: "https://www.php.net/manual/en/function.natcasesort.php",
 }
@@ -40,9 +40,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         return Err(CompileError::new(cx.span, &format!("{}() argument must be array", cx.name)));
     }
     Ok(PhpType::Void)
-}
-
-/// Lowers a `natcasesort` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_natcasesort(ctx, inst)
 }

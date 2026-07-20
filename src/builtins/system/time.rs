@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `time` builtin: its declaration and lowering.
+//! Home of the PHP `time` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -10,20 +10,15 @@
 //!   (`Int`) is fully determined by its declaration. The registry common path
 //!   infers the argument and enforces arity before falling back to `returns`.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "time",
     area: System,
     params: [],
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Time,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Returns the current Unix timestamp.",
-}
-
-/// Lowers a `time` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_time(ctx, inst)
 }

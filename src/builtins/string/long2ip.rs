@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `long2ip` builtin: its declaration and lowering.
+//! Home of the PHP `long2ip` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,21 +12,16 @@
 //! - `lower` is a thin wrapper over the dedicated `lower_long2ip` emitter in the
 //!   strings lowering module.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "long2ip",
     area: String,
     params: [ip: Int],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Long2ip,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Converts an IPv4 address from long integer to dotted string notation.",
     php_manual: "https://www.php.net/manual/en/function.long2ip.php",
-}
-
-/// Lowers a `long2ip` call by dispatching to the shared `lower_long2ip` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_long2ip(ctx, inst)
 }

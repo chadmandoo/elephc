@@ -11,10 +11,7 @@
 //! - `lower` is a thin wrapper over `io::lower_stream_get_filters` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::StreamGetFilters,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Retrieves list of registered filters.",
     php_manual: "function.stream-get-filters",
 }
@@ -31,9 +31,4 @@ builtin! {
 /// Returns `Array(Str)` as the precise return type for `stream_get_filters`.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Array(Box::new(PhpType::Str)))
-}
-
-/// Lowers a `stream_get_filters` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_stream_get_filters(ctx, inst)
 }

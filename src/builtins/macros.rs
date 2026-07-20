@@ -20,7 +20,7 @@
 //! Canonical field order:
 //!   name, area, params, variadic?, min_args?, max_args?, arity_error?, returns,
 //!   returns_fresh_storage?, returns_independent_storage?, by_ref_return?, check?,
-//!   lazy_check?, lower, summary, examples?, php_manual?,
+//!   lazy_check?, semantics?, lower?, summary, examples?, php_manual?,
 //!   deprecation?, extension?, internal?
 //!
 //! Example:
@@ -41,7 +41,7 @@
 /// Fields must appear in canonical order (optional fields may be omitted):
 /// `name`, `area`, `params`, `variadic`?, `min_args`?, `max_args`?, `arity_error`?,
 /// `returns`, `returns_fresh_storage`?, `returns_independent_storage`?,
-/// `by_ref_return`?, `check`?, `lazy_check`?, `lower`, `summary`, `examples`?,
+/// `by_ref_return`?, `check`?, `lazy_check`?, `semantics`?, `lower`?, `summary`, `examples`?,
 /// `php_manual`?, `deprecation`?, `extension`?, `internal`?
 ///
 /// `extension` (optional `bool`, default `false`) marks the builtin as an elephc
@@ -90,7 +90,8 @@ macro_rules! builtin {
         $(by_ref_return: $by_ref_return:expr,)?
         $(check: $check:expr,)?
         $(lazy_check: $lazy_check:expr,)?
-        lower: $lower:expr,
+        $(semantics: $semantics:expr,)?
+        $(lower: $lower:expr,)?
         summary: $summary:expr,
         $(examples: $examples:expr,)?
         $(php_manual: $php_manual:expr,)?
@@ -118,7 +119,8 @@ macro_rules! builtin {
                 by_ref_return: builtin!(@opt_bool $($by_ref_return)?),
                 check: builtin!(@opt_fn $($check)?),
                 lazy_check: builtin!(@opt_bool $($lazy_check)?),
-                lower: $lower,
+                semantics: builtin!(@opt_semantics $($semantics)?),
+                lower: builtin!(@opt_fn $($lower)?),
                 summary: $summary,
                 examples: builtin!(@opt_examples $($examples)?),
                 php_manual: builtin!(@opt_str $($php_manual)?),
@@ -232,6 +234,10 @@ macro_rules! builtin {
     // Helper: optional CheckFn — present yields Some, absent yields None.
     (@opt_fn $val:expr) => { Some($val) };
     (@opt_fn) => { None };
+
+    // Helper: complete semantic descriptor, or the migration-only legacy adapter.
+    (@opt_semantics $val:expr) => { $val };
+    (@opt_semantics) => { $crate::builtins::semantics::BuiltinSemantics::LEGACY };
 
     // Helper: optional examples slice — present yields the value, absent yields empty slice.
     (@opt_examples $val:expr) => { $val };

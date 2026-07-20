@@ -14,10 +14,7 @@
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
 use crate::builtins::io::stream_support;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 use crate::types::checker::builtins::io::common;
 
@@ -32,7 +29,10 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::StreamCopyToStream,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Copies data from one stream to another.",
     php_manual: "function.stream-copy-to-stream",
 }
@@ -49,9 +49,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         stream_support::ensure_int(cx.checker, cx.name, "offset", offset, cx.env)?;
     }
     Ok(cx.checker.normalize_union_type(vec![PhpType::Int, PhpType::False]))
-}
-
-/// Lowers a `stream_copy_to_stream` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_stream_copy_to_stream(ctx, inst)
 }

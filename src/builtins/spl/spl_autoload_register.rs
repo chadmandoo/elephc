@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `spl_autoload_register` builtin: its declaration and lowering.
+//! Home of the PHP `spl_autoload_register` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -10,9 +10,6 @@
 //!   and any combination of 0–3 arguments is accepted. Returns `true` always.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "spl_autoload_register",
@@ -23,16 +20,10 @@ builtin! {
         prepend: Bool = DefaultSpec::Bool(false),
     ],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::SplAutoloadRegister,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Register given function as __autoload() implementation.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-register.php",
-}
-
-/// Lowers `spl_autoload_register` by evaluating arguments for side effects and returning true.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_bool(
-        ctx,
-        inst,
-        "spl_autoload_register",
-    )
 }

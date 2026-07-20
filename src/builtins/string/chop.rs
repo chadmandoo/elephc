@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `chop` builtin: its declaration and lowering.
+//! Home of the PHP `chop` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -14,9 +14,6 @@
 //! - `lower` is a thin wrapper over `lower_trim_like` routing to the `__rt_rtrim`
 //!   family of runtime helpers.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "chop",
@@ -26,21 +23,10 @@ builtin! {
         characters: Str = crate::builtins::spec::DefaultSpec::Str(" \n\r\t\u{000b}\u{000c}\0"),
     ],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Chop,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Alias of rtrim: strips whitespace (or other characters) from the end of a string.",
     php_manual: "https://www.php.net/manual/en/function.chop.php",
-}
-
-/// Lowers a `chop` call by dispatching to `lower_trim_like` with the rtrim runtime labels.
-fn lower(
-    ctx: &mut FunctionContext,
-    inst: &Instruction,
-) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_trim_like(
-        ctx,
-        inst,
-        "chop",
-        "__rt_rtrim",
-        "__rt_rtrim_mask",
-    )
 }

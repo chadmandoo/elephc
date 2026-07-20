@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `sys_get_temp_dir` builtin: its declaration and lowering.
+//! Home of the PHP `sys_get_temp_dir` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -11,21 +11,16 @@
 //!   its 0-argument arity before falling back to `returns`.
 //! - `lower` is a thin wrapper over `io::lower_sys_get_temp_dir` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "sys_get_temp_dir",
     area: Io,
     params: [],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::SysGetTempDir,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Returns the directory path used for temporary files.",
     php_manual: "function.sys-get-temp-dir",
-}
-
-/// Lowers a `sys_get_temp_dir` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_sys_get_temp_dir(ctx, inst)
 }

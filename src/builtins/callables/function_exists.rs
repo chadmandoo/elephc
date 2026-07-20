@@ -14,10 +14,7 @@
 //! - `lower` is a thin wrapper over `lower_function_exists` (not parameterized).
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,7 +24,10 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::FunctionExists,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns true if the given function has been defined.",
     php_manual: "function.function-exists",
 }
@@ -40,9 +40,4 @@ builtin! {
 /// `types::checker::builtins` module tree.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     crate::types::checker::builtins::check_function_exists(cx.checker, cx.args, cx.span, cx.env)
-}
-
-/// Lowers a `function_exists` call by dispatching to the shared emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_function_exists(ctx, inst)
 }

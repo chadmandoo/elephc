@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `tempnam` builtin: its declaration and lowering.
+//! Home of the PHP `tempnam` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,21 +12,16 @@
 //!   `returns`.
 //! - `lower` is a thin wrapper over `io::lower_tempnam` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "tempnam",
     area: Io,
     params: [directory: Str, prefix: Str],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Tempnam,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Creates a file with a unique filename.",
     php_manual: "function.tempnam",
-}
-
-/// Lowers a `tempnam` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_tempnam(ctx, inst)
 }

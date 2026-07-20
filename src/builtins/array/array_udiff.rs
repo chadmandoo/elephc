@@ -15,10 +15,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_udiff` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,8 +24,10 @@ builtin! {
     params: [array1: Mixed, array2: Mixed, callback: Mixed],
     returns: Mixed,
     check: check,
-    lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayUdiff,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Computes the difference of arrays using a callback comparator.",
     php_manual: "https://www.php.net/manual/en/function.array-udiff.php",
 }
@@ -61,9 +60,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         &label,
     )?;
     Ok(arr_ty)
-}
-
-/// Lowers an `array_udiff` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_udiff(ctx, inst)
 }

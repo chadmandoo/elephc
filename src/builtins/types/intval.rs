@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `intval` builtin: its declaration and lowering.
+//! Home of the PHP `intval` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook), via `crate::builtins::registry`.
@@ -9,21 +9,16 @@
 //! - Declared with exactly one parameter `value` (no `base` param) matching the legacy golden signature.
 //! - `lower` is a thin wrapper over the shared intval emitter.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "intval",
     area: Types,
     params: [value: Mixed],
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Intval,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the integer value of a variable.",
     php_manual: "function.intval",
-}
-
-/// Lowers an `intval` call by dispatching to the shared intval emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_intval(ctx, inst)
 }

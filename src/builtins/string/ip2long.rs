@@ -12,10 +12,7 @@
 //! - Argument types are inferred by the common registry dispatch path before the hook fires.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -24,7 +21,10 @@ builtin! {
     params: [ip: Str],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Ip2long,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Converts a string containing an IPv4 address into a long integer.",
     php_manual: "https://www.php.net/manual/en/function.ip2long.php",
 }
@@ -37,9 +37,4 @@ builtin! {
 /// arity (exactly 1 arg) is pre-validated by the registry.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Union(vec![PhpType::Int, PhpType::False]))
-}
-
-/// Lowers an `ip2long` call by dispatching to the shared `lower_ip2long` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_ip2long(ctx, inst)
 }

@@ -14,10 +14,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_uasort` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,7 +24,10 @@ builtin! {
     returns: Void,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Uasort,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Sorts an array with a user-defined comparison function and maintains index association.",
     php_manual: "https://www.php.net/manual/en/function.uasort.php",
 }
@@ -52,9 +52,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         &label,
     )?;
     Ok(PhpType::Void)
-}
-
-/// Lowers a `uasort` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_uasort(ctx, inst)
 }

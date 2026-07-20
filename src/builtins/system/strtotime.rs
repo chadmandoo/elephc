@@ -11,10 +11,7 @@
 //! - `lower` is a thin wrapper over the shared `system::lower_strtotime` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [datetime: Str, baseTimestamp: Int = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Strtotime,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Parses an English textual datetime description into a Unix timestamp.",
 }
 
@@ -32,9 +32,4 @@ builtin! {
 /// The registry pre-infers arguments before calling this hook.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Union(vec![PhpType::Int, PhpType::False]))
-}
-
-/// Lowers a `strtotime` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_strtotime(ctx, inst)
 }

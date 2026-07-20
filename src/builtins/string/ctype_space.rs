@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `ctype_space` builtin: its declaration and lowering.
+//! Home of the PHP `ctype_space` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,21 +12,16 @@
 //! - `lower` is a thin wrapper over the dedicated `lower_ctype_space` emitter in the
 //!   ctype lowering module.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "ctype_space",
     area: String,
     params: [text: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::CtypeSpace,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Checks if all characters in the string are whitespace characters.",
     php_manual: "https://www.php.net/manual/en/function.ctype-space.php",
-}
-
-/// Lowers a `ctype_space` call by dispatching to the shared `lower_ctype_space` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::ctype::lower_ctype_space(ctx, inst)
 }

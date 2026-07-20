@@ -15,10 +15,7 @@
 //! - `lower` is a thin wrapper over `io::lower_touch` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::Expr;
 use crate::types::checker::Checker;
 use crate::types::{PhpType, TypeEnv};
@@ -30,7 +27,10 @@ builtin! {
     arity_error: "touch() takes 1, 2, or 3 arguments",
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Touch,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Sets access and modification time of a file.",
     php_manual: "function.touch",
 }
@@ -81,9 +81,4 @@ fn check_touch(
         ));
     }
     Ok(PhpType::Bool)
-}
-
-/// Lowers a `touch` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_touch(ctx, inst)
 }

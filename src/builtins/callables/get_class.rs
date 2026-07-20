@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `get_class` builtin: its declaration and lowering.
+//! Home of the PHP `get_class` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,21 +12,16 @@
 //!   with this builtin's name.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "get_class",
     area: Callables,
     params: [object: Mixed = DefaultSpec::Null],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::GetClass,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the name of the class of an object.",
     php_manual: "function.get-class",
-}
-
-/// Lowers a `get_class` call by dispatching to the shared class-name lookup emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::types::lower_class_name_lookup(ctx, inst, "get_class")
 }

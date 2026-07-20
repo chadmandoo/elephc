@@ -10,10 +10,7 @@
 //! - `lower` is a thin wrapper over the shared `pointers::lower_ptr_null` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     arity_error: "ptr_null() takes 0 arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PtrNull,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns a null raw pointer.",
     extension: true,
 }
@@ -33,9 +33,4 @@ builtin! {
 /// The registry's `check_arity` handles arity enforcement (exactly 0 arguments).
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Pointer(None))
-}
-
-/// Lowers a `ptr_null` call by dispatching to the shared pointer emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::pointers::lower_ptr_null(ctx, inst)
 }

@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `ob_get_flush` builtin: its declaration and lowering.
+//! Home of the PHP `ob_get_flush` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration), the type checker (check hook when present),
@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_flush`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -26,7 +23,10 @@ builtin! {
     returns: Mixed,
     returns_fresh_storage: true,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ObGetFlush,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Flushes the output buffer, returns it as a string and turns off output buffering.",
     php_manual: "function.ob-get-flush",
 }
@@ -35,9 +35,4 @@ builtin! {
 /// output buffer is active.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(cx.checker.normalize_union_type(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers an `ob_get_flush` call by dispatching to the shared output-buffering emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_flush(ctx, inst)
 }

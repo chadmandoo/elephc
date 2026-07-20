@@ -14,10 +14,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_reduce` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -28,8 +25,10 @@ builtin! {
     max_args: 3,
     returns: Mixed,
     check: check,
-    lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayReduce,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Iteratively reduces an array to a single value using a callback function.",
     php_manual: "https://www.php.net/manual/en/function.array-reduce.php",
 }
@@ -54,9 +53,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         "array_reduce() callback",
     )?;
     Ok(PhpType::Int)
-}
-
-/// Lowers an `array_reduce` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_reduce(ctx, inst)
 }

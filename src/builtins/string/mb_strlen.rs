@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `mb_strlen` builtin: declaration and lowering.
+//! Home of the PHP `mb_strlen` builtin: declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook), both via
@@ -12,9 +12,7 @@
 
 use crate::{
     builtins::spec::{BuiltinCheckCtx, DefaultSpec},
-    codegen::{context::FunctionContext, CodegenIrError},
     errors::CompileError,
-    ir::Instruction,
     types::PhpType,
 };
 
@@ -25,7 +23,10 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::MbStrlen,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the character count of a string in the requested encoding.",
     php_manual: "https://www.php.net/manual/en/function.mb-strlen.php",
 }
@@ -52,9 +53,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     }
 
     Ok(PhpType::Int)
-}
-
-/// Lowers an `mb_strlen` call by dispatching to the shared `lower_mb_strlen` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_mb_strlen(ctx, inst)
 }

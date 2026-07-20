@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `var_dump` builtin: its declaration and lowering.
+//! Home of the PHP `var_dump` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -13,9 +13,6 @@
 //!   dumped independently in source order, matching PHP.
 //! - `lower` is a thin wrapper over `debug::lower_var_dump` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "var_dump",
@@ -23,12 +20,10 @@ builtin! {
     params: [value: Mixed],
     variadic: "values",
     returns: Void,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::VarDump,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Dumps information about a variable.",
     php_manual: "function.var-dump",
-}
-
-/// Lowers a `var_dump` call by dispatching to the shared debug emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::debug::lower_var_dump(ctx, inst)
 }

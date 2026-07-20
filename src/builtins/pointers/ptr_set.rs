@@ -10,10 +10,7 @@
 //! - `lower` is a thin wrapper over the shared `pointers::lower_ptr_set` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -22,7 +19,10 @@ builtin! {
     params: [pointer: Mixed, value: Mixed],
     returns: Void,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PtrSet,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Writes one machine word through a raw pointer.",
     extension: true,
 }
@@ -37,9 +37,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let value_ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
     cx.checker.ensure_word_pointer_value(&value_ty, cx.span)?;
     Ok(PhpType::Void)
-}
-
-/// Lowers a `ptr_set` call by dispatching to the shared pointer emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::pointers::lower_ptr_set(ctx, inst)
 }

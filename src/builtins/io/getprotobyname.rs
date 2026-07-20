@@ -11,10 +11,7 @@
 //! - `lower` dispatches to `io::lower_getprotobyname` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [protocol: Str],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Getprotobyname,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Gets the protocol number associated with the given protocol name.",
     php_manual: "function.getprotobyname",
 }
@@ -31,9 +31,4 @@ builtin! {
 /// Returns `Union(Int, Bool)` reflecting PHP's false-on-failure return.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(cx.checker.normalize_union_type(vec![PhpType::Int, PhpType::False]))
-}
-
-/// Lowers a `getprotobyname` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_getprotobyname(ctx, inst)
 }

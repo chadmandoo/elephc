@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `ord` builtin: its declaration and lowering.
+//! Home of the PHP `ord` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,24 +12,16 @@
 //! - `lower` is a thin wrapper over the dedicated `lower_ord` emitter in the
 //!   strings lowering module.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "ord",
     area: String,
     params: [character: Str],
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Ord,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the ASCII value of the first character of a string.",
     php_manual: "https://www.php.net/manual/en/function.ord.php",
-}
-
-/// Lowers an `ord` call by dispatching to the shared per-arch emitter.
-fn lower(
-    ctx: &mut FunctionContext,
-    inst: &Instruction,
-) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_ord(ctx, inst)
 }

@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `mktime` builtin: its declaration and lowering.
+//! Home of the PHP `mktime` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -9,20 +9,15 @@
 //! - No `check` hook is needed: `mktime` is a pure-data builtin whose return type
 //!   (`Int`) is fully determined by its declaration.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "mktime",
     area: System,
     params: [hour: Int, minute: Int, second: Int, month: Int, day: Int, year: Int],
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Mktime,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the Unix timestamp for a date.",
-}
-
-/// Lowers a `mktime` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_mktime(ctx, inst)
 }

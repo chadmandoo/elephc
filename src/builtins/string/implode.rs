@@ -17,10 +17,7 @@
 //!   requires exactly two operands.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -31,7 +28,10 @@ builtin! {
     returns: Str,
     returns_independent_storage: true,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Implode,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Joins array elements into a single string using a separator.",
     php_manual: "https://www.php.net/manual/en/function.implode.php",
 }
@@ -51,9 +51,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Str)
-}
-
-/// Lowers an `implode` call by dispatching to the shared `lower_implode` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_implode(ctx, inst)
 }

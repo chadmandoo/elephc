@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `get_declared_interfaces` builtin: its declaration and lowering.
+//! Home of the PHP `get_declared_interfaces` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration), the type checker (check hook via support),
@@ -10,9 +10,6 @@
 //! - `lower` is a thin wrapper over `types::lower_get_declared_names` parameterized
 //!   with this builtin's name.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "get_declared_interfaces",
@@ -20,16 +17,10 @@ builtin! {
     params: [],
     returns: Mixed,
     check: crate::builtins::callables::support::check_declared_names,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::GetDeclaredInterfaces,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns an array of all declared interfaces.",
     php_manual: "function.get-declared-interfaces",
-}
-
-/// Lowers a `get_declared_interfaces` call by dispatching to the shared declared-names emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::types::lower_get_declared_names(
-        ctx,
-        inst,
-        "get_declared_interfaces",
-    )
 }

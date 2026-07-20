@@ -12,10 +12,7 @@
 //! - `lower` delegates to the module-level `lower_define` in `src/codegen/lower_inst/builtins.rs`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -25,7 +22,10 @@ builtin! {
     params: [constant_name: Str, value: Mixed],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Define,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Defines a named constant at compile time.",
 }
 
@@ -47,9 +47,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let ty = cx.checker.infer_type(&cx.args[1], cx.env)?;
     cx.checker.constants.entry(name_str).or_insert(ty);
     Ok(PhpType::Bool)
-}
-
-/// Lowers a `define` call by delegating to the shared module-level emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_define(ctx, inst)
 }

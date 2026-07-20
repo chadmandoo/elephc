@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `disk_total_space` builtin: its declaration and lowering.
+//! Home of the PHP `disk_total_space` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -11,21 +11,16 @@
 //!   infers the argument and enforces arity before falling back to `returns`.
 //! - `lower` is a thin wrapper over `io::lower_disk_total_space` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "disk_total_space",
     area: Io,
     params: [directory: Str],
     returns: Float,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::DiskTotalSpace,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Returns the total size of a filesystem or disk partition.",
     php_manual: "function.disk-total-space",
-}
-
-/// Lowers a `disk_total_space` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_disk_total_space(ctx, inst)
 }

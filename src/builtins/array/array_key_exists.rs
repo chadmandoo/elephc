@@ -10,10 +10,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_key_exists` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -22,7 +19,10 @@ builtin! {
     params: [key: Mixed, array: Mixed],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayKeyExists,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Checks if the given key or index exists in the array.",
     php_manual: "https://www.php.net/manual/en/function.array-key-exists.php",
 }
@@ -41,9 +41,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Bool)
-}
-
-/// Lowers an `array_key_exists` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_key_exists(ctx, inst)
 }

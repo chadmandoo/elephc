@@ -19,10 +19,7 @@
 //! - `lower` is a thin wrapper over `io::lower_file_get_contents` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -33,7 +30,10 @@ builtin! {
     returns: Mixed,
     returns_fresh_storage: true,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::FileGetContents,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Reads an entire file into a string.",
     php_manual: "function.file-get-contents",
 }
@@ -57,9 +57,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     }
     cx.checker.infer_type(&cx.args[0], cx.env)?;
     Ok(PhpType::Union(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers a `file_get_contents` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_file_get_contents(ctx, inst)
 }

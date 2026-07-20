@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_map` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -31,8 +28,10 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayMap,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Applies a callback to the elements of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-map.php",
 }
@@ -74,9 +73,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             "array_map() second argument must be array",
         )),
     }
-}
-
-/// Lowers an `array_map` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_map(ctx, inst)
 }

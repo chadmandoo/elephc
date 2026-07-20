@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over `types::lower_class_alias` (not parameterized).
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     params: [class: Str, alias: Str, autoload: Bool = DefaultSpec::Bool(true)],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ClassAlias,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Creates an alias for a class.",
     php_manual: "function.class-alias",
 }
@@ -39,9 +39,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         cx.span,
         "class_alias() is only supported as a top-level statement with literal class names",
     ))
-}
-
-/// Lowers a `class_alias` call by dispatching to the shared class-alias emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::types::lower_class_alias(ctx, inst)
 }

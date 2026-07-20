@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `realpath_cache_size` builtin: its declaration and lowering.
+//! Home of the PHP `realpath_cache_size` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -13,9 +13,6 @@
 //!   0-arg builtins produces "takes no arguments").
 //! - `lower` is a thin wrapper over `io::lower_realpath_cache_size` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "realpath_cache_size",
@@ -23,12 +20,10 @@ builtin! {
     params: [],
     arity_error: "realpath_cache_size() takes exactly 0 arguments",
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::RealpathCacheSize,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the amount of memory used by the realpath cache.",
     php_manual: "function.realpath-cache-size",
-}
-
-/// Lowers a `realpath_cache_size` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_realpath_cache_size(ctx, inst)
 }

@@ -16,10 +16,7 @@
 //! - Arity validation runs before the `check` hook fires.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -31,7 +28,10 @@ builtin! {
     arity_error: "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::HashInit,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Initialize an incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-init.php",
 }
@@ -43,9 +43,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("elephc_crypto");
     Ok(PhpType::Mixed)
-}
-
-/// Lowers a `hash_init` call by delegating to the shared hash-init emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_hash_init(ctx, inst)
 }

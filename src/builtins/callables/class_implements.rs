@@ -14,9 +14,6 @@
 //!   with this builtin's name.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "class_implements",
@@ -25,16 +22,10 @@ builtin! {
     returns: Mixed,
     check: crate::builtins::callables::support::check_class_relation,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ClassImplements,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns the interfaces which are implemented by the given class or its parents.",
     php_manual: "function.class-implements",
-}
-
-/// Lowers a `class_implements` call by dispatching to the shared class-relation emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::class_relations::lower_class_relation(
-        ctx,
-        inst,
-        "class_implements",
-    )
 }

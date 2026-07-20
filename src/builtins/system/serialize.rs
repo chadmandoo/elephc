@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `serialize` builtin: its declaration and lowering.
+//! Home of the PHP `serialize` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -10,20 +10,15 @@
 //!   (`Str`) is fully determined by its declaration. The registry common path
 //!   infers the argument and enforces arity before falling back to `returns`.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "serialize",
     area: System,
     params: [value: Mixed],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Serialize,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Generates a storable representation of a value.",
-}
-
-/// Lowers a `serialize` call by dispatching to the shared serialize emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::serialize::lower_serialize(ctx, inst)
 }

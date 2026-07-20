@@ -107,10 +107,57 @@ impl Checker {
         }
 
         // Registry-first: if the builtin is registered, use its spec to check arity
-        // and derive the return type (or call the spec's check hook for refined types).
+        // and consume its shared semantic validator/result resolver when migrated.
         // Falls through to the legacy per-area dispatch when the name is not registered.
         if let Some(def) = crate::builtins::registry::lookup(name) {
             crate::builtins::registry::check_arity(name, args.len(), span)?;
+            if !matches!(
+                def.spec.semantics.validation,
+                crate::builtins::semantics::BuiltinValidation::LegacyCheckerHook
+            ) {
+                let mut arg_types = Vec::with_capacity(args.len());
+                for arg in args {
+                    arg_types.push(self.infer_type(arg, env)?);
+                }
+                let semantic_input = crate::builtins::semantics::BuiltinSemanticInput {
+                    name: &builtin_key,
+                    args,
+                    arg_types: &arg_types,
+                    span,
+                };
+                if let crate::builtins::semantics::BuiltinValidation::Shared(validate) =
+                    def.spec.semantics.validation
+                {
+                    validate(&semantic_input)?;
+                }
+                for requirement in def.spec.semantics.requirements {
+                    match requirement {
+                        crate::builtins::semantics::BuiltinRequirement::Bridge(library)
+                        | crate::builtins::semantics::BuiltinRequirement::SystemLibrary(library) => {
+                            self.require_builtin_library(library);
+                        }
+                        crate::builtins::semantics::BuiltinRequirement::MacOsLibrary(library) => {
+                            self.require_macos_builtin_library(library);
+                        }
+                        crate::builtins::semantics::BuiltinRequirement::RuntimeFeature(_) => {}
+                    }
+                }
+                let ret = match def.spec.semantics.result_type {
+                    crate::builtins::semantics::BuiltinResultType::Declared => {
+                        def.return_type.clone()
+                    }
+                    crate::builtins::semantics::BuiltinResultType::Shared(resolve) => {
+                        resolve(&semantic_input)
+                    }
+                    crate::builtins::semantics::BuiltinResultType::LegacySplit => {
+                        return Err(CompileError::new(
+                            span,
+                            "builtin semantic metadata mixes migrated validation with legacy result typing",
+                        ));
+                    }
+                };
+                return Ok(Some(ret));
+            }
             // Infer argument types unconditionally so that type-environment side effects
             // (variable narrowing, undefined-variable diagnostics, etc.) fire for every
             // registry builtin — including pure-data builtins that have no check hook.

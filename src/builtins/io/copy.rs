@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `copy` builtin: its declaration and lowering.
+//! Home of the PHP `copy` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,21 +12,16 @@
 //!   `returns`.
 //! - `lower` is a thin wrapper over `io::lower_copy` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "copy",
     area: Io,
     params: [from: Str, to: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Copy,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Copies a file.",
     php_manual: "function.copy",
-}
-
-/// Lowers a `copy` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_copy(ctx, inst)
 }

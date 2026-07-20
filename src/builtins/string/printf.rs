@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `printf` builtin: its declaration and lowering.
+//! Home of the PHP `printf` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -9,9 +9,6 @@
 //! - Accepts a required `format` string plus a variadic `values` list.
 //! - `lower` is a thin wrapper over the shared `lower_printf` emitter.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "printf",
@@ -19,12 +16,10 @@ builtin! {
     params: [format: Str],
     variadic: "values",
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Printf,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Outputs a formatted string.",
     php_manual: "https://www.php.net/manual/en/function.printf.php",
-}
-
-/// Lowers a `printf` call by dispatching to the shared printf emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_printf(ctx, inst)
 }

@@ -10,10 +10,7 @@
 //!   array or Traversable (not an arbitrary value); returns `Int`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 use crate::types::checker::builtins::spl as checker_spl;
 
@@ -23,7 +20,10 @@ builtin! {
     params: [iterator: Mixed],
     returns: Int,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::IteratorCount,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Count the elements in an iterator.",
     php_manual: "https://www.php.net/manual/en/function.iterator-count.php",
 }
@@ -38,9 +38,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         "iterator_count()",
     )?;
     Ok(PhpType::Int)
-}
-
-/// Lowers `iterator_count()` by delegating to the iterator-count emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::spl::lower_iterator_count(ctx, inst)
 }

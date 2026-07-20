@@ -1867,6 +1867,10 @@ fn lower_function_call(ctx: &mut LoweringContext<'_, '_>, name: &Name, args: &[E
     };
     let php_type = if is_extern || is_user_function {
         call_return_type(ctx, canonical, &operands)
+    } else if let Some(php_type) =
+        registry_builtin_result_type(ctx, canonical, args, &operands, expr.span)
+    {
+        php_type
     } else {
         call_return_type_for_args(ctx, canonical, args, &operands)
             .unwrap_or_else(|| call_return_type(ctx, canonical, &operands))
@@ -1948,6 +1952,54 @@ fn emit_builtin_call_value(
     span: Span,
     eval_literal: Option<&str>,
 ) -> LoweredValue {
+    if eval_literal.is_none() {
+        if let Some(def) = crate::builtins::registry::lookup(name) {
+            let lowered = crate::builtins::semantics::lower_registry_call(
+                ctx,
+                def.name,
+                &operands,
+                &php_type,
+                span,
+            )
+            .unwrap_or_else(|error| {
+                panic!(
+                    "checked builtin {} failed backend-neutral EIR lowering at {}:{}: {}",
+                    def.name,
+                    span.line,
+                    span.col,
+                    error,
+                )
+            });
+            if let Some(lowered) = lowered {
+                let call = LoweredValue {
+                    value: lowered.value,
+                    ir_type: ctx.builder.value_type(lowered.value),
+                };
+                let return_alias = match def.spec.semantics.result_ownership {
+                    crate::builtins::semantics::BuiltinResultOwnership::NonHeap
+                    | crate::builtins::semantics::BuiltinResultOwnership::Fresh
+                    | crate::builtins::semantics::BuiltinResultOwnership::Independent => {
+                        ReturnArgAlias::None
+                    }
+                    crate::builtins::semantics::BuiltinResultOwnership::Aliases(indexes) => {
+                        ReturnArgAlias::Parameters(indexes.iter().copied().collect())
+                    }
+                    crate::builtins::semantics::BuiltinResultOwnership::Borrowed
+                    | crate::builtins::semantics::BuiltinResultOwnership::LegacyFlags => {
+                        ReturnArgAlias::Unknown
+                    }
+                };
+                release_owned_call_arg_temporaries(
+                    ctx,
+                    &operands,
+                    Some(call.value),
+                    &return_alias,
+                    span,
+                );
+                return call;
+            }
+        }
+    }
     let (op, immediate, effects) = if let Some(fragment) = eval_literal {
         (
             Op::EvalLiteralCall,
@@ -2006,6 +2058,33 @@ fn emit_builtin_call_value(
         }
     }
     call
+}
+
+/// Resolves a migrated registry builtin's result type from the same descriptor as the checker.
+fn registry_builtin_result_type(
+    ctx: &LoweringContext<'_, '_>,
+    name: &str,
+    args: &[Expr],
+    operands: &[crate::ir::ValueId],
+    span: Span,
+) -> Option<PhpType> {
+    let def = crate::builtins::registry::lookup(name)?;
+    let arg_types = operands
+        .iter()
+        .map(|operand| ctx.builder.value_php_type(*operand))
+        .collect::<Vec<_>>();
+    let input = crate::builtins::semantics::BuiltinSemanticInput {
+        name: def.name,
+        args,
+        arg_types: &arg_types,
+        span,
+    };
+    let resolved = match def.spec.semantics.result_type {
+        crate::builtins::semantics::BuiltinResultType::LegacySplit => return None,
+        crate::builtins::semantics::BuiltinResultType::Declared => def.return_type.clone(),
+        crate::builtins::semantics::BuiltinResultType::Shared(resolve) => resolve(&input),
+    };
+    Some(normalize_value_php_type(resolved))
 }
 
 /// Returns true when a literal `eval` call may still need runtime scope/interpreter state.
@@ -11583,16 +11662,16 @@ fn lower_reflection_builtin_function_call(
     expr: &Expr,
 ) -> LoweredValue {
     let operands = lower_builtin_call_args(ctx, function_name, Some(signature), args);
-    let php_type = call_return_type_for_args(ctx, function_name, args, &operands)
+    let php_type = registry_builtin_result_type(ctx, function_name, args, &operands, expr.span)
+        .or_else(|| call_return_type_for_args(ctx, function_name, args, &operands))
         .unwrap_or_else(|| call_return_type(ctx, function_name, &operands));
-    let data = ctx.intern_function_name(function_name);
-    ctx.emit_value(
-        Op::BuiltinCall,
+    emit_builtin_call_value(
+        ctx,
+        function_name,
         operands,
-        Some(Immediate::Data(data)),
         php_type,
-        effects_lookup::builtin_effects(function_name),
-        Some(expr.span),
+        expr.span,
+        None,
     )
 }
 

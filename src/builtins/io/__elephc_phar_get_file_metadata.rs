@@ -15,10 +15,7 @@
 //! - `lower` is a thin wrapper over `io::lower_elephc_phar_get_file_metadata` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,7 +24,10 @@ builtin! {
     params: [url: Str],
     returns: Str,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ElephcPharGetFileMetadata,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Reads the serialized per-file metadata blob.",
     internal: true,
 }
@@ -37,9 +37,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("elephc_phar");
     Ok(PhpType::Str)
-}
-
-/// Lowers the call by dispatching to the shared io PHAR emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_elephc_phar_get_file_metadata(ctx, inst)
 }

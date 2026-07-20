@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `umask` builtin: its declaration and lowering.
+//! Home of the PHP `umask` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -15,9 +15,6 @@
 //! - `lower` is a thin wrapper over `io::lower_umask` in the EIR backend.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "umask",
@@ -25,12 +22,10 @@ builtin! {
     params: [mask: Int = DefaultSpec::Null],
     arity_error: "umask() takes 0 or 1 arguments",
     returns: Int,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Umask,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Changes the current umask.",
     php_manual: "function.umask",
-}
-
-/// Lowers a `umask` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_umask(ctx, inst)
 }

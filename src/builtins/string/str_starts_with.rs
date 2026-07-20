@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `str_starts_with` builtin: its declaration and lowering.
+//! Home of the PHP `str_starts_with` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -12,29 +12,16 @@
 //! - `lower` is a thin wrapper over `lower_binary_string_runtime` which dispatches
 //!   to the shared `__rt_str_starts_with` runtime helper.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "str_starts_with",
     area: String,
     params: [haystack: Str, needle: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::StrStartsWith,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Checks if a string starts with a given substring.",
     php_manual: "https://www.php.net/manual/en/function.str-starts-with.php",
-}
-
-/// Lowers a `str_starts_with` call by dispatching to the shared binary-string runtime helper.
-fn lower(
-    ctx: &mut FunctionContext,
-    inst: &Instruction,
-) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_binary_string_runtime(
-        ctx,
-        inst,
-        "str_starts_with",
-        "__rt_str_starts_with",
-    )
 }

@@ -17,10 +17,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_search` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -30,7 +27,10 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArraySearch,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Searches the array for a given value and returns the first corresponding key if successful.",
     php_manual: "https://www.php.net/manual/en/function.array-search.php",
 }
@@ -55,9 +55,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         }
         _ => Ok(PhpType::Union(vec![PhpType::Int, PhpType::False])),
     }
-}
-
-/// Lowers an `array_search` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_search(ctx, inst)
 }

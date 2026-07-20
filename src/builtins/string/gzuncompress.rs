@@ -13,10 +13,7 @@
 //! - Argument types are inferred by the common registry dispatch path before the hook fires.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     params: [data: Str, max_length: Int = DefaultSpec::Int(0)],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Gzuncompress,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Uncompress a compressed string.",
     php_manual: "https://www.php.net/manual/en/function.gzuncompress.php",
 }
@@ -40,9 +40,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("z");
     Ok(PhpType::Union(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers a `gzuncompress` call by dispatching to the shared `lower_gzuncompress` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_gzuncompress(ctx, inst)
 }

@@ -15,10 +15,7 @@
 //! - `lower` is a thin wrapper over `io::lower_elephc_phar_list_entries` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,7 +24,10 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ElephcPharListEntries,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Lists the file paths within a PHAR archive.",
     internal: true,
 }
@@ -37,9 +37,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("elephc_phar");
     Ok(PhpType::Array(Box::new(PhpType::Str)))
-}
-
-/// Lowers the call by dispatching to the shared io PHAR emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_elephc_phar_list_entries(ctx, inst)
 }

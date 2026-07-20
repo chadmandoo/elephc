@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `ob_get_status` builtin: its declaration and lowering.
+//! Home of the PHP `ob_get_status` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration), the type checker (check hook when present),
@@ -12,10 +12,7 @@
 //! - `lower` is a thin wrapper over `output_buffering::lower_ob_get_status`.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     returns: Mixed,
     returns_fresh_storage: true,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ObGetStatus,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Gets status of output buffers.",
     php_manual: "function.ob-get-status",
 }
@@ -37,9 +37,4 @@ fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         key: Box::new(PhpType::Mixed),
         value: Box::new(PhpType::Mixed),
     })
-}
-
-/// Lowers an `ob_get_status` call by dispatching to the shared output-buffering emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_status(ctx, inst)
 }

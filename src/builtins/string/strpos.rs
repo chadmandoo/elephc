@@ -17,10 +17,7 @@
 //!   the `__rt_strpos` runtime helper.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -30,7 +27,10 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Strpos,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Finds the numeric position of the first occurrence of a substring.",
     php_manual: "https://www.php.net/manual/en/function.strpos.php",
 }
@@ -42,14 +42,4 @@ builtin! {
 /// this hook fires; arity (capped to 2 via `max_args`) is validated by the registry.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Union(vec![PhpType::Int, PhpType::False]))
-}
-
-/// Lowers a `strpos` call by dispatching to the shared string-position emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_string_position(
-        ctx,
-        inst,
-        "strpos",
-        "__rt_strpos",
-    )
 }

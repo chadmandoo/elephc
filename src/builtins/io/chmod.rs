@@ -11,10 +11,7 @@
 //! - `lower` is a thin wrapper over `io::lower_chmod` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -23,7 +20,10 @@ builtin! {
     params: [filename: Str, permissions: Int],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Chmod,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Changes file mode.",
     php_manual: "function.chmod",
 }
@@ -36,9 +36,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         return Err(CompileError::new(cx.args[1].span, "chmod() mode must be int"));
     }
     Ok(PhpType::Bool)
-}
-
-/// Lowers a `chmod` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_chmod(ctx, inst)
 }

@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_replace_recursive` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -28,7 +25,10 @@ builtin! {
     params: [array: Mixed, replacements: Mixed],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayReplaceRecursive,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Replaces elements from passed arrays into the first array recursively.",
     php_manual: "https://www.php.net/manual/en/function.array-replace-recursive.php",
 }
@@ -55,9 +55,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::two_input_hash_result(&ty1, &ty2))
-}
-
-/// Lowers an `array_replace_recursive` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_replace_recursive(ctx, inst)
 }

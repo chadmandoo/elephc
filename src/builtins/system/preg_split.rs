@@ -14,10 +14,7 @@
 //! - `lower` is a thin wrapper over `regex::lower_preg_split` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -27,7 +24,10 @@ builtin! {
     arity_error: "preg_split() takes between 2 and 4 arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PregSplit,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Splits a string by a regular expression.",
 }
 
@@ -39,9 +39,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     let elem = if cx.args.len() >= 4 { PhpType::Mixed } else { PhpType::Str };
     Ok(PhpType::Array(Box::new(elem)))
-}
-
-/// Lowers a `preg_split` call by dispatching to the shared regex emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::regex::lower_preg_split(ctx, inst)
 }

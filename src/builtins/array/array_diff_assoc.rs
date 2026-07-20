@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_diff_assoc` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -31,7 +28,10 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayDiffAssoc,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Computes the difference of arrays with additional index check.",
     php_manual: "https://www.php.net/manual/en/function.array-diff-assoc.php",
 }
@@ -58,9 +58,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::two_input_hash_result(&ty1, &ty2))
-}
-
-/// Lowers an `array_diff_assoc` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_diff_assoc(ctx, inst)
 }

@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over `debug::lower_print_r` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -29,7 +26,10 @@ builtin! {
     params: [value: Mixed, r#return: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PrintR,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Prints human-readable information about a variable.",
     php_manual: "function.print-r",
 }
@@ -47,9 +47,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         },
         None => Ok(PhpType::Bool),
     }
-}
-
-/// Lowers a `print_r` call by dispatching to the shared debug emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::debug::lower_print_r(ctx, inst)
 }

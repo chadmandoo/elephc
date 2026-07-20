@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_any` emitter.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,8 +22,10 @@ builtin! {
     params: [array: Mixed, callback: Mixed],
     returns: Bool,
     check: check,
-    lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayAny,
+            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    ),
     summary: "Returns true when at least one array element satisfies the predicate callback.",
     php_manual: "https://www.php.net/manual/en/function.array-any.php",
 }
@@ -55,9 +54,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         &label,
     )?;
     Ok(PhpType::Bool)
-}
-
-/// Lowers an `array_any` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_any(ctx, inst)
 }

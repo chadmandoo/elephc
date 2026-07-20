@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `chdir` builtin: its declaration and lowering.
+//! Home of the PHP `chdir` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -13,21 +13,16 @@
 //!   before falling back to `returns`.
 //! - `lower` is a thin wrapper over `io::lower_chdir` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "chdir",
     area: Io,
     params: [directory: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Chdir,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Changes the current directory.",
     php_manual: "function.chdir",
-}
-
-/// Lowers a `chdir` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_chdir(ctx, inst)
 }

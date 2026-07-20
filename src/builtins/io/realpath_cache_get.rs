@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over `io::lower_realpath_cache_get` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -26,7 +23,10 @@ builtin! {
     arity_error: "realpath_cache_get() takes exactly 0 arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::RealpathCacheGet,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns realpath cache entries.",
     php_manual: "function.realpath-cache-get",
 }
@@ -39,9 +39,4 @@ fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         key: Box::new(PhpType::Str),
         value: Box::new(PhpType::Mixed),
     })
-}
-
-/// Lowers a `realpath_cache_get` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_realpath_cache_get(ctx, inst)
 }

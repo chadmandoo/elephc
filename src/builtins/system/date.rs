@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `date` builtin: its declaration and lowering.
+//! Home of the PHP `date` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -11,20 +11,15 @@
 //!   is optional and defaults to `null` (current time).
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "date",
     area: System,
     params: [format: Str, timestamp: Int = DefaultSpec::Null],
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Date,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Formats a local time/date.",
-}
-
-/// Lowers a `date` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_date(ctx, inst)
 }

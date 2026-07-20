@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `passthru` builtin: its declaration and lowering.
+//! Home of the PHP `passthru` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -9,20 +9,15 @@
 //! - Pure-data builtin: return type (`Void`) is fully determined by the declaration.
 //! - `lower` is a thin wrapper over `system::lower_passthru` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "passthru",
     area: System,
     params: [command: Str],
     returns: Void,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Passthru,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Executes an external program and passes its output directly.",
-}
-
-/// Lowers a `passthru` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_passthru(ctx, inst)
 }

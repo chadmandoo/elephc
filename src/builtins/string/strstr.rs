@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `strstr` builtin: its declaration and lowering.
+//! Home of the PHP `strstr` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -14,9 +14,6 @@
 //!   undefined-variable diagnostics fire exactly as the legacy arm produced them.
 //! - `lower` is a thin wrapper over the shared `lower_strstr` emitter.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "strstr",
@@ -24,12 +21,10 @@ builtin! {
     params: [haystack: Str, needle: Str, before_needle: Bool = crate::builtins::spec::DefaultSpec::Bool(false)],
     max_args: 2,
     returns: Str,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Strstr,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns the portion of a string starting at the first occurrence of a substring.",
     php_manual: "https://www.php.net/manual/en/function.strstr.php",
-}
-
-/// Lowers a `strstr` call by dispatching to the shared `lower_strstr` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_strstr(ctx, inst)
 }

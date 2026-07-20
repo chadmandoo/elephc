@@ -17,10 +17,7 @@
 //! - Arity is pre-validated by `check_arity`; the hook can assume exactly 2 args.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -32,7 +29,10 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArrayMergeRecursive,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Recursively merges two arrays, combining scalar collisions into lists.",
     php_manual: "https://www.php.net/manual/en/function.array-merge-recursive.php",
 }
@@ -59,9 +59,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         key: Box::new(PhpType::widen(ty1.hash_key_type(), ty2.hash_key_type())),
         value: Box::new(PhpType::Mixed),
     })
-}
-
-/// Lowers an `array_merge_recursive` call by delegating to the shared emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_merge_recursive(ctx, inst)
 }

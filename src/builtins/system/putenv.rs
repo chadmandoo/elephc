@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `putenv` builtin: its declaration and lowering.
+//! Home of the PHP `putenv` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -9,20 +9,15 @@
 //! - Pure-data builtin: return type (`Bool`) is fully determined by the declaration.
 //! - `lower` is a thin wrapper over `system::lower_putenv` in the EIR backend.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "putenv",
     area: System,
     params: [assignment: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Putenv,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Sets an environment variable.",
-}
-
-/// Lowers a `putenv` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_putenv(ctx, inst)
 }

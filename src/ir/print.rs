@@ -200,6 +200,9 @@ fn print_immediate(out: &mut String, data: &DataPool, immediate: &Immediate) {
         Immediate::RuntimeRef(id) => {
             let _ = write!(out, " runtime#{}", id.0);
         }
+        Immediate::RuntimeCall(target) => {
+            let _ = write!(out, " runtime.{}", target.as_eir());
+        }
         Immediate::ExternRef(id) => {
             let _ = write!(out, " extern#{}", id);
         }

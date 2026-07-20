@@ -12,10 +12,7 @@
 //! - Arity (0 args) is validated by the registry.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -24,7 +21,10 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::HashAlgos,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns an array of supported hashing algorithm names.",
     php_manual: "https://www.php.net/manual/en/function.hash-algos.php",
 }
@@ -36,9 +36,4 @@ builtin! {
 /// the registry before this hook fires.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Array(Box::new(PhpType::Str)))
-}
-
-/// Lowers a `hash_algos` call by dispatching to the shared `lower_hash_algos` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_hash_algos(ctx, inst)
 }

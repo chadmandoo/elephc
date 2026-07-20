@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `sinh` builtin: its declaration and lowering.
+//! Home of the PHP `sinh` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -10,21 +10,16 @@
 //!   (`Float`) is fully determined by its declaration. The registry common path
 //!   infers the argument and enforces arity before falling back to `returns`.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "sinh",
     area: Math,
     params: [num: Float],
     returns: Float,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Sinh,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns the hyperbolic sine of a number.",
     php_manual: "https://www.php.net/manual/en/function.sinh.php",
-}
-
-/// Lowers a `sinh` call by dispatching to the libm emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "sinh")
 }

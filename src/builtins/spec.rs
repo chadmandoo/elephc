@@ -1,11 +1,11 @@
 //! Purpose:
 //! Defines the `BuiltinSpec` type that describes a single PHP builtin function:
-//! its name, arity, type signature, result-storage ownership, and codegen lowering hook.
+//! its name, arity, type signature, shared semantics, and temporary legacy lowering hook.
 //!
 //! Called from:
 //! - `crate::builtins::registry` (collected via `inventory`).
-//! - `crate::types::checker::builtins` and `crate::codegen::lower_inst::builtins`
-//!   (consumed during type-check and codegen dispatch).
+//! - Checker, optimizer, EIR lowering, ownership, callable, and runtime consumers
+//!   through `crate::builtins::semantics`.
 //!
 //! Key details:
 //! - Every builtin must submit exactly one `BuiltinSpec` via the `builtin!` macro;
@@ -225,8 +225,14 @@ pub struct BuiltinSpec {
     /// be checked with default `Int` parameter types — making `$a->property` fail
     /// before the hook can supply the correct hints.
     pub lazy_check: bool,
-    /// The assembly-lowering hook called by the EIR backend for this builtin.
-    pub lower: LowerFn,
+    /// Shared backend-neutral semantics consumed by checker, optimizer, EIR, ownership,
+    /// requirements, and callable paths. `BuiltinSemantics::LEGACY` is temporary.
+    pub semantics: crate::builtins::semantics::BuiltinSemantics,
+    /// Temporary assembly-lowering hook for an unmigrated builtin.
+    ///
+    /// Complete semantic entries leave this `None`; the field is deleted after the
+    /// last legacy family migrates.
+    pub lower: Option<LowerFn>,
     /// A short one-line summary for generated documentation.
     pub summary: &'static str,
     /// Example PHP snippets demonstrating the builtin, for generated documentation.
@@ -312,7 +318,8 @@ mod tests {
             returns: TypeSpec::Int, returns_fresh_storage: false,
             returns_independent_storage: false,
             by_ref_return: false, check: None, lazy_check: false,
-            lower: noop_lower, summary: "len", examples: &[], php_manual: None,
+            semantics: crate::builtins::semantics::BuiltinSemantics::LEGACY,
+            lower: Some(noop_lower), summary: "len", examples: &[], php_manual: None,
             deprecation: None, extension: false, internal: false,
         };
         assert_eq!(S.name, "strlen");

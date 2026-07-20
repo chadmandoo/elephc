@@ -12,6 +12,7 @@
 use crate::ir::effects::Effects;
 use crate::ir::function::{FunctionId, LocalSlotId};
 use crate::ir::module::DataId;
+use crate::ir::runtime_call::RuntimeCallTarget;
 use crate::ir::types::{IrHeapKind, IrType};
 use crate::ir::value::{Ownership, ValueId};
 use crate::span::Span;
@@ -120,6 +121,7 @@ pub enum Immediate {
     FunctionRef(FunctionId),
     BuiltinRef(BuiltinId),
     RuntimeRef(RuntimeId),
+    RuntimeCall(RuntimeCallTarget),
     ExternRef(u32),
     ClassRef(u32),
     EnumCaseRef {

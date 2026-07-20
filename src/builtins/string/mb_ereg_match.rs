@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `mb_ereg_match` builtin: declaration and lowering.
+//! Home of the PHP `mb_ereg_match` builtin: declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook), both via
@@ -16,9 +16,7 @@
 
 use crate::{
     builtins::spec::{BuiltinCheckCtx, DefaultSpec},
-    codegen::{context::FunctionContext, CodegenIrError},
     errors::CompileError,
-    ir::Instruction,
     types::PhpType,
 };
 
@@ -29,7 +27,10 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::MbEregMatch,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Tests whether a regex pattern matches the beginning of a string (multibyte).",
     php_manual: "https://www.php.net/manual/en/function.mb-ereg-match.php",
 }
@@ -63,9 +64,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     }
 
     Ok(PhpType::Bool)
-}
-
-/// Lowers an `mb_ereg_match` call by dispatching to the shared regex emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::regex::lower_mb_ereg_match(ctx, inst)
 }

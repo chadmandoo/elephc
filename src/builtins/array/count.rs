@@ -17,10 +17,7 @@
 //!   `crate::codegen::lower_inst::builtins`.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::checker::builtins::arrays::union_member_is_countable_array;
 use crate::types::PhpType;
 
@@ -31,7 +28,10 @@ builtin! {
     max_args: 1,
     returns: Int,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Count,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Counts all elements in an array or Countable object.",
     php_manual: "https://www.php.net/manual/en/function.count.php",
 }
@@ -64,9 +64,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
             "count() argument must be array or Countable object",
         )),
     }
-}
-
-/// Lowers a `count` call by dispatching to the shared module-level emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_count(ctx, inst)
 }

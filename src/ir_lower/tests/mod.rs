@@ -145,3 +145,38 @@ fn float_comparison_coerces_integer_operand() {
     assert!(text.contains("i_to_f"), "missing integer-to-float coercion in {text}");
     assert!(text.contains("fcmp"), "missing float comparison in {text}");
 }
+
+/// Verifies registry-backed `strlen` becomes ordinary EIR instead of a name-based builtin call.
+#[test]
+fn strlen_uses_backend_neutral_eir_graph() {
+    let module = lower_source(
+        "<?php function length_of(string $value): int { return strlen($value); } echo length_of('abc');",
+    );
+    let text = print_module(&module);
+    assert!(text.contains("str_len"), "missing string-length EIR operation: {text}");
+    assert!(
+        !text.contains("builtin_call @strlen"),
+        "strlen leaked through the legacy name-based backend boundary: {text}"
+    );
+}
+
+/// Verifies unary string transforms carry typed runtime identities rather than PHP names.
+#[test]
+fn unary_string_builtins_use_typed_runtime_calls() {
+    let module = lower_source(
+        "<?php function transform(string $value): string { return strtolower(urlencode($value)); } echo transform('A B');",
+    );
+    let text = print_module(&module);
+    assert!(
+        text.contains("runtime.string.url_encode"),
+        "missing typed URL-encode runtime call: {text}"
+    );
+    assert!(
+        text.contains("runtime.string.to_lower"),
+        "missing typed lower-case runtime call: {text}"
+    );
+    assert!(
+        !text.contains("builtin_call @urlencode") && !text.contains("builtin_call @strtolower"),
+        "unary transform leaked through the legacy PHP-name backend boundary: {text}"
+    );
+}

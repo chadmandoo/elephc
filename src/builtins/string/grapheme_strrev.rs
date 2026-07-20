@@ -19,10 +19,7 @@
 //!   boxes the `string|false` runtime result as `Mixed`.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -31,7 +28,10 @@ builtin! {
     params: [string: Str],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::GraphemeStrrev,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Reverses a string by grapheme cluster, returning false on failure.",
     php_manual: "https://www.php.net/manual/en/function.grapheme-strrev.php",
 }
@@ -52,12 +52,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Union(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers a `grapheme_strrev` call by dispatching to the dedicated emitter.
-fn lower(
-    ctx: &mut FunctionContext,
-    inst: &Instruction,
-) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_grapheme_strrev(ctx, inst)
 }

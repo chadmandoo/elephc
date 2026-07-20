@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `spl_autoload` builtin: its declaration and lowering.
+//! Home of the PHP `spl_autoload` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -10,25 +10,16 @@
 //! - The AOT stub evaluates arguments for side effects and returns void.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "spl_autoload",
     area: Spl,
     params: [class: Mixed, file_extensions: Mixed = DefaultSpec::Null],
     returns: Void,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::SplAutoload,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Default implementation for __autoload().",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload.php",
-}
-
-/// Lowers `spl_autoload` by evaluating arguments for side effects and returning null.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_void(
-        ctx,
-        inst,
-        "spl_autoload",
-    )
 }

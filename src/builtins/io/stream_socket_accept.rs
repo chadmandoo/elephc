@@ -12,10 +12,7 @@
 //! - `lower` dispatches to `io::lower_stream_socket_accept` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -29,7 +26,10 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::StreamSocketAccept,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Accept a connection on a socket created by stream_socket_server().",
     php_manual: "function.stream-socket-accept",
 }
@@ -46,9 +46,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         }
     }
     Ok(cx.checker.normalize_union_type(vec![PhpType::stream_resource(), PhpType::False]))
-}
-
-/// Lowers a `stream_socket_accept` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_stream_socket_accept(ctx, inst)
 }

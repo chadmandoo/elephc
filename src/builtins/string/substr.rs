@@ -14,10 +14,7 @@
 //!   the inline arity check from the legacy arm is therefore not reproduced here.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -26,7 +23,10 @@ builtin! {
     params: [string: Str, offset: Int, length: Int = crate::builtins::spec::DefaultSpec::Null],
     returns: Str,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Substr,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Returns a portion of a string specified by the offset and length.",
     php_manual: "https://www.php.net/manual/en/function.substr.php",
 }
@@ -39,12 +39,4 @@ builtin! {
 /// the hook fires, so no inline count check is needed.
 fn check(_cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     Ok(PhpType::Str)
-}
-
-/// Lowers a `substr` call by dispatching to the shared per-arch emitters.
-fn lower(
-    ctx: &mut FunctionContext,
-    inst: &Instruction,
-) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_substr(ctx, inst)
 }

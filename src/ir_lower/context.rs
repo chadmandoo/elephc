@@ -2159,6 +2159,60 @@ impl<'m, 'f> LoweringContext<'m, 'f> {
     }
 }
 
+impl crate::builtins::semantics::BuiltinLoweringContext for LoweringContext<'_, '_> {
+    /// Returns PHP metadata already attached to an EIR operand.
+    fn value_php_type(&self, value: ValueId) -> PhpType {
+        self.builder.value_php_type(value)
+    }
+
+    /// Emits a backend-neutral builtin operation through the ordinary EIR builder path.
+    fn emit_value(
+        &mut self,
+        op: Op,
+        operands: Vec<ValueId>,
+        immediate: Option<Immediate>,
+        php_type: PhpType,
+        effects: Effects,
+        span: Option<Span>,
+    ) -> crate::builtins::semantics::LoweredBuiltinValue {
+        let lowered = LoweringContext::emit_value(
+            self,
+            op,
+            operands,
+            immediate,
+            php_type,
+            effects,
+            span,
+        );
+        crate::builtins::semantics::LoweredBuiltinValue {
+            value: lowered.value,
+        }
+    }
+
+    /// Emits a typed runtime call whose helper symbol and physical ABI remain backend-owned.
+    fn emit_runtime_call(
+        &mut self,
+        target: crate::ir::RuntimeCallTarget,
+        operands: Vec<ValueId>,
+        php_type: PhpType,
+        effects: Effects,
+        span: Option<Span>,
+    ) -> crate::builtins::semantics::LoweredBuiltinValue {
+        let lowered = LoweringContext::emit_value(
+            self,
+            Op::RuntimeCall,
+            operands,
+            Some(Immediate::RuntimeCall(target)),
+            php_type,
+            effects,
+            span,
+        );
+        crate::builtins::semantics::LoweredBuiltinValue {
+            value: lowered.value,
+        }
+    }
+}
+
 /// Returns true for addressable local kinds whose `StoreLocal` overwrites owned storage.
 fn local_kind_uses_plain_store_cleanup(kind: LocalKind) -> bool {
     matches!(

@@ -13,9 +13,6 @@
 //!   this builtin's name.
 
 use crate::builtins::spec::DefaultSpec;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "trait_exists",
@@ -23,12 +20,10 @@ builtin! {
     params: [trait: Str, autoload: Bool = DefaultSpec::Bool(true)],
     returns: Bool,
     check: crate::builtins::callables::support::check_class_like_exists,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::TraitExists,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Checks whether the trait exists.",
     php_manual: "function.trait-exists",
-}
-
-/// Lowers a `trait_exists` call by dispatching to the shared class-like existence emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_class_like_exists(ctx, inst, "trait_exists")
 }

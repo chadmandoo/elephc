@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `ob_start` builtin: its declaration and lowering.
+//! Home of the PHP `ob_start` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration), the type checker (check hook when present),
@@ -14,10 +14,7 @@
 //! - `lower` is a thin wrapper over `output_buffering::lower_ob_start`.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -31,7 +28,10 @@ builtin! {
     ],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ObStart,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Turns on output buffering.",
     php_manual: "function.ob-start",
 }
@@ -52,9 +52,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         }
     }
     Ok(PhpType::Bool)
-}
-
-/// Lowers an `ob_start` call by dispatching to the shared output-buffering emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::output_buffering::lower_ob_start(ctx, inst)
 }

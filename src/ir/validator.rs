@@ -530,7 +530,66 @@ fn validate_opcode_rules(
         | InstanceOfDynamic => {
             check_count_at_least(inst_id, inst, 1, "at least 1")
         }
+        RuntimeCall => validate_typed_runtime_call(function, inst_id, inst),
         _ => Ok(()),
+    }
+}
+
+/// Validates operand and result storage types for typed runtime calls.
+fn validate_typed_runtime_call(
+    function: &Function,
+    inst_id: InstId,
+    inst: &Instruction,
+) -> Result<(), ValidationError> {
+    let Some(Immediate::RuntimeCall(target)) = inst.immediate else {
+        return Ok(());
+    };
+    let Some(params) = target.parameter_types() else {
+        return Ok(());
+    };
+    if inst.operands.len() != params.len() {
+        return Err(ValidationError::OperandCountMismatch {
+            inst: inst_id,
+            expected: "typed runtime signature",
+            actual: inst.operands.len(),
+        });
+    }
+    for (index, expected) in params.iter().copied().enumerate() {
+        check_operand_type(
+            function,
+            inst_id,
+            inst,
+            index,
+            expected,
+            ir_type_label(expected),
+        )?;
+    }
+    if target
+        .result_type()
+        .is_some_and(|result_type| inst.result_type != result_type)
+    {
+        return Err(ValidationError::ResultTypeMismatch(
+            inst.result.expect("typed runtime call must have a result"),
+        ));
+    }
+    Ok(())
+}
+
+/// Returns the static diagnostic spelling for one EIR storage type.
+fn ir_type_label(ir_type: IrType) -> &'static str {
+    match ir_type {
+        IrType::I64 => "I64",
+        IrType::F64 => "F64",
+        IrType::Str => "Str",
+        IrType::TaggedScalar => "TaggedScalar",
+        IrType::Heap(IrHeapKind::Array) => "Heap(Array)",
+        IrType::Heap(IrHeapKind::Hash) => "Heap(Hash)",
+        IrType::Heap(IrHeapKind::Object) => "Heap(Object)",
+        IrType::Heap(IrHeapKind::Mixed) => "Heap(Mixed)",
+        IrType::Heap(IrHeapKind::Iterable) => "Heap(Iterable)",
+        IrType::Heap(IrHeapKind::Union) => "Heap(Union)",
+        IrType::Heap(IrHeapKind::Buffer) => "Heap(Buffer)",
+        IrType::Void => "Void",
     }
 }
 

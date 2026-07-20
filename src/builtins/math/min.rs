@@ -11,10 +11,7 @@
 //! - `min_args: 2` enforces the legacy requirement that at least two values be provided.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -26,7 +23,10 @@ builtin! {
     arity_error: "min() requires at least 2 arguments",
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Min,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Find lowest value.",
     php_manual: "https://www.php.net/manual/en/function.min.php",
 }
@@ -45,9 +45,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     } else {
         Ok(PhpType::Int)
     }
-}
-
-/// Lowers a `min` call by dispatching to the shared min/max emitter with `want_max = false`.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::math::lower_min_max(ctx, inst, false)
 }

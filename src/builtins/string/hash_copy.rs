@@ -13,10 +13,7 @@
 //! - Arity (exactly 1 arg) is validated by the registry's `check_arity` before the hook fires.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     params: [context: Mixed],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::HashCopy,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Copies the state of an incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-copy.php",
 }
@@ -38,9 +38,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("elephc_crypto");
     Ok(PhpType::Mixed)
-}
-
-/// Lowers a `hash_copy` call by dispatching to the shared `lower_hash_copy` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_hash_copy(ctx, inst)
 }

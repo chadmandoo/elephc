@@ -1,5 +1,5 @@
 //! Purpose:
-//! Home of the PHP `date_default_timezone_set` builtin: its declaration and lowering.
+//! Home of the PHP `date_default_timezone_set` builtin: its declaration and semantic metadata.
 //!
 //! Called from:
 //! - The builtin registry (declaration) and the EIR backend (lower hook),
@@ -9,20 +9,15 @@
 //! - No `check` hook is needed: `date_default_timezone_set` is a pure-data builtin
 //!   whose return type (`Bool`) is fully determined by its declaration.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "date_default_timezone_set",
     area: System,
     params: [timezoneId: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::DateDefaultTimezoneSet,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Sets the default timezone.",
-}
-
-/// Lowers a `date_default_timezone_set` call by dispatching to the shared system emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::system::lower_date_default_timezone_set(ctx, inst)
 }

@@ -35,6 +35,7 @@ use super::{CodegenIrError, Result};
 mod arithmetic;
 mod arrays;
 mod buffers;
+mod builtin_runtime_targets;
 pub(crate) mod builtins;
 mod callables;
 mod comparisons;
@@ -50,6 +51,7 @@ mod ownership;
 mod pointers;
 mod predicates;
 mod property_values;
+mod runtime_calls;
 mod scoped_constants;
 mod static_locals;
 mod static_properties;
@@ -1632,7 +1634,7 @@ fn emit_runtime_call_wrapper_inline(
     let label = ctx.next_label(label_prefix);
     let done_label = ctx.next_label(&format!("{}_done", label_prefix));
     let mut wrapper_module = ctx.module.clone();
-    let wrapper = build_runtime_call_wrapper_function(&mut wrapper_module, &label, name, sig, kind);
+    let wrapper = build_runtime_call_wrapper_function(&mut wrapper_module, &label, name, sig, kind)?;
     abi::emit_jump(ctx.emitter, &done_label);
     super::block_emit::emit_synthetic_function_with_label(
         &wrapper_module,
@@ -1654,7 +1656,7 @@ fn build_runtime_call_wrapper_function(
     name: &str,
     sig: &FunctionSig,
     kind: RuntimeCallWrapperKind,
-) -> Function {
+) -> Result<Function> {
     let return_php_type = wrapper_return_php_type(&sig.return_type);
     let mut function = Function::new(
         label.to_string(),
@@ -1679,20 +1681,105 @@ fn build_runtime_call_wrapper_function(
     builder.set_entry(entry);
     builder.position_at_end(entry);
     let operands = wrapper_param_operands(&mut builder, sig);
-    let op = match kind {
-        RuntimeCallWrapperKind::Builtin => Op::BuiltinCall,
-        RuntimeCallWrapperKind::Extern => Op::ExternCall,
+    let result = match kind {
+        RuntimeCallWrapperKind::Builtin => {
+            let mut lowering = WrapperBuiltinLoweringContext {
+                builder: &mut builder,
+            };
+            match crate::builtins::semantics::lower_registry_call(
+                &mut lowering,
+                name,
+                &operands,
+                &return_php_type,
+                crate::span::Span::dummy(),
+            )
+            .map_err(|error| {
+                CodegenIrError::invalid_module(format!(
+                    "callable wrapper lowering for {} failed: {}",
+                    name, error,
+                ))
+            })? {
+                Some(lowered) => Some(lowered.value),
+                None => builder.emit(
+                    Op::BuiltinCall,
+                    operands,
+                    Some(Immediate::Data(data)),
+                    wrapper_return_ir_type(&return_php_type),
+                    return_php_type.clone(),
+                    Ownership::for_php_type(&return_php_type),
+                ),
+            }
+        }
+        RuntimeCallWrapperKind::Extern => builder.emit(
+            Op::ExternCall,
+            operands,
+            Some(Immediate::Data(data)),
+            wrapper_return_ir_type(&return_php_type),
+            return_php_type.clone(),
+            Ownership::for_php_type(&return_php_type),
+        ),
     };
-    let result = builder.emit(
-        op,
-        operands,
-        Some(Immediate::Data(data)),
-        wrapper_return_ir_type(&return_php_type),
-        return_php_type.clone(),
-        Ownership::for_php_type(&return_php_type),
-    );
     builder.terminate(Terminator::Return { value: result });
-    function
+    Ok(function)
+}
+
+/// EIR construction adapter used by synthetic builtin callable wrappers.
+struct WrapperBuiltinLoweringContext<'a, 'f> {
+    builder: &'a mut Builder<'f>,
+}
+
+impl crate::builtins::semantics::BuiltinLoweringContext
+    for WrapperBuiltinLoweringContext<'_, '_>
+{
+    /// Returns PHP metadata attached to one synthetic-wrapper operand.
+    fn value_php_type(&self, value: ValueId) -> PhpType {
+        self.builder.value_php_type(value)
+    }
+
+    /// Emits one backend-neutral operation into the synthetic wrapper body.
+    fn emit_value(
+        &mut self,
+        op: Op,
+        operands: Vec<ValueId>,
+        immediate: Option<Immediate>,
+        php_type: PhpType,
+        effects: crate::ir::Effects,
+        span: Option<crate::span::Span>,
+    ) -> crate::builtins::semantics::LoweredBuiltinValue {
+        let value = self
+            .builder
+            .emit_with_effects(
+                op,
+                operands,
+                immediate,
+                wrapper_value_ir_type(&php_type),
+                php_type.clone(),
+                Ownership::for_php_type(&php_type),
+                effects,
+                span,
+            )
+            .expect("builtin wrapper operation produces a value");
+        crate::builtins::semantics::LoweredBuiltinValue { value }
+    }
+
+    /// Emits one typed runtime operation into the synthetic wrapper body.
+    fn emit_runtime_call(
+        &mut self,
+        target: crate::ir::RuntimeCallTarget,
+        operands: Vec<ValueId>,
+        php_type: PhpType,
+        effects: crate::ir::Effects,
+        span: Option<crate::span::Span>,
+    ) -> crate::builtins::semantics::LoweredBuiltinValue {
+        self.emit_value(
+            Op::RuntimeCall,
+            operands,
+            Some(Immediate::RuntimeCall(target)),
+            php_type,
+            effects,
+            span,
+        )
+    }
 }
 
 /// Converts callable signature params into EIR function params with matching ABI/local slots.
@@ -1966,6 +2053,9 @@ fn callable_target_data<'a>(ctx: &'a FunctionContext<'_>, inst: &Instruction) ->
 
 /// Lowers high-level runtime fallback casts that Phase 04 can identify by type.
 fn lower_runtime_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+    if let Some(Immediate::RuntimeCall(target)) = inst.immediate {
+        return runtime_calls::lower(ctx, inst, target);
+    }
     if inst.operands.len() == 3 && matches!(inst.immediate, Some(Immediate::Data(_))) {
         return lower_property_array_runtime_set(ctx, inst);
     }

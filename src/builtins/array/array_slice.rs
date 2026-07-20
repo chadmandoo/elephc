@@ -16,10 +16,7 @@
 //! - `lower` is a thin wrapper over the shared `arrays::lower_array_slice` emitter.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -28,7 +25,10 @@ builtin! {
     params: [array: Mixed, offset: Mixed, length: Mixed = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ArraySlice,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Extracts a slice of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-slice.php",
 }
@@ -52,9 +52,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(ty)
-}
-
-/// Lowers an `array_slice` call by dispatching to the shared array emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_array_slice(ctx, inst)
 }

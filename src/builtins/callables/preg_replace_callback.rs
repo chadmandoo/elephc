@@ -15,10 +15,7 @@
 //! - `lower` is a thin wrapper over `lower_preg_replace_callback` (not parameterized).
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -28,7 +25,10 @@ builtin! {
     returns: Str,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::PregReplaceCallback,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Performs a regular expression search and replace using a callback.",
     php_manual: "function.preg-replace-callback",
 }
@@ -47,9 +47,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         cx.span,
         cx.env,
     )
-}
-
-/// Lowers a `preg_replace_callback` call by dispatching to the shared EIR emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::regex::lower_preg_replace_callback(ctx, inst)
 }

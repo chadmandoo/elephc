@@ -13,10 +13,7 @@
 //! - `lower` is a thin wrapper over `io::lower_hash_file` in the EIR backend.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -25,7 +22,10 @@ builtin! {
     params: [algo: Str, filename: Str, binary: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::HashFile,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Generates a hash value using the contents of a given file.",
     php_manual: "function.hash-file",
 }
@@ -37,9 +37,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     }
     cx.checker.require_builtin_library("elephc_crypto");
     Ok(PhpType::Union(vec![PhpType::Str, PhpType::False]))
-}
-
-/// Lowers a `hash_file` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_hash_file(ctx, inst)
 }

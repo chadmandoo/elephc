@@ -12,10 +12,7 @@
 //! - `lower` is a thin wrapper over `io::lower_unlink` in the EIR backend.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -25,7 +22,10 @@ builtin! {
     params: [filename: Str],
     returns: Bool,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Unlink,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Deletes a file.",
     php_manual: "function.unlink",
 }
@@ -45,9 +45,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     }
     cx.checker.infer_type(&cx.args[0], cx.env)?;
     Ok(PhpType::Bool)
-}
-
-/// Lowers an `unlink` call by dispatching to the shared io emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::io::lower_unlink(ctx, inst)
 }

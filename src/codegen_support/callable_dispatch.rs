@@ -48,6 +48,19 @@ pub(crate) fn runtime_builtin_wrapper_supported(
     source_arg_ty: Option<&PhpType>,
 ) -> bool {
     let name = crate::names::php_symbol_key(name.trim_start_matches('\\'));
+    if let Some(def) = crate::builtins::registry::lookup(&name) {
+        if def.spec.semantics.is_complete() {
+            return match def.spec.semantics.callable {
+                crate::builtins::semantics::BuiltinCallablePolicy::Dynamic(accepts) => {
+                    accepts(source_arg_ty)
+                }
+                crate::builtins::semantics::BuiltinCallablePolicy::DirectOnly(_) => false,
+                crate::builtins::semantics::BuiltinCallablePolicy::Legacy => unreachable!(
+                    "complete builtin semantics cannot retain a legacy callable policy"
+                ),
+            };
+        }
+    }
     if !runtime_builtin_name_supported(&name) {
         return false;
     }

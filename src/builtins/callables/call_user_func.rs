@@ -14,10 +14,7 @@
 //!   with the canonical function name.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -28,7 +25,10 @@ builtin! {
     returns: Mixed,
     check: check,
     lazy_check: true,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::CallUserFunc,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Calls a callback with the given arguments.",
     php_manual: "function.call-user-func",
 }
@@ -40,13 +40,4 @@ builtin! {
 /// machinery) that are only accessible from within the `types::checker::builtins` module tree.
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     crate::types::checker::builtins::check_call_user_func(cx.checker, cx.args, cx.span, cx.env)
-}
-
-/// Lowers a `call_user_func` builtin-call escape by dispatching to the shared emitter.
-///
-/// This path is reached only for the rare truly-dynamic case where the static lowering in
-/// `ir_lower` could not resolve the callback; it rejects the instruction with a diagnostic
-/// to guide the user toward a statically resolvable form.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::arrays::lower_call_user_func_builtin_escape(ctx, inst, "call_user_func")
 }

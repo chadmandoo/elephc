@@ -14,10 +14,7 @@
 
 use crate::builtins::spec::BuiltinCheckCtx;
 use crate::builtins::system::attr_support::resolve_class_name;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -27,7 +24,10 @@ builtin! {
     params: [class_name: Str],
     returns: Mixed,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ClassAttributeNames,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    ),
     summary: "Returns the list of attribute names applied to a class.",
     extension: true,
 }
@@ -65,9 +65,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Array(Box::new(PhpType::Str)))
-}
-
-/// Lowers a `class_attribute_names` call by delegating to the shared attributes emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::attributes::lower_class_attribute_names(ctx, inst)
 }

@@ -16,10 +16,7 @@
 //!   builtin from user programs.
 
 use crate::builtins::spec::BuiltinCheckCtx;
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::parser::ast::ExprKind;
 use crate::types::PhpType;
 
@@ -29,7 +26,10 @@ builtin! {
     params: [buffer: Mixed],
     returns: Void,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::BufferFree,
+            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    ),
     summary: "Frees a buffer<T> and nulls the local variable that held it.",
     extension: true,
 }
@@ -78,9 +78,4 @@ fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
         ));
     }
     Ok(PhpType::Void)
-}
-
-/// Lowers a `buffer_free` call by dispatching to the shared buffers emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::buffers::lower_buffer_free(ctx, inst)
 }

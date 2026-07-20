@@ -12,10 +12,7 @@
 //! - Argument types are inferred by the common registry dispatch path before the hook fires.
 
 use crate::builtins::spec::{BuiltinCheckCtx, DefaultSpec};
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
 use crate::errors::CompileError;
-use crate::ir::Instruction;
 use crate::types::PhpType;
 
 builtin! {
@@ -24,7 +21,10 @@ builtin! {
     params: [data: Str, level: Int = DefaultSpec::Int(-1)],
     returns: Str,
     check: check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::Gzdeflate,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Deflate a string using the DEFLATE data format.",
     php_manual: "https://www.php.net/manual/en/function.gzdeflate.php",
 }
@@ -37,9 +37,4 @@ builtin! {
 fn check(cx: &mut BuiltinCheckCtx) -> Result<PhpType, CompileError> {
     cx.checker.require_builtin_library("z");
     Ok(PhpType::Str)
-}
-
-/// Lowers a `gzdeflate` call by dispatching to the shared `lower_gzdeflate` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_gzdeflate(ctx, inst)
 }

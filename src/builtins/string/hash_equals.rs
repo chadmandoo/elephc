@@ -10,21 +10,16 @@
 //!   bridge library is required (this is a pure timing-safe byte comparison).
 //! - Arity (exactly 2 args) is validated by the registry.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "hash_equals",
     area: String,
     params: [known_string: Str, user_string: Str],
     returns: Bool,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::HashEquals,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Compares two strings using a constant-time algorithm.",
     php_manual: "https://www.php.net/manual/en/function.hash-equals.php",
-}
-
-/// Lowers a `hash_equals` call by dispatching to the shared `lower_hash_equals` emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::strings::lower_hash_equals(ctx, inst)
 }

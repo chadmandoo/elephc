@@ -13,9 +13,6 @@
 //! - Delegates `check` and the lowering emitter to the `ptr_read_string` home so
 //!   the two names cannot drift.
 
-use crate::codegen::context::FunctionContext;
-use crate::codegen::CodegenIrError;
-use crate::ir::Instruction;
 
 builtin! {
     name: "__elephc_ptr_read_string",
@@ -23,12 +20,10 @@ builtin! {
     params: [pointer: Mixed, length: Mixed],
     returns: Str,
     check: crate::builtins::pointers::ptr_read_string::check,
-    lower: lower,
+    semantics: crate::builtins::semantics::backend_target_adapter(
+            crate::ir::BuiltinRuntimeTarget::ElephcPtrReadString,
+            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    ),
     summary: "Internal prelude alias of ptr_read_string.",
     internal: true,
-}
-
-/// Lowers an `__elephc_ptr_read_string` call through the shared pointer emitter.
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::pointers::lower_ptr_read_string(ctx, inst)
 }

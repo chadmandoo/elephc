@@ -10,6 +10,7 @@
 //!   are immutable metadata assigned when instructions are built.
 
 mod block;
+mod builtin_runtime_target;
 mod builder;
 mod effects;
 mod function;
@@ -17,6 +18,7 @@ pub(crate) mod function_variants;
 mod instr;
 mod module;
 mod print;
+mod runtime_call;
 mod types;
 mod validator;
 mod value;
@@ -25,6 +27,7 @@ mod value;
 mod tests;
 
 pub use block::{BasicBlock, BlockId, SwitchCase, Terminator};
+pub use builtin_runtime_target::BuiltinRuntimeTarget;
 pub use builder::Builder;
 pub use effects::Effects;
 pub use function::{
@@ -39,6 +42,7 @@ pub use module::{
     Module, PackedLayoutTable, TraitMethodInfo,
 };
 pub use print::{print_function, print_module};
+pub use runtime_call::{RuntimeCallTarget, UnaryStringRuntime};
 pub use types::{IrHeapKind, IrType};
 pub use validator::{validate_function, validate_module, ValidationError};
 pub use function_variants::{
