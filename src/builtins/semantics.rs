@@ -417,10 +417,15 @@ pub fn lower_registry_call(
         BuiltinEffects::Static(effects) => effects,
         BuiltinEffects::Shared(resolve) => resolve(&semantic_input),
     };
+    let resolved_result_type = match def.spec.semantics.result_type {
+        BuiltinResultType::Checked => result_type.clone(),
+        BuiltinResultType::Declared => def.return_type.clone(),
+        BuiltinResultType::Shared(resolve) => resolve(&semantic_input),
+    };
     let normalized = NormalizedBuiltinCall {
         name: def.name,
         operands,
-        result_type,
+        result_type: &resolved_result_type,
         span,
     };
     match def.spec.semantics.lowering {
@@ -429,14 +434,14 @@ pub fn lower_registry_call(
             Op::TypePredicate,
             vec![normalized.operand(0)?],
             Some(Immediate::TypePredicate(predicate)),
-            result_type.clone(),
+            resolved_result_type.clone(),
             Op::TypePredicate.default_effects(),
             Some(span),
         )),
         BuiltinLowering::Runtime(target) => Ok(ctx.emit_runtime_call(
             target,
             operands.to_vec(),
-            result_type.clone(),
+            resolved_result_type,
             effects,
             Some(span),
         )),

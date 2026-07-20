@@ -343,6 +343,7 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
         "src/types/signatures.rs": [r"\blegacy_builtin_call_sig\b"],
         "src/ir_lower/effects_lookup.rs": [r"fn builtin_effects\s*\("],
         "src/codegen_support/callable_dispatch.rs": [r"fn runtime_builtin_name_supported\s*\("],
+        "src/codegen/lower_inst.rs": [r"match\s+php_symbol_key\s*\(\s*name"],
         "src/builtins/spec.rs": [
             r"pub\s+returns_fresh_storage\s*:",
             r"pub\s+returns_independent_storage\s*:",

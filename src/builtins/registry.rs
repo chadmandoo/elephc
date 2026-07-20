@@ -731,6 +731,27 @@ mod tests {
         }
     }
 
+    /// Verifies callable wrapper ABI refinements come from typed runtime descriptors.
+    #[test]
+    fn runtime_descriptors_refine_callable_wrapper_signatures() {
+        let mut count = callable_wrapper_sig(&function_sig("count").expect("count signature"));
+        crate::ir::RuntimeFnId::Count.refine_runtime_callable_wrapper_sig(&mut count);
+        assert_eq!(count.params.len(), 1);
+
+        let mut sum = callable_wrapper_sig(&function_sig("array_sum").expect("array_sum signature"));
+        crate::ir::RuntimeFnId::ArraySum.refine_runtime_callable_wrapper_sig(&mut sum);
+        assert_eq!(sum.params[0].1, PhpType::Array(Box::new(PhpType::Int)));
+
+        let mut clamp = callable_wrapper_sig(&function_sig("clamp").expect("clamp signature"));
+        crate::ir::RuntimeFnId::Clamp.refine_runtime_callable_wrapper_sig(&mut clamp);
+        assert!(clamp.params.iter().all(|(_, ty)| *ty == PhpType::Int));
+        assert_eq!(clamp.return_type, PhpType::Int);
+
+        let mut sort = callable_wrapper_sig(&function_sig("sort").expect("sort signature"));
+        crate::ir::RuntimeFnId::Sort.refine_runtime_callable_wrapper_sig(&mut sort);
+        assert_eq!(sort.params[0].1, PhpType::Array(Box::new(PhpType::Int)));
+    }
+
     /// Verifies conditional EIR lowering exposes its runtime fallback contract by typed ID.
     #[test]
     fn conditional_runtime_function_arity_comes_from_registry_semantics() {

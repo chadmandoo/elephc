@@ -1562,48 +1562,17 @@ pub(super) fn emit_runtime_builtin_wrapper_inline(
     emit_runtime_call_wrapper_inline(ctx, name, sig, RuntimeCallWrapperKind::Builtin)
 }
 
-/// Returns the concrete EIR ABI signature used by runtime builtin descriptors.
+/// Returns the registry/runtime-descriptor ABI used by builtin callable wrappers.
 pub(super) fn runtime_builtin_wrapper_sig(name: &str, sig: &FunctionSig) -> FunctionSig {
     let mut sig = sig.clone();
-    match php_symbol_key(name.trim_start_matches('\\')).as_str() {
-        "count" => truncate_wrapper_params(&mut sig, 1),
-        "array_sum" | "array_product" => {
-            set_wrapper_param_type(&mut sig, 0, PhpType::Array(Box::new(PhpType::Int)))
+    if let Some(def) = crate::builtins::registry::lookup(name) {
+        if let crate::builtins::semantics::BuiltinRuntimeFunctions::One(runtime_fn) =
+            def.spec.semantics.runtime_functions
+        {
+            runtime_fn.refine_runtime_callable_wrapper_sig(&mut sig);
         }
-        "clamp" => {
-            set_wrapper_param_type(&mut sig, 0, PhpType::Int);
-            set_wrapper_param_type(&mut sig, 1, PhpType::Int);
-            set_wrapper_param_type(&mut sig, 2, PhpType::Int);
-            sig.return_type = PhpType::Int;
-        }
-        "sort" | "rsort" | "shuffle" | "natsort" | "natcasesort" | "asort" | "arsort" => {
-            set_wrapper_param_type(&mut sig, 0, PhpType::Array(Box::new(PhpType::Int)))
-        }
-        _ => {}
     }
     sig
-}
-
-/// Truncates wrapper parameters to the runtime-supported visible arity.
-fn truncate_wrapper_params(sig: &mut FunctionSig, count: usize) {
-    sig.params.truncate(count);
-    sig.defaults.truncate(count);
-    sig.ref_params.truncate(count);
-    sig.declared_params.truncate(count);
-    if sig
-        .variadic
-        .as_deref()
-        .is_some_and(|name| !sig.params.iter().any(|(param_name, _)| param_name == name))
-    {
-        sig.variadic = None;
-    }
-}
-
-/// Replaces one wrapper parameter type when the parameter exists.
-fn set_wrapper_param_type(sig: &mut FunctionSig, index: usize, php_type: PhpType) {
-    if let Some((_, param_ty)) = sig.params.get_mut(index) {
-        *param_ty = php_type;
-    }
 }
 
 /// Emits an EIR extern wrapper inline so descriptors can point at PHP-ABI code.

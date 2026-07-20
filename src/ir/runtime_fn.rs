@@ -549,6 +549,33 @@ impl RuntimeFnId {
         }
     }
 
+    /// Refines the PHP-ABI wrapper signature required by this runtime implementation.
+    pub fn refine_runtime_callable_wrapper_sig(self, sig: &mut crate::types::FunctionSig) {
+        use crate::types::PhpType;
+        match self {
+            RuntimeFnId::Count => truncate_callable_params(sig, 1),
+            RuntimeFnId::ArraySum | RuntimeFnId::ArrayProduct => {
+                set_callable_param_type(sig, 0, PhpType::Array(Box::new(PhpType::Int)));
+            }
+            RuntimeFnId::Clamp => {
+                set_callable_param_type(sig, 0, PhpType::Int);
+                set_callable_param_type(sig, 1, PhpType::Int);
+                set_callable_param_type(sig, 2, PhpType::Int);
+                sig.return_type = PhpType::Int;
+            }
+            RuntimeFnId::Sort
+            | RuntimeFnId::Rsort
+            | RuntimeFnId::Shuffle
+            | RuntimeFnId::Natsort
+            | RuntimeFnId::Natcasesort
+            | RuntimeFnId::Asort
+            | RuntimeFnId::Arsort => {
+                set_callable_param_type(sig, 0, PhpType::Array(Box::new(PhpType::Int)));
+            }
+            _ => {}
+        }
+    }
+
     /// Returns the conservative observable effects for this typed backend operation.
     pub const fn effects(self) -> crate::ir::Effects {
         match self {
@@ -1318,5 +1345,31 @@ impl RuntimeFnId {
             RuntimeFnId::IsNumeric => "is_numeric",
             RuntimeFnId::Settype => "settype",
         }
+    }
+}
+
+/// Truncates a runtime callable signature while keeping all parameter metadata aligned.
+fn truncate_callable_params(sig: &mut crate::types::FunctionSig, count: usize) {
+    sig.params.truncate(count);
+    sig.defaults.truncate(count);
+    sig.ref_params.truncate(count);
+    sig.declared_params.truncate(count);
+    if sig
+        .variadic
+        .as_deref()
+        .is_some_and(|name| !sig.params.iter().any(|(param_name, _)| param_name == name))
+    {
+        sig.variadic = None;
+    }
+}
+
+/// Replaces one runtime callable parameter type when the parameter exists.
+fn set_callable_param_type(
+    sig: &mut crate::types::FunctionSig,
+    index: usize,
+    php_type: crate::types::PhpType,
+) {
+    if let Some((_, param_ty)) = sig.params.get_mut(index) {
+        *param_ty = php_type;
     }
 }
