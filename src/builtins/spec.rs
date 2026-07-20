@@ -139,15 +139,15 @@ pub struct BuiltinSpec {
     /// more than `n` arguments even though the declared parameter list (including
     /// optional params) would otherwise permit more. This affects ONLY
     /// `check_arity`; it does not change `function_sig`, `arity_bounds`, or the
-    /// parity gate, which all keep the full param-derived bounds. It exists to
-    /// preserve a migrated builtin whose legacy CHECK arm enforced a tighter arity
-    /// than its declared (golden) signature allowed.
+    /// parity gate, which all keep the full param-derived bounds. It exists for a
+    /// builtin whose supported compiler contract enforces a tighter arity than its
+    /// declared golden signature allows.
     pub max_args: Option<usize>,
     /// An optional override for the minimum argument count enforced by the
     /// registry's `check_arity`. When `Some(n)`, `check_arity` rejects calls
     /// with fewer than `n` arguments even though the declared parameter list
     /// would otherwise permit fewer (e.g. a variadic golden with min=0 but the
-    /// legacy CHECK arm required ≥2). This affects ONLY `check_arity`; it does
+    /// supported compiler contract requires at least two). This affects ONLY `check_arity`; it does
     /// not change `function_sig`, `arity_bounds`, or the parity gate.
     pub min_args: Option<usize>,
     /// A verbatim error message used by `check_arity` instead of the standard

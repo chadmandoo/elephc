@@ -207,7 +207,7 @@ def build_inventory() -> dict[str, Any]:
     ]
     resident_records = [record for record in exported if record.get("aot_resident")]
     eval_only_records = [record for record in exported if record.get("eval_only")]
-    home_map = docs_extract.build_home_lowering_map(REPO)
+    home_map = docs_extract.build_home_file_map(REPO)
     all_aot_names = [record["name"] for record in registry_records + resident_records]
     test_index = build_test_index(all_aot_names, source_files_with_tests())
 
@@ -215,7 +215,7 @@ def build_inventory() -> dict[str, Any]:
     for exported_record in sorted(registry_records, key=lambda item: item["name"].lower()):
         name = exported_record["name"]
         canonical = name.lower()
-        _, _, home_relative = home_map.get(canonical, ("", "", ""))
+        home_relative = home_map.get(canonical, "")
         home_source = read(REPO / home_relative) if home_relative else ""
         block = builtin_macro_block(home_source)
         semantics = exported_record.get("semantics", {})

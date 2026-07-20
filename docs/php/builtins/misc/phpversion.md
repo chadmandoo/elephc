@@ -2,7 +2,7 @@
 title: "phpversion()"
 description: "Returns the current PHP version information."
 sidebar:
-  order: 296
+  order: 298
 ---
 
 ## phpversion()

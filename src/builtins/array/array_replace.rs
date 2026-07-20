@@ -6,10 +6,10 @@
 //!
 //! Key details:
 //! - The PHP golden signature is `fixed(&["array", "replacements"])` (two required
-//!   params, no variadic), matching the legacy `legacy_builtin_call_sig` arm. The
+//!   params, no variadic), matching the registry signature. The
 //!   param-derived bounds already require exactly 2 arguments, so no `min_args`/
-//!   `max_args` override is needed; `check_arity` reproduces the legacy CHECK arity.
-//! - `check` reproduces the legacy rule: both arguments must be associative arrays or
+//!   `max_args` override is needed; `check_arity` owns the arity contract.
+//! - `check` enforces that both arguments are associative arrays or
 //!   indexed arrays of scalars, and the result is the two-input hash result type. A
 //!   check hook is required because the return type depends on the inferred arguments.
 

@@ -2,42 +2,42 @@
 
 ## Checklist
 
-- [ ] Keep a reproducible per-builtin inventory covering the registry, signatures,
+- [x] Keep a reproducible per-builtin inventory covering the registry, signatures,
   validation, checker and EIR result types, effects, ownership/aliasing, lowering,
   runtime helpers, bridge requirements, callable/eval support, targets, and tests.
-- [ ] Introduce one registry-owned semantic model for validation, result typing,
+- [x] Introduce one registry-owned semantic model for validation, result typing,
   effects, ownership/aliasing, requirements, callable policy, and lowering strategy.
-- [ ] Introduce stable typed runtime function identifiers and central runtime
+- [x] Introduce stable typed runtime function identifiers and central runtime
   descriptors with logical ABI, effects, ownership, requirements, and target support.
-- [ ] Add a backend-neutral builtin lowering context that can emit EIR primitives,
+- [x] Add a backend-neutral builtin lowering context that can emit EIR primitives,
   control flow, and typed runtime calls without importing codegen concepts.
-- [ ] Migrate scalar predicates and conversions.
-- [ ] Migrate math builtins.
-- [ ] Migrate string builtins.
-- [ ] Migrate array builtins.
-- [ ] Migrate callbacks and sorting builtins.
-- [ ] Migrate object, class, and reflection builtins.
-- [ ] Migrate date and time builtins.
-- [ ] Migrate JSON, serialization, regex, and hash builtins.
-- [ ] Migrate filesystem, stream, and I/O builtins.
-- [ ] Migrate process, system, and environment builtins.
-- [ ] Migrate bridge-backed builtins.
-- [ ] Migrate pointer, buffer, and elephc extension builtins.
-- [ ] Migrate internal and prelude builtins.
-- [ ] Unify direct, first-class, dynamic string, callable-array,
+- [x] Migrate scalar predicates and conversions.
+- [x] Migrate math builtins.
+- [x] Migrate string builtins.
+- [x] Migrate array builtins.
+- [x] Migrate callbacks and sorting builtins.
+- [x] Migrate object, class, and reflection builtins.
+- [x] Migrate date and time builtins.
+- [x] Migrate JSON, serialization, regex, and hash builtins.
+- [x] Migrate filesystem, stream, and I/O builtins.
+- [x] Migrate process, system, and environment builtins.
+- [x] Migrate bridge-backed builtins.
+- [x] Migrate pointer, buffer, and elephc extension builtins.
+- [x] Migrate internal and prelude builtins.
+- [x] Unify direct, first-class, dynamic string, callable-array,
   `call_user_func*`, and eval/Magician callable paths around the same semantics.
-- [ ] Remove `BuiltinSpec` assembly hooks and every `src/builtins` dependency on
+- [x] Remove `BuiltinSpec` assembly hooks and every `src/builtins` dependency on
   `src/codegen`.
-- [ ] Remove registry-backed `Op::BuiltinCall`, the separate EIR return-type chain,
+- [x] Remove registry-backed `Op::BuiltinCall`, the separate EIR return-type chain,
   legacy signature/checker fallback, duplicate effects and requirements matching,
   and separate callable assembly wrappers.
-- [ ] Add structural invariants plus registry, EIR, optimizer, ownership, callable,
+- [x] Add structural invariants plus registry, EIR, optimizer, ownership, callable,
   runtime/linking, and supported-target regression coverage.
-- [ ] Update contributor and internal architecture documentation, regenerate builtin
+- [x] Update contributor and internal architecture documentation, regenerate builtin
   documentation, and add the user-facing changelog entry.
-- [ ] Run all requested build, test, docs, assembly-comment, EIR, target, and diff
+- [x] Run all requested build, test, docs, assembly-comment, EIR, target, and diff
   gates; audit every objective requirement against current evidence.
-- [ ] Package the completed, green migration as thematic local commits without
+- [x] Package the completed, green migration as thematic local commits without
   rebasing, amending published history, pushing, or opening a pull request.
 
 ## Baseline Inventory
@@ -188,3 +188,53 @@ The intended local commit sequence is:
 7. tests, generated docs, architecture docs, and changelog.
 
 No temporary compatibility commit is a valid final state.
+
+## Completion Evidence
+
+The migration completed on 2026-07-20 with the following final structural inventory:
+
+- 469 registry-backed AOT builtins, 6 explicitly compiler-resident language or
+  dedicated-syntax entries, and 4 eval-only names;
+- 450 typed runtime-call targets, 18 EIR primitives, and 1 EIR graph lowering;
+- 0 backend-dependent builtin home files, duplicate registry names, missing home
+  files, or missing semantic descriptors;
+- all three supported targets declared for every registry-backed semantic target.
+
+Representative optimized and unoptimized EIR for `strlen`, `is_string`, and
+`strtoupper` contained only `str_len`, `type_predicate`, and
+`runtime_call runtime.string.to_upper`. Neither mode contained `BuiltinCall`,
+`builtin_call`, or `language_construct_call`, and both produced identical output.
+
+Final verification evidence:
+
+- `cargo build`, `cargo check --tests`, and the third full `cargo test --quiet`
+  completed successfully. The full run recorded 11,293 passed, 0 failed, and 37
+  ignored tests across the workspace, including 6,638 codegen tests, 1,099 error
+  tests, and 255 EIR backend smoke tests.
+- Focused suites covered every builtin family and included 212 runtime-GC tests,
+  398 callable tests, 578 object/OOP tests, 273 array tests, 255 optimizer tests,
+  247 SPL tests, 236 regression tests, 186 string tests, and the complete registry
+  and parity gates.
+- The final `array_fill(null)`/Mixed append and `SplFileObject` CSV regressions passed
+  on macOS AArch64, Linux AArch64, and Linux x86_64. Earlier ownership-sensitive
+  typed-call regression filters also passed on both Linux targets. Complete Linux
+  suites remain delegated to CI as required by the repository's local-test policy.
+- Builtin docs regenerated 479 exported records and 936 pages; the builtin audit
+  reported 0 errors and site compatibility validated all 953 generated pages.
+- Every changed assembly-emitting file passed `scripts/check_asm_comments.py`;
+  `scripts/audit_builtin_eir_boundary.py --enforce-target-architecture`, Python
+  bytecode checks for the docs/audit tools, and `git diff --check` all passed.
+- No `cargo fmt`, rebase, amend, push, or pull-request operation was performed.
+
+The thematic local implementation commits are:
+
+1. `02b5f5520` — inventory and structural audit;
+2. `d70b56bcf` — typed EIR targets;
+3. `f9b22a9e4` — shared builtin semantics;
+4. `16330ac1c` — helper-centric runtime calls;
+5. `d1b020282` — descriptor-derived callable wrappers;
+6. `9f677203d` — registry-owned argument lowering;
+7. `9a396f4c7` — final legacy-boundary enforcement;
+8. `c52ae6469` — EIR result and ownership contracts;
+9. `07cfba7c1` — final typed result-storage regressions;
+10. the documentation/generator/changelog closure commit containing this evidence.

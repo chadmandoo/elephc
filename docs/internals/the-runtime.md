@@ -381,7 +381,7 @@ Refcounts are stored as a 32-bit value in the uniform 16-byte heap header, at `[
 
 ## System routines
 
-**Source:** `src/codegen_support/runtime/system/` (43 top-level files plus `date/`, `strtotime/`, `json_validate/`, `json_decode_mixed/`, and `json_encode_str/` subdirectories)
+**Source:** `src/codegen_support/runtime/system/` (43 top-level files plus `date/`, `strtotime/`, `json_validate/`, `json_decode_mixed/`, and `json_encode_str/` subdirectories; 70 files recursively)
 
 ### `__rt_build_argv` — Build $argv array
 
@@ -786,7 +786,7 @@ Generators are stamped as object heap blocks (heap kind `4`) because `Generator`
 
 ## Fiber routines
 
-**Source:** `src/codegen_support/runtime/fibers/` (4 files plus the `api/` subdirectory)
+**Source:** `src/codegen_support/runtime/fibers/` (4 top-level files plus 4 files in the `api/` subdirectory)
 
 These helpers implement PHP 8.1-style cooperative coroutines. They are emitted by the shared runtime on every supported target.
 

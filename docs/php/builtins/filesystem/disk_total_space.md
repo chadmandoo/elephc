@@ -2,7 +2,7 @@
 title: "disk_total_space()"
 description: "Returns the total size of a filesystem or disk partition."
 sidebar:
-  order: 111
+  order: 113
 ---
 
 ## disk_total_space()

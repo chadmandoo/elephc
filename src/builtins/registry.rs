@@ -145,18 +145,17 @@ pub fn names() -> impl Iterator<Item = &'static str> {
 
 /// Derives a `FunctionSig` for the named builtin from the registry.
 ///
-/// The returned sig matches the field layout the legacy `builtin_call_sig()` arms
-/// produce via `make_sig`, with the following field mapping:
+/// The returned signature uses the following registry-to-`FunctionSig` field mapping:
 ///
 /// | `FunctionSig` field   | Source                                         |
 /// |------------------------|------------------------------------------------|
 /// | `params`               | `BuiltinDef.params` (typed via `TypeSpec`)    |
 /// | `defaults`             | `BuiltinDef.defaults` (via `DefaultSpec`)     |
 /// | `return_type`          | `BuiltinDef.return_type` (via `TypeSpec`)     |
-/// | `declared_return`      | `false` (matching `make_sig` convention)       |
+/// | `declared_return`      | `false` for a direct builtin signature          |
 /// | `by_ref_return`        | `BuiltinDef.by_ref_return` (from spec)        |
 /// | `ref_params`           | `BuiltinDef.ref_params` (from spec)           |
-/// | `declared_params`      | `vec![false; N]` (matching `make_sig`)        |
+/// | `declared_params`      | `vec![false; N]` for registry-derived params  |
 /// | `variadic`             | `BuiltinDef.variadic` (from spec)             |
 /// | `deprecation`          | `spec.deprecation` mapped to `Option<String>` |
 ///
@@ -182,11 +181,10 @@ pub fn function_sig(name: &str) -> Option<FunctionSig> {
 ///
 /// Applies `callable_wrapper_sig` to the base `function_sig`, upgrading the
 /// variadic parameter (if any) to `Array<Mixed>` as required for first-class use.
-/// This reuses the same upgrade logic applied by the legacy `callable_wrapper_sig`
-/// helper in `src/types/signatures.rs` rather than reinventing it.
+/// This reuses the shared `callable_wrapper_sig` helper in
+/// `src/types/signatures.rs` rather than rebuilding callable normalization.
 ///
-/// Sets `declared_return: true` on the resulting signature, mirroring the
-/// `typed_first_class_builtin_sig` convention used by the legacy table. First-class
+/// Sets `declared_return: true` on the resulting signature. First-class
 /// callable sigs have a known, declared return type (they are typed wrappers, not
 /// type-erased callables), so `declared_return` must be `true`.
 ///
