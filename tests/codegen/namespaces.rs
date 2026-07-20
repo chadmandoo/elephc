@@ -505,3 +505,66 @@ echo \App\C\K::mk()->t->p;
     );
     assert_eq!(out, "/");
 }
+
+/// `use const PHP_INT_MAX;` — the lexer eagerly tokenizes such constants, so the
+/// use-declaration parser must accept the dedicated tokens as import names. Aliases
+/// resolve through the seeded constant map (expression uses are not lexer-only).
+#[test]
+fn test_use_const_of_lexer_tokenized_constant() {
+    let out = compile_and_run(
+        r#"<?php
+
+namespace App;
+
+use const PHP_INT_MAX;
+use const PHP_INT_MIN;
+use const STDERR;
+
+echo PHP_INT_MAX > 0 ? 'max' : '?', ':', PHP_INT_MIN < 0 ? 'min' : '?';
+"#,
+    );
+    assert_eq!(out, "max:min");
+}
+
+/// `use const PHP_INT_MAX as MAX` must resolve the alias through ConstRef, not only the
+/// dedicated lexer token path.
+#[test]
+fn test_use_const_alias_of_lexer_tokenized_constant() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+use const PHP_INT_MAX as MAX;
+echo MAX > 0 ? 'ok' : 'no';
+"#,
+    );
+    assert_eq!(out, "ok");
+}
+
+/// Imports multiple lexer-tokenized predefined constants in one `use const` declaration.
+#[test]
+fn test_use_const_multiple_lexer_tokenized_constants() {
+    let out = compile_and_run(
+        r#"<?php
+namespace App;
+use const PHP_INT_MAX as MAX, PHP_INT_MIN as MIN;
+echo MAX > 0 && MIN < 0 ? 'ok' : 'no';
+"#,
+    );
+    assert_eq!(out, "ok");
+}
+
+/// Verifies `Enum` is accepted as an import alias, type name, constructor, and scoped receiver.
+#[test]
+fn test_enum_soft_keyword_import_alias() {
+    let out = compile_and_run(
+        r#"<?php
+namespace Vendor { class Legacy {} }
+namespace App {
+    use Vendor\Legacy as Enum;
+    function imported_name(Enum $value): string { return Enum::class; }
+    echo imported_name(new Enum());
+}
+"#,
+    );
+    assert_eq!(out, "Vendor\\Legacy");
+}

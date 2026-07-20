@@ -323,7 +323,7 @@ fn parse_atomic_type_expr(
             *pos += 1;
             Ok(TypeExpr::Named(Name::unqualified("parent")))
         }
-        Some(Token::Identifier(_)) | Some(Token::Backslash) => Ok(TypeExpr::Named(parse_name(
+        Some(_) if name_starts_at(tokens, *pos) => Ok(TypeExpr::Named(parse_name(
             tokens,
             pos,
             span,
