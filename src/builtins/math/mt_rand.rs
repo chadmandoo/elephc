@@ -20,9 +20,8 @@ builtin! {
     min_args: 0,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::MtRand,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::MtRand,
     ),
     summary: "Generate a random value via the Mersenne Twister Random Number Generator.",
     php_manual: "https://www.php.net/manual/en/function.mt-rand.php",

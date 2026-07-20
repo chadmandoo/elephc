@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [text: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::CtypeAlnum,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::CtypeAlnum,
     ),
     summary: "Checks if all characters in the string are alphanumeric.",
     php_manual: "https://www.php.net/manual/en/function.ctype-alnum.php",

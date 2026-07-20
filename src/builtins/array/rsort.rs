@@ -20,9 +20,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Rsort,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Rsort,
     ),
     summary: "Sorts an array in descending order.",
     php_manual: "https://www.php.net/manual/en/function.rsort.php",

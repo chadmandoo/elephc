@@ -20,9 +20,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObGetContents,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObGetContents,
     ),
     summary: "Returns the contents of the output buffer.",
     php_manual: "function.ob-get-contents",

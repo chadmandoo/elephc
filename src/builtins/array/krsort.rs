@@ -20,9 +20,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Krsort,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Krsort,
     ),
     summary: "Sorts an array by key in descending order.",
     php_manual: "https://www.php.net/manual/en/function.krsort.php",

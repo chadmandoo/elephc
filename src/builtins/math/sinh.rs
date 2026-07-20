@@ -16,9 +16,8 @@ builtin! {
     area: Math,
     params: [num: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Sinh,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Sinh,
     ),
     summary: "Returns the hyperbolic sine of a number.",
     php_manual: "https://www.php.net/manual/en/function.sinh.php",

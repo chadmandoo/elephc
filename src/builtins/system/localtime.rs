@@ -17,9 +17,8 @@ builtin! {
     area: System,
     params: [timestamp: Int = DefaultSpec::Int(-1), associative: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Localtime,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Localtime,
     ),
     summary: "Returns the local time.",
 }

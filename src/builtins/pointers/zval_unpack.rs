@@ -17,9 +17,8 @@ builtin! {
     params: [zval: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ZvalUnpack,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ZvalUnpack,
     ),
     summary: "Unpacks a PHP zval pointer into an owned elephc Mixed value.",
     extension: true,

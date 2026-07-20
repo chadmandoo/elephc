@@ -24,9 +24,8 @@ builtin! {
     min_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayFilter,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayFilter,
     ),
     summary: "Filters elements of an array using a callback function.",
     php_manual: "https://www.php.net/manual/en/function.array-filter.php",

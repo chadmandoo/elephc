@@ -18,9 +18,8 @@ builtin! {
     params: [protocol: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Getprotobyname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Getprotobyname,
     ),
     summary: "Gets the protocol number associated with the given protocol name.",
     php_manual: "function.getprotobyname",

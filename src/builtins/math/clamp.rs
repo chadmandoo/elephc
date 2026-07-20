@@ -19,9 +19,8 @@ builtin! {
     params: [value: Mixed, min: Mixed, max: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Clamp,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Clamp,
     ),
     summary: "Clamps a value to be within a specified range.",
     php_manual: "https://www.php.net/manual/en/function.clamp.php",

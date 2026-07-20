@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [ip: Int],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Long2ip,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Long2ip,
     ),
     summary: "Converts an IPv4 address from long integer to dotted string notation.",
     php_manual: "https://www.php.net/manual/en/function.long2ip.php",

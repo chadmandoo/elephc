@@ -18,9 +18,8 @@ builtin! {
     params: [port: Int, protocol: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Getservbyport,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Getservbyport,
     ),
     summary: "Gets the Internet service that corresponds to a port and protocol.",
     php_manual: "function.getservbyport",

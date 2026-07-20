@@ -19,9 +19,8 @@ builtin! {
     params: [filename: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Unlink,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Unlink,
     ),
     requirements: crate::builtins::semantics::unlink_requirements,
     summary: "Deletes a file.",

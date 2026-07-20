@@ -14,9 +14,8 @@ builtin! {
     area: Spl,
     params: [class: Mixed],
     returns: Void,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoloadCall,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoloadCall,
     ),
     summary: "Try all registered __autoload() functions to load the requested class.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-call.php",

@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [brigade: Mixed, bucket: Mixed],
     returns: Void,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamBucketPrepend,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamBucketPrepend,
     ),
     summary: "Prepends a bucket to the brigade.",
     php_manual: "function.stream-bucket-prepend",

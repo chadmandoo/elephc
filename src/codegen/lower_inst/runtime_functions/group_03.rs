@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 03, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::DiskFreeSpace => Some({
+        RuntimeFnId::DiskFreeSpace => Some({
             crate::codegen::lower_inst::builtins::io::lower_disk_free_space(ctx, inst)
         }),
-        BuiltinRuntimeTarget::DiskTotalSpace => Some({
+        RuntimeFnId::DiskTotalSpace => Some({
             crate::codegen::lower_inst::builtins::io::lower_disk_total_space(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fclose => Some({
+        RuntimeFnId::Fclose => Some({
             crate::codegen::lower_inst::builtins::io::lower_fclose(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fdatasync => Some({
+        RuntimeFnId::Fdatasync => Some({
             crate::codegen::lower_inst::builtins::io::lower_fdatasync(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Feof => Some({
+        RuntimeFnId::Feof => Some({
             crate::codegen::lower_inst::builtins::io::lower_feof(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fflush => Some({
+        RuntimeFnId::Fflush => Some({
             crate::codegen::lower_inst::builtins::io::lower_fflush(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fgetc => Some({
+        RuntimeFnId::Fgetc => Some({
             crate::codegen::lower_inst::builtins::io::lower_fgetc(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fgetcsv => Some({
+        RuntimeFnId::Fgetcsv => Some({
             crate::codegen::lower_inst::builtins::io::lower_fgetcsv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fgets => Some({
+        RuntimeFnId::Fgets => Some({
             crate::codegen::lower_inst::builtins::io::lower_fgets(ctx, inst)
         }),
-        BuiltinRuntimeTarget::File => Some({
+        RuntimeFnId::File => Some({
             crate::codegen::lower_inst::builtins::io::lower_file(ctx, inst)
         }),
-        BuiltinRuntimeTarget::FileExists => Some({
+        RuntimeFnId::FileExists => Some({
             crate::codegen::lower_inst::builtins::io::lower_file_exists(ctx, inst)
         }),
-        BuiltinRuntimeTarget::FileGetContents => Some({
+        RuntimeFnId::FileGetContents => Some({
             crate::codegen::lower_inst::builtins::io::lower_file_get_contents(ctx, inst)
         }),
-        BuiltinRuntimeTarget::FilePutContents => Some({
+        RuntimeFnId::FilePutContents => Some({
             crate::codegen::lower_inst::builtins::io::lower_file_put_contents(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fileatime => Some({
+        RuntimeFnId::Fileatime => Some({
             crate::codegen::lower_inst::builtins::io::lower_fileatime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Filectime => Some({
+        RuntimeFnId::Filectime => Some({
             crate::codegen::lower_inst::builtins::io::lower_filectime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Filegroup => Some({
+        RuntimeFnId::Filegroup => Some({
             crate::codegen::lower_inst::builtins::io::lower_filegroup(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fileinode => Some({
+        RuntimeFnId::Fileinode => Some({
             crate::codegen::lower_inst::builtins::io::lower_fileinode(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Filemtime => Some({
+        RuntimeFnId::Filemtime => Some({
             crate::codegen::lower_inst::builtins::io::lower_filemtime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fileowner => Some({
+        RuntimeFnId::Fileowner => Some({
             crate::codegen::lower_inst::builtins::io::lower_fileowner(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fileperms => Some({
+        RuntimeFnId::Fileperms => Some({
             crate::codegen::lower_inst::builtins::io::lower_fileperms(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Filesize => Some({
+        RuntimeFnId::Filesize => Some({
             crate::codegen::lower_inst::builtins::io::lower_filesize(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Filetype => Some({
+        RuntimeFnId::Filetype => Some({
             crate::codegen::lower_inst::builtins::io::lower_filetype(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Flock => Some({
+        RuntimeFnId::Flock => Some({
             crate::codegen::lower_inst::builtins::io::lower_flock(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fnmatch => Some({
+        RuntimeFnId::Fnmatch => Some({
             crate::codegen::lower_inst::builtins::io::lower_fnmatch(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fopen => Some({
+        RuntimeFnId::Fopen => Some({
             crate::codegen::lower_inst::builtins::io::lower_fopen(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fpassthru => Some({
+        RuntimeFnId::Fpassthru => Some({
             crate::codegen::lower_inst::builtins::io::lower_fpassthru(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fprintf => Some({
+        RuntimeFnId::Fprintf => Some({
             crate::codegen::lower_inst::builtins::io::lower_fprintf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fputcsv => Some({
+        RuntimeFnId::Fputcsv => Some({
             crate::codegen::lower_inst::builtins::io::lower_fputcsv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fread => Some({
+        RuntimeFnId::Fread => Some({
             crate::codegen::lower_inst::builtins::io::lower_fread(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fscanf => Some({
+        RuntimeFnId::Fscanf => Some({
             crate::codegen::lower_inst::builtins::io::lower_fscanf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fseek => Some({
+        RuntimeFnId::Fseek => Some({
             crate::codegen::lower_inst::builtins::io::lower_fseek(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fsockopen => Some({
+        RuntimeFnId::Fsockopen => Some({
             crate::codegen::lower_inst::builtins::io::lower_fsockopen(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fstat => Some({
+        RuntimeFnId::Fstat => Some({
             crate::codegen::lower_inst::builtins::io::lower_fstat(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fsync => Some({
+        RuntimeFnId::Fsync => Some({
             crate::codegen::lower_inst::builtins::io::lower_fsync(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Ftell => Some({
+        RuntimeFnId::Ftell => Some({
             crate::codegen::lower_inst::builtins::io::lower_ftell(ctx, inst)
         }),
         _ => None,

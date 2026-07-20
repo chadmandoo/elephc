@@ -16,9 +16,8 @@ builtin! {
     area: Math,
     params: [num: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Acos,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Acos,
     ),
     summary: "Returns the arccosine of a number in radians.",
     php_manual: "https://www.php.net/manual/en/function.acos.php",

@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [filename: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsExecutable,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsExecutable,
     ),
     summary: "Tells whether the filename is executable.",
     php_manual: "function.is-executable",

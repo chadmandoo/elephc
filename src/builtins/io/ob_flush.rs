@@ -14,9 +14,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObFlush,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObFlush,
     ),
     summary: "Flushes (sends) the contents of the active output buffer.",
     php_manual: "function.ob-flush",

@@ -19,9 +19,8 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Filectime,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Filectime,
     ),
     summary: "Gets inode change time of file.",
     php_manual: "function.filectime",

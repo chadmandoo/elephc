@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [command: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Exec,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Exec,
     ),
     summary: "Executes an external program and returns the last line of output.",
 }

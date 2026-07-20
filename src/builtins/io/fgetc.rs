@@ -20,9 +20,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fgetc,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fgetc,
     ),
     summary: "Gets a character from the given file pointer.",
     php_manual: "function.fgetc",

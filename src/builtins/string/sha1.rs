@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [string: Str, binary: Bool = DefaultSpec::Bool(false)],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Sha1,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Sha1,
     ),
     summary: "Calculates the SHA-1 hash of a string.",
     php_manual: "https://www.php.net/manual/en/function.sha1.php",

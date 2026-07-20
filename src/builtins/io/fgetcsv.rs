@@ -19,9 +19,8 @@ builtin! {
     params: [stream: Mixed, length: Int = DefaultSpec::Null, separator: Str = DefaultSpec::Str(",")],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fgetcsv,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fgetcsv,
     ),
     summary: "Gets line from file pointer and parse for CSV fields.",
     php_manual: "function.fgetcsv",

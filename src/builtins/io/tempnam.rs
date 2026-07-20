@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [directory: Str, prefix: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Tempnam,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Tempnam,
     ),
     summary: "Creates a file with a unique filename.",
     php_manual: "function.tempnam",

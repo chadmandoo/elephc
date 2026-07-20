@@ -17,9 +17,8 @@ builtin! {
     params: [value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ZvalPack,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ZvalPack,
     ),
     summary: "Packs an elephc runtime value into a heap-allocated PHP zval pointer.",
     extension: true,

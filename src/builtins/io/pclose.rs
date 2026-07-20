@@ -18,9 +18,8 @@ builtin! {
     params: [handle: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Pclose,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Pclose,
     ),
     summary: "Closes process file pointer.",
     php_manual: "function.pclose",

@@ -18,9 +18,8 @@ builtin! {
     params: [filename: Str, user: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Chown,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Chown,
     ),
     summary: "Changes file owner.",
     php_manual: "function.chown",

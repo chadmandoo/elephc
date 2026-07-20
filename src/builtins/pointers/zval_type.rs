@@ -17,9 +17,8 @@ builtin! {
     params: [zval: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ZvalType,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ZvalType,
     ),
     summary: "Returns the PHP zval type byte for a zval pointer.",
     extension: true,

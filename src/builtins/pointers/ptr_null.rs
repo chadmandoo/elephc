@@ -18,9 +18,8 @@ builtin! {
     arity_error: "ptr_null() takes 0 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrNull,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrNull,
     ),
     summary: "Returns a null raw pointer.",
     extension: true,

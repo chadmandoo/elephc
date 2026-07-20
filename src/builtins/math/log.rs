@@ -18,9 +18,8 @@ builtin! {
     area: Math,
     params: [num: Float, base: Float = DefaultSpec::Float(std::f64::consts::E)],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Log,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Log,
     ),
     summary: "Natural logarithm.",
     php_manual: "https://www.php.net/manual/en/function.log.php",

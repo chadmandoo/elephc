@@ -17,9 +17,8 @@ builtin! {
     area: String,
     params: [string: Str, flags: Int = DefaultSpec::Int(11), encoding: Str = DefaultSpec::Str("UTF-8")],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Htmlspecialchars,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Htmlspecialchars,
     ),
     summary: "Converts the HTML special characters in a string into their entities.",
     php_manual: "https://www.php.net/manual/en/function.htmlspecialchars.php",

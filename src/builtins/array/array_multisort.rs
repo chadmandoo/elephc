@@ -19,9 +19,8 @@ builtin! {
     params: [ref array1: Mixed, ref array2: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayMultisort,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayMultisort,
     ),
     summary: "Sorts multiple arrays or multi-dimensional arrays.",
     php_manual: "https://www.php.net/manual/en/function.array-multisort.php",

@@ -17,9 +17,8 @@ builtin! {
     params: [enum: Str, autoload: Bool = DefaultSpec::Bool(true)],
     returns: Bool,
     check: crate::builtins::callables::support::check_class_like_exists,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::EnumExists,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::EnumExists,
     ),
     summary: "Checks if the enum has been defined.",
     php_manual: "function.enum-exists",

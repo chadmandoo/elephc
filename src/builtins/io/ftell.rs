@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Ftell,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Ftell,
     ),
     summary: "Returns the current position of the file read/write pointer.",
     php_manual: "function.ftell",

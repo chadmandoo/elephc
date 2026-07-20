@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [directory: Str],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::DiskFreeSpace,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::DiskFreeSpace,
     ),
     summary: "Returns available space on filesystem or disk partition.",
     php_manual: "function.disk-free-space",

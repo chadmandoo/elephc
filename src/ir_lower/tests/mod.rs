@@ -180,3 +180,100 @@ fn unary_string_builtins_use_typed_runtime_calls() {
         "unary transform leaked through the legacy PHP-name backend boundary: {text}"
     );
 }
+
+/// Verifies `count` selects reusable length EIR for arrays and a typed fallback for dynamic values.
+#[test]
+fn count_uses_conditional_backend_neutral_lowering() {
+    let module = lower_source(
+        "<?php function sized(array $value): int { return count($value); } function dynamic($value): int { return count($value); } echo sized([1]); echo dynamic([1]);",
+    );
+    let text = print_module(&module);
+    assert!(text.contains("array_len"), "missing concrete array length EIR: {text}");
+    assert!(
+        text.contains("runtime.count"),
+        "missing typed dynamic count runtime function: {text}"
+    );
+    assert!(
+        !text.contains("builtin_call @count"),
+        "count leaked through the PHP-name backend boundary: {text}"
+    );
+}
+
+/// Verifies `is_null` is represented by the general EIR predicate rather than a runtime ID.
+#[test]
+fn is_null_uses_general_eir_predicate() {
+    let module = lower_source(
+        "<?php function missing($value): bool { return is_null($value); } echo missing(null);",
+    );
+    let text = print_module(&module);
+    assert!(text.contains("is_null"), "missing EIR null predicate: {text}");
+    assert!(
+        !text.contains("runtime.is_null") && !text.contains("builtin_call @is_null"),
+        "is_null leaked through a builtin-specific backend operation: {text}"
+    );
+}
+
+/// Verifies scalar conversion builtins reuse general EIR casts and truthiness.
+#[test]
+fn scalar_conversion_builtins_use_general_eir_primitives() {
+    let module = lower_source(
+        r#"<?php
+function as_bool($value): bool { return boolval($value); }
+function as_float(string $value): float { return floatval($value); }
+function as_int(string $value): int { return intval($value); }
+function as_string(int $value): string { return strval($value); }
+echo as_bool($argc), as_float("1.5"), as_int("2"), as_string(3);
+"#,
+    );
+    let text = print_module(&module);
+    assert!(text.contains("is_truthy"), "missing EIR truthiness predicate: {text}");
+    assert!(text.contains("php=float = cast"), "missing EIR float cast: {text}");
+    assert!(text.contains("php=int = cast"), "missing EIR integer cast: {text}");
+    assert!(
+        text.contains("php=string own=maybe_owned = cast"),
+        "missing EIR string cast: {text}"
+    );
+    for builtin in ["boolval", "floatval", "intval", "strval"] {
+        assert!(
+            !text.contains(&format!("runtime.{builtin}"))
+                && !text.contains(&format!("builtin_call @{builtin}")),
+            "{builtin} leaked through a builtin-specific backend operation: {text}"
+        );
+    }
+}
+
+/// Verifies scalar and container type checks share one typed EIR predicate operation.
+#[test]
+fn php_type_builtins_share_the_type_predicate_primitive() {
+    let module = lower_source(
+        r#"<?php
+function checks($value): bool {
+    return is_array($value)
+        || is_bool($value)
+        || is_float($value)
+        || is_int($value)
+        || is_iterable($value)
+        || is_object($value)
+        || is_resource($value)
+        || is_scalar($value)
+        || is_string($value);
+}
+echo checks($argc);
+"#,
+    );
+    let text = print_module(&module);
+    for predicate in [
+        "array", "bool", "float", "int", "iterable", "object", "resource", "scalar", "string",
+    ] {
+        assert!(
+            text.lines().any(|line| {
+                line.contains("type_predicate") && line.contains(&format!(" {predicate} ;"))
+            }),
+            "missing {predicate} EIR type predicate: {text}"
+        );
+        assert!(
+            !text.contains(&format!("runtime.is_{predicate}")),
+            "{predicate} predicate leaked through a runtime function: {text}"
+        );
+    }
+}

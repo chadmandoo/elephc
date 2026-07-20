@@ -21,9 +21,8 @@ builtin! {
     params: [directory: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Opendir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Opendir,
     ),
     summary: "Open directory handle.",
     php_manual: "function.opendir",

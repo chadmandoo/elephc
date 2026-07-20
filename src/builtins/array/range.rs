@@ -17,9 +17,8 @@ builtin! {
     params: [start: Mixed, end: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Range,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Range,
     ),
     summary: "Create an array containing a range of elements.",
     php_manual: "https://www.php.net/manual/en/function.range.php",

@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [string1: Str, string2: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strcasecmp,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strcasecmp,
     ),
     summary: "Binary safe case-insensitive string comparison. Returns negative, zero, or positive.",
     php_manual: "https://www.php.net/manual/en/function.strcasecmp.php",

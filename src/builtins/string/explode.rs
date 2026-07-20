@@ -24,9 +24,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Explode,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Explode,
     ),
     summary: "Splits a string by a separator into an array of substrings.",
     php_manual: "https://www.php.net/manual/en/function.explode.php",

@@ -12,9 +12,8 @@ builtin! {
     area: Callables,
     params: [object_or_class: Mixed, property: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-        crate::ir::BuiltinRuntimeTarget::PropertyExists,
-        crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PropertyExists,
     ),
     summary: "Checks whether an object or class has a property.",
     php_manual: "function.property-exists",

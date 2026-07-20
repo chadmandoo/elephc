@@ -14,9 +14,8 @@ builtin! {
     area: Types,
     params: [resource: Mixed],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetResourceType,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetResourceType,
     ),
     summary: "Returns the type of a resource.",
     php_manual: "function.get-resource-type",

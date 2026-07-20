@@ -13,7 +13,9 @@
 use std::fmt;
 
 use crate::errors::CompileError;
-use crate::ir::{BuiltinRuntimeTarget, Effects, Immediate, Op, RuntimeCallTarget, ValueId};
+use crate::ir::{
+    Effects, Immediate, Op, PhpTypePredicate, RuntimeCallTarget, RuntimeFnId, ValueId,
+};
 use crate::parser::ast::Expr;
 use crate::span::Span;
 use crate::types::PhpType;
@@ -110,7 +112,7 @@ pub enum BuiltinCallablePolicy {
     /// Direct, first-class, and runtime-known dynamic callable paths are supported.
     Dynamic(CallableSourceFn),
     /// Dynamic dispatch eligibility is defined by the typed builtin target descriptor.
-    DynamicTarget(BuiltinRuntimeTarget),
+    DynamicRuntime(RuntimeFnId),
     /// Direct and first-class calls work, but runtime-selected names are unsupported.
     StaticOnly(&'static str),
 }
@@ -133,6 +135,25 @@ pub enum BuiltinTargetStrategy {
 pub enum BuiltinTargetSupport {
     /// The semantic strategy is valid on macOS AArch64, Linux AArch64, and Linux x86_64.
     All,
+}
+
+/// Runtime functions that a backend-neutral lowering may emit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinRuntimeFunctions {
+    /// The lowering emits no `RuntimeFnId` operation.
+    None,
+    /// The lowering may emit one runtime function.
+    One(RuntimeFnId),
+}
+
+impl BuiltinRuntimeFunctions {
+    /// Returns whether this semantic descriptor may emit the requested runtime function.
+    pub fn contains(self, runtime_fn: RuntimeFnId) -> bool {
+        match self {
+            BuiltinRuntimeFunctions::None => false,
+            BuiltinRuntimeFunctions::One(candidate) => candidate == runtime_fn,
+        }
+    }
 }
 
 /// One value produced by backend-neutral builtin EIR lowering.
@@ -228,6 +249,8 @@ pub type BuiltinLowerFn = for<'a> fn(
 pub enum BuiltinLowering {
     /// Emit backend-neutral EIR through the registered semantic hook.
     Eir(BuiltinLowerFn),
+    /// Emit the reusable PHP runtime-type predicate EIR primitive.
+    TypePredicate(PhpTypePredicate),
     /// Emit one typed runtime operation using the call's normalized operands.
     Runtime(RuntimeCallTarget),
 }
@@ -249,6 +272,8 @@ pub struct BuiltinSemantics {
     pub target_strategy: BuiltinTargetStrategy,
     /// Explicit supported-target coverage contract.
     pub target_support: BuiltinTargetSupport,
+    /// Runtime functions the backend-neutral lowering may emit.
+    pub runtime_functions: BuiltinRuntimeFunctions,
     /// Callable availability contract.
     pub callable: BuiltinCallablePolicy,
     /// Backend-neutral lowering strategy.
@@ -292,33 +317,67 @@ pub const fn unary_string_runtime(
         requirements: BuiltinRequirements::Static(&[]),
         target_strategy: BuiltinTargetStrategy::RuntimeCall,
         target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::None,
         callable: BuiltinCallablePolicy::Dynamic(callable_accepts_string_source),
         lowering: BuiltinLowering::Runtime(target),
     }
 }
 
 /// Builds the complete shared descriptor for one typed builtin backend target.
-pub const fn runtime_target_semantics(
-    target: BuiltinRuntimeTarget,
-    strategy: BuiltinTargetStrategy,
-) -> BuiltinSemantics {
+pub const fn runtime_fn_semantics(target: RuntimeFnId) -> BuiltinSemantics {
     BuiltinSemantics {
         validation: BuiltinValidation::SignatureOnly,
         result_type: BuiltinResultType::Declared,
         effects: BuiltinEffects::Static(target.effects()),
         result_ownership: target.result_ownership(),
         requirements: BuiltinRequirements::Static(target.requirements()),
-        target_strategy: strategy,
+        target_strategy: BuiltinTargetStrategy::RuntimeCall,
         target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::One(target),
         callable: if target.runtime_callable_supported() {
-            BuiltinCallablePolicy::DynamicTarget(target)
+            BuiltinCallablePolicy::DynamicRuntime(target)
         } else {
             BuiltinCallablePolicy::StaticOnly(
                 "typed backend operation has no runtime-selected wrapper contract",
             )
         },
-        lowering: BuiltinLowering::Runtime(RuntimeCallTarget::Builtin(target)),
+        lowering: BuiltinLowering::Runtime(RuntimeCallTarget::Function(target)),
     }
+}
+
+/// Builds shared semantics for a PHP runtime-type predicate.
+pub const fn type_predicate_semantics(
+    predicate: PhpTypePredicate,
+    runtime_callable: bool,
+) -> BuiltinSemantics {
+    BuiltinSemantics {
+        validation: BuiltinValidation::SignatureOnly,
+        result_type: BuiltinResultType::Declared,
+        effects: BuiltinEffects::Shared(type_predicate_effects),
+        result_ownership: BuiltinResultOwnership::NonHeap,
+        requirements: BuiltinRequirements::Static(&[]),
+        target_strategy: BuiltinTargetStrategy::EirPrimitive,
+        target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::None,
+        callable: if runtime_callable {
+            BuiltinCallablePolicy::Dynamic(callable_accepts_any_source)
+        } else {
+            BuiltinCallablePolicy::StaticOnly(
+                "runtime-selected type predicate has no generic wrapper contract",
+            )
+        },
+        lowering: BuiltinLowering::TypePredicate(predicate),
+    }
+}
+
+/// Returns the conservative effect contract of a runtime type predicate.
+fn type_predicate_effects(_input: &BuiltinSemanticInput<'_>) -> Effects {
+    Op::TypePredicate.default_effects()
+}
+
+/// Accepts every source representation for a fully generic callable wrapper.
+fn callable_accepts_any_source(_source: Option<&PhpType>) -> bool {
+    true
 }
 
 /// Accepts runtime wrapper sources that already use concrete string storage.
@@ -366,6 +425,14 @@ pub fn lower_registry_call(
     };
     match def.spec.semantics.lowering {
         BuiltinLowering::Eir(lower) => lower(ctx, &normalized),
+        BuiltinLowering::TypePredicate(predicate) => Ok(ctx.emit_value(
+            Op::TypePredicate,
+            vec![normalized.operand(0)?],
+            Some(Immediate::TypePredicate(predicate)),
+            result_type.clone(),
+            Op::TypePredicate.default_effects(),
+            Some(span),
+        )),
         BuiltinLowering::Runtime(target) => Ok(ctx.emit_runtime_call(
             target,
             operands.to_vec(),
@@ -374,4 +441,43 @@ pub fn lower_registry_call(
             Some(span),
         )),
     }
+}
+
+/// Returns neutral semantics for registry plumbing probes compiled only in tests.
+#[cfg(test)]
+pub(crate) const fn test_probe_semantics() -> BuiltinSemantics {
+    BuiltinSemantics {
+        validation: BuiltinValidation::SignatureOnly,
+        result_type: BuiltinResultType::Declared,
+        effects: BuiltinEffects::Static(Effects::empty()),
+        result_ownership: BuiltinResultOwnership::MayAliasArguments,
+        requirements: BuiltinRequirements::Static(&[]),
+        target_strategy: BuiltinTargetStrategy::EirGraph,
+        target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::None,
+        callable: BuiltinCallablePolicy::StaticOnly("test-only registry probe"),
+        lowering: BuiltinLowering::Eir(lower_test_probe),
+    }
+}
+
+/// Returns test-only registry probe semantics with the requested ownership contract.
+#[cfg(test)]
+pub(crate) const fn test_probe_semantics_with_ownership(
+    result_ownership: BuiltinResultOwnership,
+) -> BuiltinSemantics {
+    let mut semantics = test_probe_semantics();
+    semantics.result_ownership = result_ownership;
+    semantics
+}
+
+/// Rejects accidental lowering of a registry plumbing probe.
+#[cfg(test)]
+fn lower_test_probe(
+    _ctx: &mut dyn BuiltinLoweringContext,
+    call: &NormalizedBuiltinCall<'_>,
+) -> Result<LoweredBuiltinValue, BuiltinLoweringError> {
+    Err(BuiltinLoweringError::new(format!(
+        "test-only builtin {} cannot be lowered",
+        call.name,
+    )))
 }

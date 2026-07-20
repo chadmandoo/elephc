@@ -18,9 +18,8 @@ builtin! {
     params: [address: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketServer,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketServer,
     ),
     summary: "Create an Internet or Unix domain server socket.",
     php_manual: "function.stream-socket-server",

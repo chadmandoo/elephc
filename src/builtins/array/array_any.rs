@@ -20,9 +20,8 @@ builtin! {
     params: [array: Mixed, callback: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayAny,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayAny,
     ),
     summary: "Returns true when at least one array element satisfies the predicate callback.",
     php_manual: "https://www.php.net/manual/en/function.array-any.php",

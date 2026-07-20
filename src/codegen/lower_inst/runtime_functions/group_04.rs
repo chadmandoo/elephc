@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 04, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::Ftruncate => Some({
+        RuntimeFnId::Ftruncate => Some({
             crate::codegen::lower_inst::builtins::io::lower_ftruncate(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fwrite => Some({
+        RuntimeFnId::Fwrite => Some({
             crate::codegen::lower_inst::builtins::io::lower_fwrite(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getcwd => Some({
+        RuntimeFnId::Getcwd => Some({
             crate::codegen::lower_inst::builtins::io::lower_getcwd(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Gethostbyaddr => Some({
+        RuntimeFnId::Gethostbyaddr => Some({
             crate::codegen::lower_inst::builtins::io::lower_gethostbyaddr(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Gethostbyname => Some({
+        RuntimeFnId::Gethostbyname => Some({
             crate::codegen::lower_inst::builtins::io::lower_gethostbyname(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Gethostname => Some({
+        RuntimeFnId::Gethostname => Some({
             crate::codegen::lower_inst::builtins::io::lower_gethostname(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getprotobyname => Some({
+        RuntimeFnId::Getprotobyname => Some({
             crate::codegen::lower_inst::builtins::io::lower_getprotobyname(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getprotobynumber => Some({
+        RuntimeFnId::Getprotobynumber => Some({
             crate::codegen::lower_inst::builtins::io::lower_getprotobynumber(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getservbyname => Some({
+        RuntimeFnId::Getservbyname => Some({
             crate::codegen::lower_inst::builtins::io::lower_getservbyname(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getservbyport => Some({
+        RuntimeFnId::Getservbyport => Some({
             crate::codegen::lower_inst::builtins::io::lower_getservbyport(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Glob => Some({
+        RuntimeFnId::Glob => Some({
             crate::codegen::lower_inst::builtins::io::lower_glob(ctx, inst)
         }),
-        BuiltinRuntimeTarget::HashFile => Some({
+        RuntimeFnId::HashFile => Some({
             crate::codegen::lower_inst::builtins::io::lower_hash_file(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsDir => Some({
+        RuntimeFnId::IsDir => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_dir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsExecutable => Some({
+        RuntimeFnId::IsExecutable => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_executable(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsFile => Some({
+        RuntimeFnId::IsFile => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_file(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsLink => Some({
+        RuntimeFnId::IsLink => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_link(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsReadable => Some({
+        RuntimeFnId::IsReadable => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_readable(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsWritable => Some({
+        RuntimeFnId::IsWritable => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_writable(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IsWriteable => Some({
+        RuntimeFnId::IsWriteable => Some({
             crate::codegen::lower_inst::builtins::io::lower_is_writeable(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Lchgrp => Some({
+        RuntimeFnId::Lchgrp => Some({
             crate::codegen::lower_inst::builtins::io::lower_lchgrp(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Lchown => Some({
+        RuntimeFnId::Lchown => Some({
             crate::codegen::lower_inst::builtins::io::lower_lchown(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Link => Some({
+        RuntimeFnId::Link => Some({
             crate::codegen::lower_inst::builtins::io::lower_link(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Linkinfo => Some({
+        RuntimeFnId::Linkinfo => Some({
             crate::codegen::lower_inst::builtins::io::lower_linkinfo(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Lstat => Some({
+        RuntimeFnId::Lstat => Some({
             crate::codegen::lower_inst::builtins::io::lower_lstat(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Mkdir => Some({
+        RuntimeFnId::Mkdir => Some({
             crate::codegen::lower_inst::builtins::io::lower_mkdir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObClean => Some({
+        RuntimeFnId::ObClean => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_clean(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObEndClean => Some({
+        RuntimeFnId::ObEndClean => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_end_clean(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObEndFlush => Some({
+        RuntimeFnId::ObEndFlush => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_end_flush(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObFlush => Some({
+        RuntimeFnId::ObFlush => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_flush(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetClean => Some({
+        RuntimeFnId::ObGetClean => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_clean(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetContents => Some({
+        RuntimeFnId::ObGetContents => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_contents(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetFlush => Some({
+        RuntimeFnId::ObGetFlush => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_flush(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetLength => Some({
+        RuntimeFnId::ObGetLength => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_length(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetLevel => Some({
+        RuntimeFnId::ObGetLevel => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_level(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObGetStatus => Some({
+        RuntimeFnId::ObGetStatus => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_get_status(ctx, inst)
         }),
         _ => None,

@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, data: Str],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fwrite,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fwrite,
     ),
     summary: "Binary-safe file write.",
     php_manual: "function.fwrite",

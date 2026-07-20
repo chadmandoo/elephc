@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [filename: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::FileExists,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::FileExists,
     ),
     summary: "Checks whether a file or directory exists.",
     php_manual: "function.file-exists",

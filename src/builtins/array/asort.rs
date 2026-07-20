@@ -20,9 +20,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Asort,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Asort,
     ),
     summary: "Sorts an array and maintains index association.",
     php_manual: "https://www.php.net/manual/en/function.asort.php",

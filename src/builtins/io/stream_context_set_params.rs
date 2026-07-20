@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [context: Mixed, params: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamContextSetParams,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamContextSetParams,
     ),
     summary: "Sets parameters on the specified context.",
     php_manual: "function.stream-context-set-params",

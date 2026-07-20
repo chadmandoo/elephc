@@ -14,9 +14,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObGetLevel,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObGetLevel,
     ),
     summary: "Returns the nesting level of the output buffering mechanism.",
     php_manual: "function.ob-get-level",

@@ -19,9 +19,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoloadFunctions,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoloadFunctions,
     ),
     summary: "Return all registered __autoload() functions.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-functions.php",

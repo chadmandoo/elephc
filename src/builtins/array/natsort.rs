@@ -20,9 +20,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Natsort,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Natsort,
     ),
     summary: "Sorts an array using a natural order algorithm.",
     php_manual: "https://www.php.net/manual/en/function.natsort.php",

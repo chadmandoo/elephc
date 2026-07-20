@@ -23,9 +23,8 @@ builtin! {
     params: [keys: Mixed, values: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayCombine,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayCombine,
     ),
     summary: "Creates an array by using one array for keys and another for values.",
     php_manual: "https://www.php.net/manual/en/function.array-combine.php",

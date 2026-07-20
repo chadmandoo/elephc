@@ -14,9 +14,8 @@ builtin! {
     area: Io,
     params: [stream: Mixed, size: Int],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSetReadBuffer,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSetReadBuffer,
     ),
     summary: "Sets the read file buffering on a stream.",
     php_manual: "function.stream-set-read-buffer",

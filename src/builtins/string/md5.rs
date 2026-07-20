@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [string: Str, binary: Bool = DefaultSpec::Bool(false)],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Md5,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Md5,
     ),
     summary: "Calculates the MD5 hash of a string.",
     php_manual: "https://www.php.net/manual/en/function.md5.php",

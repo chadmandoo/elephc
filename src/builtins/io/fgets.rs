@@ -19,9 +19,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fgets,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fgets,
     ),
     summary: "Gets line from file pointer.",
     php_manual: "function.fgets",

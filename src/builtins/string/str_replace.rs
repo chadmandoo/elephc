@@ -17,9 +17,8 @@ builtin! {
     params: [search: Str, replace: Str, subject: Str, count: Mixed = DefaultSpec::Null],
     max_args: 3,
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrReplace,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrReplace,
     ),
     summary: "Replaces all occurrences of a search string with a replacement string.",
     php_manual: "https://www.php.net/manual/en/function.str-replace.php",

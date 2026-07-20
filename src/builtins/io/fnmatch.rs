@@ -19,9 +19,8 @@ builtin! {
     params: [pattern: Str, filename: Str, flags: Int = DefaultSpec::Int(0)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fnmatch,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fnmatch,
     ),
     summary: "Matches a filename against a pattern.",
     php_manual: "function.fnmatch",

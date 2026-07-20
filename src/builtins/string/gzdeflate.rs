@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [data: Str, level: Int = DefaultSpec::Int(-1)],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gzdeflate,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gzdeflate,
     ),
     summary: "Deflate a string using the DEFLATE data format.",
     php_manual: "https://www.php.net/manual/en/function.gzdeflate.php",

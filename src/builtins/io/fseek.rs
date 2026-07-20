@@ -19,9 +19,8 @@ builtin! {
     params: [stream: Mixed, offset: Int, whence: Int = DefaultSpec::Int(0)],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fseek,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fseek,
     ),
     summary: "Seeks on a file pointer.",
     php_manual: "function.fseek",

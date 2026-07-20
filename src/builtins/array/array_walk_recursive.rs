@@ -21,9 +21,8 @@ builtin! {
     params: [ref array: Mixed, callback: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayWalkRecursive,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayWalkRecursive,
     ),
     summary: "Applies a user function recursively to every member of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-walk-recursive.php",

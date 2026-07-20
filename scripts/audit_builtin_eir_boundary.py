@@ -350,6 +350,7 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
             r"pub\s+lazy_check\s*:",
         ],
         "src/ir_lower/expr/mod.rs": [r"fn\s+builtin_return_type_override\s*\("],
+        "src/ir/runtime_call.rs": [r"enforced_arity_bounds\s*\(\s*target\.as_eir"],
     }
     for relative, patterns in required_absences.items():
         source = read(REPO / relative)
@@ -362,20 +363,30 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
             errors.append(f"{record['home_file']}: {record['name']} still has a legacy lower hook")
         if not record["targets"]["verified"]:
             errors.append(f"{record['name']}: supported-target implementation is not verified")
+        strategy = record["lowering"].get("target_strategy")
+        lowering_kind = record["lowering"].get("kind")
+        if strategy == "runtime_call" and lowering_kind != "runtime_call":
+            errors.append(
+                f"{record['name']}: runtime_call strategy does not use typed RuntimeCall lowering"
+            )
+        if strategy in {"eir_primitive", "eir_graph", "conditional"} and lowering_kind != "eir":
+            errors.append(
+                f"{record['name']}: {strategy} strategy does not use backend-neutral EIR lowering"
+            )
 
     for record in inventory["compiler_resident"]:
         if record["kind"] == "ordinary_builtin_legacy":
             errors.append(f"{record['name']}: ordinary builtin remains outside the registry")
 
-    target_source = read(REPO / "src" / "ir" / "builtin_runtime_target.rs")
+    target_source = read(REPO / "src" / "ir" / "runtime_fn.rs")
     builtin_target_variants = dict(
-        re.findall(r'BuiltinRuntimeTarget::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"', target_source)
+        re.findall(r'RuntimeFnId::([A-Za-z0-9_]+)\s*=>\s*"([^"]+)"', target_source)
     )
     builtin_variant_by_name = {name: variant for variant, name in builtin_target_variants.items()}
     builtin_backend_source = "\n".join(
         read(path)
         for path in sorted(
-            (REPO / "src" / "codegen" / "lower_inst" / "builtin_runtime_targets").glob("group_*.rs")
+            (REPO / "src" / "codegen" / "lower_inst" / "runtime_functions").glob("group_*.rs")
         )
     )
     unary_source = read(REPO / "src" / "ir" / "runtime_call.rs")
@@ -384,6 +395,19 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
     )
     unary_variant_by_name = {name: variant for variant, name in unary_variants.items()}
     unary_backend_source = read(REPO / "src" / "codegen" / "lower_inst" / "runtime_calls.rs")
+    builtin_semantics_source = "\n".join(
+        read(path) for path in sorted((REPO / "src" / "builtins").rglob("*.rs"))
+    )
+    referenced_runtime_variants = set(
+        re.findall(r"RuntimeFnId::([A-Za-z0-9_]+)", builtin_semantics_source)
+    )
+    for variant in sorted(set(builtin_target_variants) - referenced_runtime_variants):
+        errors.append(f"RuntimeFnId::{variant}: runtime function is not referenced by builtin semantics")
+    for variant in sorted(referenced_runtime_variants - set(builtin_target_variants)):
+        errors.append(f"RuntimeFnId::{variant}: builtin semantics reference an unknown runtime function")
+    for variant in sorted(referenced_runtime_variants):
+        if f"RuntimeFnId::{variant}" not in builtin_backend_source:
+            errors.append(f"RuntimeFnId::{variant}: runtime function has no backend implementation arm")
     for record in inventory["registry_builtins"]:
         lowering = record["lowering"]
         if lowering.get("kind") != "runtime_call":
@@ -391,7 +415,7 @@ def target_architecture_errors(inventory: dict[str, Any]) -> list[str]:
         target = lowering.get("target")
         if target in builtin_variant_by_name:
             variant = builtin_variant_by_name[target]
-            if f"BuiltinRuntimeTarget::{variant}" not in builtin_backend_source:
+            if f"RuntimeFnId::{variant}" not in builtin_backend_source:
                 errors.append(f"{record['name']}: typed target {target} has no backend arm")
         elif target in unary_variant_by_name:
             variant = unary_variant_by_name[target]

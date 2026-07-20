@@ -19,9 +19,8 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fileinode,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fileinode,
     ),
     summary: "Gets file inode.",
     php_manual: "function.fileinode",

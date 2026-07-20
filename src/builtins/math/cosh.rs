@@ -16,9 +16,8 @@ builtin! {
     area: Math,
     params: [num: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Cosh,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Cosh,
     ),
     summary: "Returns the hyperbolic cosine of a number.",
     php_manual: "https://www.php.net/manual/en/function.cosh.php",

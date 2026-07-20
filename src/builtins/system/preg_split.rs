@@ -22,9 +22,8 @@ builtin! {
     arity_error: "preg_split() takes between 2 and 4 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PregSplit,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PregSplit,
     ),
     summary: "Splits a string by a regular expression.",
 }

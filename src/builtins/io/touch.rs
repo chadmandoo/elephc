@@ -25,9 +25,8 @@ builtin! {
     arity_error: "touch() takes 1, 2, or 3 arguments",
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Touch,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Touch,
     ),
     summary: "Sets access and modification time of a file.",
     php_manual: "function.touch",

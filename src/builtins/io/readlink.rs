@@ -20,9 +20,8 @@ builtin! {
     params: [path: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Readlink,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Readlink,
     ),
     summary: "Returns the target of a symbolic link.",
     php_manual: "function.readlink",

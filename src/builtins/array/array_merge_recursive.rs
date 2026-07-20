@@ -28,9 +28,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayMergeRecursive,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayMergeRecursive,
     ),
     summary: "Recursively merges two arrays, combining scalar collisions into lists.",
     php_manual: "https://www.php.net/manual/en/function.array-merge-recursive.php",

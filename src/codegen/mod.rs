@@ -1551,9 +1551,9 @@ fn is_stream_registration_builtin(inst: &crate::ir::Instruction) -> bool {
 }
 
 /// Returns the typed builtin target carried by an EIR runtime call.
-fn typed_builtin_target(inst: &crate::ir::Instruction) -> Option<crate::ir::BuiltinRuntimeTarget> {
+fn typed_builtin_target(inst: &crate::ir::Instruction) -> Option<crate::ir::RuntimeFnId> {
     match inst.immediate {
-        Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::Builtin(target))) => Some(target),
+        Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::Function(target))) => Some(target),
         _ => None,
     }
 }

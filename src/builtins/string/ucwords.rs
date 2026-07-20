@@ -20,9 +20,8 @@ builtin! {
     params: [string: Str, separators: Str = crate::builtins::spec::DefaultSpec::Str(" \t\r\n\u{0c}\u{0b}")],
     max_args: 1,
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Ucwords,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Ucwords,
     ),
     summary: "Uppercases the first character of each word in a string.",
     php_manual: "https://www.php.net/manual/en/function.ucwords.php",

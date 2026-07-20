@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSupportsLock,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSupportsLock,
     ),
     summary: "Tells whether the stream supports locking.",
     php_manual: "function.stream-supports-lock",

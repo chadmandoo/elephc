@@ -5,7 +5,7 @@
 //! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
-//! - Pure-data builtin with no check hook; arity and arg inference are handled by the registry common path.
+//! - Uses the shared typed EIR predicate; dynamic values are inspected by target-aware codegen.
 
 
 builtin! {
@@ -13,9 +13,9 @@ builtin! {
     area: Types,
     params: [value: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsObject,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::type_predicate_semantics(
+        crate::ir::PhpTypePredicate::Object,
+        false,
     ),
     summary: "Checks whether a variable is an object.",
     php_manual: "function.is-object",

@@ -24,9 +24,8 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketAccept,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketAccept,
     ),
     summary: "Accept a connection on a socket created by stream_socket_server().",
     php_manual: "function.stream-socket-accept",

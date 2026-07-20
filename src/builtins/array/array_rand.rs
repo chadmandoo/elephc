@@ -18,9 +18,8 @@ builtin! {
     params: [array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayRand,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayRand,
     ),
     summary: "Pick one or more random keys out of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-rand.php",

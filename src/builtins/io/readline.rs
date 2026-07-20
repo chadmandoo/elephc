@@ -24,9 +24,8 @@ builtin! {
     arity_error: "readline() takes 0 or 1 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Readline,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Readline,
     ),
     summary: "Reads a line from the user's terminal.",
     php_manual: "function.readline",

@@ -14,9 +14,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: crate::builtins::callables::support::check_declared_names,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetDeclaredTraits,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetDeclaredTraits,
     ),
     summary: "Returns an array of all declared traits.",
     php_manual: "function.get-declared-traits",

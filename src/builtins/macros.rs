@@ -20,7 +20,7 @@
 //! Canonical field order:
 //!   name, area, params, variadic?, min_args?, max_args?, arity_error?, returns,
 //!   by_ref_return?, check?,
-//!   lazy_check?, semantics?, requirements?, summary, examples?, php_manual?,
+//!   lazy_check?, semantics, requirements?, summary, examples?, php_manual?,
 //!   deprecation?, extension?, internal?
 //!
 //! Example:
@@ -40,7 +40,7 @@
 ///
 /// Fields must appear in canonical order (optional fields may be omitted):
 /// `name`, `area`, `params`, `variadic`?, `min_args`?, `max_args`?, `arity_error`?,
-/// `returns`, `by_ref_return`?, `check`?, `lazy_check`?, `semantics`?, `requirements`?,
+/// `returns`, `by_ref_return`?, `check`?, `lazy_check`?, `semantics`, `requirements`?,
 /// `summary`, `examples`?,
 /// `php_manual`?, `deprecation`?, `extension`?, `internal`?
 ///
@@ -81,7 +81,7 @@ macro_rules! builtin {
         $(by_ref_return: $by_ref_return:expr,)?
         $(check: $check:expr,)?
         $(lazy_check: $lazy_check:expr,)?
-        $(semantics: $semantics:expr,)?
+        semantics: $semantics:expr,
         $(requirements: $requirements:expr,)?
         summary: $summary:expr,
         $(examples: $examples:expr,)?
@@ -108,7 +108,7 @@ macro_rules! builtin {
                 by_ref_return: builtin!(@opt_bool $($by_ref_return)?),
                 semantics: $crate::builtins::semantics::with_registry_requirement_resolver(
                     $crate::builtins::semantics::with_registry_checker_contract(
-                        builtin!(@opt_semantics $($semantics)?),
+                        $semantics,
                         builtin!(@opt_fn $($check)?),
                         builtin!(@opt_bool $($lazy_check)?),
                     ),
@@ -231,15 +231,6 @@ macro_rules! builtin {
     // Helper: optional source-dependent requirement resolver.
     (@opt_requirements_fn $val:expr) => { Some($val) };
     (@opt_requirements_fn) => { None };
-
-    // Helper: complete semantic descriptor, or a test-only neutral descriptor.
-    (@opt_semantics $val:expr) => { $val };
-    (@opt_semantics) => {
-        $crate::builtins::semantics::runtime_target_semantics(
-            $crate::ir::BuiltinRuntimeTarget::Settype,
-            $crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
-        )
-    };
 
     // Helper: optional examples slice — present yields the value, absent yields empty slice.
     (@opt_examples $val:expr) => { $val };

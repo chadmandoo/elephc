@@ -14,9 +14,8 @@ builtin! {
     area: Types,
     params: [num: Float],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsNan,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsNan,
     ),
     summary: "Checks whether a float is NAN.",
     php_manual: "function.is-nan",

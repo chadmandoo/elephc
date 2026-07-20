@@ -19,9 +19,8 @@ builtin! {
     params: [path: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Realpath,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Realpath,
     ),
     summary: "Returns canonicalized absolute pathname.",
     php_manual: "function.realpath",

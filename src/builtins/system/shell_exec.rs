@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [command: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ShellExec,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ShellExec,
     ),
     summary: "Executes a command via the shell and returns the complete output as a string.",
 }

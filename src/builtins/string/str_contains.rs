@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [haystack: Str, needle: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrContains,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrContains,
     ),
     summary: "Determines if a string contains a given substring.",
     php_manual: "https://www.php.net/manual/en/function.str-contains.php",

@@ -22,9 +22,8 @@ builtin! {
     params: [class_name: Str, attribute_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ClassAttributeArgs,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ClassAttributeArgs,
     ),
     summary: "Returns the constructor arguments of a named attribute applied to a class.",
     extension: true,

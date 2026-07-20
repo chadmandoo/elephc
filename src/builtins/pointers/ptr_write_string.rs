@@ -18,9 +18,8 @@ builtin! {
     params: [pointer: Mixed, string: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrWriteString,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrWriteString,
     ),
     summary: "Copies PHP string bytes into raw memory at the given pointer.",
     extension: true,

@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [path: Str, suffix: Str = DefaultSpec::Str("")],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Basename,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Basename,
     ),
     summary: "Returns the trailing name component of a path.",
     php_manual: "function.basename",

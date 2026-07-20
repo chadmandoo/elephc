@@ -21,9 +21,8 @@ builtin! {
     params: [class_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ClassAttributeNames,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ClassAttributeNames,
     ),
     summary: "Returns the list of attribute names applied to a class.",
     extension: true,

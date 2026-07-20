@@ -18,9 +18,8 @@ builtin! {
     params: [dir_handle: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Closedir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Closedir,
     ),
     summary: "Closes directory handle.",
     php_manual: "function.closedir",

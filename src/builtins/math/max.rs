@@ -22,9 +22,8 @@ builtin! {
     arity_error: "max() requires at least 2 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Max,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Max,
     ),
     summary: "Find highest value.",
     php_manual: "https://www.php.net/manual/en/function.max.php",

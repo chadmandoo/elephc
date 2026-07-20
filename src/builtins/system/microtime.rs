@@ -21,9 +21,8 @@ builtin! {
     arity_error: "microtime() takes 0 or 1 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Microtime,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Microtime,
     ),
     summary: "Returns the current Unix timestamp with microseconds.",
 }

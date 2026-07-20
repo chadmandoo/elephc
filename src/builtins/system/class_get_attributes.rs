@@ -22,9 +22,8 @@ builtin! {
     params: [class_name: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ClassGetAttributes,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ClassGetAttributes,
     ),
     summary: "Returns an array of ReflectionAttribute objects for all attributes of a class.",
     extension: true,

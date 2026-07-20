@@ -29,9 +29,8 @@ builtin! {
     arity_error: "tmpfile() takes no arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Tmpfile,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Tmpfile,
     ),
     summary: "Creates a temporary file.",
     php_manual: "function.tmpfile",

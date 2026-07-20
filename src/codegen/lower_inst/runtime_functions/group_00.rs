@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 00, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::ArrayAll => Some({
+        RuntimeFnId::ArrayAll => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_all(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayAny => Some({
+        RuntimeFnId::ArrayAny => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_any(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayChunk => Some({
+        RuntimeFnId::ArrayChunk => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_chunk(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayColumn => Some({
+        RuntimeFnId::ArrayColumn => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_column(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayCombine => Some({
+        RuntimeFnId::ArrayCombine => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_combine(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayDiff => Some({
+        RuntimeFnId::ArrayDiff => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_diff(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayDiffAssoc => Some({
+        RuntimeFnId::ArrayDiffAssoc => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_diff_assoc(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayDiffKey => Some({
+        RuntimeFnId::ArrayDiffKey => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_diff_key(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayFill => Some({
+        RuntimeFnId::ArrayFill => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_fill(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayFillKeys => Some({
+        RuntimeFnId::ArrayFillKeys => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_fill_keys(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayFilter => Some({
+        RuntimeFnId::ArrayFilter => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_filter(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayFind => Some({
+        RuntimeFnId::ArrayFind => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_find(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayFlip => Some({
+        RuntimeFnId::ArrayFlip => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_flip(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayIntersect => Some({
+        RuntimeFnId::ArrayIntersect => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_intersect(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayIntersectAssoc => Some({
+        RuntimeFnId::ArrayIntersectAssoc => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_intersect_assoc(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayIntersectKey => Some({
+        RuntimeFnId::ArrayIntersectKey => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_intersect_key(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayIsList => Some({
+        RuntimeFnId::ArrayIsList => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_is_list(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayKeyExists => Some({
+        RuntimeFnId::ArrayKeyExists => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_key_exists(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayKeyFirst => Some({
+        RuntimeFnId::ArrayKeyFirst => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_key_first(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayKeyLast => Some({
+        RuntimeFnId::ArrayKeyLast => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_key_last(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayKeys => Some({
+        RuntimeFnId::ArrayKeys => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_keys(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayMap => Some({
+        RuntimeFnId::ArrayMap => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_map(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayMerge => Some({
+        RuntimeFnId::ArrayMerge => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_merge(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayMergeRecursive => Some({
+        RuntimeFnId::ArrayMergeRecursive => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_merge_recursive(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayMultisort => Some({
+        RuntimeFnId::ArrayMultisort => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_multisort(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayPad => Some({
+        RuntimeFnId::ArrayPad => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_pad(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayPop => Some({
+        RuntimeFnId::ArrayPop => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_pop(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayProduct => Some({
+        RuntimeFnId::ArrayProduct => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_product(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayPush => Some({
+        RuntimeFnId::ArrayPush => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_push(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayRand => Some({
+        RuntimeFnId::ArrayRand => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_rand(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayReduce => Some({
+        RuntimeFnId::ArrayReduce => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_reduce(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayReplace => Some({
+        RuntimeFnId::ArrayReplace => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_replace(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayReplaceRecursive => Some({
+        RuntimeFnId::ArrayReplaceRecursive => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_replace_recursive(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArrayReverse => Some({
+        RuntimeFnId::ArrayReverse => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_reverse(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ArraySearch => Some({
+        RuntimeFnId::ArraySearch => Some({
             crate::codegen::lower_inst::builtins::arrays::lower_array_search(ctx, inst)
         }),
         _ => None,

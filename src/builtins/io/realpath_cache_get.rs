@@ -21,9 +21,8 @@ builtin! {
     arity_error: "realpath_cache_get() takes exactly 0 arguments",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::RealpathCacheGet,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::RealpathCacheGet,
     ),
     summary: "Returns realpath cache entries.",
     php_manual: "function.realpath-cache-get",

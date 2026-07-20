@@ -21,9 +21,8 @@ builtin! {
         thousands_separator: Str = DefaultSpec::Str(",")
     ],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::NumberFormat,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::NumberFormat,
     ),
     summary: "Formats a number with grouped thousands.",
     php_manual: "https://www.php.net/manual/en/function.number-format.php",

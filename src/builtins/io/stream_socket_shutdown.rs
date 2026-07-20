@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, mode: Int],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketShutdown,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketShutdown,
     ),
     summary: "Shutdown a full-duplex connection.",
     php_manual: "function.stream-socket-shutdown",

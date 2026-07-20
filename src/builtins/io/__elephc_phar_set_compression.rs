@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [filename: Str, compression: Int],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharSetCompression,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharSetCompression,
     ),
     summary: "Sets the compression algorithm for a PHAR archive.",
     internal: true,

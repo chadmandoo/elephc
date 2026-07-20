@@ -19,9 +19,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplClasses,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplClasses,
     ),
     summary: "Return available SPL classes.",
     php_manual: "https://www.php.net/manual/en/function.spl-classes.php",

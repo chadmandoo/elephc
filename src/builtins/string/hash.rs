@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [algo: Str, data: Str, binary: Bool = DefaultSpec::Bool(false)],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Hash,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Hash,
     ),
     summary: "Generates a hash value using the given algorithm.",
     php_manual: "https://www.php.net/manual/en/function.hash.php",

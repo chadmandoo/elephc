@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [pattern: Str, subject: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PregMatchAll,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PregMatchAll,
     ),
     summary: "Performs a global regular expression match and returns the number of matches.",
 }

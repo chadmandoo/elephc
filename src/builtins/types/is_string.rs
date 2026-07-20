@@ -5,16 +5,16 @@
 //! - Checker, EIR, optimizer, ownership, and callable consumers through `crate::builtins::registry`.
 //!
 //! Key details:
-//! - Pure-data builtin with no check hook; arity and arg inference are handled by the registry common path.
+//! - Uses the shared typed EIR predicate; dynamic values are inspected by target-aware codegen.
 
 builtin! {
     name: "is_string",
     area: Types,
     params: [value: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsString,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::type_predicate_semantics(
+        crate::ir::PhpTypePredicate::String,
+        false,
     ),
     summary: "Checks whether a variable is a string.",
     php_manual: "function.is-string",

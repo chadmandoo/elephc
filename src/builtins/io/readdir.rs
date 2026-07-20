@@ -20,9 +20,8 @@ builtin! {
     params: [dir_handle: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Readdir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Readdir,
     ),
     summary: "Read entry from directory handle.",
     php_manual: "function.readdir",

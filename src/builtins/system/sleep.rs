@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [seconds: Int],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Sleep,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Sleep,
     ),
     summary: "Delays execution for a number of seconds.",
 }

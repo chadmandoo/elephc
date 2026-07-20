@@ -22,9 +22,8 @@ builtin! {
     params: [array: Mixed, length: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayChunk,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayChunk,
     ),
     summary: "Splits an array into chunks of the given size.",
     php_manual: "https://www.php.net/manual/en/function.array-chunk.php",

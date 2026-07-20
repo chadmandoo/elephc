@@ -19,9 +19,8 @@ builtin! {
     returns: Mixed,
     check: crate::builtins::callables::support::check_class_relation,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ClassImplements,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ClassImplements,
     ),
     summary: "Returns the interfaces which are implemented by the given class or its parents.",
     php_manual: "function.class-implements",

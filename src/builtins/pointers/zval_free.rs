@@ -17,9 +17,8 @@ builtin! {
     params: [zval: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ZvalFree,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ZvalFree,
     ),
     summary: "Frees a PHP zval pointer allocated by `zval_pack`.",
     extension: true,

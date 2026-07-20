@@ -23,9 +23,8 @@ builtin! {
     params: [buffer: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::BufferFree,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::BufferFree,
     ),
     summary: "Frees a buffer<T> and nulls the local variable that held it.",
     extension: true,

@@ -21,9 +21,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayPop,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayPop,
     ),
     summary: "Pops the element off the end of array.",
     php_manual: "https://www.php.net/manual/en/function.array-pop.php",

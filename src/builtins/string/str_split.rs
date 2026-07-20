@@ -26,9 +26,8 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrSplit,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrSplit,
     ),
     summary: "Converts a string into an array of chunks of the given length.",
     php_manual: "https://www.php.net/manual/en/function.str-split.php",

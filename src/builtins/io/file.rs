@@ -19,9 +19,8 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::File,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::File,
     ),
     summary: "Reads an entire file into an array.",
     php_manual: "function.file",

@@ -21,9 +21,8 @@ builtin! {
         value: Mixed = DefaultSpec::Null
     ],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamContextSetOption,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamContextSetOption,
     ),
     summary: "Sets an option on the specified context.",
     php_manual: "function.stream-context-set-option",

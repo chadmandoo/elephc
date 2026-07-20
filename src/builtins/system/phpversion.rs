@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Phpversion,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Phpversion,
     ),
     summary: "Returns the current PHP / elephc compiler version string.",
 }

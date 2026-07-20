@@ -17,9 +17,8 @@ builtin! {
     params: [pointer: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrGet,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrGet,
     ),
     summary: "Reads one machine word through a raw pointer and returns it as an integer.",
     extension: true,

@@ -25,9 +25,8 @@ builtin! {
     params: [filename: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::FileGetContents,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::FileGetContents,
     ),
     requirements: crate::builtins::semantics::file_get_contents_requirements,
     summary: "Reads an entire file into a string.",

@@ -20,9 +20,8 @@ builtin! {
     variadic: "vars",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Sscanf,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Sscanf,
     ),
     summary: "Parses a string according to a format.",
     php_manual: "https://www.php.net/manual/en/function.sscanf.php",

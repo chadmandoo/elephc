@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::JsonLastErrorMsg,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::JsonLastErrorMsg,
     ),
     summary: "Returns the error string of the last json_encode() or json_decode() call.",
 }

@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [assignment: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Putenv,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Putenv,
     ),
     summary: "Sets an environment variable.",
 }

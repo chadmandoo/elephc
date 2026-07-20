@@ -20,9 +20,8 @@ builtin! {
     params: [buffer: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::BufferLen,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::BufferLen,
     ),
     summary: "Returns the logical element count of a buffer<T>.",
     extension: true,

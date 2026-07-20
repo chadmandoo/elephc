@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, seconds: Int, microseconds: Int = DefaultSpec::Int(0)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSetTimeout,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSetTimeout,
     ),
     summary: "Sets timeout period on a stream.",
     php_manual: "function.stream-set-timeout",

@@ -18,9 +18,8 @@ builtin! {
     params: [ip: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gethostbyaddr,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gethostbyaddr,
     ),
     summary: "Gets the Internet host name corresponding to a given IP address.",
     php_manual: "function.gethostbyaddr",

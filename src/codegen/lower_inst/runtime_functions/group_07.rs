@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 07, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::Touch => Some({
+        RuntimeFnId::Touch => Some({
             crate::codegen::lower_inst::builtins::io::lower_touch(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Umask => Some({
+        RuntimeFnId::Umask => Some({
             crate::codegen::lower_inst::builtins::io::lower_umask(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Unlink => Some({
+        RuntimeFnId::Unlink => Some({
             crate::codegen::lower_inst::builtins::io::lower_unlink(ctx, inst)
         }),
-        BuiltinRuntimeTarget::VarDump => Some({
+        RuntimeFnId::VarDump => Some({
             crate::codegen::lower_inst::builtins::debug::lower_var_dump(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Vfprintf => Some({
+        RuntimeFnId::Vfprintf => Some({
             crate::codegen::lower_inst::builtins::io::lower_vfprintf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Abs => Some({
+        RuntimeFnId::Abs => Some({
             crate::codegen::lower_inst::builtins::math::lower_abs(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Acos => Some({
+        RuntimeFnId::Acos => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "acos")
         }),
-        BuiltinRuntimeTarget::Asin => Some({
+        RuntimeFnId::Asin => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "asin")
         }),
-        BuiltinRuntimeTarget::Atan => Some({
+        RuntimeFnId::Atan => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "atan")
         }),
-        BuiltinRuntimeTarget::Atan2 => Some({
+        RuntimeFnId::Atan2 => Some({
             crate::codegen::lower_inst::builtins::math::lower_atan2(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Ceil => Some({
+        RuntimeFnId::Ceil => Some({
             crate::codegen::lower_inst::builtins::math::lower_ceil(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Clamp => Some({
+        RuntimeFnId::Clamp => Some({
             crate::codegen::lower_inst::builtins::math::lower_clamp(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Cos => Some({
+        RuntimeFnId::Cos => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "cos")
         }),
-        BuiltinRuntimeTarget::Cosh => Some({
+        RuntimeFnId::Cosh => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "cosh")
         }),
-        BuiltinRuntimeTarget::Deg2rad => Some({
+        RuntimeFnId::Deg2rad => Some({
             crate::codegen::lower_inst::builtins::math::lower_deg2rad(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Exp => Some({
+        RuntimeFnId::Exp => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "exp")
         }),
-        BuiltinRuntimeTarget::Fdiv => Some({
+        RuntimeFnId::Fdiv => Some({
             crate::codegen::lower_inst::builtins::math::lower_fdiv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Floor => Some({
+        RuntimeFnId::Floor => Some({
             crate::codegen::lower_inst::builtins::math::lower_floor(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Fmod => Some({
+        RuntimeFnId::Fmod => Some({
             crate::codegen::lower_inst::builtins::math::lower_fmod(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Hypot => Some({
+        RuntimeFnId::Hypot => Some({
             crate::codegen::lower_inst::builtins::math::lower_hypot(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Intdiv => Some({
+        RuntimeFnId::Intdiv => Some({
             crate::codegen::lower_inst::builtins::math::lower_intdiv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Log => Some({
+        RuntimeFnId::Log => Some({
             crate::codegen::lower_inst::builtins::math::lower_log(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Log10 => Some({
+        RuntimeFnId::Log10 => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "log10")
         }),
-        BuiltinRuntimeTarget::Log2 => Some({
+        RuntimeFnId::Log2 => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "log2")
         }),
-        BuiltinRuntimeTarget::Max => Some({
+        RuntimeFnId::Max => Some({
             crate::codegen::lower_inst::builtins::math::lower_min_max(ctx, inst, true)
         }),
-        BuiltinRuntimeTarget::Min => Some({
+        RuntimeFnId::Min => Some({
             crate::codegen::lower_inst::builtins::math::lower_min_max(ctx, inst, false)
         }),
-        BuiltinRuntimeTarget::MtRand => Some({
+        RuntimeFnId::MtRand => Some({
             crate::codegen::lower_inst::builtins::math::lower_rand(ctx, inst, "mt_rand")
         }),
-        BuiltinRuntimeTarget::Pi => Some({
+        RuntimeFnId::Pi => Some({
             crate::codegen::lower_inst::builtins::math::lower_pi(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Pow => Some({
+        RuntimeFnId::Pow => Some({
             crate::codegen::lower_inst::builtins::math::lower_pow(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rad2deg => Some({
+        RuntimeFnId::Rad2deg => Some({
             crate::codegen::lower_inst::builtins::math::lower_rad2deg(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rand => Some({
+        RuntimeFnId::Rand => Some({
             crate::codegen::lower_inst::builtins::math::lower_rand(ctx, inst, "rand")
         }),
-        BuiltinRuntimeTarget::RandomInt => Some({
+        RuntimeFnId::RandomInt => Some({
             crate::codegen::lower_inst::builtins::math::lower_random_int(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Round => Some({
+        RuntimeFnId::Round => Some({
             crate::codegen::lower_inst::builtins::math::lower_round(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Sin => Some({
+        RuntimeFnId::Sin => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "sin")
         }),
-        BuiltinRuntimeTarget::Sinh => Some({
+        RuntimeFnId::Sinh => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "sinh")
         }),
         _ => None,

@@ -20,9 +20,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Shuffle,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Shuffle,
     ),
     summary: "Shuffles an array into random order.",
     php_manual: "https://www.php.net/manual/en/function.shuffle.php",

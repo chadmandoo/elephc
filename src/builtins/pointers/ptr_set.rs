@@ -17,9 +17,8 @@ builtin! {
     params: [pointer: Mixed, value: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrSet,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrSet,
     ),
     summary: "Writes one machine word through a raw pointer.",
     extension: true,

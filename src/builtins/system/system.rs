@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [command: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::System,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::System,
     ),
     summary: "Executes an external program and displays the output.",
 }

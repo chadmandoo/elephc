@@ -18,9 +18,8 @@ builtin! {
     params: [service: Str, protocol: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Getservbyname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Getservbyname,
     ),
     summary: "Gets port number associated with an Internet service and protocol.",
     php_manual: "function.getservbyname",

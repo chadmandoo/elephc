@@ -22,9 +22,8 @@ builtin! {
     params: [array1: Mixed, array2: Mixed, callback: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayUdiff,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayUdiff,
     ),
     summary: "Computes the difference of arrays using a callback comparator.",
     php_manual: "https://www.php.net/manual/en/function.array-udiff.php",

@@ -20,9 +20,8 @@ builtin! {
         prepend: Bool = DefaultSpec::Bool(false),
     ],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoloadRegister,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoloadRegister,
     ),
     summary: "Register given function as __autoload() implementation.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-register.php",

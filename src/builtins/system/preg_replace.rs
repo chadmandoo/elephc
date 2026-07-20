@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [pattern: Str, replacement: Str, subject: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PregReplace,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PregReplace,
     ),
     summary: "Performs a regular expression search and replace.",
 }

@@ -20,9 +20,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashAlgos,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashAlgos,
     ),
     summary: "Returns an array of supported hashing algorithm names.",
     php_manual: "https://www.php.net/manual/en/function.hash-algos.php",

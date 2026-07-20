@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [filename: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsReadable,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsReadable,
     ),
     summary: "Tells whether the filename is readable.",
     php_manual: "function.is-readable",

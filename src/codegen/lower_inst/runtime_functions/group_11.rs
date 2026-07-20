@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 11, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::ClassAttributeNames => Some({
+        RuntimeFnId::ClassAttributeNames => Some({
             crate::codegen::lower_inst::builtins::attributes::lower_class_attribute_names(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ClassGetAttributes => Some({
+        RuntimeFnId::ClassGetAttributes => Some({
             crate::codegen::lower_inst::builtins::attributes::lower_class_get_attributes(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Date => Some({
+        RuntimeFnId::Date => Some({
             crate::codegen::lower_inst::builtins::system::lower_date(ctx, inst)
         }),
-        BuiltinRuntimeTarget::DateDefaultTimezoneGet => Some({
+        RuntimeFnId::DateDefaultTimezoneGet => Some({
             crate::codegen::lower_inst::builtins::system::lower_date_default_timezone_get(ctx, inst)
         }),
-        BuiltinRuntimeTarget::DateDefaultTimezoneSet => Some({
+        RuntimeFnId::DateDefaultTimezoneSet => Some({
             crate::codegen::lower_inst::builtins::system::lower_date_default_timezone_set(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Define => Some({
+        RuntimeFnId::Define => Some({
             crate::codegen::lower_inst::builtins::lower_define(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Defined => Some({
+        RuntimeFnId::Defined => Some({
             crate::codegen::lower_inst::builtins::lower_defined(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Exec => Some({
+        RuntimeFnId::Exec => Some({
             crate::codegen::lower_inst::builtins::system::lower_exec(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getdate => Some({
+        RuntimeFnId::Getdate => Some({
             crate::codegen::lower_inst::builtins::system::lower_getdate(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Getenv => Some({
+        RuntimeFnId::Getenv => Some({
             crate::codegen::lower_inst::builtins::system::lower_getenv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Gmdate => Some({
+        RuntimeFnId::Gmdate => Some({
             crate::codegen::lower_inst::builtins::system::lower_gmdate(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Gmmktime => Some({
+        RuntimeFnId::Gmmktime => Some({
             crate::codegen::lower_inst::builtins::system::lower_gmmktime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Header => Some({
+        RuntimeFnId::Header => Some({
             crate::codegen::lower_inst::builtins::system::lower_header(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Hrtime => Some({
+        RuntimeFnId::Hrtime => Some({
             crate::codegen::lower_inst::builtins::system::lower_hrtime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::HttpResponseCode => Some({
+        RuntimeFnId::HttpResponseCode => Some({
             crate::codegen::lower_inst::builtins::system::lower_http_response_code(ctx, inst)
         }),
-        BuiltinRuntimeTarget::JsonDecode => Some({
+        RuntimeFnId::JsonDecode => Some({
             crate::codegen::lower_inst::builtins::json::lower_json_decode(ctx, inst)
         }),
-        BuiltinRuntimeTarget::JsonEncode => Some({
+        RuntimeFnId::JsonEncode => Some({
             crate::codegen::lower_inst::builtins::json::lower_json_encode(ctx, inst)
         }),
-        BuiltinRuntimeTarget::JsonLastError => Some({
+        RuntimeFnId::JsonLastError => Some({
             crate::codegen::lower_inst::builtins::json::lower_json_last_error(ctx, inst)
         }),
-        BuiltinRuntimeTarget::JsonLastErrorMsg => Some({
+        RuntimeFnId::JsonLastErrorMsg => Some({
             crate::codegen::lower_inst::builtins::json::lower_json_last_error_msg(ctx, inst)
         }),
-        BuiltinRuntimeTarget::JsonValidate => Some({
+        RuntimeFnId::JsonValidate => Some({
             crate::codegen::lower_inst::builtins::json::lower_json_validate(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Localtime => Some({
+        RuntimeFnId::Localtime => Some({
             crate::codegen::lower_inst::builtins::system::lower_localtime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Microtime => Some({
+        RuntimeFnId::Microtime => Some({
             crate::codegen::lower_inst::builtins::system::lower_microtime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Mktime => Some({
+        RuntimeFnId::Mktime => Some({
             crate::codegen::lower_inst::builtins::system::lower_mktime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Passthru => Some({
+        RuntimeFnId::Passthru => Some({
             crate::codegen::lower_inst::builtins::system::lower_passthru(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PhpUname => Some({
+        RuntimeFnId::PhpUname => Some({
             crate::codegen::lower_inst::builtins::system::lower_php_uname(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Phpversion => Some({
+        RuntimeFnId::Phpversion => Some({
             crate::codegen::lower_inst::builtins::lower_phpversion(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PregMatch => Some({
+        RuntimeFnId::PregMatch => Some({
             crate::codegen::lower_inst::builtins::regex::lower_preg_match(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PregMatchAll => Some({
+        RuntimeFnId::PregMatchAll => Some({
             crate::codegen::lower_inst::builtins::regex::lower_preg_match_all(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PregReplace => Some({
+        RuntimeFnId::PregReplace => Some({
             crate::codegen::lower_inst::builtins::regex::lower_preg_replace(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PregSplit => Some({
+        RuntimeFnId::PregSplit => Some({
             crate::codegen::lower_inst::builtins::regex::lower_preg_split(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Putenv => Some({
+        RuntimeFnId::Putenv => Some({
             crate::codegen::lower_inst::builtins::system::lower_putenv(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Serialize => Some({
+        RuntimeFnId::Serialize => Some({
             crate::codegen::lower_inst::builtins::serialize::lower_serialize(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ShellExec => Some({
+        RuntimeFnId::ShellExec => Some({
             crate::codegen::lower_inst::builtins::system::lower_shell_exec(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Sleep => Some({
+        RuntimeFnId::Sleep => Some({
             crate::codegen::lower_inst::builtins::system::lower_sleep(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Strtotime => Some({
+        RuntimeFnId::Strtotime => Some({
             crate::codegen::lower_inst::builtins::system::lower_strtotime(ctx, inst)
         }),
         _ => None,

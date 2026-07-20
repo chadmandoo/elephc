@@ -12,9 +12,8 @@ builtin! {
     area: Callables,
     params: [object_or_class: Mixed, method: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-        crate::ir::BuiltinRuntimeTarget::MethodExists,
-        crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::MethodExists,
     ),
     summary: "Checks whether a class method exists.",
     php_manual: "function.method-exists",

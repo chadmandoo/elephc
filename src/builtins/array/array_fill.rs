@@ -19,9 +19,8 @@ builtin! {
     params: [start_index: Mixed, count: Mixed, value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayFill,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayFill,
     ),
     summary: "Fill an array with values.",
     php_manual: "https://www.php.net/manual/en/function.array-fill.php",

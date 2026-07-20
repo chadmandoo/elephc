@@ -16,9 +16,8 @@ builtin! {
     area: Callables,
     params: [object_or_class: Mixed = DefaultSpec::Null],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetParentClass,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetParentClass,
     ),
     summary: "Returns the name of the parent class of an object or class.",
     php_manual: "function.get-parent-class",

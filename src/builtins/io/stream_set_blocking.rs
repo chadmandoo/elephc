@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, enable: Bool],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSetBlocking,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSetBlocking,
     ),
     summary: "Sets blocking/non-blocking mode on a stream.",
     php_manual: "function.stream-set-blocking",

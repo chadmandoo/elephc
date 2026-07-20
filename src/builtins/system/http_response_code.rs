@@ -18,9 +18,8 @@ builtin! {
     params: [response_code: Int = DefaultSpec::Int(0)],
     arity_error: "http_response_code() takes 0 or 1 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HttpResponseCode,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HttpResponseCode,
     ),
     summary: "Gets or sets the HTTP response code.",
 }

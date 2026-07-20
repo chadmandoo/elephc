@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fdatasync,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fdatasync,
     ),
     summary: "Synchronizes data (but not meta-data) to file.",
     php_manual: "function.fdatasync",

@@ -35,7 +35,7 @@ use super::{CodegenIrError, Result};
 mod arithmetic;
 mod arrays;
 mod buffers;
-mod builtin_runtime_targets;
+mod runtime_functions;
 pub(crate) mod builtins;
 mod callables;
 mod comparisons;
@@ -121,6 +121,7 @@ pub(super) fn lower_instruction(ctx: &mut FunctionContext<'_>, inst_id: InstId) 
         Op::LooseNotEq => comparisons::lower_loose_eq(ctx, &inst, false),
         Op::IsNull => predicates::lower_is_null(ctx, &inst),
         Op::IsTruthy => predicates::lower_is_truthy(ctx, &inst),
+        Op::TypePredicate => builtins::lower_type_predicate(ctx, &inst),
         Op::IToF => floats::lower_int_to_float(ctx, &inst),
         Op::FToI => floats::lower_float_to_int(ctx, &inst),
         Op::IToStr => strings::lower_int_like_to_string(ctx, &inst),
@@ -1552,7 +1553,7 @@ fn emit_runtime_callable_invoker_inline(
     label
 }
 
-/// Emits a legacy builtin wrapper inline so EIR descriptors can point at PHP-ABI code.
+/// Emits a synthetic EIR builtin wrapper so callable descriptors can use the PHP ABI.
 pub(super) fn emit_runtime_builtin_wrapper_inline(
     ctx: &mut FunctionContext<'_>,
     name: &str,

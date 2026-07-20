@@ -26,9 +26,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayDiffAssoc,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayDiffAssoc,
     ),
     summary: "Computes the difference of arrays with additional index check.",
     php_manual: "https://www.php.net/manual/en/function.array-diff-assoc.php",

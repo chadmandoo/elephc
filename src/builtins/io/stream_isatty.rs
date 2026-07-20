@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamIsatty,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamIsatty,
     ),
     summary: "Checks if a stream is a TTY.",
     php_manual: "function.stream-isatty",

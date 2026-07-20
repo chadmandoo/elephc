@@ -11,9 +11,9 @@
 
 use crate::builtins::semantics::{
     BuiltinCallablePolicy, BuiltinEffects, BuiltinLowering, BuiltinLoweringContext,
-    BuiltinResultOwnership, BuiltinResultType, BuiltinSemanticInput, BuiltinSemantics,
-    BuiltinRequirements, BuiltinTargetStrategy, BuiltinTargetSupport, BuiltinValidation,
-    LoweredBuiltinValue, NormalizedBuiltinCall,
+    BuiltinResultOwnership, BuiltinResultType, BuiltinRuntimeFunctions, BuiltinSemanticInput,
+    BuiltinSemantics, BuiltinRequirements, BuiltinTargetStrategy, BuiltinTargetSupport,
+    BuiltinValidation, LoweredBuiltinValue, NormalizedBuiltinCall,
 };
 use crate::errors::CompileError;
 use crate::ir::{Immediate, IrType, Op};
@@ -32,6 +32,7 @@ builtin! {
         requirements: BuiltinRequirements::Static(&[]),
         target_strategy: BuiltinTargetStrategy::EirGraph,
         target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::None,
         callable: BuiltinCallablePolicy::Dynamic(
             crate::builtins::semantics::callable_accepts_strlen_source,
         ),

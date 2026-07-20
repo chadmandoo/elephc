@@ -19,9 +19,8 @@ builtin! {
     params: [value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Ptr,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Ptr,
     ),
     summary: "Returns a raw pointer to the given variable.",
     extension: true,

@@ -23,9 +23,8 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketSendto,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketSendto,
     ),
     summary: "Sends a message to a socket, whether it is connected or not.",
     php_manual: "function.stream-socket-sendto",

@@ -23,9 +23,8 @@ builtin! {
     ],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fputcsv,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fputcsv,
     ),
     summary: "Format line as CSV and write to file pointer.",
     php_manual: "function.fputcsv",

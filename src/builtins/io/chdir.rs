@@ -18,9 +18,8 @@ builtin! {
     area: Io,
     params: [directory: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Chdir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Chdir,
     ),
     summary: "Changes the current directory.",
     php_manual: "function.chdir",

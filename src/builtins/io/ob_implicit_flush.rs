@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [enable: Bool = DefaultSpec::Bool(true)],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObImplicitFlush,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObImplicitFlush,
     ),
     summary: "Turns implicit flush on/off.",
     php_manual: "function.ob-implicit-flush",

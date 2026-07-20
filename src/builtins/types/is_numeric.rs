@@ -13,9 +13,8 @@ builtin! {
     area: Types,
     params: [value: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsNumeric,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsNumeric,
     ),
     summary: "Checks whether a variable is a number or a numeric string.",
     php_manual: "function.is-numeric",

@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fpassthru,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fpassthru,
     ),
     summary: "Output all remaining data on a file pointer.",
     php_manual: "function.fpassthru",

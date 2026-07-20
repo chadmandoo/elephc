@@ -13,9 +13,8 @@ builtin! {
     area: String,
     params: [context: Mixed],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashCopy,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashCopy,
     ),
     summary: "Copies the state of an incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-copy.php",

@@ -17,9 +17,8 @@ builtin! {
     area: Callables,
     params: [object_or_class: Mixed, class: Str, allow_string: Bool = DefaultSpec::Bool(false)],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsA,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsA,
     ),
     summary: "Checks whether an object is of a given type or has it as one of its parents.",
     php_manual: "function.is-a",

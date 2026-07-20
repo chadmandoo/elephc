@@ -20,9 +20,8 @@ builtin! {
     min_args: 0,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Rand,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Rand,
     ),
     summary: "Generate a random integer.",
     php_manual: "https://www.php.net/manual/en/function.rand.php",

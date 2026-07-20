@@ -16,9 +16,8 @@ builtin! {
     area: System,
     params: [hour: Int, minute: Int, second: Int, month: Int, day: Int, year: Int],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcGmmktimeRaw,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcGmmktimeRaw,
     ),
     summary: "Internal raw gmmktime alias used by the synthetic DateTime body.",
     internal: true,

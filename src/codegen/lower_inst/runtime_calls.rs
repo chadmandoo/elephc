@@ -25,7 +25,7 @@ pub(super) fn lower(
 ) -> Result<()> {
     match target {
         RuntimeCallTarget::UnaryString(runtime) => lower_unary_string(ctx, inst, runtime),
-        RuntimeCallTarget::Builtin(target) => super::builtin_runtime_targets::lower(ctx, inst, target),
+        RuntimeCallTarget::Function(target) => super::runtime_functions::lower(ctx, inst, target),
     }
 }
 

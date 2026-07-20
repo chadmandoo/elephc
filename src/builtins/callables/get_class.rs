@@ -16,9 +16,8 @@ builtin! {
     area: Callables,
     params: [object: Mixed = DefaultSpec::Null],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetClass,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetClass,
     ),
     summary: "Returns the name of the class of an object.",
     php_manual: "function.get-class",

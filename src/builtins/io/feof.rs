@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Feof,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Feof,
     ),
     summary: "Tests for end-of-file on a file pointer.",
     php_manual: "function.feof",

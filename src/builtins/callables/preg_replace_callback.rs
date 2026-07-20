@@ -23,9 +23,8 @@ builtin! {
     returns: Str,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PregReplaceCallback,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PregReplaceCallback,
     ),
     summary: "Performs a regular expression search and replace using a callback.",
     php_manual: "function.preg-replace-callback",

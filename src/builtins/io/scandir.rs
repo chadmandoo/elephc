@@ -19,9 +19,8 @@ builtin! {
     params: [directory: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Scandir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Scandir,
     ),
     summary: "Lists files and directories inside the specified path.",
     php_manual: "function.scandir",

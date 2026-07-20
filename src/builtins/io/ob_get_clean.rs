@@ -20,9 +20,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObGetClean,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObGetClean,
     ),
     summary: "Gets the current buffer contents and deletes the current output buffer.",
     php_manual: "function.ob-get-clean",

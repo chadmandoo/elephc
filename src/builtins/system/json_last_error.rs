@@ -16,9 +16,8 @@ builtin! {
     area: System,
     params: [],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::JsonLastError,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::JsonLastError,
     ),
     summary: "Returns the last error (if any) occurred during the last JSON encoding/decoding.",
 }

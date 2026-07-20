@@ -15,9 +15,8 @@ builtin! {
     area: Math,
     params: [],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Pi,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Pi,
     ),
     summary: "Gets value of pi.",
     php_manual: "https://www.php.net/manual/en/function.pi.php",

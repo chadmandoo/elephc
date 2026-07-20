@@ -23,9 +23,8 @@ builtin! {
     params: [ref array: Mixed, callback: Mixed],
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Uksort,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Uksort,
     ),
     summary: "Sorts an array by keys using a user-defined comparison function.",
     php_manual: "https://www.php.net/manual/en/function.uksort.php",

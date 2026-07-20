@@ -18,9 +18,8 @@ builtin! {
     area: Io,
     params: [directory: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Mkdir,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Mkdir,
     ),
     summary: "Makes a directory.",
     php_manual: "function.mkdir",

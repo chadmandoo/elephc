@@ -19,9 +19,8 @@ builtin! {
     params: [constant_name: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Defined,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Defined,
     ),
     summary: "Checks whether the given named constant exists.",
 }

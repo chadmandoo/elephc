@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [src: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharGzipArchive,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharGzipArchive,
     ),
     summary: "Compresses a PHAR archive using gzip.",
     internal: true,

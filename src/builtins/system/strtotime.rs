@@ -18,9 +18,8 @@ builtin! {
     params: [datetime: Str, baseTimestamp: Int = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strtotime,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strtotime,
     ),
     summary: "Parses an English textual datetime description into a Unix timestamp.",
 }

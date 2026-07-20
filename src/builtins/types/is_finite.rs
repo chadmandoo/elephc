@@ -14,9 +14,8 @@ builtin! {
     area: Types,
     params: [num: Float],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IsFinite,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IsFinite,
     ),
     summary: "Checks whether a float is finite.",
     php_manual: "function.is-finite",

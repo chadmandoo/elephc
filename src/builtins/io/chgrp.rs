@@ -18,9 +18,8 @@ builtin! {
     params: [filename: Str, group: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Chgrp,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Chgrp,
     ),
     summary: "Changes file group.",
     php_manual: "function.chgrp",

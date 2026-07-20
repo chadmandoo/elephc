@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [month: Int, day: Int, year: Int],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Checkdate,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Checkdate,
     ),
     summary: "Validates a Gregorian date.",
 }

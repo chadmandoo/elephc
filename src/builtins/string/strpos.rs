@@ -24,9 +24,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strpos,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strpos,
     ),
     summary: "Finds the numeric position of the first occurrence of a substring.",
     php_manual: "https://www.php.net/manual/en/function.strpos.php",

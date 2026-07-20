@@ -25,9 +25,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArraySearch,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArraySearch,
     ),
     summary: "Searches the array for a given value and returns the first corresponding key if successful.",
     php_manual: "https://www.php.net/manual/en/function.array-search.php",

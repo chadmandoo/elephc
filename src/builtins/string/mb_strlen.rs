@@ -23,9 +23,8 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::MbStrlen,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::MbStrlen,
     ),
     summary: "Returns the character count of a string in the requested encoding.",
     php_manual: "https://www.php.net/manual/en/function.mb-strlen.php",

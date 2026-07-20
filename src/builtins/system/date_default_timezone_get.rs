@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::DateDefaultTimezoneGet,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::DateDefaultTimezoneGet,
     ),
     summary: "Gets the default timezone.",
 }

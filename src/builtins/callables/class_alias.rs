@@ -20,9 +20,8 @@ builtin! {
     params: [class: Str, alias: Str, autoload: Bool = DefaultSpec::Bool(true)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ClassAlias,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ClassAlias,
     ),
     summary: "Creates an alias for a class.",
     php_manual: "function.class-alias",

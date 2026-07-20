@@ -16,9 +16,8 @@ builtin! {
     area: Spl,
     params: [class: Mixed, file_extensions: Mixed = DefaultSpec::Null],
     returns: Void,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoload,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoload,
     ),
     summary: "Default implementation for __autoload().",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload.php",

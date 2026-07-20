@@ -20,9 +20,8 @@ builtin! {
     arity_error: "php_uname() takes 0 or 1 arguments",
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PhpUname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PhpUname,
     ),
     summary: "Returns information about the operating system PHP is running on.",
 }

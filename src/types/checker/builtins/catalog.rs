@@ -160,6 +160,7 @@ mod tests {
         area: Types,
         params: [x: Int],
         returns: Bool,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "catalog probe for PHP-visibility test",
         internal: false,
     }

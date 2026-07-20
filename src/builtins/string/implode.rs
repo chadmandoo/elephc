@@ -24,9 +24,8 @@ builtin! {
     max_args: 2,
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Implode,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Implode,
     ),
     summary: "Joins array elements into a single string using a separator.",
     php_manual: "https://www.php.net/manual/en/function.implode.php",

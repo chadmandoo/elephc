@@ -12,9 +12,9 @@ builtin! {
     area: Types,
     params: [value: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-        crate::ir::BuiltinRuntimeTarget::IsFloat,
-        crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::type_predicate_semantics(
+        crate::ir::PhpTypePredicate::Float,
+        false,
     ),
     summary: "Alias of is_float().",
     php_manual: "function.is-double",

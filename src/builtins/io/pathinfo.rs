@@ -24,9 +24,8 @@ builtin! {
     params: [path: Str, flags: Int = DefaultSpec::Int(15)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Pathinfo,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Pathinfo,
     ),
     summary: "Returns information about a file path.",
     php_manual: "function.pathinfo",

@@ -21,9 +21,8 @@ builtin! {
     params: [mask: Int = DefaultSpec::Null],
     arity_error: "umask() takes 0 or 1 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Umask,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Umask,
     ),
     summary: "Changes the current umask.",
     php_manual: "function.umask",

@@ -21,9 +21,8 @@ builtin! {
     params: [array: Mixed, length: Mixed, value: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayPad,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayPad,
     ),
     summary: "Pads an array to the specified length with a value.",
     php_manual: "https://www.php.net/manual/en/function.array-pad.php",

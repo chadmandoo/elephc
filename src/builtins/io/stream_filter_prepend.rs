@@ -27,9 +27,8 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamFilterPrepend,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamFilterPrepend,
     ),
     requirements: crate::builtins::semantics::stream_filter_requirements,
     summary: "Attaches a filter to a stream (prepend).",

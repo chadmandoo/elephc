@@ -978,9 +978,9 @@ pub(super) fn all_lowered_functions(module: &Module) -> impl Iterator<Item = &Fu
 /// Returns the typed builtin target carried by a runtime-call instruction.
 fn typed_builtin_target(
     inst: &crate::ir::Instruction,
-) -> Option<crate::ir::BuiltinRuntimeTarget> {
+) -> Option<crate::ir::RuntimeFnId> {
     match inst.immediate {
-        Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::Builtin(target))) => Some(target),
+        Some(Immediate::RuntimeCall(crate::ir::RuntimeCallTarget::Function(target))) => Some(target),
         _ => None,
     }
 }
@@ -989,7 +989,7 @@ fn typed_builtin_target(
 fn typed_builtin_requires_descriptor_invoker(
     function: &Function,
     inst: &crate::ir::Instruction,
-    target: crate::ir::BuiltinRuntimeTarget,
+    target: crate::ir::RuntimeFnId,
 ) -> bool {
     let Some(callback_index) = target.string_callback_operand_index() else {
         return false;

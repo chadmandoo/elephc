@@ -15,9 +15,8 @@ builtin! {
     area: System,
     params: [header: Str, replace: Bool = DefaultSpec::Bool(true), response_code: Int = DefaultSpec::Int(0)],
     returns: Void,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Header,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Header,
     ),
     summary: "Sends a raw HTTP header.",
 }

@@ -1,8 +1,8 @@
 //! Purpose:
-//! Routes typed registry builtin runtime targets to bounded backend dispatch groups.
+//! Routes typed EIR runtime-function IDs to bounded backend implementation groups.
 //!
 //! Called from:
-//! - `crate::codegen::lower_inst::runtime_calls` for typed builtin operations.
+//! - `crate::codegen::lower_inst::runtime_calls` for typed runtime operations.
 //!
 //! Key details:
 //! - No PHP-name lookup participates in backend dispatch.
@@ -10,7 +10,7 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::{CodegenIrError, Result};
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 mod group_00;
 mod group_01;
@@ -26,11 +26,11 @@ mod group_10;
 mod group_11;
 mod group_12;
 
-/// Lowers one typed registry builtin target through its typed backend dispatcher.
+/// Lowers one typed runtime function through its backend implementation dispatcher.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Result<()> {
     if let Some(result) = group_00::lower(ctx, inst, target) {
         return result;

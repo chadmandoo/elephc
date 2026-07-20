@@ -329,6 +329,9 @@ fn validate_instruction_immediate(
         Cast => require_immediate(inst_id, inst, "cast target", |imm| {
             matches!(imm, Imm::CastTarget(_))
         }),
+        TypePredicate => require_immediate(inst_id, inst, "type predicate", |imm| {
+            matches!(imm, Imm::TypePredicate(_))
+        }),
         Nop => {
             if matches!(inst.immediate, None | Some(Imm::Data(_))) {
                 Ok(())

@@ -24,9 +24,8 @@ builtin! {
     params: [stream: Mixed, operation: Int, ref would_block: Mixed = DefaultSpec::Null],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Flock,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Flock,
     ),
     summary: "Portable advisory file locking.",
     php_manual: "function.flock",

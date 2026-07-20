@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, size: Int],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Ftruncate,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Ftruncate,
     ),
     summary: "Truncates a file to a given length.",
     php_manual: "function.ftruncate",

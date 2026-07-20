@@ -20,9 +20,8 @@ builtin! {
     params: [constant_name: Str, value: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Define,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Define,
     ),
     summary: "Defines a named constant at compile time.",
 }

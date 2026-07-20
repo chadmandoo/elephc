@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fsync,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fsync,
     ),
     summary: "Synchronizes changes to the file (including meta-data).",
     php_manual: "function.fsync",

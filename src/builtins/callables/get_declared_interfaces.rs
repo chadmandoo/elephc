@@ -14,9 +14,8 @@ builtin! {
     params: [],
     returns: Mixed,
     check: crate::builtins::callables::support::check_declared_names,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetDeclaredInterfaces,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetDeclaredInterfaces,
     ),
     summary: "Returns an array of all declared interfaces.",
     php_manual: "function.get-declared-interfaces",

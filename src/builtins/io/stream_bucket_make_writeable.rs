@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [brigade: Mixed],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamBucketMakeWriteable,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamBucketMakeWriteable,
     ),
     summary: "Returns a bucket object from the brigade for use in a stream filter.",
     php_manual: "function.stream-bucket-make-writeable",

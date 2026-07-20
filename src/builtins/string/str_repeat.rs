@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [string: Str, times: Int],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrRepeat,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrRepeat,
     ),
     summary: "Repeats a string a given number of times.",
     php_manual: "https://www.php.net/manual/en/function.str-repeat.php",

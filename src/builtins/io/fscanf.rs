@@ -24,9 +24,8 @@ builtin! {
     variadic: "vars",
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fscanf,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fscanf,
     ),
     summary: "Parses input from a file according to a format.",
     php_manual: "function.fscanf",

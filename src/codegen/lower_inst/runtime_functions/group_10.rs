@@ -10,31 +10,31 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 10, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::MbStrlen => Some({
+        RuntimeFnId::MbStrlen => Some({
             crate::codegen::lower_inst::builtins::strings::lower_mb_strlen(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Md5 => Some({
+        RuntimeFnId::Md5 => Some({
             crate::codegen::lower_inst::builtins::strings::lower_md5(ctx, inst)
         }),
-        BuiltinRuntimeTarget::NumberFormat => Some({
+        RuntimeFnId::NumberFormat => Some({
             crate::codegen::lower_inst::builtins::strings::lower_number_format(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Ord => Some({
+        RuntimeFnId::Ord => Some({
             crate::codegen::lower_inst::builtins::strings::lower_ord(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Printf => Some({
+        RuntimeFnId::Printf => Some({
             crate::codegen::lower_inst::builtins::strings::lower_printf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rtrim => Some({
+        RuntimeFnId::Rtrim => Some({
             crate::codegen::lower_inst::builtins::strings::lower_trim_like(
                     ctx,
                     inst,
@@ -43,19 +43,19 @@ pub(super) fn lower(
                     "__rt_rtrim_mask",
                 )
         }),
-        BuiltinRuntimeTarget::Sha1 => Some({
+        RuntimeFnId::Sha1 => Some({
             crate::codegen::lower_inst::builtins::strings::lower_sha1(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Sprintf => Some({
+        RuntimeFnId::Sprintf => Some({
             crate::codegen::lower_inst::builtins::strings::lower_sprintf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Sscanf => Some({
+        RuntimeFnId::Sscanf => Some({
             crate::codegen::lower_inst::builtins::strings::lower_sscanf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StrContains => Some({
+        RuntimeFnId::StrContains => Some({
             crate::codegen::lower_inst::builtins::strings::lower_str_contains(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StrEndsWith => Some({
+        RuntimeFnId::StrEndsWith => Some({
             crate::codegen::lower_inst::builtins::strings::lower_binary_string_runtime(
                     ctx,
                     inst,
@@ -63,7 +63,7 @@ pub(super) fn lower(
                     "__rt_str_ends_with",
                 )
         }),
-        BuiltinRuntimeTarget::StrIreplace => Some({
+        RuntimeFnId::StrIreplace => Some({
             crate::codegen::lower_inst::builtins::strings::lower_string_replace(
                     ctx,
                     inst,
@@ -71,13 +71,13 @@ pub(super) fn lower(
                     "__rt_str_ireplace",
                 )
         }),
-        BuiltinRuntimeTarget::StrPad => Some({
+        RuntimeFnId::StrPad => Some({
             crate::codegen::lower_inst::builtins::strings::lower_str_pad(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StrRepeat => Some({
+        RuntimeFnId::StrRepeat => Some({
             crate::codegen::lower_inst::builtins::strings::lower_str_repeat(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StrReplace => Some({
+        RuntimeFnId::StrReplace => Some({
             crate::codegen::lower_inst::builtins::strings::lower_string_replace(
                     ctx,
                     inst,
@@ -85,10 +85,10 @@ pub(super) fn lower(
                     "__rt_str_replace",
                 )
         }),
-        BuiltinRuntimeTarget::StrSplit => Some({
+        RuntimeFnId::StrSplit => Some({
             crate::codegen::lower_inst::builtins::strings::lower_str_split(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StrStartsWith => Some({
+        RuntimeFnId::StrStartsWith => Some({
             crate::codegen::lower_inst::builtins::strings::lower_binary_string_runtime(
                     ctx,
                     inst,
@@ -96,7 +96,7 @@ pub(super) fn lower(
                     "__rt_str_starts_with",
                 )
         }),
-        BuiltinRuntimeTarget::Strcasecmp => Some({
+        RuntimeFnId::Strcasecmp => Some({
             crate::codegen::lower_inst::builtins::strings::lower_binary_string_runtime(
                     ctx,
                     inst,
@@ -104,7 +104,7 @@ pub(super) fn lower(
                     "__rt_strcasecmp",
                 )
         }),
-        BuiltinRuntimeTarget::Strcmp => Some({
+        RuntimeFnId::Strcmp => Some({
             crate::codegen::lower_inst::builtins::strings::lower_binary_string_runtime(
                     ctx,
                     inst,
@@ -112,7 +112,7 @@ pub(super) fn lower(
                     "__rt_strcmp",
                 )
         }),
-        BuiltinRuntimeTarget::Strpos => Some({
+        RuntimeFnId::Strpos => Some({
             crate::codegen::lower_inst::builtins::strings::lower_string_position(
                     ctx,
                     inst,
@@ -120,7 +120,7 @@ pub(super) fn lower(
                     "__rt_strpos",
                 )
         }),
-        BuiltinRuntimeTarget::Strrpos => Some({
+        RuntimeFnId::Strrpos => Some({
             crate::codegen::lower_inst::builtins::strings::lower_string_position(
                     ctx,
                     inst,
@@ -128,16 +128,16 @@ pub(super) fn lower(
                     "__rt_strrpos",
                 )
         }),
-        BuiltinRuntimeTarget::Strstr => Some({
+        RuntimeFnId::Strstr => Some({
             crate::codegen::lower_inst::builtins::strings::lower_strstr(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Substr => Some({
+        RuntimeFnId::Substr => Some({
             crate::codegen::lower_inst::builtins::strings::lower_substr(ctx, inst)
         }),
-        BuiltinRuntimeTarget::SubstrReplace => Some({
+        RuntimeFnId::SubstrReplace => Some({
             crate::codegen::lower_inst::builtins::strings::lower_substr_replace(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Trim => Some({
+        RuntimeFnId::Trim => Some({
             crate::codegen::lower_inst::builtins::strings::lower_trim_like(
                     ctx,
                     inst,
@@ -146,10 +146,10 @@ pub(super) fn lower(
                     "__rt_trim_mask",
                 )
         }),
-        BuiltinRuntimeTarget::Ucfirst => Some({
+        RuntimeFnId::Ucfirst => Some({
             crate::codegen::lower_inst::builtins::strings::lower_ucfirst(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Ucwords => Some({
+        RuntimeFnId::Ucwords => Some({
             crate::codegen::lower_inst::builtins::strings::lower_unary_string_runtime(
                     ctx,
                     inst,
@@ -157,28 +157,28 @@ pub(super) fn lower(
                     "__rt_ucwords",
                 )
         }),
-        BuiltinRuntimeTarget::Vprintf => Some({
+        RuntimeFnId::Vprintf => Some({
             crate::codegen::lower_inst::builtins::strings::lower_vprintf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Vsprintf => Some({
+        RuntimeFnId::Vsprintf => Some({
             crate::codegen::lower_inst::builtins::strings::lower_vsprintf(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Wordwrap => Some({
+        RuntimeFnId::Wordwrap => Some({
             crate::codegen::lower_inst::builtins::strings::lower_wordwrap(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ElephcGmmktimeRaw => Some({
+        RuntimeFnId::ElephcGmmktimeRaw => Some({
             crate::codegen::lower_inst::builtins::system::lower_gmmktime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ElephcMktimeRaw => Some({
+        RuntimeFnId::ElephcMktimeRaw => Some({
             crate::codegen::lower_inst::builtins::system::lower_mktime(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ElephcStrtotimeRaw => Some({
+        RuntimeFnId::ElephcStrtotimeRaw => Some({
             crate::codegen::lower_inst::builtins::system::lower_elephc_strtotime_raw(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Checkdate => Some({
+        RuntimeFnId::Checkdate => Some({
             crate::codegen::lower_inst::builtins::system::lower_checkdate(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ClassAttributeArgs => Some({
+        RuntimeFnId::ClassAttributeArgs => Some({
             crate::codegen::lower_inst::builtins::attributes::lower_class_attribute_args(ctx, inst)
         }),
         _ => None,

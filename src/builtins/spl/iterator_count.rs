@@ -19,9 +19,8 @@ builtin! {
     params: [iterator: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IteratorCount,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IteratorCount,
     ),
     summary: "Count the elements in an iterator.",
     php_manual: "https://www.php.net/manual/en/function.iterator-count.php",

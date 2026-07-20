@@ -72,9 +72,12 @@ def run_gen_builtins(repo: Path) -> list[dict]:
     to ``cargo run``.
     """
     cmd: list[str]
+    source_inputs = [repo / "Cargo.toml", repo / "Cargo.lock", repo / "tools" / "gen_builtins.rs"]
+    source_inputs.extend((repo / "src").rglob("*.rs"))
+    newest_source_mtime = max(path.stat().st_mtime for path in source_inputs if path.exists())
     for profile in ("release", "debug"):
         exe = repo / "target" / profile / "examples" / "gen_builtins"
-        if exe.exists():
+        if exe.exists() and exe.stat().st_mtime >= newest_source_mtime:
             cmd = [str(exe), "--include-internal"]
             break
     else:

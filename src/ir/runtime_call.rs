@@ -22,7 +22,7 @@ pub enum RuntimeCallSignature {
         /// Storage type produced by the operation.
         result: IrType,
     },
-    /// A registry builtin whose values carry their polymorphic logical types in EIR.
+    /// A runtime function whose values carry their polymorphic logical types in EIR.
     Polymorphic {
         /// Minimum accepted operand count after call-argument normalization.
         min_operands: usize,
@@ -36,8 +36,8 @@ pub enum RuntimeCallSignature {
 pub enum RuntimeCallTarget {
     /// A one-string-to-one-string transform implemented by the shared runtime.
     UnaryString(UnaryStringRuntime),
-    /// A typed registry builtin operation whose target-aware adapter is backend-owned.
-    Builtin(crate::ir::BuiltinRuntimeTarget),
+    /// A stable runtime function whose target-aware implementation is backend-owned.
+    Function(crate::ir::RuntimeFnId),
 }
 
 impl RuntimeCallTarget {
@@ -48,13 +48,8 @@ impl RuntimeCallTarget {
                 parameters: &[IrType::Str],
                 result: IrType::Str,
             }),
-            RuntimeCallTarget::Builtin(target) => {
-                let (min_operands, max_operands) =
-                    crate::builtins::registry::enforced_arity_bounds(target.as_eir())?;
-                Some(RuntimeCallSignature::Polymorphic {
-                    min_operands,
-                    max_operands,
-                })
+            RuntimeCallTarget::Function(target) => {
+                target.descriptor().logical_signature
             }
         }
     }
@@ -63,7 +58,7 @@ impl RuntimeCallTarget {
     pub fn as_eir(self) -> &'static str {
         match self {
             RuntimeCallTarget::UnaryString(runtime) => runtime.as_eir(),
-            RuntimeCallTarget::Builtin(target) => target.as_eir(),
+            RuntimeCallTarget::Function(target) => target.as_eir(),
         }
     }
 }

@@ -15,9 +15,8 @@ builtin! {
     area: Math,
     params: [num: Mixed, exponent: Mixed],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Pow,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Pow,
     ),
     summary: "Exponential expression.",
     php_manual: "https://www.php.net/manual/en/function.pow.php",

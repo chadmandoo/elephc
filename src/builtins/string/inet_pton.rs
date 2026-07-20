@@ -20,9 +20,8 @@ builtin! {
     params: [ip: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::InetPton,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::InetPton,
     ),
     summary: "Converts a human-readable IP address to its packed in_addr representation.",
     php_manual: "https://www.php.net/manual/en/function.inet-pton.php",

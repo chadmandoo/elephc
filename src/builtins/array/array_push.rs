@@ -26,9 +26,8 @@ builtin! {
     max_args: 2,
     returns: Void,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayPush,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayPush,
     ),
     summary: "Pushes one or more elements onto the end of array.",
     php_manual: "https://www.php.net/manual/en/function.array-push.php",

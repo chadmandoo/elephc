@@ -23,9 +23,8 @@ builtin! {
     max_args: 3,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayReduce,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayReduce,
     ),
     summary: "Iteratively reduces an array to a single value using a callback function.",
     php_manual: "https://www.php.net/manual/en/function.array-reduce.php",

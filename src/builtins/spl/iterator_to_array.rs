@@ -21,9 +21,8 @@ builtin! {
     params: [iterator: Mixed, preserve_keys: Bool = DefaultSpec::Bool(true)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IteratorToArray,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IteratorToArray,
     ),
     summary: "Copy the iterator into an array.",
     php_manual: "https://www.php.net/manual/en/function.iterator-to-array.php",

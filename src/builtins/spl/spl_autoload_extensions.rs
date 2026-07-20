@@ -20,9 +20,8 @@ builtin! {
     params: [file_extensions: Mixed = DefaultSpec::Null],
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoloadExtensions,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoloadExtensions,
     ),
     summary: "Register and return default file extensions for spl_autoload.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-extensions.php",

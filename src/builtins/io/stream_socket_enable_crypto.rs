@@ -23,9 +23,8 @@ builtin! {
     ],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketEnableCrypto,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketEnableCrypto,
     ),
     summary: "Turns encryption on/off on an already connected socket.",
     php_manual: "function.stream-socket-enable-crypto",

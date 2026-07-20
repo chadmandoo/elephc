@@ -18,8 +18,8 @@
 use crate::builtins::registry::{lookup, names};
 use crate::builtins::semantics::{
     BuiltinCallablePolicy, BuiltinEffects, BuiltinLowering, BuiltinRequirement,
-    BuiltinRequirements, BuiltinResultOwnership, BuiltinResultType, BuiltinSemantics,
-    BuiltinTargetStrategy, BuiltinValidation,
+    BuiltinRequirements, BuiltinResultOwnership, BuiltinResultType, BuiltinRuntimeFunctions,
+    BuiltinSemantics, BuiltinTargetStrategy, BuiltinValidation,
 };
 use crate::builtins::spec::{Area, DefaultSpec, TypeSpec};
 use serde_json::{json, Value};
@@ -134,9 +134,13 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
             ["macos-aarch64", "linux-aarch64", "linux-x86_64"]
         }
     };
+    let runtime_functions = match semantics.runtime_functions {
+        BuiltinRuntimeFunctions::None => Vec::new(),
+        BuiltinRuntimeFunctions::One(runtime_fn) => vec![runtime_fn.as_eir()],
+    };
     let callable = match semantics.callable {
         BuiltinCallablePolicy::Dynamic(_) => json!({"kind": "dynamic"}),
-        BuiltinCallablePolicy::DynamicTarget(target) => {
+        BuiltinCallablePolicy::DynamicRuntime(target) => {
             json!({"kind": "dynamic_target", "target": target.as_eir()})
         }
         BuiltinCallablePolicy::StaticOnly(reason) => {
@@ -144,7 +148,7 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
         }
     };
     let lowering = match semantics.lowering {
-        BuiltinLowering::Eir(_) => json!({"kind": "eir"}),
+        BuiltinLowering::Eir(_) | BuiltinLowering::TypePredicate(_) => json!({"kind": "eir"}),
         BuiltinLowering::Runtime(target) => {
             json!({"kind": "runtime_call", "target": target.as_eir()})
         }
@@ -157,6 +161,7 @@ fn semantics_json(semantics: BuiltinSemantics) -> Value {
         "requirements": requirements,
         "target_strategy": target_strategy,
         "target_support": target_support,
+        "runtime_functions": runtime_functions,
         "callable": callable,
         "lowering": lowering,
     })

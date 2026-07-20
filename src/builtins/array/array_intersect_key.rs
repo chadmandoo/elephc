@@ -26,9 +26,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayIntersectKey,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayIntersectKey,
     ),
     summary: "Computes the intersection of arrays using keys for comparison.",
     php_manual: "https://www.php.net/manual/en/function.array-intersect-key.php",

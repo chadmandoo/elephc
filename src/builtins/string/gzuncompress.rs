@@ -19,9 +19,8 @@ builtin! {
     params: [data: Str, max_length: Int = DefaultSpec::Int(0)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gzuncompress,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gzuncompress,
     ),
     summary: "Uncompress a compressed string.",
     php_manual: "https://www.php.net/manual/en/function.gzuncompress.php",

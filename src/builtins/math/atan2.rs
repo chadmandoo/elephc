@@ -15,9 +15,8 @@ builtin! {
     area: Math,
     params: [y: Float, x: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Atan2,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Atan2,
     ),
     summary: "Returns the arc tangent of two variables.",
     php_manual: "https://www.php.net/manual/en/function.atan2.php",

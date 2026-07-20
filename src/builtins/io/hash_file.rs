@@ -20,9 +20,8 @@ builtin! {
     params: [algo: Str, filename: Str, binary: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashFile,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashFile,
     ),
     summary: "Generates a hash value using the contents of a given file.",
     php_manual: "function.hash-file",

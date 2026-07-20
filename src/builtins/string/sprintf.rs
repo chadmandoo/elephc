@@ -15,9 +15,8 @@ builtin! {
     params: [format: Str],
     variadic: "values",
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Sprintf,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Sprintf,
     ),
     summary: "Returns a formatted string.",
     php_manual: "https://www.php.net/manual/en/function.sprintf.php",

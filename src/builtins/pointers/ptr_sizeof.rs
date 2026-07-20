@@ -19,9 +19,8 @@ builtin! {
     params: [r#type: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrSizeof,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrSizeof,
     ),
     summary: "Returns the byte size of the named pointer target type.",
     extension: true,

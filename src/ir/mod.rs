@@ -10,7 +10,7 @@
 //!   are immutable metadata assigned when instructions are built.
 
 mod block;
-mod builtin_runtime_target;
+mod runtime_fn;
 mod builder;
 mod effects;
 mod function;
@@ -27,7 +27,9 @@ mod value;
 mod tests;
 
 pub use block::{BasicBlock, BlockId, SwitchCase, Terminator};
-pub use builtin_runtime_target::BuiltinRuntimeTarget;
+pub use runtime_fn::{
+    RuntimeFnBackendMapping, RuntimeFnDescriptor, RuntimeFnId, RuntimeFnTargetSupport,
+};
 pub use builder::Builder;
 pub use effects::Effects;
 pub use function::{
@@ -35,8 +37,9 @@ pub use function::{
     LocalSlotId,
 };
 pub use instr::{
-    BuiltinId, CmpPredicate, Immediate, InstId, Instruction, MixedNumericOp, Op, RuntimeId,
- PassOrigin,};
+    BuiltinId, CmpPredicate, Immediate, InstId, Instruction, MixedNumericOp, Op, PhpTypePredicate,
+    RuntimeId, PassOrigin,
+};
 pub use module::{
     ClassTable, DataId, DataPool, EnumTable, ExternDecl, ExternParamDecl, InterfaceTable,
     Module, PackedLayoutTable, TraitMethodInfo,

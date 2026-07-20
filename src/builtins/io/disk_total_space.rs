@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [directory: Str],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::DiskTotalSpace,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::DiskTotalSpace,
     ),
     summary: "Returns the total size of a filesystem or disk partition.",
     php_manual: "function.disk-total-space",

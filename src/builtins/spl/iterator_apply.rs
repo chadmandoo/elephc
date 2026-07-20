@@ -22,9 +22,8 @@ builtin! {
     returns: Int,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::IteratorApply,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::IteratorApply,
     ),
     summary: "Call a function for every element in an iterator.",
     php_manual: "https://www.php.net/manual/en/function.iterator-apply.php",

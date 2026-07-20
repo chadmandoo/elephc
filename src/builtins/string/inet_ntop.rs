@@ -20,9 +20,8 @@ builtin! {
     params: [ip: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::InetNtop,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::InetNtop,
     ),
     summary: "Converts a packed internet address to a human-readable representation.",
     php_manual: "https://www.php.net/manual/en/function.inet-ntop.php",

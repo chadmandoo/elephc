@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [context: Mixed, binary: Bool = DefaultSpec::Bool(false)],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashFinal,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashFinal,
     ),
     summary: "Finalizes an incremental hash and returns the digest string.",
     php_manual: "https://www.php.net/manual/en/function.hash-final.php",

@@ -20,9 +20,8 @@ builtin! {
     params: [haystack: Str, needle: Str, before_needle: Bool = crate::builtins::spec::DefaultSpec::Bool(false)],
     max_args: 2,
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strstr,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strstr,
     ),
     summary: "Returns the portion of a string starting at the first occurrence of a substring.",
     php_manual: "https://www.php.net/manual/en/function.strstr.php",

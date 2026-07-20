@@ -20,9 +20,8 @@ builtin! {
     params: [options: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamContextSetDefault,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamContextSetDefault,
     ),
     summary: "Sets the default stream context.",
     php_manual: "function.stream-context-set-default",

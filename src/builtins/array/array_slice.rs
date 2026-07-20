@@ -23,9 +23,8 @@ builtin! {
     params: [array: Mixed, offset: Mixed, length: Mixed = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArraySlice,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArraySlice,
     ),
     summary: "Extracts a slice of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-slice.php",

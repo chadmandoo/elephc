@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [src: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharDecompressArchive,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharDecompressArchive,
     ),
     summary: "Decompresses a PHAR archive to a new path.",
     internal: true,

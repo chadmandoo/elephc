@@ -19,9 +19,8 @@ builtin! {
     params: [stream_filter: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamFilterRemove,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamFilterRemove,
     ),
     summary: "Removes a filter from a stream.",
     php_manual: "function.stream-filter-remove",

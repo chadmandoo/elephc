@@ -19,9 +19,8 @@ builtin! {
     params: [filter_name: Str, class: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamFilterRegister,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamFilterRegister,
     ),
     summary: "Registers a user-defined stream filter.",
     php_manual: "function.stream-filter-register",

@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [path: Str, key: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharSignOpenssl,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharSignOpenssl,
     ),
     summary: "Signs a PHAR archive using an OpenSSL private key.",
     internal: true,

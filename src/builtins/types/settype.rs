@@ -22,9 +22,8 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Settype,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Settype,
     ),
     summary: "Sets the type of a variable.",
     php_manual: "function.settype",

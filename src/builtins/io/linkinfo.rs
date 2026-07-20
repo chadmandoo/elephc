@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [path: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Linkinfo,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Linkinfo,
     ),
     summary: "Gets information about a link.",
     php_manual: "function.linkinfo",

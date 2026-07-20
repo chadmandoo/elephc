@@ -15,9 +15,8 @@ builtin! {
     area: String,
     params: [known_string: Str, user_string: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashEquals,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashEquals,
     ),
     summary: "Compares two strings using a constant-time algorithm.",
     php_manual: "https://www.php.net/manual/en/function.hash-equals.php",

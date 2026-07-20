@@ -21,9 +21,8 @@ builtin! {
     arity_error: "vfprintf() takes exactly 3 arguments (stream, format, values)",
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Vfprintf,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Vfprintf,
     ),
     summary: "Write a formatted string to a stream.",
     php_manual: "function.vfprintf",

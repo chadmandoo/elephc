@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [string: Str, offset: Int, length: Int = crate::builtins::spec::DefaultSpec::Null],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Substr,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Substr,
     ),
     summary: "Returns a portion of a string specified by the offset and length.",
     php_manual: "https://www.php.net/manual/en/function.substr.php",

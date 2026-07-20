@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [path: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharGetSignatureHash,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharGetSignatureHash,
     ),
     summary: "Returns the PHAR signature hash bytes.",
     internal: true,

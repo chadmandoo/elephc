@@ -14,9 +14,8 @@ builtin! {
     area: Types,
     params: [resource: Mixed],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GetResourceId,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GetResourceId,
     ),
     summary: "Returns an integer identifier for the given resource.",
     php_manual: "function.get-resource-id",

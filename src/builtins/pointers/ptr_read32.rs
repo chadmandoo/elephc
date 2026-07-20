@@ -17,9 +17,8 @@ builtin! {
     params: [pointer: Mixed],
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrRead32,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrRead32,
     ),
     summary: "Reads one unsigned 32-bit word through a raw pointer and returns it as an integer.",
     extension: true,

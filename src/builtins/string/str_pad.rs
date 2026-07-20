@@ -21,9 +21,8 @@ builtin! {
         pad_type: Int = DefaultSpec::Int(1)
     ],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrPad,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrPad,
     ),
     summary: "Pads a string to a certain length with another string.",
     php_manual: "https://www.php.net/manual/en/function.str-pad.php",

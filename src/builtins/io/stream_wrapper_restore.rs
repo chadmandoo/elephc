@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [protocol: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamWrapperRestore,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamWrapperRestore,
     ),
     summary: "Restores a previously unregistered built-in wrapper.",
     php_manual: "function.stream-wrapper-restore",

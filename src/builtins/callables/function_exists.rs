@@ -22,9 +22,8 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::FunctionExists,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::FunctionExists,
     ),
     summary: "Returns true if the given function has been defined.",
     php_manual: "function.function-exists",

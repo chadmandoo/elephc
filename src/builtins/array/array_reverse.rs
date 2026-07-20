@@ -21,9 +21,8 @@ builtin! {
     params: [array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayReverse,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayReverse,
     ),
     summary: "Returns an array with the elements in reverse order.",
     php_manual: "https://www.php.net/manual/en/function.array-reverse.php",

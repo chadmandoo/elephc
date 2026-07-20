@@ -15,9 +15,8 @@ builtin! {
     area: Math,
     params: [num1: Float, num2: Float],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Fdiv,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Fdiv,
     ),
     summary: "Divides two numbers, according to IEEE 754.",
     php_manual: "https://www.php.net/manual/en/function.fdiv.php",

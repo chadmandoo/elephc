@@ -14,9 +14,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObClean,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObClean,
     ),
     summary: "Cleans (erases) the contents of the active output buffer.",
     php_manual: "function.ob-clean",

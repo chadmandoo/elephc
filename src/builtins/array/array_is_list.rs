@@ -23,9 +23,8 @@ builtin! {
     params: [array: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayIsList,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayIsList,
     ),
     summary: "Checks whether an array is a list (sequential 0-based integer keys).",
     php_manual: "https://www.php.net/manual/en/function.array-is-list.php",

@@ -19,9 +19,8 @@ builtin! {
     params: [],
     arity_error: "realpath_cache_size() takes exactly 0 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::RealpathCacheSize,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::RealpathCacheSize,
     ),
     summary: "Returns the amount of memory used by the realpath cache.",
     php_manual: "function.realpath-cache-size",

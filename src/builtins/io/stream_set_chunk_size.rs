@@ -14,9 +14,8 @@ builtin! {
     area: Io,
     params: [stream: Mixed, size: Int],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSetChunkSize,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSetChunkSize,
     ),
     summary: "Sets the read chunk size on a stream.",
     php_manual: "function.stream-set-chunk-size",

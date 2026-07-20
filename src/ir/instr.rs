@@ -146,6 +146,7 @@ pub enum Immediate {
     },
     HeapKind(IrHeapKind),
     MixedTag(u8),
+    TypePredicate(PhpTypePredicate),
     MixedNumericOp(MixedNumericOp),
     CmpPredicate(CmpPredicate),
     CastTarget(IrType),
@@ -160,6 +161,37 @@ pub enum MixedNumericOp {
     Add,
     Sub,
     Mul,
+}
+
+/// PHP runtime type category tested by the backend-neutral `TypePredicate` opcode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PhpTypePredicate {
+    Array,
+    Bool,
+    Float,
+    Int,
+    Iterable,
+    Object,
+    Resource,
+    Scalar,
+    String,
+}
+
+impl PhpTypePredicate {
+    /// Returns the stable textual spelling used by the EIR printer.
+    pub const fn as_eir(self) -> &'static str {
+        match self {
+            Self::Array => "array",
+            Self::Bool => "bool",
+            Self::Float => "float",
+            Self::Int => "int",
+            Self::Iterable => "iterable",
+            Self::Object => "object",
+            Self::Resource => "resource",
+            Self::Scalar => "scalar",
+            Self::String => "string",
+        }
+    }
 }
 
 impl MixedNumericOp {
@@ -263,6 +295,7 @@ pub enum Op {
     Spaceship,
     IsNull,
     IsTruthy,
+    TypePredicate,
     IsEmpty,
     InstanceOf,
     IToF,
@@ -496,8 +529,6 @@ impl Op {
             | StrToF
             | StrToNumber
             | MixedTagOf
-            | IsNull
-            | IsTruthy
             | IsEmpty
             | FunctionVariantDispatch
             | PtrCast
@@ -550,7 +581,7 @@ impl Op {
             | ClosureNew | FirstClassCallableNew | CallableArrayNew | BufferNew | GeneratorNew => {
                 E::ALLOC_HEAP
             }
-            MixedUnbox | MixedCastBool | MixedCastInt | MixedCastFloat | ArrayGetSilent
+            IsNull | IsTruthy | TypePredicate | MixedUnbox | MixedCastBool | MixedCastInt | MixedCastFloat | ArrayGetSilent
             | HashGetSilent
             | ArrayIsset | HashIsset | BufferGet | BufferLen | PackedFieldGet | PtrRead
             | PtrReadString => {
@@ -730,6 +761,7 @@ impl Op {
             Spaceship => "spaceship",
             IsNull => "is_null",
             IsTruthy => "is_truthy",
+            TypePredicate => "type_predicate",
             IsEmpty => "is_empty",
             InstanceOf => "instance_of",
             IToF => "i_to_f",

@@ -27,9 +27,8 @@ builtin! {
     returns: Bool,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::MbEregMatch,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::MbEregMatch,
     ),
     summary: "Tests whether a regex pattern matches the beginning of a string (multibyte).",
     php_manual: "https://www.php.net/manual/en/function.mb-ereg-match.php",

@@ -25,9 +25,8 @@ builtin! {
     params: [string: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::GraphemeStrrev,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::GraphemeStrrev,
     ),
     summary: "Reverses a string by grapheme cluster, returning false on failure.",
     php_manual: "https://www.php.net/manual/en/function.grapheme-strrev.php",

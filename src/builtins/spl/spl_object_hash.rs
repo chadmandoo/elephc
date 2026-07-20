@@ -18,9 +18,8 @@ builtin! {
     params: [object: Mixed],
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplObjectHash,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplObjectHash,
     ),
     summary: "Return hash id for given object.",
     php_manual: "https://www.php.net/manual/en/function.spl-object-hash.php",

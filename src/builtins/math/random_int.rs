@@ -14,9 +14,8 @@ builtin! {
     area: Math,
     params: [min: Int, max: Int],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::RandomInt,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::RandomInt,
     ),
     summary: "Get a cryptographically secure, uniformly selected integer.",
     php_manual: "https://www.php.net/manual/en/function.random-int.php",

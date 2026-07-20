@@ -18,9 +18,8 @@ builtin! {
     params: [filename: Str, permissions: Int],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Chmod,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Chmod,
     ),
     summary: "Changes file mode.",
     php_manual: "function.chmod",

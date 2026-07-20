@@ -17,9 +17,8 @@ builtin! {
     params: [key: Mixed, array: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayKeyExists,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayKeyExists,
     ),
     summary: "Checks if the given key or index exists in the array.",
     php_manual: "https://www.php.net/manual/en/function.array-key-exists.php",

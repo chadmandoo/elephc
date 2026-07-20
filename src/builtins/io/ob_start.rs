@@ -26,9 +26,8 @@ builtin! {
     ],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObStart,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObStart,
     ),
     summary: "Turns on output buffering.",
     php_manual: "function.ob-start",

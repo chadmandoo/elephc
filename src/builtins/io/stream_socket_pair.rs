@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [domain: Int, type: Int, protocol: Int],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketPair,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketPair,
     ),
     summary: "Creates a pair of connected, indistinguishable socket streams.",
     php_manual: "function.stream-socket-pair",

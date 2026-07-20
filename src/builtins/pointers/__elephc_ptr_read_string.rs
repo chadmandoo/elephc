@@ -20,9 +20,8 @@ builtin! {
     params: [pointer: Mixed, length: Mixed],
     returns: Str,
     check: crate::builtins::pointers::ptr_read_string::check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPtrReadString,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPtrReadString,
     ),
     summary: "Internal prelude alias of ptr_read_string.",
     internal: true,

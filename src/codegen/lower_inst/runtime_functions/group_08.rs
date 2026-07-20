@@ -10,126 +10,126 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 08, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::Sqrt => Some({
+        RuntimeFnId::Sqrt => Some({
             crate::codegen::lower_inst::builtins::math::lower_sqrt(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Tan => Some({
+        RuntimeFnId::Tan => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "tan")
         }),
-        BuiltinRuntimeTarget::Tanh => Some({
+        RuntimeFnId::Tanh => Some({
             crate::codegen::lower_inst::builtins::math::lower_unary_libm(ctx, inst, "tanh")
         }),
-        BuiltinRuntimeTarget::ElephcPtrIsNull => Some({
+        RuntimeFnId::ElephcPtrIsNull => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_is_null(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ElephcPtrReadString => Some({
+        RuntimeFnId::ElephcPtrReadString => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_read_string(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ElephcPtrWriteString => Some({
+        RuntimeFnId::ElephcPtrWriteString => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_write_string(ctx, inst)
         }),
-        BuiltinRuntimeTarget::BufferFree => Some({
+        RuntimeFnId::BufferFree => Some({
             crate::codegen::lower_inst::builtins::buffers::lower_buffer_free(ctx, inst)
         }),
-        BuiltinRuntimeTarget::BufferLen => Some({
+        RuntimeFnId::BufferLen => Some({
             crate::codegen::lower_inst::builtins::buffers::lower_buffer_len(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Ptr => Some({
+        RuntimeFnId::Ptr => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrGet => Some({
+        RuntimeFnId::PtrGet => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_get(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrIsNull => Some({
+        RuntimeFnId::PtrIsNull => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_is_null(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrNull => Some({
+        RuntimeFnId::PtrNull => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_null(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrOffset => Some({
+        RuntimeFnId::PtrOffset => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_offset(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrRead16 => Some({
+        RuntimeFnId::PtrRead16 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_read16(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrRead32 => Some({
+        RuntimeFnId::PtrRead32 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_read32(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrRead8 => Some({
+        RuntimeFnId::PtrRead8 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_read8(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrReadString => Some({
+        RuntimeFnId::PtrReadString => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_read_string(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrSet => Some({
+        RuntimeFnId::PtrSet => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_set(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrSizeof => Some({
+        RuntimeFnId::PtrSizeof => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_sizeof(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrWrite16 => Some({
+        RuntimeFnId::PtrWrite16 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_write16(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrWrite32 => Some({
+        RuntimeFnId::PtrWrite32 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_write32(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrWrite8 => Some({
+        RuntimeFnId::PtrWrite8 => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_write8(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PtrWriteString => Some({
+        RuntimeFnId::PtrWriteString => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_ptr_write_string(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ZvalFree => Some({
+        RuntimeFnId::ZvalFree => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_zval_free(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ZvalPack => Some({
+        RuntimeFnId::ZvalPack => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_zval_pack(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ZvalType => Some({
+        RuntimeFnId::ZvalType => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_zval_type(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ZvalUnpack => Some({
+        RuntimeFnId::ZvalUnpack => Some({
             crate::codegen::lower_inst::builtins::pointers::lower_zval_unpack(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IteratorApply => Some({
+        RuntimeFnId::IteratorApply => Some({
             crate::codegen::lower_inst::builtins::spl::lower_iterator_apply(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IteratorCount => Some({
+        RuntimeFnId::IteratorCount => Some({
             crate::codegen::lower_inst::builtins::spl::lower_iterator_count(ctx, inst)
         }),
-        BuiltinRuntimeTarget::IteratorToArray => Some({
+        RuntimeFnId::IteratorToArray => Some({
             crate::codegen::lower_inst::builtins::spl::lower_iterator_to_array(ctx, inst)
         }),
-        BuiltinRuntimeTarget::SplAutoload => Some({
+        RuntimeFnId::SplAutoload => Some({
             crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_void(
                     ctx,
                     inst,
                     "spl_autoload",
                 )
         }),
-        BuiltinRuntimeTarget::SplAutoloadCall => Some({
+        RuntimeFnId::SplAutoloadCall => Some({
             crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_void(
                     ctx,
                     inst,
                     "spl_autoload_call",
                 )
         }),
-        BuiltinRuntimeTarget::SplAutoloadExtensions => Some({
+        RuntimeFnId::SplAutoloadExtensions => Some({
             crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_extensions(ctx, inst)
         }),
-        BuiltinRuntimeTarget::SplAutoloadFunctions => Some({
+        RuntimeFnId::SplAutoloadFunctions => Some({
             crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_functions(ctx, inst)
         }),
-        BuiltinRuntimeTarget::SplAutoloadRegister => Some({
+        RuntimeFnId::SplAutoloadRegister => Some({
             crate::codegen::lower_inst::builtins::spl::lower_spl_autoload_bool(
                     ctx,
                     inst,

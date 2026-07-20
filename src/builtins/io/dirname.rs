@@ -21,9 +21,8 @@ builtin! {
     params: [path: Str, levels: Int = DefaultSpec::Int(1)],
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Dirname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Dirname,
     ),
     summary: "Returns a parent directory's path.",
     php_manual: "function.dirname",

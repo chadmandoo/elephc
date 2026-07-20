@@ -14,9 +14,8 @@ builtin! {
     area: Spl,
     params: [callback: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::SplAutoloadUnregister,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::SplAutoloadUnregister,
     ),
     summary: "Unregister given function as __autoload() implementation.",
     php_manual: "https://www.php.net/manual/en/function.spl-autoload-unregister.php",

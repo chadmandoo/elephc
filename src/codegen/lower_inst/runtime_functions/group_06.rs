@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 06, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::StreamFilterPrepend => Some({
+        RuntimeFnId::StreamFilterPrepend => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_filter_attach(ctx, inst, "stream_filter_prepend")
         }),
-        BuiltinRuntimeTarget::StreamFilterRegister => Some({
+        RuntimeFnId::StreamFilterRegister => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_filter_register(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamFilterRemove => Some({
+        RuntimeFnId::StreamFilterRemove => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_filter_remove(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetContents => Some({
+        RuntimeFnId::StreamGetContents => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_contents(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetFilters => Some({
+        RuntimeFnId::StreamGetFilters => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_filters(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetLine => Some({
+        RuntimeFnId::StreamGetLine => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_line(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetMetaData => Some({
+        RuntimeFnId::StreamGetMetaData => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_meta_data(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetTransports => Some({
+        RuntimeFnId::StreamGetTransports => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_transports(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamGetWrappers => Some({
+        RuntimeFnId::StreamGetWrappers => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_get_wrappers(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamIsLocal => Some({
+        RuntimeFnId::StreamIsLocal => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_is_local(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamIsatty => Some({
+        RuntimeFnId::StreamIsatty => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_isatty(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamResolveIncludePath => Some({
+        RuntimeFnId::StreamResolveIncludePath => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_resolve_include_path(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSelect => Some({
+        RuntimeFnId::StreamSelect => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_select(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSetBlocking => Some({
+        RuntimeFnId::StreamSetBlocking => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_set_blocking(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSetChunkSize => Some({
+        RuntimeFnId::StreamSetChunkSize => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_set_chunk_size(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSetReadBuffer => Some({
+        RuntimeFnId::StreamSetReadBuffer => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_set_buffer(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSetTimeout => Some({
+        RuntimeFnId::StreamSetTimeout => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_set_timeout(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSetWriteBuffer => Some({
+        RuntimeFnId::StreamSetWriteBuffer => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_set_buffer(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketAccept => Some({
+        RuntimeFnId::StreamSocketAccept => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_accept(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketClient => Some({
+        RuntimeFnId::StreamSocketClient => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_client(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketEnableCrypto => Some({
+        RuntimeFnId::StreamSocketEnableCrypto => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_enable_crypto(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketGetName => Some({
+        RuntimeFnId::StreamSocketGetName => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_get_name(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketPair => Some({
+        RuntimeFnId::StreamSocketPair => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_pair(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketRecvfrom => Some({
+        RuntimeFnId::StreamSocketRecvfrom => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_recvfrom(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketSendto => Some({
+        RuntimeFnId::StreamSocketSendto => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_sendto(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketServer => Some({
+        RuntimeFnId::StreamSocketServer => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_server(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSocketShutdown => Some({
+        RuntimeFnId::StreamSocketShutdown => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_socket_shutdown(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamSupportsLock => Some({
+        RuntimeFnId::StreamSupportsLock => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_supports_lock(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamWrapperRegister => Some({
+        RuntimeFnId::StreamWrapperRegister => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_wrapper_register(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamWrapperRestore => Some({
+        RuntimeFnId::StreamWrapperRestore => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_wrapper_restore(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamWrapperUnregister => Some({
+        RuntimeFnId::StreamWrapperUnregister => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_wrapper_unregister(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Symlink => Some({
+        RuntimeFnId::Symlink => Some({
             crate::codegen::lower_inst::builtins::io::lower_symlink(ctx, inst)
         }),
-        BuiltinRuntimeTarget::SysGetTempDir => Some({
+        RuntimeFnId::SysGetTempDir => Some({
             crate::codegen::lower_inst::builtins::io::lower_sys_get_temp_dir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Tempnam => Some({
+        RuntimeFnId::Tempnam => Some({
             crate::codegen::lower_inst::builtins::io::lower_tempnam(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Tmpfile => Some({
+        RuntimeFnId::Tmpfile => Some({
             crate::codegen::lower_inst::builtins::io::lower_tmpfile(ctx, inst)
         }),
         _ => None,

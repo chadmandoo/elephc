@@ -19,9 +19,8 @@ builtin! {
     params: [full_status: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ObGetStatus,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ObGetStatus,
     ),
     summary: "Gets status of output buffers.",
     php_manual: "function.ob-get-status",

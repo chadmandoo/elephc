@@ -18,9 +18,8 @@ builtin! {
     params: [stream: Mixed, length: Int, ending: Str = DefaultSpec::Str("")],
     returns: Str,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamGetLine,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamGetLine,
     ),
     summary: "Gets line from stream resource up to a given delimiter.",
     php_manual: "function.stream-get-line",

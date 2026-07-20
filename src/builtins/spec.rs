@@ -199,8 +199,8 @@ inventory::collect!(BuiltinSpec);
 #[cfg(test)]
 mod macro_tests {
     use crate::builtins::spec::*;
-    builtin! { name: "__macro_probe", area: Types, params: [x: Int], returns: Int, summary: "probe", internal: true }
-    builtin! { name: "__macro_ext_probe", area: Types, params: [], returns: Void, summary: "extension probe", extension: true, internal: true }
+    builtin! { name: "__macro_probe", area: Types, params: [x: Int], returns: Int, semantics: crate::builtins::semantics::test_probe_semantics(), summary: "probe", internal: true }
+    builtin! { name: "__macro_ext_probe", area: Types, params: [], returns: Void, semantics: crate::builtins::semantics::test_probe_semantics(), summary: "extension probe", extension: true, internal: true }
 
     /// Verifies the macro registers a builtin with its semantic descriptor.
     #[test]
@@ -245,10 +245,7 @@ mod tests {
             max_args: None, min_args: None, arity_error: None,
             returns: TypeSpec::Int,
             by_ref_return: false,
-            semantics: crate::builtins::semantics::runtime_target_semantics(
-                crate::ir::BuiltinRuntimeTarget::IsInt,
-                crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
-            ),
+            semantics: crate::builtins::semantics::test_probe_semantics(),
             summary: "len", examples: &[], php_manual: None,
             deprecation: None, extension: false, internal: false,
         };

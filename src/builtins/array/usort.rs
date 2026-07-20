@@ -22,9 +22,8 @@ builtin! {
     returns: Void,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Usort,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Usort,
     ),
     summary: "Sorts an array by values using a user-defined comparison function.",
     php_manual: "https://www.php.net/manual/en/function.usort.php",

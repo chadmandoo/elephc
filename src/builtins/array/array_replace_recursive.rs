@@ -23,9 +23,8 @@ builtin! {
     params: [array: Mixed, replacements: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayReplaceRecursive,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayReplaceRecursive,
     ),
     summary: "Replaces elements from passed arrays into the first array recursively.",
     php_manual: "https://www.php.net/manual/en/function.array-replace-recursive.php",

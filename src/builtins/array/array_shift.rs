@@ -21,9 +21,8 @@ builtin! {
     params: [ref array: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayShift,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayShift,
     ),
     summary: "Shifts an element off the beginning of array.",
     php_manual: "https://www.php.net/manual/en/function.array-shift.php",

@@ -19,9 +19,8 @@ builtin! {
     params: [pattern: Str],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Glob,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Glob,
     ),
     summary: "Finds pathnames matching a pattern.",
     php_manual: "function.glob",

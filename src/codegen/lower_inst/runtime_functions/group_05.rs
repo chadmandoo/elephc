@@ -10,118 +10,118 @@
 
 use crate::codegen::context::FunctionContext;
 use crate::codegen::Result;
-use crate::ir::{BuiltinRuntimeTarget, Instruction};
+use crate::ir::{RuntimeFnId, Instruction};
 
 /// Lowers a target owned by bounded dispatch group 05, or returns `None`.
 pub(super) fn lower(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
-    target: BuiltinRuntimeTarget,
+    target: RuntimeFnId,
 ) -> Option<Result<()>> {
     match target {
-        BuiltinRuntimeTarget::ObImplicitFlush => Some({
+        RuntimeFnId::ObImplicitFlush => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_implicit_flush(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObListHandlers => Some({
+        RuntimeFnId::ObListHandlers => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_list_handlers(ctx, inst)
         }),
-        BuiltinRuntimeTarget::ObStart => Some({
+        RuntimeFnId::ObStart => Some({
             crate::codegen::lower_inst::builtins::output_buffering::lower_ob_start(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Opendir => Some({
+        RuntimeFnId::Opendir => Some({
             crate::codegen::lower_inst::builtins::io::lower_opendir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Pathinfo => Some({
+        RuntimeFnId::Pathinfo => Some({
             crate::codegen::lower_inst::builtins::io::lower_pathinfo(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Pclose => Some({
+        RuntimeFnId::Pclose => Some({
             crate::codegen::lower_inst::builtins::io::lower_pclose(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Pfsockopen => Some({
+        RuntimeFnId::Pfsockopen => Some({
             crate::codegen::lower_inst::builtins::io::lower_fsockopen(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Popen => Some({
+        RuntimeFnId::Popen => Some({
             crate::codegen::lower_inst::builtins::io::lower_popen(ctx, inst)
         }),
-        BuiltinRuntimeTarget::PrintR => Some({
+        RuntimeFnId::PrintR => Some({
             crate::codegen::lower_inst::builtins::debug::lower_print_r(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Readdir => Some({
+        RuntimeFnId::Readdir => Some({
             crate::codegen::lower_inst::builtins::io::lower_readdir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Readfile => Some({
+        RuntimeFnId::Readfile => Some({
             crate::codegen::lower_inst::builtins::io::lower_readfile(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Readline => Some({
+        RuntimeFnId::Readline => Some({
             crate::codegen::lower_inst::builtins::io::lower_readline(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Readlink => Some({
+        RuntimeFnId::Readlink => Some({
             crate::codegen::lower_inst::builtins::io::lower_readlink(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Realpath => Some({
+        RuntimeFnId::Realpath => Some({
             crate::codegen::lower_inst::builtins::io::lower_realpath(ctx, inst)
         }),
-        BuiltinRuntimeTarget::RealpathCacheGet => Some({
+        RuntimeFnId::RealpathCacheGet => Some({
             crate::codegen::lower_inst::builtins::io::lower_realpath_cache_get(ctx, inst)
         }),
-        BuiltinRuntimeTarget::RealpathCacheSize => Some({
+        RuntimeFnId::RealpathCacheSize => Some({
             crate::codegen::lower_inst::builtins::io::lower_realpath_cache_size(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rename => Some({
+        RuntimeFnId::Rename => Some({
             crate::codegen::lower_inst::builtins::io::lower_rename(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rewind => Some({
+        RuntimeFnId::Rewind => Some({
             crate::codegen::lower_inst::builtins::io::lower_rewind(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rewinddir => Some({
+        RuntimeFnId::Rewinddir => Some({
             crate::codegen::lower_inst::builtins::io::lower_rewinddir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Rmdir => Some({
+        RuntimeFnId::Rmdir => Some({
             crate::codegen::lower_inst::builtins::io::lower_rmdir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Scandir => Some({
+        RuntimeFnId::Scandir => Some({
             crate::codegen::lower_inst::builtins::io::lower_scandir(ctx, inst)
         }),
-        BuiltinRuntimeTarget::Stat => Some({
+        RuntimeFnId::Stat => Some({
             crate::codegen::lower_inst::builtins::io::lower_stat(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamBucketAppend => Some({
+        RuntimeFnId::StreamBucketAppend => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_bucket_append_or_prepend(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamBucketMakeWriteable => Some({
+        RuntimeFnId::StreamBucketMakeWriteable => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_bucket_make_writeable(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamBucketNew => Some({
+        RuntimeFnId::StreamBucketNew => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_bucket_new(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamBucketPrepend => Some({
+        RuntimeFnId::StreamBucketPrepend => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_bucket_append_or_prepend(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextCreate => Some({
+        RuntimeFnId::StreamContextCreate => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_create(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextGetDefault => Some({
+        RuntimeFnId::StreamContextGetDefault => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_get_default(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextGetOptions => Some({
+        RuntimeFnId::StreamContextGetOptions => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_get_options(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextGetParams => Some({
+        RuntimeFnId::StreamContextGetParams => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_get_params(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextSetDefault => Some({
+        RuntimeFnId::StreamContextSetDefault => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_set_default(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextSetOption => Some({
+        RuntimeFnId::StreamContextSetOption => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_set_option(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamContextSetParams => Some({
+        RuntimeFnId::StreamContextSetParams => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_context_set_params(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamCopyToStream => Some({
+        RuntimeFnId::StreamCopyToStream => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_copy_to_stream(ctx, inst)
         }),
-        BuiltinRuntimeTarget::StreamFilterAppend => Some({
+        RuntimeFnId::StreamFilterAppend => Some({
             crate::codegen::lower_inst::builtins::io::lower_stream_filter_attach(ctx, inst, "stream_filter_append")
         }),
         _ => None,

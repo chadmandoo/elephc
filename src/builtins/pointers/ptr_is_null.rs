@@ -17,9 +17,8 @@ builtin! {
     params: [pointer: Mixed],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrIsNull,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrIsNull,
     ),
     summary: "Returns true if the pointer is null.",
     extension: true,

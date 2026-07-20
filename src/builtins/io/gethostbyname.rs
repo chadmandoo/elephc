@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [hostname: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gethostbyname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gethostbyname,
     ),
     summary: "Gets the IPv4 address corresponding to the given Internet host name.",
     php_manual: "function.gethostbyname",

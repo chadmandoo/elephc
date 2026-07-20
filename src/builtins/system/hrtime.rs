@@ -17,9 +17,8 @@ builtin! {
     area: System,
     params: [as_number: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Hrtime,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Hrtime,
     ),
     summary: "Returns the current high-resolution time.",
 }

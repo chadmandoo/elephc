@@ -14,9 +14,8 @@ builtin! {
     area: String,
     params: [format: Str, values: Mixed],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Vprintf,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Vprintf,
     ),
     summary: "Outputs a formatted string using an array of values.",
     php_manual: "https://www.php.net/manual/en/function.vprintf.php",

@@ -19,9 +19,8 @@ builtin! {
     params: [data: Str, max_length: Int = DefaultSpec::Int(0)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gzinflate,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gzinflate,
     ),
     summary: "Inflate a deflated string.",
     php_manual: "https://www.php.net/manual/en/function.gzinflate.php",

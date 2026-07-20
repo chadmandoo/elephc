@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [string: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Ucfirst,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Ucfirst,
     ),
     summary: "Uppercases the first character of a string.",
     php_manual: "https://www.php.net/manual/en/function.ucfirst.php",

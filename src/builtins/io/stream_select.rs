@@ -22,9 +22,8 @@ builtin! {
         microseconds: Int = DefaultSpec::Int(0)
     ],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSelect,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSelect,
     ),
     summary: "Runs the equivalent of the select() system call on the given arrays of streams.",
     php_manual: "function.stream-select",

@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [from: Str, to: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Rename,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Rename,
     ),
     summary: "Renames a file or directory.",
     php_manual: "function.rename",

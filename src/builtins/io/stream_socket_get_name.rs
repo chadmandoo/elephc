@@ -18,9 +18,8 @@ builtin! {
     params: [socket: Mixed, remote: Bool],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamSocketGetName,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamSocketGetName,
     ),
     summary: "Retrieve the name of the local or remote sockets.",
     php_manual: "function.stream-socket-get-name",

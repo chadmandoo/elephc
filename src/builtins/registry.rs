@@ -1,10 +1,10 @@
 //! Purpose:
 //! Collects all `BuiltinSpec` entries submitted via `builtin!` into a lazy registry,
-//! and exposes lookup helpers used by the catalog, type checker, and codegen dispatcher.
+//! and exposes lookup helpers used by the catalog, type checker, EIR, and documentation.
 //!
 //! Called from:
 //! - `crate::types::checker::builtins::catalog` for name-based lookup.
-//! - `crate::codegen::lower_inst::builtins` for lowering-hook dispatch.
+//! - `crate::ir::runtime_call` for typed runtime-function contracts.
 //!
 //! Key details:
 //! - Registry is initialized once at first access via a `OnceLock`; subsequent calls
@@ -210,7 +210,7 @@ pub fn first_class_callable_sig(name: &str) -> Option<FunctionSig> {
 /// Applies first-class-callable refinements that are broader in the direct builtin spec.
 fn refine_first_class_callable_sig(def: &BuiltinDef, sig: &mut FunctionSig) {
     if let crate::builtins::semantics::BuiltinLowering::Runtime(
-        crate::ir::RuntimeCallTarget::Builtin(target),
+        crate::ir::RuntimeCallTarget::Function(target),
     ) = def.spec.semantics.lowering
     {
         target.refine_first_class_callable_sig(sig);
@@ -224,30 +224,67 @@ fn refine_first_class_callable_sig(def: &BuiltinDef, sig: &mut FunctionSig) {
 ///   where `n` is the total parameter count including optional ones.
 ///
 /// Returns `None` if the builtin is not registered.
+#[cfg(test)]
 pub fn arity_bounds(name: &str) -> Option<(usize, Option<usize>)> {
     let def = lookup(name)?;
+    Some(arity_bounds_for_def(def))
+}
+
+/// Derives declared arity bounds from one already-resolved registry definition.
+fn arity_bounds_for_def(def: &BuiltinDef) -> (usize, Option<usize>) {
     let min = def.defaults.iter().filter(|d| d.is_none()).count();
     let max = if def.variadic.is_some() {
         None
     } else {
         Some(def.params.len())
     };
-    Some((min, max))
+    (min, max)
 }
 
 /// Returns the arity bounds enforced by semantic checking and typed EIR calls.
 pub fn enforced_arity_bounds(name: &str) -> Option<(usize, Option<usize>)> {
-    let (declared_min, declared_max) = arity_bounds(name)?;
     let def = lookup(name)?;
-    Some((
+    Some(enforced_arity_bounds_for_def(def))
+}
+
+/// Derives the semantic arity contract from one already-resolved definition.
+fn enforced_arity_bounds_for_def(def: &BuiltinDef) -> (usize, Option<usize>) {
+    let (declared_min, declared_max) = arity_bounds_for_def(def);
+    (
         def.spec.min_args.unwrap_or(declared_min),
         def.spec.max_args.map_or(declared_max, Some),
-    ))
+    )
+}
+
+/// Returns the arity contract for a typed runtime function without PHP-name lookup.
+///
+/// Multiple aliases may share one runtime ID. Their normalized call contracts must
+/// agree; a mismatch is a registry invariant violation rather than a backend choice.
+pub fn runtime_fn_arity_bounds(
+    runtime_fn: crate::ir::RuntimeFnId,
+) -> Option<(usize, Option<usize>)> {
+    let mut resolved = None;
+    for def in registry().values() {
+        if !def.spec.semantics.runtime_functions.contains(runtime_fn) {
+            continue;
+        }
+        let bounds = enforced_arity_bounds_for_def(def);
+        if let Some(previous) = resolved {
+            assert_eq!(
+                previous, bounds,
+                "runtime function {} has aliases with incompatible arity contracts",
+                runtime_fn.as_eir(),
+            );
+        } else {
+            resolved = Some(bounds);
+        }
+    }
+    resolved
 }
 
 /// Validates the argument count for a named builtin and returns a standard arity error on mismatch.
 ///
-/// Uses `arity_bounds(name)` to determine the expected arity and compares it against
+/// Uses the registry's enforced arity contract and compares it against
 /// `arg_count`. Returns `Ok(())` when the count is in range. Returns a `CompileError`
 /// with `span` and a message matching the dominant legacy `"<name>() takes …"` phrasing:
 ///
@@ -324,6 +361,7 @@ mod tests {
         area: Types,
         params: [a: Int, b: Str = DefaultSpec::Null],
         returns: Bool,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry arity probe",
         internal: true,
     }
@@ -333,9 +371,8 @@ mod tests {
         area: Types,
         params: [],
         returns: Mixed,
-        semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayColumn,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+        semantics: crate::builtins::semantics::test_probe_semantics_with_ownership(
+            crate::builtins::semantics::BuiltinResultOwnership::Fresh,
         ),
         summary: "registry owned-result probe",
         internal: true,
@@ -346,9 +383,8 @@ mod tests {
         area: Types,
         params: [value: Str],
         returns: Str,
-        semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Htmlentities,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+        semantics: crate::builtins::semantics::test_probe_semantics_with_ownership(
+            crate::builtins::semantics::BuiltinResultOwnership::Independent,
         ),
         summary: "registry independent-result probe",
         internal: true,
@@ -360,6 +396,7 @@ mod tests {
         params: [fmt: Str],
         variadic: "__registry_values",
         returns: Str,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry variadic probe",
         internal: true,
     }
@@ -373,6 +410,7 @@ mod tests {
         params: [a: Int, b: Int, c: Int = DefaultSpec::Int(0)],
         max_args: 2,
         returns: Int,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry capped-arity probe",
         internal: true,
     }
@@ -384,6 +422,7 @@ mod tests {
         variadic: "__registry_arrays",
         min_args: 2,
         returns: Mixed,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry raised-min probe",
         internal: true,
     }
@@ -396,6 +435,7 @@ mod tests {
         max_args: 1,
         arity_error: "custom arity error message for probe",
         returns: Mixed,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry arity_error probe",
         internal: true,
     }
@@ -405,6 +445,7 @@ mod tests {
         area: Types,
         params: [ref target: Mixed, value: Int],
         returns: Mixed,
+        semantics: crate::builtins::semantics::test_probe_semantics(),
         summary: "registry by-ref param probe",
         internal: true,
     }
@@ -646,7 +687,7 @@ mod tests {
         assert_eq!(sig.params[1].0, "value");
     }
 
-    /// Verifies every registry runtime lowering resolves a validator-visible logical signature.
+    /// Verifies every registry runtime function has a complete central descriptor and logical ABI.
     #[test]
     fn every_runtime_lowering_has_a_logical_signature() {
         for name in names() {
@@ -661,6 +702,41 @@ mod tests {
                     target.as_eir(),
                 );
             }
+            if let crate::builtins::semantics::BuiltinRuntimeFunctions::One(runtime_fn) =
+                def.spec.semantics.runtime_functions
+            {
+                let target = crate::ir::RuntimeCallTarget::Function(runtime_fn);
+                let descriptor = runtime_fn.descriptor();
+                assert!(
+                    target.signature().is_some(),
+                    "{} may emit {} without a logical signature",
+                    name,
+                    target.as_eir(),
+                );
+                assert_eq!(descriptor.id, runtime_fn);
+                assert_eq!(descriptor.eir_name, target.as_eir());
+                assert_eq!(descriptor.logical_signature, target.signature());
+                assert_eq!(descriptor.effects, runtime_fn.effects());
+                assert_eq!(descriptor.result_ownership, runtime_fn.result_ownership());
+                assert_eq!(descriptor.requirements, runtime_fn.requirements());
+                assert_eq!(
+                    descriptor.backend_mapping,
+                    crate::ir::RuntimeFnBackendMapping::TargetAwareEmitter,
+                );
+                assert_eq!(
+                    descriptor.target_support,
+                    crate::ir::RuntimeFnTargetSupport::AllSupported,
+                );
+            }
         }
+    }
+
+    /// Verifies conditional EIR lowering exposes its runtime fallback contract by typed ID.
+    #[test]
+    fn conditional_runtime_function_arity_comes_from_registry_semantics() {
+        assert_eq!(
+            runtime_fn_arity_bounds(crate::ir::RuntimeFnId::Count),
+            Some((1, Some(1))),
+        );
     }
 }

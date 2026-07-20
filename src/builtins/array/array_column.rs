@@ -23,9 +23,8 @@ builtin! {
     params: [array: Mixed, column_key: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayColumn,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayColumn,
     ),
     summary: "Returns the values from a single column of an array of arrays.",
     php_manual: "https://www.php.net/manual/en/function.array-column.php",

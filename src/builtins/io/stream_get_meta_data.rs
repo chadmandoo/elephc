@@ -19,9 +19,8 @@ builtin! {
     params: [stream: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamGetMetaData,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamGetMetaData,
     ),
     summary: "Retrieves metadata from streams/file pointers.",
     php_manual: "function.stream-get-meta-data",

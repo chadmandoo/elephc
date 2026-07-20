@@ -18,9 +18,8 @@ builtin! {
     area: Math,
     params: [num: Float, precision: Int = DefaultSpec::Int(0)],
     returns: Float,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Round,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Round,
     ),
     summary: "Rounds a float.",
     php_manual: "https://www.php.net/manual/en/function.round.php",

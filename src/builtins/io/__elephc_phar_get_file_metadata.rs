@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [url: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharGetFileMetadata,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharGetFileMetadata,
     ),
     summary: "Reads the serialized per-file metadata blob.",
     internal: true,

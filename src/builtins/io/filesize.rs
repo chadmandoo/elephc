@@ -16,9 +16,8 @@ builtin! {
     area: Io,
     params: [filename: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Filesize,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Filesize,
     ),
     summary: "Gets file size.",
     php_manual: "function.filesize",

@@ -13,9 +13,8 @@ builtin! {
     area: String,
     params: [context: Mixed, data: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashUpdate,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashUpdate,
     ),
     summary: "Pumps data into an active incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-update.php",

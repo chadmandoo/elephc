@@ -21,9 +21,8 @@ builtin! {
     returns: Mixed,
     check: check,
     lazy_check: true,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::CallUserFuncArray,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::CallUserFuncArray,
     ),
     summary: "Calls a callback with an array of parameters.",
     php_manual: "function.call-user-func-array",

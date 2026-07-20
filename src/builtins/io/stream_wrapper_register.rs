@@ -19,9 +19,8 @@ builtin! {
     params: [protocol: Str, class: Str, flags: Int = DefaultSpec::Int(0)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamWrapperRegister,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamWrapperRegister,
     ),
     summary: "Registers a URL wrapper implemented as a PHP class.",
     php_manual: "function.stream-wrapper-register",

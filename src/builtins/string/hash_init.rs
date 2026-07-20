@@ -22,9 +22,8 @@ builtin! {
     max_args: 1,
     arity_error: "hash_init() flags/HASH_HMAC streaming mode is not supported; use hash_hmac() for HMAC",
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::HashInit,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::HashInit,
     ),
     summary: "Initialize an incremental hashing context.",
     php_manual: "https://www.php.net/manual/en/function.hash-init.php",

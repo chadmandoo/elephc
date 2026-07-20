@@ -20,9 +20,8 @@ builtin! {
     params: [pointer: Mixed],
     returns: Bool,
     check: crate::builtins::pointers::ptr_is_null::check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPtrIsNull,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPtrIsNull,
     ),
     summary: "Internal prelude alias of ptr_is_null.",
     internal: true,

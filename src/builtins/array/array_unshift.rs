@@ -26,9 +26,8 @@ builtin! {
     max_args: 2,
     returns: Int,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArrayUnshift,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArrayUnshift,
     ),
     summary: "Prepends one or more elements to the beginning of an array.",
     php_manual: "https://www.php.net/manual/en/function.array-unshift.php",

@@ -24,9 +24,8 @@ builtin! {
     max_args: 2,
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strrpos,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strrpos,
     ),
     summary: "Finds the numeric position of the last occurrence of a substring.",
     php_manual: "https://www.php.net/manual/en/function.strrpos.php",

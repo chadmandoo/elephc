@@ -20,9 +20,8 @@ builtin! {
     params: [context: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamContextGetParams,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamContextGetParams,
     ),
     summary: "Retrieves parameters from the specified stream context.",
     php_manual: "function.stream-context-get-params",

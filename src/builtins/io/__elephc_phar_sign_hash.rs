@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [path: Str, algo: Str],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharSignHash,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharSignHash,
     ),
     summary: "Signs a PHAR archive with the given hash algorithm.",
     internal: true,

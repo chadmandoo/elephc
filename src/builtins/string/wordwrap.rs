@@ -22,9 +22,8 @@ builtin! {
         cut_long_words: Bool = DefaultSpec::Bool(false)
     ],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Wordwrap,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Wordwrap,
     ),
     summary: "Wraps a string to a given number of characters.",
     php_manual: "https://www.php.net/manual/en/function.wordwrap.php",

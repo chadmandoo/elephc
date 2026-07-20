@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [stream: Mixed, buffer: Str],
     returns: Mixed,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamBucketNew,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamBucketNew,
     ),
     summary: "Creates a new bucket for use in a stream filter.",
     php_manual: "function.stream-bucket-new",

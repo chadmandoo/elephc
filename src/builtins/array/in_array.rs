@@ -19,9 +19,8 @@ builtin! {
     params: [needle: Mixed, haystack: Mixed, strict: Bool = DefaultSpec::Bool(false)],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::InArray,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::InArray,
     ),
     summary: "Checks if a value exists in an array.",
     php_manual: "https://www.php.net/manual/en/function.in-array.php",

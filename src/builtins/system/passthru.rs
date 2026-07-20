@@ -14,9 +14,8 @@ builtin! {
     area: System,
     params: [command: Str],
     returns: Void,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Passthru,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Passthru,
     ),
     summary: "Executes an external program and passes its output directly.",
 }

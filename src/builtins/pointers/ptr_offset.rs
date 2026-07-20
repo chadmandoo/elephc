@@ -18,9 +18,8 @@ builtin! {
     params: [pointer: Mixed, offset: Mixed],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PtrOffset,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PtrOffset,
     ),
     summary: "Returns a new pointer offset from the given pointer by the given byte count.",
     extension: true,

@@ -18,9 +18,8 @@ builtin! {
     params: [datetime: Str, baseTimestamp: Int = DefaultSpec::Null],
     arity_error: "strtotime() takes 1 or 2 arguments",
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcStrtotimeRaw,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcStrtotimeRaw,
     ),
     summary: "Internal raw strtotime alias returning a plain integer.",
     internal: true,

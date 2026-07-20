@@ -17,9 +17,8 @@ builtin! {
     area: Io,
     params: [filename: Str],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ElephcPharGetStub,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ElephcPharGetStub,
     ),
     summary: "Reads the PHAR stub script.",
     internal: true,

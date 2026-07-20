@@ -24,9 +24,8 @@ builtin! {
     params: [value: Mixed, r#return: Bool = DefaultSpec::Bool(false)],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::PrintR,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::PrintR,
     ),
     summary: "Prints human-readable information about a variable.",
     php_manual: "function.print-r",

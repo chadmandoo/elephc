@@ -13,9 +13,8 @@ builtin! {
     area: Types,
     params: [value: Mixed],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gettype,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gettype,
     ),
     summary: "Returns the type of a variable as a string.",
     php_manual: "function.gettype",

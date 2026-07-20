@@ -16,9 +16,8 @@ builtin! {
     area: String,
     params: [string1: Str, string2: Str],
     returns: Int,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Strcmp,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirPrimitive,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Strcmp,
     ),
     summary: "Binary safe string comparison. Returns negative, zero, or positive.",
     php_manual: "https://www.php.net/manual/en/function.strcmp.php",

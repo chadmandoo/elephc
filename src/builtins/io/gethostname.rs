@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [],
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Gethostname,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Gethostname,
     ),
     summary: "Gets the standard host name for the local machine.",
     php_manual: "function.gethostname",

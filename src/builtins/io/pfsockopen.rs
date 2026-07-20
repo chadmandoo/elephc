@@ -28,9 +28,8 @@ builtin! {
     ],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Pfsockopen,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Pfsockopen,
     ),
     summary: "Open persistent Internet or Unix domain socket connection.",
     php_manual: "function.pfsockopen",

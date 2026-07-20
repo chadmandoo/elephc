@@ -13,9 +13,8 @@ builtin! {
     area: Io,
     params: [stream: Mixed],
     returns: Bool,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StreamIsLocal,
-            crate::builtins::semantics::BuiltinTargetStrategy::EirGraph,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StreamIsLocal,
     ),
     summary: "Checks if a stream is a local stream.",
     php_manual: "function.stream-is-local",

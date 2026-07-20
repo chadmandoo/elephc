@@ -17,9 +17,8 @@ builtin! {
     params: [search: Str, replace: Str, subject: Str, count: Mixed = DefaultSpec::Null],
     max_args: 3,
     returns: Str,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::StrIreplace,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::StrIreplace,
     ),
     summary: "Case-insensitive version of str_replace().",
     php_manual: "https://www.php.net/manual/en/function.str-ireplace.php",

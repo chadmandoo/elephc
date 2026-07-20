@@ -23,9 +23,8 @@ builtin! {
     params: [ref array: Mixed, offset: Int, length: Mixed = DefaultSpec::Null],
     returns: Mixed,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::ArraySplice,
-            crate::builtins::semantics::BuiltinTargetStrategy::Conditional,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::ArraySplice,
     ),
     summary: "Removes a portion of the array and replaces it with something else.",
     php_manual: "https://www.php.net/manual/en/function.array-splice.php",

@@ -18,9 +18,8 @@ builtin! {
     params: [filename: Str, group: Str],
     returns: Bool,
     check: check,
-    semantics: crate::builtins::semantics::runtime_target_semantics(
-            crate::ir::BuiltinRuntimeTarget::Lchgrp,
-            crate::builtins::semantics::BuiltinTargetStrategy::RuntimeCall,
+    semantics: crate::builtins::semantics::runtime_fn_semantics(
+        crate::ir::RuntimeFnId::Lchgrp,
     ),
     summary: "Changes group ownership of a symlink.",
     php_manual: "function.lchgrp",
