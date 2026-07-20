@@ -637,17 +637,15 @@ fn infer_loop_growth_value_type(
     }
 }
 
-/// Mirrors the checker's `foreach` value binding for the loop-widening prescan: the element
-/// type for an indexed/associative array source variable, `mixed` otherwise.
+/// Mirrors the checker's `foreach` value binding for the loop-widening prescan, preserving
+/// concrete element types from locals, literals, and function-like source expressions.
 fn foreach_prescan_value_type(ctx: &LoweringContext<'_, '_>, array: &Expr) -> PhpType {
-    let ExprKind::Variable(name) = &array.kind else {
-        return PhpType::Mixed;
+    let source_ty = match &array.kind {
+        ExprKind::Variable(name) => ctx.local_type(name),
+        _ => infer_loop_growth_value_type(ctx, array)
+            .unwrap_or_else(|| crate::types::checker::infer_expr_type_syntactic(array)),
     };
-    match ctx.local_type(name) {
-        PhpType::Array(elem) => *elem,
-        PhpType::AssocArray { value, .. } => *value,
-        _ => PhpType::Mixed,
-    }
+    foreach_value_type(&source_ty)
 }
 
 /// Lowers a `while` loop.
