@@ -35,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `print_r` is implemented in the compiler, see [the internals page](../../../internals/builtins/misc/print_r.md).
-

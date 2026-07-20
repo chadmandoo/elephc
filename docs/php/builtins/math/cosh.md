@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `cosh` is implemented in the compiler, see [the internals page](../../../internals/builtins/math/cosh.md).
-

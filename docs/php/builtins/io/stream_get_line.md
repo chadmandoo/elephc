@@ -36,4 +36,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_get_line` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_get_line.md).
-

@@ -35,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `atan2` is implemented in the compiler, see [the internals page](../../../internals/builtins/math/atan2.md).
-

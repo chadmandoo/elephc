@@ -35,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_bucket_new` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_bucket_new.md).
-

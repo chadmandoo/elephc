@@ -380,11 +380,9 @@ def render_user(b: dict, order: int, repo_root: Path) -> str:
         see_also_section=_see_also_section(b),
         internals_link=_internals_link(b),
     )
-    # Empty optional sections can stack several blank lines. Preserve the
-    # established output otherwise, but collapse pathological trailing runs.
-    if rendered.endswith("\n\n\n"):
-        return rendered.rstrip() + "\n"
-    return rendered
+    # Empty optional sections can stack trailing blank lines. Keep generated
+    # pages canonical with exactly one final newline.
+    return rendered.rstrip() + "\n"
 
 
 def render_internals(b: dict, order: int, repo_root: Path) -> str:

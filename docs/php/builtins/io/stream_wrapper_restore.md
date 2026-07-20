@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_wrapper_restore` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_wrapper_restore.md).
-

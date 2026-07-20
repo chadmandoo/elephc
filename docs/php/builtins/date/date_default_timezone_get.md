@@ -33,4 +33,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `date_default_timezone_get` is implemented in the compiler, see [the internals page](../../../internals/builtins/date/date_default_timezone_get.md).
-

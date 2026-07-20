@@ -237,4 +237,4 @@ The thematic local implementation commits are:
 7. `9a396f4c7` — final legacy-boundary enforcement;
 8. `c52ae6469` — EIR result and ownership contracts;
 9. `07cfba7c1` — final typed result-storage regressions;
-10. the documentation/generator/changelog closure commit containing this evidence.
+10. `386a6f861` — document the typed builtin EIR boundary and completion evidence.

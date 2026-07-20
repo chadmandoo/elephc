@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `is_link` is implemented in the compiler, see [the internals page](../../../internals/builtins/filesystem/is_link.md).
-

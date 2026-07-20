@@ -33,4 +33,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `realpath_cache_size` is implemented in the compiler, see [the internals page](../../../internals/builtins/filesystem/realpath_cache_size.md).
-

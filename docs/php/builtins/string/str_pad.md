@@ -37,4 +37,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `str_pad` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/str_pad.md).
-

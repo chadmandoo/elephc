@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `lstat` is implemented in the compiler, see [the internals page](../../../internals/builtins/filesystem/lstat.md).
-

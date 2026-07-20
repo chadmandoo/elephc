@@ -36,4 +36,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `clamp` is implemented in the compiler, see [the internals page](../../../internals/builtins/math/clamp.md).
-

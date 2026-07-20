@@ -35,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `file_put_contents` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/file_put_contents.md).
-

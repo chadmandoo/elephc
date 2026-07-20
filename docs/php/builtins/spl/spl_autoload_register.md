@@ -36,4 +36,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `spl_autoload_register` is implemented in the compiler, see [the internals page](../../../internals/builtins/spl/spl_autoload_register.md).
-

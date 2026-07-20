@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `spl_object_hash` is implemented in the compiler, see [the internals page](../../../internals/builtins/spl/spl_object_hash.md).
-

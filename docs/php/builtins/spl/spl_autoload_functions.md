@@ -33,4 +33,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `spl_autoload_functions` is implemented in the compiler, see [the internals page](../../../internals/builtins/spl/spl_autoload_functions.md).
-

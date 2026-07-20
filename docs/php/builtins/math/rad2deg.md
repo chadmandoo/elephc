@@ -34,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `rad2deg` is implemented in the compiler, see [the internals page](../../../internals/builtins/math/rad2deg.md).
-

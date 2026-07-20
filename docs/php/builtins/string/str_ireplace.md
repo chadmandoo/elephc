@@ -37,4 +37,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `str_ireplace` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/str_ireplace.md).
-
