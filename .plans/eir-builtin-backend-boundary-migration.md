@@ -228,8 +228,8 @@ Final verification evidence:
 
 The branch was refreshed onto `origin/main` (`07391e965`) on 2026-07-21:
 
-- all 11 migration commits were rebased, leaving the branch 0 behind and 11 ahead of
-  `origin/main`; no amend, push, or pull-request operation was performed;
+- all 11 migration commits were rebased and `origin/main` is an ancestor of the
+  refreshed branch; no amend, push, or pull-request operation was performed;
 - `main` added no builtin home files, so the inventory remained at 469 registry-backed
   AOT builtins; its changes to 12 array-callback builtins and `fseek()` were preserved
   inside the final semantic descriptors;
