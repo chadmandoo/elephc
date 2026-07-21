@@ -1540,6 +1540,9 @@ fn emit_runtime_callable_invoker_inline(
     sig: &FunctionSig,
     captures: &[(String, PhpType, bool)],
 ) -> String {
+    if let Some(label) = ctx.shared.runtime_callable_invoker(sig, captures) {
+        return label;
+    }
     let label = ctx.next_label("callable_invoker");
     let done_label = ctx.next_label("callable_invoker_done");
     let invoker = super::runtime_callable_invoker::RuntimeCallableInvoker {
@@ -1550,6 +1553,8 @@ fn emit_runtime_callable_invoker_inline(
     abi::emit_jump(ctx.emitter, &done_label);
     super::runtime_callable_invoker::emit_runtime_callable_invoker(ctx.emitter, ctx.data, &invoker);
     ctx.emitter.label(&done_label);
+    ctx.shared
+        .cache_runtime_callable_invoker(sig, captures, &label);
     label
 }
 
@@ -1598,6 +1603,13 @@ fn emit_runtime_call_wrapper_inline(
     sig: &FunctionSig,
     kind: RuntimeCallWrapperKind,
 ) -> Result<String> {
+    let cached = match kind {
+        RuntimeCallWrapperKind::Builtin => ctx.shared.runtime_builtin_wrapper(name, sig),
+        RuntimeCallWrapperKind::Extern => ctx.shared.runtime_extern_wrapper(name, sig),
+    };
+    if let Some(label) = cached {
+        return Ok(label);
+    }
     let label_prefix = match kind {
         RuntimeCallWrapperKind::Builtin => "callable_builtin",
         RuntimeCallWrapperKind::Extern => "callable_extern",
@@ -1617,6 +1629,14 @@ fn emit_runtime_call_wrapper_inline(
         false,
     )?;
     ctx.emitter.label(&done_label);
+    match kind {
+        RuntimeCallWrapperKind::Builtin => {
+            ctx.shared.cache_runtime_builtin_wrapper(name, sig, &label)
+        }
+        RuntimeCallWrapperKind::Extern => {
+            ctx.shared.cache_runtime_extern_wrapper(name, sig, &label)
+        }
+    }
     Ok(label)
 }
 

@@ -10,6 +10,7 @@
 //! - `crate::codegen_support` owns shared target, runtime, ABI, and metadata helpers.
 
 mod block_emit;
+mod callable_reachability;
 pub(crate) mod context;
 mod eval_callable_helpers;
 mod eval_class_constant_helpers;
