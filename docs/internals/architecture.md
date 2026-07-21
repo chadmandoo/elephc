@@ -198,6 +198,7 @@ src/
 ├── eval_aot.rs                Target-independent literal eval planning and fallback classification
 ├── optimize.rs                Public optimizer entry points and effect context
 ├── optimize/                  Constant folding, constant propagation, control-flow pruning, normalization, dead-code elimination
+├── builtins/                  Single-source builtin declarations and shared validation/type/effect/ownership/requirement/callable/EIR semantics
 ├── ir/                        EIR types, builder, validator, printer, effects, and tests
 ├── ir_lower/                  Active checked-AST to EIR lowering
 ├── ir_passes/                 EIR optimization pass driver, identity folding, peephole patterns, constant folding, common-subexpression elimination, loop-invariant code motion, dead-instruction elimination, dead-store elimination, branch simplification, the cross-function small-function inliner (run to a module-level fixed point), dominance analysis, loop analysis, and linear-scan register allocation
@@ -262,7 +263,7 @@ src/
 │       ├── builtin_spl_exceptions.rs SPL exception hierarchy metadata
 │       ├── builtin_stdclass.rs stdClass dynamic-property metadata
 │       ├── builtin_types/     Shared builtin class/type helper predicates
-│       ├── builtins/          Built-in function type signatures
+│       ├── builtins/          Registry integration plus compiler-resident language-construct checks
 │       ├── callables/         Closure, extern-callable, and first-class callable signature resolution
 │       ├── extern_decl.rs     Extern declaration validation
 │       ├── functions.rs       Function-checking module root / orchestration
@@ -286,7 +287,9 @@ src/
 │   ├── frame/                 Frame-layout unit tests
 │   ├── block_emit.rs          Basic-block scheduling and emission
 │   ├── lower_inst.rs          EIR instruction lowering dispatcher
-│   ├── lower_inst/            Target-aware instruction, builtin, callable, object, ownership, and conversion lowerers
+│   ├── lower_inst/            Target-aware instruction, typed runtime-target, callable, object, ownership, and conversion lowerers
+│   ├── lower_inst/runtime_calls.rs Typed RuntimeCallTarget dispatcher with no PHP-name lookup
+│   ├── lower_inst/runtime_functions/ Bounded RuntimeFnId backend implementation groups
 │   ├── lower_term.rs          EIR terminator lowering
 │   ├── value_placement.rs     Linear-scan register and stack value placement
 │   ├── runtime_callable_invoker.rs Runtime callable-descriptor invocation lowering

@@ -3,6 +3,9 @@
 All notable changes to elephc, a PHP-to-native compiler written in Rust.
 Releases are listed newest first.
 
+## [Unreleased]
+- Migrated every registry-backed PHP builtin to the backend-neutral EIR boundary. Builtin declarations now own one shared semantic descriptor for validation, result typing, effects, ownership, runtime/bridge requirements, callable policy, and lowering strategy; direct calls and generated callable wrappers emit typed EIR primitives or runtime calls that the target-aware backend materializes uniformly on macOS AArch64, Linux AArch64, and Linux x86_64. The old assembly hooks, opaque builtin opcode, duplicated per-name result/effect/requirement tables, legacy checker/signature fallbacks, and separately maintained callable wrappers have been removed.
+
 ## [0.26.2]
 - Added experimental PHP `eval()` support across macOS ARM64, Linux ARM64, and Linux x86_64. Eligible literal fragments are parsed at compile time and lowered to native EIR, including direct or scope-backed caller-local synchronization; dynamic strings and unsupported literal shapes fall back to the optional statically linked `elephc-magician` EvalIR interpreter. Within the supported eval subset, the fallback preserves caller/global scope updates, dynamic functions/classes/constants, callables, reflection, builtins, exceptions, ownership/COW behavior, and PHP-visible diagnostics without requiring PHP or the Zend Engine. Bridge linking is automatic when required and can be forced with `--with-eval`; generated builtin documentation now reports AOT and eval availability separately.
 - Added PHP-compatible sessions to `--web` across PHP 8.2–8.5 and every supported target: `$_SESSION`, the complete `session_*()` API and interfaces, file persistence with `flock`, the `php`/`php_binary`/`php_serialize` wire formats, custom save handlers, strict mode, lazy writes, GC, SID and runtime INI configuration, cookies and cache limiters, auto-start, multipart upload progress, and trans-SID rewriting. Session state, locks, and bridge buffers are reset between requests, while invalid names, IDs, serialized input, and every supported callable-handler form follow PHP-compatible validation and failure paths. The web prelude now retains session helpers by reachability, omits the legacy callable-handler adapter when unused, uses a compact auto-start path, and shares callable descriptors and invokers module-wide, keeping ordinary `--web` compilation and assembly size close to the pre-session baseline.
@@ -507,7 +510,8 @@ Releases are listed newest first.
 ## [0.1.0] - 2026-03-22
 - Initial compiler: echo, variables, integers, arithmetic and string concatenation, comparison operators, control flow (`if`/`while`/`for`/`break`/`continue`), functions, logical/assignment/increment operators.
 
-[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.26.2...HEAD
+[0.26.2]: https://github.com/illegalstudio/elephc/compare/v0.26.1...v0.26.2
 [0.26.1]: https://github.com/illegalstudio/elephc/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/illegalstudio/elephc/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/illegalstudio/elephc/compare/v0.25.1...v0.25.2

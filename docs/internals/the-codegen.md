@@ -46,7 +46,8 @@ and link the resulting user object against the cached runtime object.
 |---|---|
 | `src/codegen/mod.rs` | Public codegen facade, EIR backend entry points, runtime metadata finalization |
 | `src/codegen/block_emit.rs` | Function/block traversal, prologues, top-level entry and deferred EIR wrappers |
-| `src/codegen/lower_inst.rs`, `src/codegen/lower_inst/` | Instruction lowering and builtin-specific EIR emission |
+| `src/codegen/lower_inst.rs`, `src/codegen/lower_inst/` | Instruction lowering, including typed runtime-target dispatch with no PHP-name lookup |
+| `src/codegen/lower_inst/runtime_calls.rs`, `runtime_functions/` | Validates and lowers typed `RuntimeCallTarget` / `RuntimeFnId` operations into target-aware backend implementations |
 | `src/codegen/lower_inst/builtins/eval.rs` | Literal-eval AOT bodies, scope synchronization, bridge calls, and dynamic post-barrier dispatch |
 | `src/codegen/lower_term.rs` | Terminator lowering for returns, branches, switches, and unreachable paths |
 | `src/codegen/context.rs` | EIR function emission state and value materialization helpers |
@@ -84,6 +85,20 @@ than emitted by the assembly backend.
 Runtime feature selection is derived from the EIR module plus CLI-owned modes
 such as `--web`. This keeps ordinary binaries from carrying unused helper
 families while preserving deterministic linking.
+
+## Builtin Boundary
+
+Each registry-backed builtin owns one backend-neutral `BuiltinSemantics`
+descriptor in `src/builtins/<area>/<name>.rs`. Checker validation/result typing,
+optimizer effects, ownership/aliasing, runtime/link requirements, callable policy,
+argument lowering, and EIR lowering consume that same descriptor.
+
+Lowering emits reusable EIR primitives/graphs or an `Op::RuntimeCall` carrying a
+typed `RuntimeCallTarget`. `src/codegen/lower_inst/runtime_calls.rs` and the bounded
+`runtime_functions/` groups select the concrete target-aware implementation. PHP
+builtin names are absent from backend dispatch. Only compiler-resident language
+constructs such as `eval`, `isset`, `unset`, `empty`, `exit`, and `die` retain the
+separate `LanguageConstructCall` path.
 
 ## Eval Lowering Boundary
 

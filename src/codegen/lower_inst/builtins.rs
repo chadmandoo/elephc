@@ -1,6 +1,6 @@
 //! Purpose:
-//! Lowers the first scalar PHP builtin calls emitted as EIR `BuiltinCall` instructions.
-//! Covers concrete scalar casts, type predicates, selected Mixed tag predicates, and string length.
+//! Owns target-aware builtin emitters plus the small set of PHP language constructs
+//! represented by EIR `LanguageConstructCall` instructions.
 //!
 //! Called from:
 //! - `crate::codegen::lower_inst::lower_instruction()`.
@@ -13,17 +13,14 @@ use std::collections::BTreeSet;
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
-use crate::ir::{Immediate, Instruction, Op, ValueDef, ValueId};
+use crate::ir::{Immediate, Instruction, Op, PhpTypePredicate, ValueDef, ValueId};
 use crate::names::{define_seen_symbol, ir_global_symbol, php_symbol_key};
 use crate::parser::ast::Visibility;
 use crate::types::checker::builtins::is_php_visible_builtin_function;
 use crate::types::{ClassInfo, PhpType};
 
 use super::super::context::FunctionContext;
-use super::{
-    conversions, expect_data, expect_operand, load_value_to_first_int_arg, predicates,
-    store_if_result,
-};
+use super::{expect_data, expect_operand, load_value_to_first_int_arg, predicates, store_if_result};
 use crate::codegen::{CodegenIrError, Result};
 
 pub(crate) mod attributes;
@@ -50,34 +47,17 @@ pub(crate) mod types;
 const DEFINE_ALREADY_DEFINED_WARNING: &str =
     "Warning: define(): Constant already defined\n";
 
-/// Lowers a scalar builtin call by matching the canonical PHP function name.
-///
-/// Consults the builtin registry first using the canonical key, then handles
-/// compiler-resident language constructs that are not registry builtins.
-pub(super) fn lower_builtin_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+/// Lowers one compiler-resident PHP language construct by its canonical name.
+pub(super) fn lower_language_construct_call(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let name = ctx.function_name_data(expect_data(inst)?)?;
     let key = php_symbol_key(name.trim_start_matches('\\'));
-    // Registry-first: if the builtin is registered, invoke its lowering hook.
-    // Falls through to compiler-resident constructs when the name is not registered.
-    if let Some(def) = crate::builtins::registry::lookup(key.as_str()) {
-        return (def.spec.lower)(ctx, inst);
-    }
     match key.as_str() {
-        "closure_bind" => lower_closure_bind(ctx, inst),
         "eval" => eval::lower_eval(ctx, inst),
-        "strval" => lower_strval(ctx, inst),
-        "method_exists" | "property_exists" => lower_member_exists(ctx, inst, key.as_str()),
-        "is_integer" | "is_long" => {
-            lower_static_type_predicate(ctx, inst, key.as_str(), PhpType::Int)
-        }
-        "is_double" | "is_real" => {
-            lower_static_type_predicate(ctx, inst, key.as_str(), PhpType::Float)
-        }
         "empty" => lower_empty(ctx, inst),
         "unset" => types::lower_unset_builtin(ctx, inst),
         "isset" => isset::lower_isset(ctx, inst),
         "exit" | "die" => system::lower_exit(ctx, inst),
-        _ => Err(CodegenIrError::unsupported(format!("builtin call {}", name))),
+        _ => Err(CodegenIrError::unsupported(format!("language construct {}", name))),
     }
 }
 
@@ -793,7 +773,7 @@ fn emit_is_callable_dynamic_string_lookup(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Lowers `method_exists()` and `property_exists()` through eval or static metadata.
-fn lower_member_exists(
+pub(super) fn lower_member_exists(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
     name: &str,
@@ -1075,7 +1055,7 @@ pub(crate) fn lower_count(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> 
 /// Lowers the synthetic `closure_bind` call: rebinds a closure's captured
 /// `$this` to a new receiver via `__rt_closure_bind(descriptor, new_this)`,
 /// returning the rebound closure descriptor.
-fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(super) fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     ensure_arg_count(inst, "closure_bind", 2)?;
     let descriptor = expect_operand(inst, 0)?;
     let new_this = expect_operand(inst, 1)?;
@@ -1091,145 +1071,6 @@ fn lower_closure_bind(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
     }
     abi::emit_call_label(ctx.emitter, "__rt_closure_bind");
     store_if_result(ctx, inst)
-}
-
-/// Lowers `strlen()` by coercing string-like values and returning the byte length.
-pub(crate) fn lower_strlen(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "strlen", 1)?;
-    let value = expect_operand(inst, 0)?;
-    let ty = ctx.load_value_to_result(value)?;
-    match ty.codegen_repr() {
-        PhpType::Str => {}
-        PhpType::Mixed | PhpType::Union(_) => {
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_string");
-        }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "strlen for PHP type {:?}",
-                other
-            )));
-        }
-    }
-    let result_reg = abi::int_result_reg(ctx.emitter);
-    let len_reg = abi::string_result_regs(ctx.emitter).1;
-    match ctx.emitter.target.arch {
-        Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, len_reg)); // return the byte length of the loaded PHP string
-        }
-        Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("mov {}, {}", result_reg, len_reg)); // return the byte length of the loaded PHP string
-        }
-    }
-    store_if_result(ctx, inst)
-}
-
-/// Lowers `intval()` for concrete scalar operands.
-pub(crate) fn lower_intval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "intval", 1)?;
-    let value = expect_operand(inst, 0)?;
-    match ctx.value_php_type(value)? {
-        PhpType::Int | PhpType::Bool | PhpType::False => {
-            ctx.load_value_to_result(value)?;
-        }
-        PhpType::Void | PhpType::Never => {
-            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
-        }
-        PhpType::Float => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_float_result_to_int_result(ctx.emitter);
-        }
-        PhpType::Str => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_str_to_int");
-        }
-        PhpType::Mixed | PhpType::Union(_) => {
-            load_value_to_first_int_arg(ctx, value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int");
-        }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "intval for PHP type {:?}",
-                other
-            )))
-        }
-    }
-    store_if_result(ctx, inst)
-}
-
-/// Lowers `floatval()` for concrete scalar operands.
-pub(crate) fn lower_floatval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "floatval", 1)?;
-    let value = expect_operand(inst, 0)?;
-    match ctx.value_php_type(value)? {
-        PhpType::Float => {
-            ctx.load_value_to_result(value)?;
-        }
-        PhpType::Int | PhpType::Bool | PhpType::False => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_int_result_to_float_result(ctx.emitter);
-        }
-        PhpType::Void | PhpType::Never => {
-            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
-            abi::emit_int_result_to_float_result(ctx.emitter);
-        }
-        PhpType::Str => {
-            ctx.load_value_to_result(value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_str_to_number");
-        }
-        PhpType::Mixed | PhpType::Union(_) => {
-            load_value_to_first_int_arg(ctx, value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float");
-        }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "floatval for PHP type {:?}",
-                other
-            )))
-        }
-    }
-    store_if_result(ctx, inst)
-}
-
-/// Lowers `boolval()` using the same concrete scalar PHP truthiness rules as `IsTruthy`.
-pub(crate) fn lower_boolval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "boolval", 1)?;
-    let value = expect_operand(inst, 0)?;
-    match ctx.value_php_type(value)? {
-        PhpType::Bool | PhpType::False | PhpType::Int => {
-            ctx.load_value_to_result(value)?;
-            predicates::emit_int_result_nonzero_bool(ctx);
-        }
-        PhpType::Void | PhpType::Never => {
-            abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 0);
-        }
-        PhpType::Float => {
-            ctx.load_value_to_result(value)?;
-            predicates::emit_float_result_nonzero_bool(ctx);
-        }
-        PhpType::Str => {
-            predicates::emit_string_truthiness(ctx, value)?;
-        }
-        PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Iterable => {
-            predicates::emit_array_truthiness(ctx, value)?;
-        }
-        PhpType::Mixed | PhpType::Union(_) => {
-            load_value_to_first_int_arg(ctx, value)?;
-            abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool");
-        }
-        other => {
-            return Err(CodegenIrError::unsupported(format!(
-                "boolval for PHP type {:?}",
-                other
-            )))
-        }
-    }
-    store_if_result(ctx, inst)
-}
-
-/// Lowers `strval()` through the same semantics as an explicit PHP string cast.
-fn lower_strval(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "strval", 1)?;
-    conversions::lower_cast_to_string(ctx, inst)
 }
 
 /// Lowers `empty()` for concrete scalar and array-like operands.
@@ -1350,7 +1191,38 @@ fn invert_bool_result(ctx: &mut FunctionContext<'_>) {
     }
 }
 
-/// Lowers a static `is_*` predicate for concrete non-Mixed values.
+/// Lowers the reusable EIR PHP type predicate through target-aware value inspection.
+pub(crate) fn lower_type_predicate(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let Some(Immediate::TypePredicate(predicate)) = inst.immediate else {
+        return Err(CodegenIrError::unsupported(
+            "type_predicate requires a typed predicate immediate",
+        ));
+    };
+    match predicate {
+        PhpTypePredicate::Array => lower_is_array(ctx, inst),
+        PhpTypePredicate::Bool => {
+            lower_static_type_predicate(ctx, inst, "type_predicate", PhpType::Bool)
+        }
+        PhpTypePredicate::Float => {
+            lower_static_type_predicate(ctx, inst, "type_predicate", PhpType::Float)
+        }
+        PhpTypePredicate::Int => {
+            lower_static_type_predicate(ctx, inst, "type_predicate", PhpType::Int)
+        }
+        PhpTypePredicate::Iterable => lower_is_iterable(ctx, inst),
+        PhpTypePredicate::Object => lower_is_object(ctx, inst),
+        PhpTypePredicate::Resource => types::lower_is_resource(ctx, inst),
+        PhpTypePredicate::Scalar => lower_is_scalar(ctx, inst),
+        PhpTypePredicate::String => {
+            lower_static_type_predicate(ctx, inst, "type_predicate", PhpType::Str)
+        }
+    }
+}
+
+/// Lowers a static PHP type predicate for concrete non-Mixed values.
 pub(crate) fn lower_static_type_predicate(
     ctx: &mut FunctionContext<'_>,
     inst: &Instruction,
@@ -1605,14 +1477,6 @@ fn interface_extends_traversable(ctx: &FunctionContext<'_>, interface_name: &str
 /// Normalizes a PHP class or interface name for metadata lookups.
 fn normalized_type_name(type_name: &str) -> &str {
     type_name.trim_start_matches('\\')
-}
-
-/// Lowers `is_null()` for concrete scalar values and boxed Mixed payloads.
-pub(crate) fn lower_is_null_builtin(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
-    ensure_arg_count(inst, "is_null", 1)?;
-    let value = expect_operand(inst, 0)?;
-    predicates::emit_is_null_result(ctx, value)?;
-    store_if_result(ctx, inst)
 }
 
 /// Lowers `is_array()`: true for statically-known arrays/hashes, or a boxed Mixed/Union value

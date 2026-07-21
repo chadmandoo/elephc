@@ -5,7 +5,7 @@
 //! from boxed Mixed cells after the call returns.
 //!
 //! Called from:
-//! - `crate::codegen::lower_inst::builtins::lower_builtin_call()`.
+//! - `crate::codegen::lower_inst::builtins::lower_language_construct_call()`.
 //!
 //! Key details:
 //! - Argument evaluation has already happened in PHP source order during EIR
