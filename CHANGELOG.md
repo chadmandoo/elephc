@@ -510,7 +510,8 @@ Releases are listed newest first.
 ## [0.1.0] - 2026-03-22
 - Initial compiler: echo, variables, integers, arithmetic and string concatenation, comparison operators, control flow (`if`/`while`/`for`/`break`/`continue`), functions, logical/assignment/increment operators.
 
-[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/illegalstudio/elephc/compare/v0.26.2...HEAD
+[0.26.2]: https://github.com/illegalstudio/elephc/compare/v0.26.1...v0.26.2
 [0.26.1]: https://github.com/illegalstudio/elephc/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/illegalstudio/elephc/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/illegalstudio/elephc/compare/v0.25.1...v0.25.2
