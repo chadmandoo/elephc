@@ -811,44 +811,22 @@ pub(super) fn check_list_unpack(
     env: &mut TypeEnv,
 ) -> Result<(), CompileError> {
     let arr_ty = checker.infer_type(value, env)?;
-    match &arr_ty {
-        PhpType::Array(elem_ty) => {
-            for var in vars {
-                let unpack_ty = *elem_ty.clone();
-                env.insert(var.clone(), unpack_ty.clone());
-                update_list_unpack_callable_metadata(checker, var, value, &unpack_ty);
-                checker.reflection_class_targets.remove(var);
-            }
-        }
-        // An associative-array RHS, or a union that carries an array-like member
-        // (a null-narrowed `?array` return leaves `Union[Array, Void]`; a Mixed
-        // union), is an array at runtime in well-typed code. Its elements bind as
-        // Mixed (adaptive access), the same trust posture PHP applies at runtime.
-        PhpType::AssocArray { .. } => {
-            for var in vars {
-                env.insert(var.clone(), PhpType::Mixed);
-                update_list_unpack_callable_metadata(checker, var, value, &PhpType::Mixed);
-            }
-        }
-        PhpType::Union(members)
-            if members.iter().any(|member| {
-                matches!(
-                    member.codegen_repr(),
-                    PhpType::Array(_) | PhpType::AssocArray { .. } | PhpType::Mixed
-                )
-            }) =>
-        {
-            for var in vars {
-                env.insert(var.clone(), PhpType::Mixed);
-                update_list_unpack_callable_metadata(checker, var, value, &PhpType::Mixed);
-            }
-        }
+    let unpack_ty = match &arr_ty {
+        PhpType::Array(elem_ty) => *elem_ty.clone(),
+        // Associative arrays can contain integer keys used by positional destructuring. Their
+        // element type stays adaptive because hash values may be heterogeneous or absent.
+        PhpType::AssocArray { .. } => PhpType::Mixed,
         _ => {
             return Err(CompileError::new(
                 span,
                 "List unpacking requires an array on the right-hand side",
             ));
         }
+    };
+    for var in vars {
+        env.insert(var.clone(), unpack_ty.clone());
+        update_list_unpack_callable_metadata(checker, var, value, &unpack_ty);
+        checker.reflection_class_targets.remove(var);
     }
     Ok(())
 }

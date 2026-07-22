@@ -278,7 +278,7 @@ impl Checker {
                     && else_body.is_none()
                     && clauses
                         .iter()
-                        .all(|(_, body)| self.body_always_diverges(body));
+                        .all(|(_, body)| self.body_cannot_fall_through(body));
                 if !keep_complement_after_if {
                     for (var, original) in &saved_vars {
                         restore_narrowed_var(env, var, original);
