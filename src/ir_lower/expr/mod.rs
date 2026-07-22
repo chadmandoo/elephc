@@ -2052,10 +2052,10 @@ fn emit_builtin_call_value(
         ctx.mark_eval_executed();
         if eval_needs_barrier {
             ctx.apply_eval_barrier();
-        } else if eval_literal
-            .is_some_and(|fragment| eval_literal_needs_scope_barrier(ctx, fragment))
+        } else if let Some(write_names) = eval_literal
+            .and_then(|fragment| eval_literal_scope_barrier_writes(ctx, fragment))
         {
-            ctx.apply_eval_scope_barrier();
+            ctx.apply_eval_scope_barrier(&write_names);
         }
     }
     call
@@ -2145,8 +2145,11 @@ fn eval_literal_needs_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> 
     true
 }
 
-/// Returns true when a literal `eval` only needs materialized eval-scope state.
-fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &str) -> bool {
+/// Returns the caller locals written by an EIR literal `eval` that only needs scope state.
+fn eval_literal_scope_barrier_writes(
+    ctx: &LoweringContext<'_, '_>,
+    fragment: &str,
+) -> Option<std::collections::BTreeSet<String>> {
     let static_call_supported = |name: &str, args: &[Expr]| {
         eval_literal_static_function_supported_by_lowering(ctx, name, args)
     };
@@ -2158,13 +2161,14 @@ fn eval_literal_needs_scope_barrier(ctx: &LoweringContext<'_, '_>, fragment: &st
             eval_literal_static_method_supported_by_lowering(ctx, receiver, method, args)
         },
     );
-    plan.requires_runtime_eval_scope()
+    (plan.requires_runtime_eval_scope()
         && eval_literal_scope_constraints_supported_by_lowering(
             ctx,
             plan.array_read_constraints(),
             plan.assoc_array_read_constraints(),
             plan.float_predicate_read_constraints(),
-        )
+        ))
+    .then(|| plan.writes().clone())
 }
 
 /// Returns true when all scope-read variables can be passed as direct Mixed params.

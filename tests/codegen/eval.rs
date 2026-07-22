@@ -2598,7 +2598,7 @@ eval('if (true) { echo "yes"; } else { echo "no"; }');
 fn test_literal_eval_scalar_store_uses_scope_eir_without_magician() {
     let dir = make_cli_test_dir("elephc_literal_eval_aot_store_asm");
     let (user_asm, runtime_asm, required_libraries) = compile_source_to_asm_with_options(
-        "<?php eval('$created = \"yes\";'); echo $created;",
+        "<?php $existing = 1; eval('$created = \"yes\"; $existing = \"changed\";'); echo $created . ':' . $existing;",
         &dir,
         8_388_608,
         false,
@@ -2619,7 +2619,7 @@ fn test_literal_eval_scalar_store_uses_scope_eir_without_magician() {
         &default_link_paths(),
         &[],
     );
-    assert_eq!(out, "yes");
+    assert_eq!(out, "yes:changed");
     let _ = fs::remove_dir_all(&dir);
 }
 
