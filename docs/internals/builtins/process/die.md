@@ -2,7 +2,7 @@
 title: "die() — internals"
 description: "Compiler internals for die(): lowering path, type checks, and runtime helpers."
 sidebar:
-  order: 304
+  order: 323
 ---
 
 ## `die()` — internals
@@ -14,9 +14,13 @@ sidebar:
 - **Function symbol**: `(none — type-checker only)()`
 
 
-## Runtime helpers
+## Semantic descriptor
 
-_No direct `__rt_*` helpers captured — the lowering is inlined or routes through another builtin._
+_Compiler-resident construct; this name is intentionally outside the builtin registry._
+
+## EIR and runtime boundary
+
+_Compiler-resident lowering; no registry-backed typed runtime target applies._
 
 ## Signature summary
 
@@ -27,6 +31,11 @@ function die(int $status): void
 ## What the type checker enforces
 
 - **Arity**: takes 0–1 arguments (1 optional).
+
+## Eval interpreter (magician)
+
+- **Declaration**: [`crates/elephc-magician/src/interpreter/builtins/core/die.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/core/die.rs) (`eval_builtin!`)
+- **Dispatch hooks**: `direct`, `values`
 
 ## Cross-references
 

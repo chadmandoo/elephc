@@ -2,7 +2,7 @@
 title: "gethostbyaddr()"
 description: "Gets the Internet host name corresponding to a given IP address."
 sidebar:
-  order: 177
+  order: 183
 ---
 
 ## gethostbyaddr()
@@ -18,6 +18,11 @@ Gets the Internet host name corresponding to a given IP address.
 
 **Returns**: `mixed`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/network_env/gethostbyaddr.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/network_env/gethostbyaddr.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -29,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `gethostbyaddr` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/gethostbyaddr.md).
-

@@ -2,7 +2,7 @@
 title: "isset()"
 description: "Determines whether a variable is set and is not null."
 sidebar:
-  order: 277
+  order: 296
 ---
 
 ## isset()
@@ -19,6 +19,11 @@ Determines whether a variable is set and is not null.
 
 **Returns**: `bool`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/symbols/isset.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/symbols/isset.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -30,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `isset` is implemented in the compiler, see [the internals page](../../../internals/builtins/misc/isset.md).
-

@@ -2,7 +2,7 @@
 title: "stream_get_wrappers()"
 description: "Retrieves list of registered streams."
 sidebar:
-  order: 206
+  order: 225
 ---
 
 ## stream_get_wrappers()
@@ -17,6 +17,11 @@ Retrieves list of registered streams.
 
 **Returns**: `array`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/string/stream_get_wrappers.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/string/stream_get_wrappers.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -28,4 +33,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_get_wrappers` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_get_wrappers.md).
-

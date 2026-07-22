@@ -2,7 +2,7 @@
 title: "gzinflate()"
 description: "Inflate a deflated string."
 sidebar:
-  order: 350
+  order: 369
 ---
 
 ## gzinflate()
@@ -19,6 +19,11 @@ Inflate a deflated string.
 
 **Returns**: `mixed`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/string/gzinflate.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/string/gzinflate.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -30,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `gzinflate` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/gzinflate.md).
-

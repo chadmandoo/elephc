@@ -16,8 +16,9 @@ use crate::types::PhpType;
 
 use super::super::frame::emit_adjust_sp;
 use super::super::registers::{
-    float_arg_reg_limit, float_arg_reg_name, int_arg_reg_limit, int_arg_reg_name,
-    secondary_scratch_reg, tertiary_scratch_reg, OutgoingArgAssignment, STACK_ARG_SENTINEL,
+    float_arg_reg_limit, float_arg_reg_name, float_spill_scratch_reg, int_arg_reg_limit,
+    int_arg_reg_name, secondary_scratch_reg, tertiary_scratch_reg, OutgoingArgAssignment,
+    STACK_ARG_SENTINEL,
 };
 use super::stack::{emit_load_temporary_stack_slot, emit_store_to_sp};
 
@@ -109,10 +110,7 @@ fn emit_copy_stack_arg_slot(
         Arch::AArch64 => tertiary_scratch_reg(emitter),
         Arch::X86_64 => "r11",
     };
-    let float_reg = match emitter.target.arch {
-        Arch::AArch64 => "d15",
-        Arch::X86_64 => "xmm15",
-    };
+    let float_reg = float_spill_scratch_reg(emitter.target);
     match ty {
         PhpType::Float => {
             emit_load_temporary_stack_slot(emitter, float_reg, src_offset);
@@ -254,4 +252,17 @@ pub fn materialize_outgoing_args(
     }
 
     overflow_bytes
+}
+
+/// Returns the temporary caller-stack padding needed after outgoing stack args are materialized.
+///
+/// AArch64 callees read the first spilled incoming argument at `x29+32`, which leaves a
+/// 16-byte gap above the outgoing stack-argument area after the callee saves `x29/x30`.
+/// x86_64 already gets the corresponding gap from `call` pushing the return address and the
+/// callee saving `rbp`.
+pub fn outgoing_call_stack_pad_bytes(target: Target, overflow_bytes: usize) -> usize {
+    match target.arch {
+        Arch::AArch64 if overflow_bytes > 0 => 16,
+        _ => 0,
+    }
 }

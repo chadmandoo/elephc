@@ -2,7 +2,7 @@
 title: "stream_socket_enable_crypto()"
 description: "Turns encryption on/off on an already connected socket."
 sidebar:
-  order: 218
+  order: 237
 ---
 
 ## stream_socket_enable_crypto()
@@ -21,6 +21,11 @@ Turns encryption on/off on an already connected socket.
 
 **Returns**: `bool`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/filesystem/stream_socket_enable_crypto.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/filesystem/stream_socket_enable_crypto.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -32,4 +37,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_socket_enable_crypto` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_socket_enable_crypto.md).
-

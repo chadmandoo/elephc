@@ -942,6 +942,14 @@ and 0.x validation rather than by speculative pass work.
 - [x] Source maps v2 — richer mappings for functions / expressions / labels and a more stable machine-readable schema for external tooling (`elephc-source-map` version 2: function ranges with entry symbols, in-function labels, opcode-tagged instruction mappings; schema contract in `docs/compiling/source-maps.md`)
 - [x] Memory-model-aware propagation for heap-backed locals and targeted runtime invalidations beyond `unset($var)` and the currently modeled local writes — locals holding all-scalar array literals carry a COW-snapshot fact (`$a[<const>]` folds, `list()` unpacks, `$b = $a` copies), and side-effecting statements now invalidate only the locals they can write: known writes and complex `unset` targets stay exact, calls kill their by-ref argument roots (user signatures pre-scanned, builtin signatures from the registry, callback-invoking builtins treated as unknown callees) plus top-level facts only when the callee transitively writes `global` storage, all backed by a reference-volatility ledger covering `&`-aliases, by-ref captures/foreach/args, `global`/`static` bindings, and superglobals
 - [x] Resource scope-cleanup — auto-free tag-9 resource handles that leave scope without their explicit close (today an unclosed `fopen()` leaks its fd and an unfinalized `hash_init()` context leaks its heap state until process exit; `functions/cleanup.rs` skips `Resource`s by design). Prerequisites: a resource-kind subtype in the Mixed cell so the cleanup pass can pick the right destructor (fd → `close()`, HashContext → `elephc_crypto_free`, …), and aliasing safety (resources have no refcount; `$b = $a` would double-free under naive scope-free). Includes wiring the currently-uncalled `elephc_crypto_free` (`_elephc_crypto_free_fn` slot + publish entry + a `__rt_hash_ctx_free` helper) as the single HashContext destructor and making `hash_final` finalize a *clone* (leaving the original owned by its Mixed box) so a finalized context that later leaves scope is freed exactly once — closing the double-final/use-after-free hole documented in `src/codegen/runtime/strings/hash_context.rs`. `popen` pipes (kind 3 → `__rt_pclose`) and `opendir` streams (kind 4 → `__rt_closedir`) are released the same way, and an explicit `fclose`/`pclose`/`closedir` stamps a `-1` sentinel into the box so a descriptor (whose fd number may be reused) is never closed twice
+- [x] Experimental PHP `eval()` support — eligible literal fragments are parsed at compile time and lowered to native EIR (including direct or scope-backed caller-local synchronization); dynamic strings and unsupported literal shapes fall back to the optional statically linked `elephc-magician` EvalIR interpreter (auto-linked when required, forced with `--with-eval`), preserving caller/global scope updates, dynamic functions/classes/constants, callables, reflection, builtins, exceptions, and ownership/COW semantics within the supported subset
+- [x] Output-buffering builtins — `ob_start` through `ob_list_handlers` (13 builtins) on one shared buffer stack across native and eval'd code, capturing every stdout writer, with user output handlers (closures, first-class callables, function-name strings, eval-registered callables), `chunk_size` auto-flushing, cleanable/flushable/removable `flags` gating, and PHP-shaped `ob_get_status()` reporting
+- [x] `--strict-php` flag — accept only PHP-compatible constructs: extension syntax is rejected with per-violation diagnostics across the main file, includes, and autoloaded files, extension builtins behave exactly as under the PHP interpreter (`function_exists()` false, undefined-function fatal with a hint naming the disabled extension), and the mode reaches `eval()` with PHP's execute-time semantics
+- [x] `declare` directives (PR #459) — `declare(strict_types=1);` and the block form `declare(ticks=1) { ... }` parse and are validated syntactically; elephc compiles an always-strict subset, so directives are treated as no-ops
+- [x] PHP 8.3 typed class constants — declared types enforced for initializers and inherited overrides (including covariant narrowing) on classes, interfaces, traits, and enums, exposed via `ReflectionClassConstant::hasType()`/`getType()`
+- [x] `$object::class` on object expressions — returns the receiver's concrete runtime class name, evaluates the receiver exactly once, and rejects statically known non-object receivers
+- [x] `mb_strlen()` — nullable optional `$encoding` argument, UTF-8 malformed-sequence handling, byte-count aliases, iconv-backed multibyte encodings, callable dispatch, catchable `ValueError` for unknown encodings
+- [x] `static $x;` function-static declarations without an initializer — desugar to `= null` in both the native and Magician `eval()` parsers, matching PHP
 - [ ] Purity / may-throw v2 for dynamic instance dispatch, richer property/array reads, and less pessimistic builtin modeling (feeds the EIR effects table)
 - [ ] Guard reasoning v2 for dead-code elimination — broader range reasoning and multi-variable facts beyond current strict-scalar, boolean, loose-comparison, and safe relational-complement guards
 - [ ] Exception-aware DCE v2 — exact thrown-type / handler reachability, nested try rethrow modeling, and less conservative finally-path invalidation
@@ -1000,6 +1008,53 @@ statics, and static class properties all reset between requests). Run it with
   graceful `SIGINT`/`SIGTERM` shutdown (forward to workers, reap, exit 0), worker
   respawn on unexpected death, and a 30s header-read timeout bounding slow/idle
   keep-alive connections. Out of v1 scope: cookies, sessions, TLS, HTTP/2–3, multipart.
+- [x] **Phase 5** — session support: `session_start()`, `$_SESSION` superglobal,
+  `session_id()`, `session_name()`, `session_status()`, `session_save_path()`,
+  `session_write_close()` (auto-called at handler end via a finally block),
+  `session_regenerate_id()`, `session_unset()`, `session_destroy()`,
+  `session_set_cookie_params()` / `session_get_cookie_params()`, file-based
+  storage (matching PHP's `session.save_handler = files`; an empty configured
+  save path resolves to `sys_get_temp_dir()`), `flock`-based concurrency safety,
+  `PHP_SESSION_DISABLED` / `PHP_SESSION_NONE` / `PHP_SESSION_ACTIVE` constants.
+- [x] **Phase 5.1** — session parity: predefined `PHP_SESSION_*` / `SID`
+  constants (no runtime `define()`); custom save handlers via the object form
+  `session_set_save_handler(SessionHandlerInterface)` plus `SessionHandler`,
+  `SessionIdInterface`, `SessionUpdateTimestampHandlerInterface`;
+  `session.use_strict_mode`, `serialize_handler` (`php`/`php_serialize`/
+  `php_binary`), `lazy_write`, probabilistic auto-GC (`gc_probability`/
+  `gc_divisor`/`gc_maxlifetime`), `sid_length`/`sid_bits_per_character`,
+  complete `session_cache_limiter()` headers, `session_abort()`/`session_reset()`/
+  `session_gc()`/`session_encode()`/`session_decode()`/`session_module_name()`/
+  `session_commit()`/`session_register_shutdown()`. Also supports the legacy
+  6-callable `session_set_save_handler($open, $close, $read, …)` form (deprecated
+  in 8.4) for function-name and closure callables, wired through a general
+  enhancement that lets `call_user_func`/`call_user_func_array` dispatch a boxed
+  `Mixed` callback by runtime tag; instance array callables `[$obj, 'method']` in
+  that form now dispatch through the same boxed-`Mixed` path (only static
+  `['Class', 'method']` array callables still need the object form).
+  Fixed a pre-existing CLI SIGSEGV (superglobal type seeding gated on
+  `--web`) and two EIR ownership bugs on `static` property stores: a borrowed
+  object is now acquired (so it dispatches after the borrow is released), and
+  overwriting a Mixed/nullable-object static slot now releases the previous
+  object instead of leaking it on every reassignment.
+- [x] **Phase 5.2** — session runtime configuration: `ini_get()` / `ini_set()` /
+  `ini_get_all()` scoped to the `session.*` directive surface (PHP `ini_get`
+  string convention — integers as decimals, booleans as `'1'`/`''`; unknown
+  directives return `false`); `session.auto_start` seeded per worker from the
+  `ELEPHC_SESSION_AUTO_START` environment variable (auto-starts the session in
+  the request bootstrap, `php.ini`-`PERDIR`-style); `session.referer_check`
+  enforcement (a cookie-supplied ID whose request `Referer` lacks the configured
+  substring is invalidated, starting a fresh session). Adds the ini-settable
+  config surface for `session.use_only_cookies`, `session.use_trans_sid` /
+  `trans_sid_*`, and `session.upload_progress.*` (output URL-rewriting and live
+  upload-progress runtime behavior tracked separately).
+- [x] **Phase 5.3** — php-src lifecycle and storage parity: binary-safe
+  pointer/length payload ABI; files-handler `[depth;[mode;]]path`, nested GC,
+  no-follow/ownership hardening, and complete writes; active callback status,
+  abort/restart/read-and-close/regenerate sequencing; Cookie/GET/POST SID
+  transport without redundant cookies; `save_handler`, `cookie_partitioned`,
+  `use_cookies`, and `lazy_write` INI coverage; custom-handler lazy snapshots;
+  and `php_binary` plus non-cookie upload-progress IDs.
 
 ## v0.27.x — Shared and static libraries (C ABI)
 
@@ -1046,19 +1101,6 @@ future use cases.
 | Generator parity v2 | Medium | MVP delivered in v0.21.x for ARM64 and Linux x86_64. Remaining parity work: `yield` inside `try`/`catch`/`finally`, dynamic `yield from` arrays beyond the compile-time literal form, broader dynamic `yield from` Iterator targets, exception propagation through `Generator::throw` to caller-visible finally paths, and PHP-exact `Generator` interface inheritance with `Iterator`. See `docs/php/generators.md`. |
 | Fiber parity v2 | Medium | MVP delivered in v0.20.x for ARM64 and Linux x86_64. Remaining parity work: arithmetic auto-unboxing on `mixed` payloads received from `suspend()`, true variadic `start(...$args)` beyond seven args, dynamic callback targets, by-reference callback start parameters, configurable stack sizing, and PHP-exact `FiberError` hierarchy. See `docs/php/fibers.md`. |
 | Conditional include class-like variants | High | Keep class/interface/trait/enum duplicate detection strict for now. Supporting branch-selected class-like declarations would require runtime class metadata/layout dispatch, while modern PHP can avoid the ambiguity with namespaces. |
-
----
-
-## Will not implement
-
-Features that are fundamentally incompatible with a static ahead-of-time compiler.
-
-| Feature | Reason |
-|---|---|
-| `compact()` | Resolves variable names from strings at runtime. In elephc, variables are fixed stack slots allocated at compile time — there is no variable name table at runtime. |
-| `extract()` | Creates new variables from array keys at runtime. A static compiler must know all variables before execution — it cannot allocate stack slots on the fly. |
-| `$$var` (variable variables) | Requires a runtime symbol table to resolve variable names dynamically. Incompatible with static stack-based variable allocation. |
-| `eval()` | Requires a full interpreter/compiler at runtime. Fundamentally impossible in an AOT compiler. |
 
 ## Future 1.0 perspective
 

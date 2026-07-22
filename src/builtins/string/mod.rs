@@ -1,7 +1,7 @@
 //! Purpose:
 //! Groups all `string`-area builtin homes into this module so the registry can
 //! collect them in one place. Each submodule declares exactly one builtin via
-//! `builtin!` and provides its type-check and lowering hooks.
+//! `builtin!` and provides its checker contract and typed runtime target.
 //!
 //! Called from:
 //! - `crate::builtins` (`mod string;` in `src/builtins/mod.rs`).
@@ -48,6 +48,7 @@ pub mod lcfirst;
 pub mod long2ip;
 pub mod ltrim;
 pub mod mb_ereg_match;
+pub mod mb_strlen;
 pub mod md5;
 pub mod nl2br;
 pub mod number_format;

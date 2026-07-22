@@ -21,11 +21,11 @@
 </p>
 
 <p align="center">
-  <strong>3 native targets &middot; no Zend Engine &middot; zero runtime dependencies &middot; single standalone binary</strong>
+  <strong>3 native targets &middot; no Zend Engine &middot; no external PHP runtime &middot; single standalone binary</strong>
 </p>
 
 <p align="center">
-  A PHP-to-native compiler that takes a subset of PHP and compiles it directly to native assembly, producing standalone binaries for <strong>macOS ARM64</strong>, <strong>Linux ARM64</strong>, and <strong>Linux x86_64</strong>. No opcode fallback, just real machine code.
+  A PHP-to-native compiler that takes a subset of PHP and compiles it directly to native assembly, producing standalone binaries for <strong>macOS ARM64</strong>, <strong>Linux ARM64</strong>, and <strong>Linux x86_64</strong>. Ordinary source is AOT-compiled with no opcode fallback; experimental <code>eval()</code> can embed an optional interpreter bridge when runtime parsing is required.
 </p>
 
 <p align="center">
@@ -88,6 +88,8 @@ I made the project as modular as possible. Every function has its own codegen fi
 
 You can write PHP using the constructs documented in the [docs](docs/). Classes with single inheritance, interfaces, `instanceof`, nullsafe access (`?->`), abstract classes, final classes, methods and typed/static properties, PHP-style static property redeclarations, constructor property promotion, traits, constructors, instance/static methods, case-insensitive PHP symbol lookup for functions/classes/methods, `self::` / `parent::` / `static::` with late static binding, `readonly` properties and classes, enums, PHP 8 attributes on declarations, named arguments, first-class callables, typed function and method parameters and returns, `try` / `catch` / `finally` / `throw`, visibility modifiers, union and nullable types, copy-on-write arrays, associative arrays with PHP insertion order and integer/numeric-string key normalization, array union with `+`, closures, generator functions and generator closures with `yield` / `yield from`, namespaces, includes, compile-time Composer/SPL autoloading, class/introspection helpers, `PDO` database access (`PDO` / `PDOStatement` / `PDOException`) with SQLite, PostgreSQL, and MySQL/MariaDB drivers, image creation and manipulation (GD raster I/O, drawing, transforms/filters, Exif/IPTC metadata, and the `Imagick`/`Gmagick`/Cairo object APIs) on a pure-Rust codec/raster bridge, and PHP 8.1-style `Fiber` coroutines on macOS ARM64, Linux ARM64, and Linux x86_64.
 
+Experimental [`eval()` support](docs/php/eval.md) AOT-lowers eligible literal fragments and falls back to the optional, statically linked Magician interpreter for dynamic fragments. Runnable examples live in [`examples/eval/`](examples/eval/) and [`examples/eval-globals/`](examples/eval-globals/).
+
 For performance-oriented code, elephc exposes compiler extensions beyond standard PHP — see the Why section above.
 
 Then compile and run:
@@ -109,13 +111,13 @@ elephc is designed to be read. The code generation and runtime layers are heavil
 
 There are several ways to make PHP easier to distribute or faster to run: bundling a PHP runtime into one executable, encrypting bytecode, running through the Zend VM with JIT, or compiling selected hot paths while falling back to opcodes for dynamic code.
 
-elephc takes a narrower but cleaner route: it is a from-scratch compiler for a static subset of PHP. It parses PHP source, type-checks it, lowers it to target-specific assembly, assembles and links it into a native executable, and ships only the small runtime routines needed by the generated program. If elephc compiles a construct, that construct is native code rather than interpreted PHP.
+elephc takes a narrower but cleaner route: it is a from-scratch compiler for a static subset of PHP. It parses PHP source, type-checks it, lowers it to target-specific assembly, assembles and links it into a native executable, and ships only the small runtime routines needed by the generated program. Ordinary supported constructs are native code. Eligible literal `eval()` fragments can also be lowered ahead of time; fragments that require runtime parsing use the optional Magician interpreter bridge.
 
 That tradeoff is intentional:
 
 - **Less long-tail compatibility** than a VM-backed PHP implementation.
 - **More mechanical transparency**: readable assembly output, source maps, line-by-line commented codegen, and a documented memory model.
-- **No hidden runtime dependency**: the generated binary does not need PHP, the Zend Engine, a loader extension, or an embedded interpreter.
+- **No hidden external PHP runtime dependency**: the generated binary does not need PHP, the Zend Engine, or a loader extension. A program that needs dynamic `eval()` embeds its optional interpreter bridge directly in the standalone binary.
 - **Native-oriented extensions**: `extern`, `ptr`, `buffer<T>`, and `packed class` let PHP-shaped code cross into systems, FFI, game, and performance-sensitive workloads.
 
 That does not mean elephc has to live outside the existing PHP ecosystem. The current CLI path produces standalone executables, but the roadmap also includes shared/static library output and an experimental PHP extension bridge. That opens a practical middle path: keep a framework such as WordPress, Laravel, or Symfony running on PHP, then compile static, performance-sensitive modules into native libraries or PHP extensions.
@@ -177,6 +179,9 @@ elephc --gc-stats heavy.php
 # Enable compile-time feature branches
 elephc --define DEBUG app.php
 
+# Accept only PHP-compatible constructs (reject every elephc extension)
+elephc --strict-php app.php
+
 # Print per-phase compiler timings
 elephc --timings hello.php
 
@@ -195,8 +200,10 @@ elephc --no-ir-opt hot.php
 # Link extra native libraries or frameworks for FFI
 elephc app.php -l sqlite3 -L /opt/homebrew/lib --framework Cocoa
 
-# Force-enable a bridge crate (pdo, tls, crypto, phar, tz, image) regardless of auto-detection
+# Force-enable a bridge crate (pdo, tls, crypto, phar, tz, image, eval, web) regardless of auto-detection
 elephc app.php --with-pdo --with-crypto
+# --with-eval force-links Magician; normal eval use is detected automatically
+elephc app.php --with-eval
 
 # Explicit target selection
 # Supported targets today: macos-aarch64, linux-aarch64, linux-x86_64
@@ -316,18 +323,19 @@ The full list of supported constructs, operators, and control structures is in t
 <details>
 <summary>Show the construct highlights</summary>
 
-- **OOP**: classes, abstract/final classes, typed/final/static properties and methods, PHP-style static property redeclarations, direct static array property writes, constructor property promotion, interfaces, `instanceof`, traits, enums, PHP 8 declaration attributes, limited attribute reflection (`ReflectionClass`/`ReflectionMethod`/`ReflectionProperty::getAttributes()`, `ReflectionAttribute::newInstance()`), `readonly`, static/instance methods, case-insensitive class/interface/trait and method lookup, `self::`/`parent::`/`static::`, `::class` reflection, `new self()` / `new static()` / `new parent()`, magic methods (`__toString`, `__get`, `__set`)
+- **OOP**: classes, abstract/final classes, typed/final/static properties and methods, PHP-style static property redeclarations, direct static array property writes, constructor property promotion, interfaces, `instanceof`, traits, enums, PHP 8 declaration attributes, limited attribute reflection (`ReflectionClass`/`ReflectionMethod`/`ReflectionProperty::getAttributes()`, `ReflectionAttribute::newInstance()`), `readonly`, static/instance methods, case-insensitive class/interface/trait and method lookup, `self::`/`parent::`/`static::`, `::class` reflection (including `$object::class` on object expressions, returning the receiver's runtime class), class constants including PHP 8.3 typed class constants (exposed via `ReflectionClassConstant::hasType()`/`getType()`), `new self()` / `new static()` / `new parent()`, magic methods (`__toString`, `__get`, `__set`)
 - **Functions**: case-insensitive user and built-in function calls, default parameters, variadic/spread, pass by reference, named arguments, global variables, static locals, first-class callables, closures, arrow functions, static closures (`static function () { }`, `static fn () => ...`)
 - **Generators**: generator functions and closures, `yield`, key/value yields, `yield from`, `Generator::send()`, `throw()`, `getReturn()`, and `foreach` over `Iterator` / `IteratorAggregate`
 - **Fibers**: `Fiber`, `FiberError`, `Fiber::suspend()`, `Fiber::getCurrent()`, `start()`, `resume()`, `throw()`, `getReturn()`, state predicates, closure captures, guarded native stacks, and target-aware context switching on macOS ARM64, Linux ARM64, and Linux x86_64
 - **Control flow**: if/elseif/else, while, do-while, for, foreach, switch, match, break/continue including multi-level depths, try/catch/finally/throw
-- **Statements and literals**: `const` / `define()` constants, `global` declarations, `static` locals, `print` expressions, list unpacking, PHP numeric literal forms, heredoc / nowdoc strings
+- **Statements and literals**: `const` / `define()` constants, `global` declarations, `static` locals (with or without an initializer), `print` expressions, list unpacking, PHP numeric literal forms, heredoc / nowdoc strings, `declare(strict_types=1)` and `declare(ticks=...)` directives (validated syntactically and treated as no-ops — elephc compiles an always-strict subset)
 - **Operators**: arithmetic, comparison, `instanceof`, logical, bitwise, ternary, null coalescing (`??`), PHP 8.5 pipe (`|>`), assignment expressions for local and stabilized non-local targets, null coalescing assignment (`??=`), error control (`@`), and compound assignments
 - **Types**: union types (`int|string`), nullable (`?int`), `never` return type, `iterable` pseudo-type, inferred `resource|false` values for `fopen()` and `resource` values for standard streams, type casting, typed properties, typed function, method, closure, and arrow parameters and returns
 - **Modules**: namespaces, use imports, include/require/include_once/require_once, compile-time Composer PSR-4/PSR-0/classmap/files autoloading, `spl_autoload_register()` rule extraction, PHP magic constants
 - **FFI**: extern functions, extern blocks, extern globals, extern classes, pointer builtins
 - **Database (PDO)**: `PDO`, `PDOStatement`, `PDOException` with SQLite, PostgreSQL, and MySQL/MariaDB drivers, positional `?` and named `:name` binds, fetch modes, transactions, and `foreach` over result sets
 - **Date/time**: `DateTime`, `DateTimeImmutable`, `DateTimeInterface`, `DateTimeZone`, `DateInterval`, `DatePeriod`, the PHP 8.3 date exception hierarchy, DST-aware formatting via a bundled IANA timezone database, and `ext/calendar` Julian-Day functions
+- **Web server (`--web`)**: standalone prefork HTTP server binaries with `$_SERVER`/`$_GET`/`$_POST` and `php://input` request input, `header()`/`http_response_code()` response control, and PHP-compatible sessions — `$_SESSION`, the complete `session_*()` API, file persistence, custom save handlers, strict mode, cookies and cache limiters, and trans-SID rewriting
 - **Extensions**: `ifdef`, `packed class`, `buffer<T>`, `buffer_new<T>()`, `buffer_len()`, `buffer_free()`
 
 </details>
@@ -339,15 +347,17 @@ Over 420 PHP built-ins are implemented natively, grouped here by category — st
 <details>
 <summary>Show all built-in functions by category</summary>
 
-**Strings:** `strlen`, `substr`, `strpos`, `strrpos`, `strstr`, `str_replace`, `str_ireplace`, `substr_replace`, `strtolower`, `strtoupper`, `ucfirst`, `lcfirst`, `ucwords`, `trim`, `ltrim`, `rtrim`, `str_repeat`, `str_pad`, `strrev`, `chop`, `grapheme_strrev`, `str_split`, `strcmp`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `ord`, `chr`, `explode`, `implode`, `sprintf`, `printf`, `vprintf`, `vsprintf`, `sscanf`, `md5`, `sha1`, `hash`, `hash_algos`, `hash_equals`, `hash_hmac`, `hash_init`, `hash_update`, `hash_final`, `hash_copy`, `crc32`, `number_format`, `addslashes`, `stripslashes`, `nl2br`, `wordwrap`, `bin2hex`, `hex2bin`, `htmlspecialchars`, `htmlentities`, `html_entity_decode`, `urlencode`, `urldecode`, `rawurlencode`, `rawurldecode`, `base64_encode`, `base64_decode`, `gzcompress`, `gzdeflate`, `gzinflate`, `gzuncompress`, `ip2long`, `long2ip`, `inet_ntop`, `inet_pton`, `ctype_alpha`, `ctype_digit`, `ctype_alnum`, `ctype_space`
+**Strings:** `strlen`, `substr`, `strpos`, `strrpos`, `strstr`, `str_replace`, `str_ireplace`, `substr_replace`, `strtolower`, `strtoupper`, `ucfirst`, `lcfirst`, `ucwords`, `trim`, `ltrim`, `rtrim`, `str_repeat`, `str_pad`, `strrev`, `chop`, `grapheme_strrev`, `str_split`, `strcmp`, `strcasecmp`, `str_contains`, `str_starts_with`, `str_ends_with`, `ord`, `chr`, `explode`, `implode`, `sprintf`, `printf`, `vprintf`, `vsprintf`, `sscanf`, `md5`, `sha1`, `hash`, `hash_algos`, `hash_equals`, `hash_hmac`, `hash_init`, `hash_update`, `hash_final`, `hash_copy`, `crc32`, `number_format`, `addslashes`, `stripslashes`, `nl2br`, `wordwrap`, `bin2hex`, `hex2bin`, `htmlspecialchars`, `htmlentities`, `html_entity_decode`, `urlencode`, `urldecode`, `rawurlencode`, `rawurldecode`, `base64_encode`, `base64_decode`, `gzcompress`, `gzdeflate`, `gzinflate`, `gzuncompress`, `ip2long`, `long2ip`, `inet_ntop`, `inet_pton`, `ctype_alpha`, `ctype_digit`, `ctype_alnum`, `ctype_space`, `mb_strlen`, `mb_ereg_match`
 
 **Arrays:** `count`, `array_push`, `array_pop`, `in_array`, `array_keys`, `array_values`, `sort`, `rsort`, `isset`, `array_key_exists`, `array_search`, `array_merge`, `array_slice`, `array_splice`, `array_combine`, `array_flip`, `array_reverse`, `array_unique`, `array_sum`, `array_product`, `array_chunk`, `array_pad`, `array_fill`, `array_fill_keys`, `array_diff`, `array_intersect`, `array_diff_key`, `array_intersect_key`, `array_unshift`, `array_shift`, `asort`, `arsort`, `ksort`, `krsort`, `natsort`, `natcasesort`, `shuffle`, `array_rand`, `array_column`, `range`, `array_map`, `array_filter`, `array_reduce`, `array_walk`, `array_walk_recursive`, `array_is_list`, `array_key_first`, `array_key_last`, `array_replace`, `array_replace_recursive`, `array_merge_recursive`, `array_diff_assoc`, `array_intersect_assoc`, `array_udiff`, `array_uintersect`, `array_find`, `array_any`, `array_all`, `array_multisort`, `usort`, `uksort`, `uasort`, `call_user_func`, `call_user_func_array`, `function_exists`
 
 **Math:** `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`, `clamp`, `intdiv`, `fmod`, `fdiv`, `rand`, `mt_rand`, `random_int`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `log`, `log2`, `log10`, `exp`, `hypot`, `deg2rad`, `rad2deg`, `pi`
 
-**Types and class introspection:** `gettype`, `settype`, `empty`, `unset`, `is_int`, `is_float`, `is_string`, `is_bool`, `is_null`, `is_numeric`, `is_nan`, `is_finite`, `is_infinite`, `is_iterable`, `is_callable`, `is_resource`, `is_array`, `is_object`, `is_scalar`, `boolval`, `floatval`, `intval`, `get_resource_type`, `get_resource_id`, `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`, `class_alias`, `get_class`, `get_parent_class`, `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`, `is_a`, `is_subclass_of`, `class_implements`, `class_parents`, `class_uses`
+**Types and class introspection:** `gettype`, `settype`, `empty`, `unset`, `is_int`, `is_float`, `is_string`, `is_bool`, `is_null`, `is_numeric`, `is_nan`, `is_finite`, `is_infinite`, `is_iterable`, `is_callable`, `is_resource`, `is_array`, `is_object`, `is_scalar`, `boolval`, `floatval`, `intval`, `get_resource_type`, `get_resource_id`, `class_exists`, `interface_exists`, `trait_exists`, `enum_exists`, `class_alias`, `get_class`, `get_parent_class`, `get_declared_classes`, `get_declared_interfaces`, `get_declared_traits`, `is_a`, `is_subclass_of`, `class_implements`, `class_parents`, `class_uses`, `method_exists`, `property_exists`, `strval`
 
 **I/O:** `fopen`, `fclose`, `fread`, `fwrite`, `fprintf`, `vfprintf`, `fscanf`, `fgets`, `fgetc`, `fpassthru`, `flock`, `tmpfile`, `readfile`, `feof`, `readline`, `fseek`, `ftell`, `rewind`, `file_get_contents`, `file_put_contents`, `file`, `hash_file`, `fgetcsv`, `fputcsv`, `file_exists`, `is_file`, `is_dir`, `is_readable`, `is_writable`, `is_writeable`, `is_executable`, `is_link`, `symlink`, `link`, `readlink`, `linkinfo`, `filesize`, `filemtime`, `fileatime`, `filectime`, `fileperms`, `fileowner`, `filegroup`, `fileinode`, `filetype`, `stat`, `lstat`, `fstat`, `clearstatcache`, `disk_free_space`, `disk_total_space`, `basename`, `dirname`, `pathinfo`, `realpath`, `realpath_cache_get`, `realpath_cache_size`, `fnmatch`, `touch`, `chmod`, `chown`, `chgrp`, `lchown`, `lchgrp`, `umask`, `ftruncate`, `fflush`, `fsync`, `fdatasync`, `copy`, `rename`, `unlink`, `mkdir`, `rmdir`, `opendir`, `readdir`, `rewinddir`, `closedir`, `scandir`, `glob`, `getcwd`, `chdir`, `tempnam`, `sys_get_temp_dir`, `var_dump`, `print_r`
+
+**Output buffering:** `ob_start`, `ob_get_contents`, `ob_get_clean`, `ob_get_flush`, `ob_get_length`, `ob_get_level`, `ob_clean`, `ob_end_clean`, `ob_end_flush`, `ob_flush`, `ob_get_status`, `ob_implicit_flush`, `ob_list_handlers`
 
 **Streams and sockets:** `stream_isatty`, `stream_is_local`, `stream_supports_lock`, `stream_get_wrappers`, `stream_get_transports`, `stream_get_filters`, `stream_context_create`, `stream_context_get_default`, `stream_context_set_default`, `stream_context_set_option`, `stream_context_set_params`, `stream_context_get_options`, `stream_context_get_params`, `stream_resolve_include_path`, `stream_get_contents`, `stream_copy_to_stream`, `stream_get_line`, `stream_get_meta_data`, `stream_set_chunk_size`, `stream_set_read_buffer`, `stream_set_write_buffer`, `stream_set_blocking`, `stream_set_timeout`, `stream_select`, `stream_filter_register`, `stream_filter_append`, `stream_filter_prepend`, `stream_filter_remove`, `stream_bucket_new`, `stream_bucket_make_writeable`, `stream_bucket_append`, `stream_bucket_prepend`, `stream_wrapper_register`, `stream_wrapper_unregister`, `stream_wrapper_restore`, `stream_socket_server`, `stream_socket_client`, `stream_socket_accept`, `stream_socket_enable_crypto`, `stream_socket_shutdown`, `stream_socket_sendto`, `stream_socket_recvfrom`, `stream_socket_get_name`, `stream_socket_pair`, `fsockopen`, `pfsockopen`, `popen`, `pclose`, `gethostname`, `gethostbyname`, `gethostbyaddr`, `getprotobyname`, `getprotobynumber`, `getservbyname`, `getservbyport`
 
@@ -355,7 +365,7 @@ Over 420 PHP built-ins are implemented natively, grouped here by category — st
 
 **SPL/autoload:** `spl_autoload_register`, `spl_autoload_unregister`, `spl_autoload_functions`, `spl_autoload_extensions`, `spl_autoload_call`, `spl_autoload`, `spl_classes`, `spl_object_id`, `spl_object_hash`, `iterator_to_array`, `iterator_count`, `iterator_apply`
 
-**Pointers/Buffers:** `ptr`, `ptr_null`, `ptr_is_null`, `ptr_get`, `ptr_set`, `ptr_read8`, `ptr_read16`, `ptr_read32`, `ptr_read_string`, `ptr_write8`, `ptr_write16`, `ptr_write32`, `ptr_write_string`, `ptr_offset`, `ptr_cast<T>`, `ptr_sizeof`, `buffer_new`, `buffer_new<T>()`, `buffer_len`, `buffer_free`
+**Pointers/Buffers:** `ptr`, `ptr_null`, `ptr_is_null`, `ptr_get`, `ptr_set`, `ptr_read8`, `ptr_read16`, `ptr_read32`, `ptr_read_string`, `ptr_write8`, `ptr_write16`, `ptr_write32`, `ptr_write_string`, `ptr_offset`, `ptr_cast<T>`, `ptr_sizeof`, `buffer_new`, `buffer_new<T>()`, `buffer_len`, `buffer_free`, `zval_pack`, `zval_unpack`, `zval_type`, `zval_free`
 
 </details>
 
@@ -461,6 +471,7 @@ src/
 ├── magic_constants/     # File/scope/trait magic-constant walkers
 ├── autoload/            # Composer/SPL AOT autoload indexing and file insertion
 ├── resolver/            # Include/require resolution, declaration discovery, once guards
+├── eval_aot.rs          # Compile-time planning for literal eval AOT vs bridge fallback
 ├── runtime_cache.rs     # Preassembled runtime object cache
 ├── source_map.rs        # Assembly/source-map sidecar emission
 ├── termination.rs       # Structured terminal-effect analysis
@@ -567,6 +578,9 @@ src/
 │       └── generators/  # Generator frame layout and __rt_gen_* helpers
 │
 └── errors/              # Error formatting with line:col
+
+crates/
+└── elephc-magician/     # Optional EvalIR interpreter staticlib for dynamic eval
 ```
 
 </details>
@@ -610,10 +624,10 @@ MIT
 
 ## Star History
 
-<a href="https://star-history.com/#illegalstudio/elephc&Date">
+<a href="https://www.star-history.com/?type=date&repos=illegalstudio%2Felephc">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=illegalstudio/elephc&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=illegalstudio/elephc&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=illegalstudio/elephc&type=Date" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=illegalstudio/elephc&type=date&theme=dark&legend=top-left&sealed_token=EQEmXlxMmVDs1v5rzSNsUSteRrE0JAStXJfEZTdWICM7iAlfoR7s3K86rK1-DPBD9s1ZEtWxIlT60K_2NpKFy58a3IINIamTOE_A8XrxqQyFkogm0ThuNY6desq_LayMIwk-GN2EeQpmClT97SY8-rR9W5R_AFj5dyaIAtHNcXE8KsuWFRt9r6Fx7jbh" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=illegalstudio/elephc&type=date&legend=top-left&sealed_token=EQEmXlxMmVDs1v5rzSNsUSteRrE0JAStXJfEZTdWICM7iAlfoR7s3K86rK1-DPBD9s1ZEtWxIlT60K_2NpKFy58a3IINIamTOE_A8XrxqQyFkogm0ThuNY6desq_LayMIwk-GN2EeQpmClT97SY8-rR9W5R_AFj5dyaIAtHNcXE8KsuWFRt9r6Fx7jbh" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=illegalstudio/elephc&type=date&legend=top-left&sealed_token=EQEmXlxMmVDs1v5rzSNsUSteRrE0JAStXJfEZTdWICM7iAlfoR7s3K86rK1-DPBD9s1ZEtWxIlT60K_2NpKFy58a3IINIamTOE_A8XrxqQyFkogm0ThuNY6desq_LayMIwk-GN2EeQpmClT97SY8-rR9W5R_AFj5dyaIAtHNcXE8KsuWFRt9r6Fx7jbh" />
  </picture>
 </a>

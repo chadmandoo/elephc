@@ -19,6 +19,11 @@ Returns true when at least one array element satisfies the predicate callback.
 
 **Returns**: `bool`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: not available inside eval'd code.
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -30,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `array_any` is implemented in the compiler, see [the internals page](../../../internals/builtins/array/array_any.md).
-

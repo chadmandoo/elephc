@@ -2,7 +2,7 @@
 title: "serialize()"
 description: "Generates a storable representation of a value."
 sidebar:
-  order: 281
+  order: 300
 ---
 
 ## serialize()
@@ -18,6 +18,11 @@ Generates a storable representation of a value.
 
 **Returns**: `string`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: not available inside eval'd code.
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -29,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `serialize` is implemented in the compiler, see [the internals page](../../../internals/builtins/misc/serialize.md).
-

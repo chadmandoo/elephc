@@ -18,7 +18,8 @@ use super::super::validation::{
     build_method_sig, matches_global_builtin_attribute, validate_override_signature,
     visibility_rank,
 };
-use super::state::{collect_attribute_args, collect_attribute_names, ClassBuildState};
+use super::state::ClassBuildState;
+use super::{collect_attribute_args, collect_attribute_names};
 
 /// Validates and registers all methods of a flattened class into the build state.
 /// Enforces abstract/final modifiers, method body presence, and delegates to
@@ -96,7 +97,7 @@ fn apply_static_method(
     method: &ClassMethod,
 ) -> Result<(), CompileError> {
     let method_key = php_symbol_key(&method.name);
-    let sig = build_method_sig(checker, method)?;
+    let sig = build_method_sig(checker, method, &class.name)?;
     if state.final_methods.contains(&method_key) {
         return Err(final_method_error(
             state
@@ -132,9 +133,18 @@ fn apply_static_method(
         }
     }
     if let Some(parent_sig) = state.static_sigs.get(&method_key) {
-        validate_override_signature(checker, &class.name, method, parent_sig, true)?;
+        validate_override_signature(
+            checker,
+            class,
+            method,
+            parent_sig,
+            state
+                .late_static_static_method_returns
+                .get(&method_key),
+            true,
+        )?;
     } else if has_override_attribute(method)
-        && !interface_declares_method(checker, state, class, &method_key)
+        && !interface_declares_method(checker, state, class, &method_key, true)
     {
         return Err(missing_override_target(class, method));
     }
@@ -148,6 +158,19 @@ fn apply_static_method(
         ));
     }
     state.static_sigs.insert(method_key.clone(), sig);
+    if let Some(return_type) = method
+        .return_type
+        .as_ref()
+        .filter(|return_type| return_type.contains_late_static())
+    {
+        state
+            .late_static_static_method_returns
+            .insert(method_key.clone(), return_type.clone());
+    } else {
+        state
+            .late_static_static_method_returns
+            .remove(&method_key);
+    }
     state
         .static_method_visibilities
         .insert(method_key.clone(), method.visibility.clone());
@@ -193,7 +216,7 @@ fn apply_instance_method(
     method: &ClassMethod,
 ) -> Result<(), CompileError> {
     let method_key = php_symbol_key(&method.name);
-    let sig = build_method_sig(checker, method)?;
+    let sig = build_method_sig(checker, method, &class.name)?;
     if state.final_static_methods.contains(&method_key) {
         return Err(final_method_error(
             state
@@ -229,9 +252,16 @@ fn apply_instance_method(
         }
     }
     if let Some(parent_sig) = state.method_sigs.get(&method_key) {
-        validate_override_signature(checker, &class.name, method, parent_sig, false)?;
+        validate_override_signature(
+            checker,
+            class,
+            method,
+            parent_sig,
+            state.late_static_method_returns.get(&method_key),
+            false,
+        )?;
     } else if has_override_attribute(method)
-        && !interface_declares_method(checker, state, class, &method_key)
+        && !interface_declares_method(checker, state, class, &method_key, false)
     {
         return Err(missing_override_target(class, method));
     }
@@ -245,6 +275,17 @@ fn apply_instance_method(
         ));
     }
     state.method_sigs.insert(method_key.clone(), sig);
+    if let Some(return_type) = method
+        .return_type
+        .as_ref()
+        .filter(|return_type| return_type.contains_late_static())
+    {
+        state
+            .late_static_method_returns
+            .insert(method_key.clone(), return_type.clone());
+    } else {
+        state.late_static_method_returns.remove(&method_key);
+    }
     state
         .method_visibilities
         .insert(method_key.clone(), method.visibility.clone());
@@ -313,17 +354,19 @@ fn has_override_attribute(method: &ClassMethod) -> bool {
 }
 
 /// Returns `true` if any interface implemented by the class (directly or
-/// transitively via parent interfaces or parent classes) declares the method —
-/// instance OR PHP 8.3+ static (a `#[\Override]` on a static interface-method
-/// implementation is valid). Seeds from `class.implements` because `apply_methods`
-/// runs before `collect_interfaces` has added the class's own clause to
-/// `state.interfaces`, plus `state.interfaces`, which at this point carries the
-/// interfaces inherited from the parent class chain.
+/// transitively via parent interfaces or inherited parent-class contracts)
+/// declares the method with the requested static/instance kind.
+///
+/// Seeds from `class.implements` because `apply_methods` runs before
+/// `collect_interfaces` has added the class's own clause to `state.interfaces`;
+/// also scans `state.interfaces`, which already carries interfaces inherited
+/// from the parent class chain.
 fn interface_declares_method(
     checker: &Checker,
     state: &ClassBuildState,
     class: &FlattenedClass,
     method_key: &str,
+    is_static: bool,
 ) -> bool {
     let mut visited = std::collections::HashSet::new();
     let mut queue: Vec<String> = class.implements.clone();
@@ -335,7 +378,12 @@ fn interface_declares_method(
         let Some(info) = checker.interfaces.get(&name) else {
             continue;
         };
-        if info.methods.contains_key(method_key) || info.static_methods.contains_key(method_key) {
+        let declares_method = if is_static {
+            info.static_methods.contains_key(method_key)
+        } else {
+            info.methods.contains_key(method_key)
+        };
+        if declares_method {
             return true;
         }
         queue.extend(info.parents.iter().cloned());

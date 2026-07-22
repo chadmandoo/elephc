@@ -2,7 +2,7 @@
 title: "ucwords()"
 description: "Uppercases the first character of each word in a string."
 sidebar:
-  order: 404
+  order: 424
 ---
 
 ## ucwords()
@@ -19,6 +19,11 @@ Uppercases the first character of each word in a string.
 
 **Returns**: `string`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/string/ucwords.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/string/ucwords.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -30,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `ucwords` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/ucwords.md).
-

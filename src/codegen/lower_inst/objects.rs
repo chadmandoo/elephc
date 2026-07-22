@@ -17,9 +17,11 @@
 
 use std::collections::HashSet;
 
-use crate::codegen::{abi, callable_descriptor, emit_box_current_value_as_mixed, runtime_value_tag};
 use crate::codegen::platform::Arch;
 use crate::codegen::UNINITIALIZED_TYPED_PROPERTY_SENTINEL;
+use crate::codegen::{
+    abi, callable_descriptor, emit_box_current_value_as_mixed, runtime_value_tag,
+};
 use crate::intrinsics::IntrinsicCall;
 use crate::ir::{Immediate, Instruction, LocalSlotId, Op, ValueDef, ValueId};
 use crate::names::{method_symbol, php_symbol_key};
@@ -27,12 +29,13 @@ use crate::types::{ClassInfo, InterfaceInfo, PhpType};
 
 use super::super::context::FunctionContext;
 use super::{
-    callables, cast_loaded_mixed_pointer_to_result, direct_call_stack_pad_bytes, expect_data,
+    builtins, callables, cast_loaded_mixed_pointer_to_result, direct_call_stack_pad_bytes,
+    expect_data,
+    coerce_loaded_value_to_tagged_scalar, emit_loaded_assoc_array_to_mixed,
     emit_loaded_indexed_array_to_mixed, emit_mixed_string_for_persistent_store,
     emit_ref_arg_writebacks, expect_operand, iterators, load_value_to_first_int_arg,
-    materialize_direct_call_args_with_refs,
     materialize_method_call_args_with_receiver_reg_and_refs, resolve_method_call_target,
-    store_if_result, store_method_call_result,
+    property_values, store_if_result, store_method_call_result,
 };
 use crate::codegen::fibers;
 use crate::codegen::literal_defaults::{
@@ -47,7 +50,6 @@ use crate::codegen::{CodegenIrError, Result};
 
 mod reflection;
 
-const X86_64_HEAP_MAGIC_HI32: u64 = 0x454C5048;
 const RUNTIME_NULL_SENTINEL: i64 = 0x7fff_ffff_ffff_fffe;
 const ITERATOR_ITERATOR_DOWNCAST_MESSAGE: &str =
     "Class to downcast to not found or not base class or does not implement Traversable";
@@ -103,9 +105,6 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
     if is_fiber_class(&class_name) {
         return lower_fiber_new(ctx, inst);
     }
-    if class_name == "ReflectionFunction" {
-        return reflection::lower_reflection_function_new(ctx, inst);
-    }
     if reflection::is_reflection_owner_class(&class_name) {
         return reflection::lower_reflection_owner_new(ctx, inst, &class_name);
     }
@@ -137,11 +136,10 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         property_defaults,
         constructor_impl,
     ) = {
-        let class_info = ctx
-            .module
-            .class_infos
-            .get(&class_name)
-            .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
+        let class_info =
+            ctx.module.class_infos.get(&class_name).ok_or_else(|| {
+                CodegenIrError::unsupported(format!("unknown class {}", class_name))
+            })?;
         if class_interfaces_require_missing_method_symbols(ctx, &class_name, class_info) {
             return Err(CodegenIrError::unsupported(format!(
                 "object allocation requiring interface method symbols not emitted by EIR for {}",
@@ -227,6 +225,96 @@ pub(super) fn lower_object_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
     Ok(())
 }
 
+/// Lowers PHP object cloning for fixed-class receivers.
+pub(super) fn lower_object_clone_shallow(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let source = expect_operand(inst, 0)?;
+    let class_name = class_name_immediate(ctx, inst)?.to_string();
+    if is_builtin_stdclass(&class_name) {
+        return lower_stdclass_clone(ctx, inst, source);
+    }
+    if is_runtime_managed_object_clone_class(&class_name) {
+        return Err(CodegenIrError::unsupported(format!(
+            "clone for runtime-managed class {}",
+            class_name
+        )));
+    }
+    let (
+        class_id,
+        property_count,
+        allow_dynamic_properties,
+        retained_offsets,
+        owned_reference_property_offsets,
+    ) = {
+        let class_info =
+            ctx.module.class_infos.get(&class_name).ok_or_else(|| {
+                CodegenIrError::unsupported(format!("unknown class {}", class_name))
+            })?;
+        let retained_offsets = cloned_property_retain_offsets(class_info);
+        let owned_reference_property_offsets = owned_reference_property_offsets(class_info);
+        (
+            class_info.class_id,
+            class_info.properties.len(),
+            class_info.allow_dynamic_properties,
+            retained_offsets,
+            owned_reference_property_offsets,
+        )
+    };
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("object_clone_shallow missing result value"))?;
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    ctx.load_value_to_reg(source, result_reg)?;
+    abi::emit_push_reg(ctx.emitter, result_reg);
+    emit_object_allocation(
+        ctx,
+        class_id,
+        property_count,
+        allow_dynamic_properties,
+        &[],
+        &owned_reference_property_offsets,
+    )?;
+    ctx.store_result_value(result)?;
+    let source_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let dest_reg = abi::symbol_scratch_reg(ctx.emitter);
+    abi::emit_pop_reg(ctx.emitter, source_reg);
+    ctx.load_value_to_reg(result, dest_reg)?;
+    emit_clone_declared_property_slots(ctx, source_reg, dest_reg, property_count, &retained_offsets);
+    if allow_dynamic_properties {
+        emit_clone_dynamic_property_hash(
+            ctx,
+            source_reg,
+            dest_reg,
+            dynamic_property_hash_offset(property_count),
+        );
+    }
+    Ok(())
+}
+
+/// Lowers `clone` for `stdClass`, whose payload is just class id plus dynamic-property hash.
+fn lower_stdclass_clone(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    source: ValueId,
+) -> Result<()> {
+    let result = inst
+        .result
+        .ok_or_else(|| CodegenIrError::invalid_module("stdClass clone missing result value"))?;
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    ctx.load_value_to_reg(source, result_reg)?;
+    abi::emit_push_reg(ctx.emitter, result_reg);
+    abi::emit_call_label(ctx.emitter, "__rt_stdclass_new");
+    ctx.store_result_value(result)?;
+    let source_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let dest_reg = abi::symbol_scratch_reg(ctx.emitter);
+    abi::emit_pop_reg(ctx.emitter, source_reg);
+    ctx.load_value_to_reg(result, dest_reg)?;
+    emit_clone_dynamic_property_hash(ctx, source_reg, dest_reg, 8);
+    Ok(())
+}
+
 /// Lowers `new stdClass()` through the runtime helper that seeds its dynamic-property hash.
 fn lower_stdclass_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     if !inst.operands.is_empty() {
@@ -242,6 +330,19 @@ fn lower_stdclass_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Resu
 /// Returns true when the class uses the runtime-managed SPL doubly-linked-list payload.
 fn is_spl_doubly_linked_list_family(class_name: &str) -> bool {
     matches!(class_name, "SplDoublyLinkedList" | "SplStack" | "SplQueue")
+}
+
+/// Returns true for object classes whose payload is not the generic declared-property layout.
+fn is_runtime_managed_object_clone_class(class_name: &str) -> bool {
+    let class_name = class_name.trim_start_matches('\\');
+    is_fiber_class(class_name)
+        || class_name == "Generator"
+        || reflection::is_reflection_owner_class(class_name)
+        || class_name == "CallbackFilterIterator"
+        || class_name == "RecursiveCallbackFilterIterator"
+        || class_name == "IteratorIterator"
+        || is_spl_doubly_linked_list_family(class_name)
+        || class_name == "SplFixedArray"
 }
 
 /// Lowers `new SplDoublyLinkedList`, `new SplStack`, and `new SplQueue`.
@@ -322,12 +423,17 @@ fn lower_callback_filter_iterator_new(
     }
     let source = expect_operand(inst, 0)?;
     let callback = expect_operand(inst, 1)?;
-    let (class_id, property_count, uninitialized_marker_offsets, property_defaults, callback_env_offset) = {
-        let class_info = ctx
-            .module
-            .class_infos
-            .get(class_name)
-            .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", class_name)))?;
+    let (
+        class_id,
+        property_count,
+        uninitialized_marker_offsets,
+        property_defaults,
+        callback_env_offset,
+    ) = {
+        let class_info =
+            ctx.module.class_infos.get(class_name).ok_or_else(|| {
+                CodegenIrError::unsupported(format!("unknown class {}", class_name))
+            })?;
         if class_info.allow_dynamic_properties {
             return Err(CodegenIrError::unsupported(format!(
                 "object allocation requiring dynamic properties for {}",
@@ -507,7 +613,13 @@ fn lower_iterator_iterator_new(ctx: &mut FunctionContext<'_>, inst: &Instruction
         .result
         .ok_or_else(|| CodegenIrError::invalid_module("object_new missing result value"))?;
     ctx.store_result_value(result)?;
-    emit_iterator_iterator_inner_from_traversable(ctx, source, inst.operands.get(1).copied(), result, &slot)
+    emit_iterator_iterator_inner_from_traversable(
+        ctx,
+        source,
+        inst.operands.get(1).copied(),
+        result,
+        &slot,
+    )
 }
 
 /// Stores IteratorIterator::$inner after converting IteratorAggregate inputs through getIterator().
@@ -686,7 +798,7 @@ fn emit_validate_iterator_iterator_aggregate_downcast(ctx: &mut FunctionContext<
 fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionContext<'_>) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov x0, #56");                             // request Throwable payload storage (message/code/previous)
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 marks object instances
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp allocation as a runtime object
@@ -695,9 +807,13 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionConte
             ctx.emitter.instruction("str x9, [x0]");                            // store the class id at object header
             abi::emit_symbol_address(ctx.emitter, "x9", "_iterator_iterator_downcast_msg");
             ctx.emitter.instruction("str x9, [x0, #8]");                        // store static exception message pointer
-            ctx.emitter.instruction(&format!("mov x9, #{}", ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len())); // load static exception message length
+            ctx.emitter.instruction(&format!(
+                "mov x9, #{}",
+                ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len()
+            )); // load static exception message length
             ctx.emitter.instruction("str x9, [x0, #16]");                       // store static exception message length
             ctx.emitter.instruction("str xzr, [x0, #24]");                      // exception code defaults to zero
+            ctx.emitter.instruction("str xzr, [x0, #40]");                      // previous defaults to null
             abi::emit_symbol_address(ctx.emitter, "x9", "_exc_value");
             ctx.emitter.instruction("str x0, [x9]");                            // publish the active exception object
             ctx.emitter.instruction("b __rt_throw_current");                    // enter the standard exception unwinder
@@ -706,17 +822,24 @@ fn emit_throw_iterator_iterator_downcast_logic_exception(ctx: &mut FunctionConte
             ctx.emitter.instruction("push rbp");                                // preserve caller frame pointer for exception allocation
             ctx.emitter.instruction("mov rbp, rsp");                            // establish an aligned helper frame
             ctx.emitter.instruction("sub rsp, 16");                             // keep the nested heap allocation call aligned
-            ctx.emitter.instruction("mov rax, 32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov rax, 56");                             // request Throwable payload storage (message/code/previous)
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
-            ctx.emitter.instruction("mov r10, 0x4548504c00000006");             // materialize the x86_64 object heap kind word
+            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", crate::codegen_support::sentinels::x86_64_heap_kind_word(6))); // stamp the canonical x86_64 heap-kind word (magic + kind 6 throwable)
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp allocation as a runtime object
-            ctx.emitter.instruction("mov r10, QWORD PTR [rip + _spl_logic_exception_class_id]"); // load LogicException's runtime class id
+            ctx.emitter
+                .instruction("mov r10, QWORD PTR [rip + _spl_logic_exception_class_id]"); // load LogicException's runtime class id
             ctx.emitter.instruction("mov QWORD PTR [rax], r10");                // store the class id at object header
-            ctx.emitter.instruction("lea r10, [rip + _iterator_iterator_downcast_msg]"); // materialize static exception message pointer
+            ctx.emitter
+                .instruction("lea r10, [rip + _iterator_iterator_downcast_msg]"); // materialize static exception message pointer
             ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");            // store static exception message pointer
-            ctx.emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len())); // store static exception message length
+            ctx.emitter.instruction(&format!(
+                "mov QWORD PTR [rax + 16], {}",
+                ITERATOR_ITERATOR_DOWNCAST_MESSAGE.len()
+            )); // store static exception message length
             ctx.emitter.instruction("mov QWORD PTR [rax + 24], 0");             // exception code defaults to zero
-            ctx.emitter.instruction("mov QWORD PTR [rip + _exc_value], rax");   // publish the active exception object
+            ctx.emitter.instruction("mov QWORD PTR [rax + 40], 0");             // previous defaults to null
+            ctx.emitter
+                .instruction("mov QWORD PTR [rip + _exc_value], rax"); // publish the active exception object
             ctx.emitter.instruction("mov rsp, rbp");                            // release helper frame before throwing
             ctx.emitter.instruction("pop rbp");                                 // restore caller frame pointer before throwing
             ctx.emitter.instruction("jmp __rt_throw_current");                  // enter the standard exception unwinder
@@ -731,7 +854,9 @@ fn emit_branch_if_saved_traversable_implements(
     target_label: &str,
 ) -> Result<()> {
     let interface_id = interface_info_by_name(ctx, interface_name)
-        .ok_or_else(|| CodegenIrError::unsupported(format!("missing interface {}", interface_name)))?
+        .ok_or_else(|| {
+            CodegenIrError::unsupported(format!("missing interface {}", interface_name))
+        })?
         .interface_id as i64;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
@@ -770,7 +895,12 @@ fn emit_iterator_inner_property_from_result(
     let base_reg = abi::symbol_scratch_reg(ctx.emitter);
     let tag_reg = abi::secondary_scratch_reg(ctx.emitter);
     ctx.load_value_to_reg(target, base_reg)?;
-    abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), base_reg, inner_offset);
+    abi::emit_store_to_address(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        base_reg,
+        inner_offset,
+    );
     abi::emit_load_int_immediate(ctx.emitter, tag_reg, 6);
     abi::emit_store_to_address(ctx.emitter, tag_reg, base_reg, inner_offset + 8);
     Ok(())
@@ -783,7 +913,7 @@ fn lower_builtin_throwable_new(
     class_name: &str,
     class_id: u64,
 ) -> Result<()> {
-    if inst.operands.len() > 2 {
+    if inst.operands.len() > 3 {
         return Err(CodegenIrError::unsupported(format!(
             "{}::__construct with {} EIR operands",
             class_name,
@@ -794,6 +924,7 @@ fn lower_builtin_throwable_new(
     preserve_throwable_for_init(ctx);
     emit_throwable_message_fields(ctx, inst.operands.first().copied())?;
     emit_throwable_code_field(ctx, inst.operands.get(1).copied())?;
+    emit_throwable_previous_field(ctx, inst.operands.get(2).copied())?;
     restore_throwable_after_init(ctx);
     store_if_result(ctx, inst)
 }
@@ -808,6 +939,7 @@ fn is_builtin_throwable_payload_class(class_name: &str) -> bool {
             | "ArithmeticError"
             | "Exception"
             | "RuntimeException"
+            | "ReflectionException"
             | "JsonException"
             | "FiberError"
             | "LogicException"
@@ -865,24 +997,34 @@ fn class_declares_own_constructor(class_name: &str, class_info: &ClassInfo) -> b
         .is_some_and(|declaring_class| declaring_class == class_name)
 }
 
-/// Allocates a 32-byte Throwable payload and stamps its heap kind and class id.
+/// Compact Throwable payload bytes: class_id + message(16) + code(16) + previous(16).
+const THROWABLE_COMPACT_PAYLOAD_SIZE: u64 = 56;
+
+/// Allocates a compact Throwable payload and stamps its heap kind and class id.
 fn emit_throwable_allocation(ctx: &mut FunctionContext<'_>, class_id: u64) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                             // request compact Throwable payload storage
+            // -- allocate and stamp the compact Throwable payload --
+            ctx.emitter.instruction(&format!("mov x0, #{}", THROWABLE_COMPACT_PAYLOAD_SIZE)); // request compact Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 marks runtime object payloads
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp the heap header before the Throwable payload
             ctx.emitter.instruction(&format!("mov x9, #{}", class_id));         // materialize the Throwable runtime class id
             ctx.emitter.instruction("str x9, [x0]");                            // store class id at payload offset zero
+            ctx.emitter.instruction("str xzr, [x0, #40]");                      // previous defaults to null until constructor init
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction("mov rax, 32");                             // request compact Throwable payload storage
+            // -- allocate and stamp the compact Throwable payload --
+            ctx.emitter.instruction(&format!("mov rax, {}", THROWABLE_COMPACT_PAYLOAD_SIZE)); // request compact Throwable payload storage
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
-            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 6)); // materialize the x86_64 Throwable heap kind word
+            ctx.emitter.instruction(&format!(
+                "mov r10, 0x{:x}",
+                crate::codegen_support::sentinels::x86_64_heap_kind_word(6)
+            )); // materialize the x86_64 Throwable heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp the heap header before the Throwable payload
             ctx.emitter.instruction(&format!("mov r10, {}", class_id));         // materialize the Throwable runtime class id
             ctx.emitter.instruction("mov QWORD PTR [rax], r10");                // store class id at payload offset zero
+            ctx.emitter.instruction("mov QWORD PTR [rax + 40], 0");             // previous defaults to null until constructor init
         }
     }
 }
@@ -915,6 +1057,7 @@ fn emit_throwable_message_fields_aarch64(
 ) -> Result<()> {
     if let Some(message) = message {
         ctx.load_string_value_to_regs(message, "x1", "x2")?;
+        abi::emit_call_label(ctx.emitter, "__rt_str_persist");
     } else {
         emit_empty_string_to_regs(ctx, "x1", "x2");
     }
@@ -931,6 +1074,7 @@ fn emit_throwable_message_fields_x86_64(
 ) -> Result<()> {
     if let Some(message) = message {
         ctx.load_string_value_to_regs(message, "rax", "rdx")?;
+        abi::emit_call_label(ctx.emitter, "__rt_str_persist");
     } else {
         emit_empty_string_to_regs(ctx, "rax", "rdx");
     }
@@ -948,10 +1092,7 @@ fn emit_empty_string_to_regs(ctx: &mut FunctionContext<'_>, ptr_reg: &str, len_r
 }
 
 /// Writes the integer exception code into the compact Throwable payload.
-fn emit_throwable_code_field(
-    ctx: &mut FunctionContext<'_>,
-    code: Option<ValueId>,
-) -> Result<()> {
+fn emit_throwable_code_field(ctx: &mut FunctionContext<'_>, code: Option<ValueId>) -> Result<()> {
     match ctx.emitter.target.arch {
         Arch::AArch64 => emit_throwable_code_field_aarch64(ctx, code),
         Arch::X86_64 => emit_throwable_code_field_x86_64(ctx, code),
@@ -985,6 +1126,76 @@ fn emit_throwable_code_field_x86_64(
     }
     ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                        // reload the saved Throwable object for code initialization
     ctx.emitter.instruction("mov QWORD PTR [r11 + 24], rax");                   // store Throwable code
+    Ok(())
+}
+
+/// Writes PHP's `$previous` object pointer into the compact Throwable payload at offset 40.
+fn emit_throwable_previous_field(
+    ctx: &mut FunctionContext<'_>,
+    previous: Option<ValueId>,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => emit_throwable_previous_field_aarch64(ctx, previous),
+        Arch::X86_64 => emit_throwable_previous_field_x86_64(ctx, previous),
+    }
+}
+
+/// Writes the AArch64 Throwable previous field, retaining a non-null previous object.
+fn emit_throwable_previous_field_aarch64(
+    ctx: &mut FunctionContext<'_>,
+    previous: Option<ValueId>,
+) -> Result<()> {
+    if let Some(previous) = previous {
+        // -- normalize and retain the previous Throwable --
+        let store_label = ctx.next_label("throwable_previous_store");
+        let null_label = ctx.next_label("throwable_previous_null");
+        ctx.load_value_to_reg(previous, "x0")?;
+        ctx.emitter.instruction(&format!("cbz x0, {}", null_label));            // missing previous → store null
+        abi::emit_load_int_immediate(ctx.emitter, "x9", RUNTIME_NULL_SENTINEL);
+        ctx.emitter.instruction("cmp x0, x9");                                  // is previous the in-band null sentinel?
+        ctx.emitter.instruction(&format!("b.eq {}", null_label));               // treat sentinel as null payload
+        abi::emit_call_label(ctx.emitter, "__rt_incref"); // retain previous for the Throwable payload
+        ctx.emitter.instruction(&format!("b {}", store_label));                 // keep the retained previous pointer
+        ctx.emitter.label(&null_label);
+        ctx.emitter.instruction("mov x0, xzr");                                 // compact payload stores raw null, not the in-band sentinel
+        ctx.emitter.label(&store_label);
+        ctx.emitter.instruction("ldr x9, [sp]");                                // reload the saved Throwable object for previous initialization
+        ctx.emitter.instruction("str x0, [x9, #40]");                           // store Throwable previous pointer
+    } else {
+        // -- initialize an omitted previous Throwable --
+        ctx.emitter.instruction("ldr x9, [sp]");                                // reload the saved Throwable object for previous initialization
+        ctx.emitter.instruction("str xzr, [x9, #40]");                          // previous defaults to null
+    }
+    Ok(())
+}
+
+/// Writes the x86_64 Throwable previous field, retaining a non-null previous object.
+fn emit_throwable_previous_field_x86_64(
+    ctx: &mut FunctionContext<'_>,
+    previous: Option<ValueId>,
+) -> Result<()> {
+    if let Some(previous) = previous {
+        // -- normalize and retain the previous Throwable --
+        let store_label = ctx.next_label("throwable_previous_store");
+        let null_label = ctx.next_label("throwable_previous_null");
+        ctx.load_value_to_reg(previous, "rax")?;
+        ctx.emitter.instruction("test rax, rax");                               // missing previous → store null
+        ctx.emitter.instruction(&format!("jz {}", null_label));                 // branch around retain for a missing previous
+        abi::emit_load_int_immediate(ctx.emitter, "r10", RUNTIME_NULL_SENTINEL);
+        ctx.emitter.instruction("cmp rax, r10");                                // is previous the in-band null sentinel?
+        ctx.emitter.instruction(&format!("je {}", null_label));                 // treat sentinel as null payload
+        abi::emit_call_label(ctx.emitter, "__rt_incref"); // retain previous for the Throwable payload
+        ctx.emitter.instruction(&format!("jmp {}", store_label));               // keep the retained previous pointer
+        ctx.emitter.label(&null_label);
+        ctx.emitter.instruction("xor rax, rax");                                // compact payload stores raw null, not the in-band sentinel
+        ctx.emitter.label(&store_label);
+        ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                    // reload the saved Throwable object for previous initialization
+        ctx.emitter.instruction("mov QWORD PTR [r11 + 40], rax");               // store Throwable previous pointer
+    } else {
+        // -- initialize an omitted previous Throwable --
+        ctx.emitter.instruction("mov r11, QWORD PTR [rsp]");                    // reload the saved Throwable object for previous initialization
+        ctx.emitter.instruction("mov QWORD PTR [r11 + 40], 0");                 // previous defaults to null
+    }
     Ok(())
 }
 
@@ -1024,6 +1235,10 @@ fn lower_fiber_new(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<
                 "fiber_constructor",
             )?;
             move_fiber_callable_result_to_arg(ctx, callable_arg);
+        } else if callable_ty == PhpType::Callable {
+            ctx.load_value_to_result(callable)?;
+            callable_descriptor::emit_retain_current_descriptor(ctx.emitter);
+            move_fiber_callable_result_to_arg(ctx, callable_arg);
         } else {
             ctx.load_value_to_reg(callable, callable_arg)?;
         }
@@ -1051,7 +1266,8 @@ fn move_fiber_callable_result_to_arg(ctx: &mut FunctionContext<'_>, callable_arg
     if result_reg == callable_arg {
         return;
     }
-    ctx.emitter.instruction(&format!("mov {}, {}", callable_arg, result_reg));  // pass selected callable descriptor to Fiber constructor
+    ctx.emitter
+        .instruction(&format!("mov {}, {}", callable_arg, result_reg)); // pass selected callable descriptor to Fiber constructor
 }
 
 /// Lowers constrained runtime class-string object construction.
@@ -1061,10 +1277,9 @@ pub(super) fn lower_dynamic_object_new(
 ) -> Result<()> {
     let (_fallback_class, required_parent) = dynamic_object_new_metadata(ctx, inst)?;
     let class_name_value = expect_operand(inst, 0)?;
-    let constructor_args = inst
-        .operands
-        .get(1..)
-        .ok_or_else(|| CodegenIrError::invalid_module("dynamic_object_new missing class operand"))?;
+    let constructor_args = inst.operands.get(1..).ok_or_else(|| {
+        CodegenIrError::invalid_module("dynamic_object_new missing class operand")
+    })?;
     let candidates = dynamic_new_candidates(ctx, &required_parent, constructor_args.len(), inst)?;
     if candidates.is_empty() {
         return Err(CodegenIrError::unsupported(format!(
@@ -1115,18 +1330,17 @@ pub(super) fn lower_dynamic_object_new_mixed(
     inst: &Instruction,
 ) -> Result<()> {
     let class_name_value = expect_operand(inst, 0)?;
-    let constructor_args = inst
-        .operands
-        .get(1..)
-        .ok_or_else(|| CodegenIrError::invalid_module("dynamic_object_new_mixed missing class operand"))?;
-    let result = inst
-        .result
-        .ok_or_else(|| CodegenIrError::invalid_module("dynamic_object_new_mixed missing result value"))?;
+    let constructor_args = inst.operands.get(1..).ok_or_else(|| {
+        CodegenIrError::invalid_module("dynamic_object_new_mixed missing class operand")
+    })?;
+    let result = inst.result.ok_or_else(|| {
+        CodegenIrError::invalid_module("dynamic_object_new_mixed missing result value")
+    })?;
     let done_label = ctx.next_label("dynamic_new_mixed_done");
     let non_string_label = ctx.next_label("dynamic_new_mixed_non_string");
     if !emit_generic_dynamic_new_class_string(ctx, class_name_value, &non_string_label)? {
-        emit_boxed_null(ctx);
-        return store_if_result(ctx, inst);
+        emit_dynamic_new_invalid_class_name_fatal(ctx);
+        return Ok(());
     }
     abi::emit_push_result_value(ctx.emitter, &PhpType::Str);
 
@@ -1145,18 +1359,85 @@ pub(super) fn lower_dynamic_object_new_mixed(
     for (candidate, label) in candidates.iter().zip(case_labels.iter()) {
         ctx.emitter.label(label);
         abi::emit_release_temporary_stack(ctx.emitter, 16);
-        emit_dynamic_new_mixed_candidate(ctx, candidate, constructor_args, class_name_value, result)?;
+        emit_dynamic_new_mixed_candidate(
+            ctx,
+            candidate,
+            constructor_args,
+            class_name_value,
+            result,
+        )?;
         abi::emit_jump(ctx.emitter, &done_label);
     }
 
     ctx.emitter.label(&fallback_label);
-    emit_dynamic_new_mixed_fallback(ctx);
-    ctx.store_result_value(result)?;
-    abi::emit_jump(ctx.emitter, &done_label);
+    if builtins::has_eval_context(ctx) {
+        let eval_miss_label = ctx.next_label("dynamic_new_mixed_eval_miss");
+        builtins::lower_eval_object_new_dynamic_fallback(ctx, inst, &eval_miss_label)?;
+        ctx.store_result_value(result)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+        ctx.emitter.label(&eval_miss_label);
+        emit_dynamic_new_class_not_found_fatal(ctx);
+    } else {
+        emit_dynamic_new_mixed_fallback(ctx);
+        ctx.store_result_value(result)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
 
     ctx.emitter.label(&non_string_label);
-    emit_boxed_null(ctx);
-    ctx.store_result_value(result)?;
+    emit_dynamic_new_invalid_class_name_fatal(ctx);
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Lowers dynamic allocation that intentionally skips PHP constructor dispatch.
+pub(super) fn lower_dynamic_object_new_without_constructor_mixed(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let class_name_value = expect_operand(inst, 0)?;
+    if inst.operands.len() != 1 {
+        return Err(CodegenIrError::invalid_module(
+            "dynamic_object_new_without_constructor_mixed expects only a class operand",
+        ));
+    }
+    let result = inst.result.ok_or_else(|| {
+        CodegenIrError::invalid_module(
+            "dynamic_object_new_without_constructor_mixed missing result value",
+        )
+    })?;
+    let done_label = ctx.next_label("dynamic_new_no_ctor_mixed_done");
+    let non_string_label = ctx.next_label("dynamic_new_no_ctor_mixed_non_string");
+    if !emit_generic_dynamic_new_class_string(ctx, class_name_value, &non_string_label)? {
+        emit_dynamic_new_invalid_class_name_fatal(ctx);
+        return Ok(());
+    }
+    abi::emit_push_result_value(ctx.emitter, &PhpType::Str);
+
+    let fallback_label = ctx.next_label("dynamic_new_no_ctor_mixed_fallback");
+    let candidates = dynamic_new_without_constructor_mixed_candidates(ctx, inst)?;
+    let case_labels = candidates
+        .iter()
+        .map(|candidate| {
+            let label = ctx.next_label("dynamic_new_no_ctor_mixed_case");
+            emit_branch_if_dynamic_new_mixed_class_name_matches(ctx, &candidate.class_name, &label);
+            label
+        })
+        .collect::<Vec<_>>();
+    abi::emit_jump(ctx.emitter, &fallback_label);
+
+    for (candidate, label) in candidates.iter().zip(case_labels.iter()) {
+        ctx.emitter.label(label);
+        abi::emit_release_temporary_stack(ctx.emitter, 16);
+        emit_dynamic_new_without_constructor_mixed_candidate(ctx, candidate, result)?;
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
+
+    ctx.emitter.label(&fallback_label);
+    emit_dynamic_new_class_not_found_fatal(ctx);
+
+    ctx.emitter.label(&non_string_label);
+    emit_dynamic_new_invalid_class_name_fatal(ctx);
 
     ctx.emitter.label(&done_label);
     Ok(())
@@ -1181,11 +1462,13 @@ fn emit_generic_dynamic_new_class_string(
             match ctx.emitter.target.arch {
                 Arch::AArch64 => {
                     ctx.emitter.instruction("cmp x0, #1");                      // require a boxed string class name for dynamic construction
-                    ctx.emitter.instruction(&format!("b.ne {}", non_string_label)); // non-string class names produce the runtime null fallback
+                    ctx.emitter
+                        .instruction(&format!("b.ne {}", non_string_label)); // non-string class names produce the runtime null fallback
                 }
                 Arch::X86_64 => {
                     ctx.emitter.instruction("cmp rax, 1");                      // require a boxed string class name for dynamic construction
-                    ctx.emitter.instruction(&format!("jne {}", non_string_label)); // non-string class names produce the runtime null fallback
+                    ctx.emitter
+                        .instruction(&format!("jne {}", non_string_label)); // non-string class names produce the runtime null fallback
                     ctx.emitter.instruction("mov rax, rdi");                    // move the unboxed string pointer into the string result register
                 }
             }
@@ -1210,6 +1493,27 @@ fn dynamic_new_mixed_candidates(
         }
         if let Some(candidate) =
             dynamic_new_candidate(ctx, class_name, class_info, arg_count, inst)?
+        {
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
+}
+
+/// Returns AOT candidates that can be allocated without constructor dispatch.
+fn dynamic_new_without_constructor_mixed_candidates(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<Vec<DynamicNewCandidate>> {
+    let mut candidates = Vec::new();
+    let mut sorted_classes = ctx.module.class_infos.iter().collect::<Vec<_>>();
+    sorted_classes.sort_by_key(|(_, class_info)| class_info.class_id);
+    for (class_name, class_info) in sorted_classes {
+        if !is_dynamic_new_mixed_aot_candidate(class_name) {
+            continue;
+        }
+        if let Some(candidate) =
+            dynamic_new_without_constructor_candidate(ctx, class_name, class_info, inst)?
         {
             candidates.push(candidate);
         }
@@ -1252,9 +1556,7 @@ fn supported_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "OverflowException",
         "RangeException",
         "RecursiveCallbackFilterIterator",
-        "ReflectionClass",
-        "ReflectionMethod",
-        "ReflectionProperty",
+        "ReflectionException",
         "RuntimeException",
         "SplDoublyLinkedList",
         "SplFixedArray",
@@ -1316,8 +1618,19 @@ fn known_dynamic_new_builtin_class_names() -> &'static [&'static str] {
         "RecursiveRegexIterator",
         "ReflectionAttribute",
         "ReflectionClass",
+        "ReflectionObject",
+        "ReflectionEnum",
+        "ReflectionClassConstant",
+        "ReflectionEnumBackedCase",
+        "ReflectionEnumUnitCase",
+        "ReflectionException",
+        "ReflectionFunction",
         "ReflectionMethod",
+        "ReflectionNamedType",
+        "ReflectionParameter",
         "ReflectionProperty",
+        "ReflectionUnionType",
+        "ReflectionIntersectionType",
         "RegexIterator",
         "RuntimeException",
         "SplDoublyLinkedList",
@@ -1415,10 +1728,34 @@ fn emit_dynamic_new_mixed_candidate(
     }
     abi::emit_load_temporary_stack_slot(ctx.emitter, object_reg, 0);
     abi::emit_release_temporary_stack(ctx.emitter, 16);
-    emit_box_current_value_as_mixed(
-        ctx.emitter,
-        &PhpType::Object(candidate.class_name.clone()),
-    );
+    emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Object(candidate.class_name.clone()));
+    ctx.store_result_value(result)
+}
+
+/// Allocates one constructorless dynamic-new candidate and boxes it as Mixed.
+fn emit_dynamic_new_without_constructor_mixed_candidate(
+    ctx: &mut FunctionContext<'_>,
+    candidate: &DynamicNewCandidate,
+    result: ValueId,
+) -> Result<()> {
+    emit_object_allocation(
+        ctx,
+        candidate.class_id,
+        candidate.property_count,
+        candidate.allow_dynamic_properties,
+        &candidate.uninitialized_marker_offsets,
+        &candidate.owned_reference_property_offsets,
+    )?;
+    let object_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, object_reg);
+    let object_base_reg = abi::secondary_scratch_reg(ctx.emitter);
+    for default in &candidate.property_defaults {
+        abi::emit_load_temporary_stack_slot(ctx.emitter, object_base_reg, 0);
+        emit_property_default(ctx, object_base_reg, default)?;
+    }
+    abi::emit_load_temporary_stack_slot(ctx.emitter, object_reg, 0);
+    abi::emit_release_temporary_stack(ctx.emitter, 16);
+    emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Object(candidate.class_name.clone()));
     ctx.store_result_value(result)
 }
 
@@ -1512,30 +1849,34 @@ fn emit_dynamic_new_mixed_constructor_call(
     emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
 }
 
-/// Invokes the runtime class-name registry fallback and boxes object/null as Mixed.
+/// Invokes the runtime class-name registry fallback and boxes a matched object as Mixed.
 fn emit_dynamic_new_mixed_fallback(ctx: &mut FunctionContext<'_>) {
-    let null_label = ctx.next_label("dynamic_new_mixed_null");
+    let miss_label = ctx.next_label("dynamic_new_mixed_missing_class");
     let done_label = ctx.next_label("dynamic_new_mixed_fallback_done");
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2");
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x2", 8);
             abi::emit_call_label(ctx.emitter, "__rt_new_by_name");
-            ctx.emitter.instruction(&format!("cbz x0, {}", null_label));        // registry miss returns PHP null for dynamic construction
+            ctx.emitter.instruction(&format!("cbz x0, {}", miss_label));        // registry miss is PHP's class-not-found fatal for source-level dynamic construction
+            abi::emit_release_temporary_stack(ctx.emitter, 16);
             emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Object(String::new()));
-            ctx.emitter.instruction(&format!("b {}", done_label));              // skip null boxing after a registry allocation
-            ctx.emitter.label(&null_label);
-            emit_boxed_null(ctx);
+            ctx.emitter.instruction(&format!("b {}", done_label));              // skip the fatal path after a registry allocation
+            ctx.emitter.label(&miss_label);
+            emit_dynamic_new_class_not_found_fatal(ctx);
             ctx.emitter.label(&done_label);
         }
         Arch::X86_64 => {
-            abi::emit_pop_reg_pair(ctx.emitter, "rax", "rdx");
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rax", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdx", 8);
             abi::emit_call_label(ctx.emitter, "__rt_new_by_name");
-            ctx.emitter.instruction("test rax, rax");                           // registry miss returns PHP null for dynamic construction
-            ctx.emitter.instruction(&format!("jz {}", null_label));             // box PHP null when no runtime class table entry matched
+            ctx.emitter.instruction("test rax, rax");                           // did the runtime class registry produce an object?
+            ctx.emitter.instruction(&format!("jz {}", miss_label));             // registry miss is PHP's class-not-found fatal
+            abi::emit_release_temporary_stack(ctx.emitter, 16);
             emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Object(String::new()));
-            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip null boxing after a registry allocation
-            ctx.emitter.label(&null_label);
-            emit_boxed_null(ctx);
+            ctx.emitter.instruction(&format!("jmp {}", done_label));            // skip the fatal path after a registry allocation
+            ctx.emitter.label(&miss_label);
+            emit_dynamic_new_class_not_found_fatal(ctx);
             ctx.emitter.label(&done_label);
         }
     }
@@ -1667,6 +2008,38 @@ fn dynamic_new_candidate(
     }))
 }
 
+/// Builds a dynamic-new candidate that deliberately omits constructor invocation.
+fn dynamic_new_without_constructor_candidate(
+    ctx: &FunctionContext<'_>,
+    class_name: &str,
+    class_info: &ClassInfo,
+    inst: &Instruction,
+) -> Result<Option<DynamicNewCandidate>> {
+    if class_info.is_abstract || ctx.module.enum_infos.contains_key(class_name) {
+        return Ok(None);
+    }
+    if class_name != "stdClass" && known_dynamic_new_builtin_class_names().contains(&class_name) {
+        return Ok(None);
+    }
+    if class_name == "SplFixedArray" || is_spl_doubly_linked_list_family(class_name) {
+        return Ok(None);
+    }
+    if class_interfaces_require_missing_method_symbols(ctx, class_name, class_info) {
+        return Ok(None);
+    }
+    let property_defaults = collect_property_defaults(class_info, inst)?;
+    Ok(Some(DynamicNewCandidate {
+        class_name: class_name.to_string(),
+        class_id: class_info.class_id,
+        property_count: class_info.properties.len(),
+        allow_dynamic_properties: class_info.allow_dynamic_properties,
+        uninitialized_marker_offsets: uninitialized_property_marker_offsets(class_info),
+        owned_reference_property_offsets: owned_reference_property_offsets(class_info),
+        property_defaults,
+        constructor_impl: None,
+    }))
+}
+
 /// Builds dynamic-new metadata for SPL classes whose storage is runtime-managed.
 fn spl_runtime_storage_dynamic_new_candidate(
     class_name: &str,
@@ -1721,10 +2094,7 @@ fn emit_dynamic_new_class_lookup(
 }
 
 /// Unboxes a mixed class-string or emits the dynamic-factory fatal.
-fn emit_dynamic_new_mixed_class_string(
-    ctx: &mut FunctionContext<'_>,
-    required_parent: &str,
-) {
+fn emit_dynamic_new_mixed_class_string(ctx: &mut FunctionContext<'_>, required_parent: &str) {
     let string_label = ctx.next_label("dynamic_new_class_string");
     abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
     match ctx.emitter.target.arch {
@@ -1745,10 +2115,7 @@ fn emit_dynamic_new_mixed_class_string(
 }
 
 /// Branches when the dynamic factory lookup failed or named an interface.
-fn emit_branch_if_dynamic_new_lookup_invalid(
-    ctx: &mut FunctionContext<'_>,
-    invalid_label: &str,
-) {
+fn emit_branch_if_dynamic_new_lookup_invalid(ctx: &mut FunctionContext<'_>, invalid_label: &str) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.instruction("cmp x0, #0");                              // did the dynamic factory class-string resolve to metadata?
@@ -1783,11 +2150,13 @@ fn emit_compare_dynamic_new_class_id(
     abi::emit_load_temporary_stack_slot(ctx.emitter, scratch, 0);
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("cmp {}, #{}", scratch, class_id)); // compare the requested factory class with this candidate class id
+            ctx.emitter
+                .instruction(&format!("cmp {}, #{}", scratch, class_id)); // compare the requested factory class with this candidate class id
             ctx.emitter.instruction(&format!("b.eq {}", matched_label));        // branch when the runtime class-string selected this constructor
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", scratch, class_id)); // compare the requested factory class with this candidate class id
+            ctx.emitter
+                .instruction(&format!("cmp {}, {}", scratch, class_id)); // compare the requested factory class with this candidate class id
             ctx.emitter.instruction(&format!("je {}", matched_label));          // branch when the runtime class-string selected this constructor
         }
     }
@@ -1834,6 +2203,58 @@ fn emit_dynamic_new_fatal(ctx: &mut FunctionContext<'_>, required_parent: &str) 
     emit_fatal_message(ctx, message.as_bytes());
 }
 
+/// Emits PHP's fatal diagnostic for source-level `new $name` with a missing class.
+fn emit_dynamic_new_class_not_found_fatal(ctx: &mut FunctionContext<'_>) {
+    let (prefix_label, prefix_len) = ctx
+        .data
+        .add_string(b"Fatal error: Uncaught Error: Class \"");
+    let (suffix_label, suffix_len) = ctx.data.add_string(b"\" not found\n");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("mov x0, #2");                              // select stderr for the class-not-found prefix
+            ctx.emitter.adrp("x1", &prefix_label);
+            ctx.emitter.add_lo12("x1", "x1", &prefix_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", prefix_len));       // pass the class-not-found prefix byte length
+            ctx.emitter.syscall(4);
+            ctx.emitter.instruction("mov x0, #2");                              // select stderr for the missing class name
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x2", 8);
+            ctx.emitter.syscall(4);
+            ctx.emitter.instruction("mov x0, #2");                              // select stderr for the class-not-found suffix
+            ctx.emitter.adrp("x1", &suffix_label);
+            ctx.emitter.add_lo12("x1", "x1", &suffix_label);
+            ctx.emitter.instruction(&format!("mov x2, #{}", suffix_len));       // pass the class-not-found suffix byte length
+            ctx.emitter.syscall(4);
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "rsi", &prefix_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", prefix_len));       // pass the class-not-found prefix byte length
+            ctx.emitter.instruction("mov edi, 2");                              // select stderr for the class-not-found prefix
+            ctx.emitter.instruction("mov eax, 1");                              // select Linux write syscall for the prefix
+            ctx.emitter.instruction("syscall");                                 // write the class-not-found prefix
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rsi", 0);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdx", 8);
+            ctx.emitter.instruction("mov edi, 2");                              // select stderr for the missing class name
+            ctx.emitter.instruction("mov eax, 1");                              // select Linux write syscall for the class name
+            ctx.emitter.instruction("syscall");                                 // write the missing class name
+            abi::emit_symbol_address(ctx.emitter, "rsi", &suffix_label);
+            ctx.emitter.instruction(&format!("mov edx, {}", suffix_len));       // pass the class-not-found suffix byte length
+            ctx.emitter.instruction("mov edi, 2");                              // select stderr for the class-not-found suffix
+            ctx.emitter.instruction("mov eax, 1");                              // select Linux write syscall for the suffix
+            ctx.emitter.instruction("syscall");                                 // write the class-not-found suffix
+        }
+    }
+    abi::emit_exit(ctx.emitter, 1);
+}
+
+/// Emits PHP's fatal diagnostic for `new $name` when the class expression is not a string.
+fn emit_dynamic_new_invalid_class_name_fatal(ctx: &mut FunctionContext<'_>) {
+    emit_fatal_message(
+        ctx,
+        b"Fatal error: Uncaught Error: Class name must be a valid object or a string\n",
+    );
+}
+
 /// Writes a fatal diagnostic to stderr and exits.
 fn emit_fatal_message(ctx: &mut FunctionContext<'_>, message: &[u8]) {
     let (message_label, message_len) = ctx.data.add_string(message);
@@ -1842,12 +2263,14 @@ fn emit_fatal_message(ctx: &mut FunctionContext<'_>, message: &[u8]) {
             ctx.emitter.instruction("mov x0, #2");                              // select stderr for the fatal diagnostic
             ctx.emitter.adrp("x1", &message_label);
             ctx.emitter.add_lo12("x1", "x1", &message_label);
-            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the fatal diagnostic byte length to write()
+            ctx.emitter
+                .instruction(&format!("mov x2, #{}", message_len)); // pass the fatal diagnostic byte length to write()
             ctx.emitter.syscall(4);
         }
         Arch::X86_64 => {
             abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
-            ctx.emitter.instruction(&format!("mov edx, {}", message_len));      // pass the fatal diagnostic byte length to write()
+            ctx.emitter
+                .instruction(&format!("mov edx, {}", message_len)); // pass the fatal diagnostic byte length to write()
             ctx.emitter.instruction("mov edi, 2");                              // select stderr for the fatal diagnostic
             ctx.emitter.instruction("mov eax, 1");                              // select Linux write syscall
             ctx.emitter.instruction("syscall");                                 // write the fatal diagnostic bytes
@@ -1866,11 +2289,15 @@ fn collect_property_defaults(
         let Some(default_expr) = class_info.defaults.get(index).and_then(Option::as_ref) else {
             continue;
         };
-        let offset = class_info
-            .property_offsets
-            .get(property)
-            .copied()
-            .unwrap_or(8 + index * 16);
+        // A null default whose slot cannot represent null (a scalar slot rebound by
+        // constructor-argument propagation) is skipped; the slot is always written
+        // before an observable read on those paths.
+        if matches!(default_expr.kind, crate::parser::ast::ExprKind::Null)
+            && !php_type.null_property_default_required()
+        {
+            continue;
+        }
+        let offset = 8 + index * 16;
         defaults.push(PropertyDefault {
             offset,
             value: literal_default_value(
@@ -1937,10 +2364,14 @@ fn emit_property_default(
             abi::emit_symbol_address(ctx.emitter, scratch, &label);
             match ctx.emitter.target.arch {
                 Arch::AArch64 => {
-                    ctx.emitter.instruction(&format!("ldr {}, [{}]", float_reg, scratch)); // load the property default float literal through the symbol scratch register
+                    ctx.emitter
+                        .instruction(&format!("ldr {}, [{}]", float_reg, scratch));
+                    // load the property default float literal through the symbol scratch register
                 }
                 Arch::X86_64 => {
-                    ctx.emitter.instruction(&format!("movsd {}, QWORD PTR [{}]", float_reg, scratch)); // load the property default float literal through the symbol scratch register
+                    ctx.emitter
+                        .instruction(&format!("movsd {}, QWORD PTR [{}]", float_reg, scratch));
+                    // load the property default float literal through the symbol scratch register
                 }
             }
             abi::emit_store_to_address(ctx.emitter, float_reg, object_reg, default.offset);
@@ -2071,12 +2502,20 @@ fn emit_constructor_call(
     let mut ref_params = Vec::with_capacity(constructor_ref_params.len() + 1);
     ref_params.push(false);
     ref_params.extend_from_slice(constructor_ref_params);
-    let call_args = materialize_direct_call_args_with_refs(ctx, &args, &param_types, &ref_params)?;
+    let call_args = super::materialize_direct_call_args_with_refs_and_options(
+        ctx,
+        &args,
+        &param_types,
+        &ref_params,
+        true,
+    )?;
     let caller_stack_pad_bytes = direct_call_stack_pad_bytes(ctx, call_args.overflow_bytes);
     abi::emit_reserve_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_call_label(ctx.emitter, &method_symbol(impl_class, constructor_key));
     abi::emit_release_temporary_stack(ctx.emitter, caller_stack_pad_bytes);
     abi::emit_release_temporary_stack(ctx.emitter, call_args.overflow_bytes);
+    super::emit_call_arg_temp_cleanups(ctx, &call_args, None)?;
+    super::emit_borrowed_stack_mixed_arg_release(ctx, &call_args);
     emit_ref_arg_writebacks(ctx, &call_args.ref_writebacks)
 }
 
@@ -2084,25 +2523,75 @@ fn emit_constructor_call(
 pub(super) fn lower_prop_get(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let object = expect_operand(inst, 0)?;
     let property = property_name_immediate(ctx, inst)?.to_string();
+    if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Object(_)) {
+        return lower_object_prop_get_with_null_guard(ctx, inst, object, &property);
+    }
+    lower_prop_get_nonnull(ctx, inst, object, &property)
+}
+
+/// Guards statically typed object receivers before selecting declared, dynamic,
+/// stdClass, or magic-property lowering.
+fn lower_object_prop_get_with_null_guard(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    property: &str,
+) -> Result<()> {
+    let null_label = ctx.next_label("prop_get_null_receiver");
+    let done_label = ctx.next_label("prop_get_done");
+    let base_reg = abi::symbol_scratch_reg(ctx.emitter);
+    ctx.load_value_to_reg(object, base_reg)?;
+    let scratch_reg = abi::secondary_scratch_reg(ctx.emitter);
+    crate::codegen::sentinels::emit_branch_if_null_container(
+        ctx.emitter,
+        base_reg,
+        scratch_reg,
+        &null_label,
+    );
+    lower_prop_get_nonnull(ctx, inst, object, property)?;
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&null_label);
+    if inst.op != Op::NullsafePropGet {
+        emit_property_on_null_warning(ctx, property);
+    }
+    super::arrays::emit_array_get_null_fallback(ctx, &inst.result_php_type.codegen_repr());
+    store_if_result(ctx, inst)?;
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Selects the property representation after a statically typed object receiver
+/// has been proven non-null, or for receiver shapes with their own null handling.
+fn lower_prop_get_nonnull(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    property: &str,
+) -> Result<()> {
     if let Some((class_name, true)) = nullable_object_receiver_class(ctx, object)? {
-        return lower_nullable_prop_get_with_warning(ctx, inst, object, &class_name, &property);
+        return lower_nullable_prop_get_with_warning(ctx, inst, object, &class_name, property);
     }
     if let Some(class_name) = union_object_member_class(ctx, object)? {
-        return lower_union_object_prop_get(ctx, inst, object, &class_name, &property);
+        return lower_union_object_prop_get(ctx, inst, object, &class_name, property);
     }
-    if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
-        return lower_mixed_prop_get(ctx, inst, object, &property);
+    if matches!(
+        ctx.value_php_type(object)?.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) {
+        return lower_mixed_prop_get(ctx, inst, object, property);
     }
     if object_is_builtin_stdclass(ctx, object)? {
-        return lower_stdclass_prop_get(ctx, inst, object, &property);
+        return lower_stdclass_prop_get(ctx, inst, object, property);
     }
-    if let Some(class_name) = magic_get_receiver_class(ctx, object, &property)? {
-        return lower_magic_get_prop(ctx, inst, object, &class_name, &property);
+    if let Some(class_name) = magic_get_receiver_class(ctx, object, property)? {
+        return lower_magic_get_prop(ctx, inst, object, &class_name, property);
     }
-    if let Some(offset) = dynamic_property_hash_offset_for_object(ctx, object, &property)? {
-        return lower_allow_dynamic_prop_get(ctx, inst, object, &property, offset);
+    if let Some(offset) = dynamic_property_hash_offset_for_object(ctx, object, property)? {
+        return lower_allow_dynamic_prop_get(ctx, inst, object, property, offset);
     }
-    let slot = resolve_property_slot(ctx, object, &property, inst)?;
+    let slot = resolve_property_slot(ctx, object, property, inst)?;
     let base_reg = abi::symbol_scratch_reg(ctx.emitter);
     ctx.load_value_to_reg(object, base_reg)?;
     if slot.is_declared {
@@ -2177,7 +2666,6 @@ fn lower_mixed_load_prop_ref_cell(
     }
     let done_label = ctx.next_label("mixed_propref_done");
     let null_label = ctx.next_label("mixed_propref_null");
-    let stdclass_label = ctx.next_label("mixed_propref_stdclass");
     let match_labels = candidates
         .iter()
         .map(|candidate| {
@@ -2188,9 +2676,14 @@ fn lower_mixed_load_prop_ref_cell(
     ctx.load_value_to_reg(object, abi::int_result_reg(ctx.emitter))?;
     abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
     emit_mixed_object_payload_or_null(ctx, &null_label);
-    // stdClass has no declared reference property; route it to the null fallback.
-    emit_mixed_property_class_dispatch(ctx, &candidates, &match_labels, &null_label);
-    let _ = stdclass_label;
+    // stdClass and classes without this reference property have no matching cell.
+    emit_mixed_property_class_dispatch(
+        ctx,
+        &candidates,
+        &match_labels,
+        &null_label,
+        &null_label,
+    );
 
     let int_reg = abi::int_result_reg(ctx.emitter);
     for (candidate, label) in candidates.iter().zip(match_labels.iter()) {
@@ -2206,6 +2699,24 @@ fn lower_mixed_load_prop_ref_cell(
     store_ref_cell_pointer_result(ctx, inst)
 }
 
+/// Lowers a declared object-property initialization probe.
+pub(super) fn lower_prop_initialized(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
+    let object = expect_operand(inst, 0)?;
+    let property = property_name_immediate(ctx, inst)?.to_string();
+    let slot = resolve_property_slot(ctx, object, &property, inst)?;
+    if !slot.is_declared {
+        abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), 1);
+        return store_if_result(ctx, inst);
+    }
+    let base_reg = abi::symbol_scratch_reg(ctx.emitter);
+    ctx.load_value_to_reg(object, base_reg)?;
+    emit_typed_property_initialized_bool(ctx, &slot, base_reg);
+    store_if_result(ctx, inst)
+}
+
 /// Returns the receiver class when an undeclared property should route through `__get`.
 fn magic_get_receiver_class(
     ctx: &FunctionContext<'_>,
@@ -2219,7 +2730,11 @@ fn magic_get_receiver_class(
     let Some(class_info) = ctx.module.class_infos.get(normalized) else {
         return Ok(None);
     };
-    if class_info.properties.iter().any(|(name, _)| name == property) {
+    if class_info
+        .properties
+        .iter()
+        .any(|(name, _)| name == property)
+    {
         return Ok(None);
     }
     if class_info.methods.contains_key(&php_symbol_key("__get")) {
@@ -2247,7 +2762,10 @@ fn lower_magic_get_prop(
     if let Some(slot) = target.dynamic_slot {
         super::emit_dynamic_instance_method_call(ctx, slot);
     } else {
-        abi::emit_call_label(ctx.emitter, &method_symbol(&target.impl_class, &target.method_key));
+        abi::emit_call_label(
+            ctx.emitter,
+            &method_symbol(&target.impl_class, &target.method_key),
+        );
     }
     store_method_call_result(ctx, inst, &target)
 }
@@ -2324,7 +2842,8 @@ fn lower_allow_dynamic_prop_get(
     ctx.load_value_to_reg(object, object_reg)?;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("ldr x0, [{}, #{}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
+            ctx.emitter
+                .instruction(&format!("ldr x0, [{}, #{}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
             abi::emit_symbol_address(ctx.emitter, "x1", &label);
             abi::emit_load_int_immediate(ctx.emitter, "x2", key_len as i64);
             abi::emit_call_label(ctx.emitter, "__rt_hash_get");
@@ -2333,7 +2852,10 @@ fn lower_allow_dynamic_prop_get(
             ctx.emitter.instruction(&format!("b {}", done_label));              // skip the null fallback after a successful dynamic-property hit
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("mov rdi, QWORD PTR [{} + {}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
+            ctx.emitter.instruction(&format!(
+                "mov rdi, QWORD PTR [{} + {}]",
+                object_reg, hash_offset
+            )); // load the dynamic-property hash pointer from the receiver
             abi::emit_symbol_address(ctx.emitter, "rsi", &label);
             abi::emit_load_int_immediate(ctx.emitter, "rdx", key_len as i64);
             abi::emit_call_label(ctx.emitter, "__rt_hash_get");
@@ -2402,6 +2924,7 @@ fn lower_declared_mixed_prop_get(
     candidates: Vec<MixedPropertyCandidate>,
 ) -> Result<()> {
     let null_label = ctx.next_label("mixed_prop_null");
+    let miss_label = ctx.next_label("mixed_prop_miss");
     let done_label = ctx.next_label("mixed_prop_done");
     let stdclass_label = ctx.next_label("mixed_prop_stdclass");
     let match_labels = candidates
@@ -2417,7 +2940,13 @@ fn lower_declared_mixed_prop_get(
     ctx.load_value_to_reg(object, abi::int_result_reg(ctx.emitter))?;
     abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
     emit_mixed_object_payload_or_null(ctx, &null_label);
-    emit_mixed_property_class_dispatch(ctx, &candidates, &match_labels, &stdclass_label);
+    emit_mixed_property_class_dispatch(
+        ctx,
+        &candidates,
+        &match_labels,
+        &stdclass_label,
+        &miss_label,
+    );
 
     for (candidate, label) in candidates.iter().zip(match_labels.iter()) {
         ctx.emitter.label(label);
@@ -2432,6 +2961,11 @@ fn lower_declared_mixed_prop_get(
 
     ctx.emitter.label(&stdclass_label);
     emit_stdclass_get_from_loaded_object(ctx, property);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&miss_label);
+    emit_undefined_property_warning_for_loaded_object(ctx, property);
+    emit_boxed_null(ctx);
     abi::emit_jump(ctx.emitter, &done_label);
 
     ctx.emitter.label(&null_label);
@@ -2511,12 +3045,13 @@ fn emit_mixed_object_payload_or_null(ctx: &mut FunctionContext<'_>, null_label: 
     }
 }
 
-/// Emits class-id dispatch for declared property candidates and stdClass fallback.
+/// Emits class-id dispatch for declared property candidates, stdClass, and a real miss branch.
 fn emit_mixed_property_class_dispatch(
     ctx: &mut FunctionContext<'_>,
     candidates: &[MixedPropertyCandidate],
     match_labels: &[String],
     stdclass_label: &str,
+    miss_label: &str,
 ) {
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
@@ -2527,6 +3062,7 @@ fn emit_mixed_property_class_dispatch(
                 ctx.emitter.instruction(&format!("b.eq {}", label));            // read the declared property when the class id matches
             }
             emit_branch_to_stdclass_candidate(ctx, "x9", "x10", stdclass_label);
+            abi::emit_jump(ctx.emitter, miss_label);
         }
         Arch::X86_64 => {
             ctx.emitter.instruction("mov r11, QWORD PTR [rax]");                // load the receiver class id for Mixed property dispatch
@@ -2536,6 +3072,7 @@ fn emit_mixed_property_class_dispatch(
                 ctx.emitter.instruction(&format!("je {}", label));              // read the declared property when the class id matches
             }
             emit_branch_to_stdclass_candidate(ctx, "r11", "r10", stdclass_label);
+            abi::emit_jump(ctx.emitter, miss_label);
         }
     }
 }
@@ -2553,11 +3090,13 @@ fn emit_branch_to_stdclass_candidate(
     abi::emit_load_int_immediate(ctx.emitter, scratch_reg, stdclass_id as i64);
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", class_id_reg, scratch_reg)); // check whether the object uses stdClass dynamic storage
+            ctx.emitter
+                .instruction(&format!("cmp {}, {}", class_id_reg, scratch_reg)); // check whether the object uses stdClass dynamic storage
             ctx.emitter.instruction(&format!("b.eq {}", stdclass_label));       // route stdClass reads through the hash-backed helper
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", class_id_reg, scratch_reg)); // check whether the object uses stdClass dynamic storage
+            ctx.emitter
+                .instruction(&format!("cmp {}, {}", class_id_reg, scratch_reg)); // check whether the object uses stdClass dynamic storage
             ctx.emitter.instruction(&format!("je {}", stdclass_label));         // route stdClass reads through the hash-backed helper
         }
     }
@@ -2656,20 +3195,58 @@ fn lower_nullable_prop_get_with_warning(
 
 /// Emits PHP's warning for reading a property from null.
 fn emit_property_on_null_warning(ctx: &mut FunctionContext<'_>, property: &str) {
-    let message = format!("Warning: Attempt to read property \"{}\" on null\n", property);
+    let message = format!(
+        "Warning: Attempt to read property \"{}\" on null\n",
+        property
+    );
     let (message_label, message_len) = ctx.data.add_string(message.as_bytes());
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             ctx.emitter.adrp("x1", &message_label);
             ctx.emitter.add_lo12("x1", "x1", &message_label);
-            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the property-on-null warning byte length
+            ctx.emitter
+                .instruction(&format!("mov x2, #{}", message_len)); // pass the property-on-null warning byte length
         }
         Arch::X86_64 => {
             abi::emit_symbol_address(ctx.emitter, "rdi", &message_label);
-            ctx.emitter.instruction(&format!("mov esi, {}", message_len));      // pass the property-on-null warning byte length
+            ctx.emitter
+                .instruction(&format!("mov esi, {}", message_len)); // pass the property-on-null warning byte length
         }
     }
     abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
+}
+
+/// Emits `Warning: Undefined property: Class::$name` for an object already in the result register.
+fn emit_undefined_property_warning_for_loaded_object(
+    ctx: &mut FunctionContext<'_>,
+    property: &str,
+) {
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction("ldr x9, [x0]");                            // load the missing-property receiver class id
+            abi::emit_symbol_address(ctx.emitter, "x10", "_class_name_entries");
+            ctx.emitter.instruction("lsl x11, x9, #4");                         // scale the class id to the 16-byte class-name row
+            ctx.emitter.instruction("add x10, x10, x11");                       // address the receiver's class-name metadata
+            ctx.emitter.instruction("ldr x1, [x10]");                           // load the receiver class-name pointer
+            ctx.emitter.instruction("ldr x2, [x10, #8]");                       // load the receiver class-name byte length
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction("mov r9, QWORD PTR [rax]");                 // load the missing-property receiver class id
+            abi::emit_symbol_address(ctx.emitter, "r10", "_class_name_entries");
+            ctx.emitter.instruction("shl r9, 4");                               // scale the class id to the 16-byte class-name row
+            ctx.emitter.instruction("mov rax, QWORD PTR [r10 + r9]");           // load the receiver class-name pointer
+            ctx.emitter.instruction("mov rdx, QWORD PTR [r10 + r9 + 8]");       // load the receiver class-name byte length
+        }
+    }
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+    emit_property_warning_fragment(ctx, b"Warning: Undefined property: ");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => abi::emit_pop_reg_pair(ctx.emitter, "x1", "x2"),
+        Arch::X86_64 => abi::emit_pop_reg_pair(ctx.emitter, "rdi", "rsi"),
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
+    emit_property_warning_fragment(ctx, format!("::${}\n", property).as_bytes());
 }
 
 /// Lowers a nullsafe declared-property read for nullable object receivers.
@@ -2713,16 +3290,100 @@ pub(super) fn lower_dynamic_prop_get(
 ) -> Result<()> {
     let object = expect_operand(inst, 0)?;
     let property_value = expect_operand(inst, 1)?;
+    if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Object(_)) {
+        return lower_object_dynamic_prop_get_with_null_guard(
+            ctx,
+            inst,
+            object,
+            property_value,
+        );
+    }
+    lower_dynamic_prop_get_nonnull(ctx, inst, object, property_value)
+}
+
+/// Guards a statically typed object before evaluating any runtime-name property
+/// representation that would otherwise dereference the null-container sentinel.
+fn lower_object_dynamic_prop_get_with_null_guard(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    property_value: ValueId,
+) -> Result<()> {
+    let null_label = ctx.next_label("dynamic_prop_get_null_receiver");
+    let done_label = ctx.next_label("dynamic_prop_get_done");
+    let object_reg = abi::symbol_scratch_reg(ctx.emitter);
+    ctx.load_value_to_reg(object, object_reg)?;
+    let scratch_reg = abi::secondary_scratch_reg(ctx.emitter);
+    crate::codegen::sentinels::emit_branch_if_null_container(
+        ctx.emitter,
+        object_reg,
+        scratch_reg,
+        &null_label,
+    );
+    lower_dynamic_prop_get_nonnull(ctx, inst, object, property_value)?;
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&null_label);
+    emit_dynamic_property_on_null_warning(ctx, property_value)?;
+    super::arrays::emit_array_get_null_fallback(ctx, &inst.result_php_type.codegen_repr());
+    store_if_result(ctx, inst)?;
+
+    ctx.emitter.label(&done_label);
+    Ok(())
+}
+
+/// Selects dynamic-property lowering after a typed object receiver has been
+/// proven non-null, or for receiver shapes with their own runtime null checks.
+fn lower_dynamic_prop_get_nonnull(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object: ValueId,
+    property_value: ValueId,
+) -> Result<()> {
     if let Some(property) = const_string_operand(ctx, property_value)? {
         return lower_const_dynamic_prop_get(ctx, object, property, inst);
     }
-    if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+    if matches!(
+        ctx.value_php_type(object)?.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) {
         return lower_runtime_dynamic_mixed_prop_get(ctx, inst, object, property_value);
     }
     if object_is_builtin_stdclass(ctx, object)? {
         return lower_runtime_dynamic_stdclass_prop_get(ctx, inst, object, property_value);
     }
     lower_runtime_dynamic_declared_prop_get(ctx, object, property_value, inst)
+}
+
+/// Emits PHP's runtime-name warning for a dynamic property read on null.
+fn emit_dynamic_property_on_null_warning(
+    ctx: &mut FunctionContext<'_>,
+    property_value: ValueId,
+) -> Result<()> {
+    emit_property_warning_fragment(ctx, b"Warning: Attempt to read property \"");
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => ctx.load_string_value_to_regs(property_value, "x1", "x2")?,
+        Arch::X86_64 => ctx.load_string_value_to_regs(property_value, "rdi", "rsi")?,
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
+    emit_property_warning_fragment(ctx, b"\" on null\n");
+    Ok(())
+}
+
+/// Writes one static fragment through the suppressible PHP warning channel.
+fn emit_property_warning_fragment(ctx: &mut FunctionContext<'_>, bytes: &[u8]) {
+    let (label, len) = ctx.data.add_string(bytes);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_symbol_address(ctx.emitter, "x1", &label);
+            abi::emit_load_int_immediate(ctx.emitter, "x2", len as i64);
+        }
+        Arch::X86_64 => {
+            abi::emit_symbol_address(ctx.emitter, "rdi", &label);
+            abi::emit_load_int_immediate(ctx.emitter, "rsi", len as i64);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_diag_warning");
 }
 
 /// Lowers a dynamic property read when the property expression is a literal string.
@@ -2732,7 +3393,10 @@ fn lower_const_dynamic_prop_get(
     property: &str,
     inst: &Instruction,
 ) -> Result<()> {
-    if matches!(ctx.value_php_type(object)?.codegen_repr(), PhpType::Mixed | PhpType::Union(_)) {
+    if matches!(
+        ctx.value_php_type(object)?.codegen_repr(),
+        PhpType::Mixed | PhpType::Union(_)
+    ) {
         return lower_mixed_prop_get(ctx, inst, object, property);
     }
     if object_is_builtin_stdclass(ctx, object)? {
@@ -2763,18 +3427,63 @@ fn lower_runtime_dynamic_mixed_prop_get(
     property_value: ValueId,
 ) -> Result<()> {
     ensure_runtime_dynamic_property_name(ctx, property_value, inst)?;
-    match ctx.emitter.target.arch {
-        Arch::AArch64 => {
-            ctx.load_value_to_reg(object, "x0")?;
-            ctx.load_string_value_to_regs(property_value, "x1", "x2")?;
-        }
-        Arch::X86_64 => {
-            ctx.load_value_to_reg(object, "rdi")?;
-            ctx.load_string_value_to_regs(property_value, "rsi", "rdx")?;
-        }
+    ensure_dynamic_property_miss_supported(inst)?;
+    let candidates = declared_mixed_property_get_candidates(ctx, inst)?;
+    let done_label = ctx.next_label("mixed_dyn_prop_get_done");
+    let miss_label = ctx.next_label("mixed_dyn_prop_get_miss");
+    let miss_no_stack_label = ctx.next_label("mixed_dyn_prop_get_miss_no_stack");
+    let stdclass_label = ctx.next_label("mixed_dyn_prop_get_stdclass");
+    let match_labels = candidates
+        .iter()
+        .map(|candidate| {
+            ctx.next_label(&format!(
+                "mixed_dyn_prop_get_{}",
+                label_fragment(&candidate.slot.property)
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    ctx.load_value_to_reg(object, abi::int_result_reg(ctx.emitter))?;
+    abi::emit_call_label(ctx.emitter, "__rt_mixed_unbox");
+    emit_branch_if_mixed_unboxed_not_object(ctx, &miss_no_stack_label);
+    push_mixed_unboxed_object_payload(ctx);
+    let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
+    ctx.load_string_value_to_regs(property_value, ptr_reg, len_reg)?;
+    abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
+
+    for (candidate, label) in candidates.iter().zip(match_labels.iter()) {
+        emit_branch_if_mixed_dynamic_property_candidate_matches(ctx, candidate, label);
     }
-    abi::emit_call_label(ctx.emitter, "__rt_mixed_property_get");
-    cast_loaded_mixed_pointer_to_result(ctx, &inst.result_php_type.codegen_repr())?;
+    emit_branch_if_stacked_object_is_stdclass(ctx, 16, &stdclass_label);
+    abi::emit_jump(ctx.emitter, &miss_label);
+
+    for (candidate, label) in candidates.iter().zip(match_labels.iter()) {
+        ctx.emitter.label(label);
+        let base_reg = abi::symbol_scratch_reg(ctx.emitter);
+        abi::emit_load_temporary_stack_slot(ctx.emitter, base_reg, 16);
+        if candidate.slot.is_declared {
+            emit_uninitialized_typed_property_guard(ctx, &candidate.slot, base_reg);
+        }
+        emit_property_load(ctx, &candidate.slot, base_reg)?;
+        materialize_loaded_property_result(ctx, inst, &candidate.slot.php_type)?;
+        abi::emit_release_temporary_stack(ctx.emitter, 32);
+        abi::emit_jump(ctx.emitter, &done_label);
+    }
+
+    ctx.emitter.label(&stdclass_label);
+    emit_runtime_stdclass_get_for_stacked_name(ctx, inst, 16, 0)?;
+    abi::emit_release_temporary_stack(ctx.emitter, 32);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&miss_label);
+    abi::emit_release_temporary_stack(ctx.emitter, 32);
+    emit_dynamic_property_miss_result(ctx, inst);
+    abi::emit_jump(ctx.emitter, &done_label);
+
+    ctx.emitter.label(&miss_no_stack_label);
+    emit_dynamic_property_miss_result(ctx, inst);
+
+    ctx.emitter.label(&done_label);
     store_if_result(ctx, inst)
 }
 
@@ -2894,11 +3603,10 @@ fn declared_dynamic_property_slots(
 ) -> Result<Vec<PropertySlot>> {
     let normalized = class_name.trim_start_matches('\\');
     let property_names = {
-        let class_info = ctx
-            .module
-            .class_infos
-            .get(normalized)
-            .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", normalized)))?;
+        let class_info =
+            ctx.module.class_infos.get(normalized).ok_or_else(|| {
+                CodegenIrError::unsupported(format!("unknown class {}", normalized))
+            })?;
         class_info
             .properties
             .iter()
@@ -2911,6 +3619,36 @@ fn declared_dynamic_property_slots(
         .collect()
 }
 
+/// Collects declared-property candidates readable from a boxed Mixed receiver.
+fn declared_mixed_property_get_candidates(
+    ctx: &FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<Vec<MixedPropertyCandidate>> {
+    let mut candidates = Vec::new();
+    let mut sorted_classes = ctx.module.class_infos.iter().collect::<Vec<_>>();
+    sorted_classes.sort_by_key(|(_, class_info)| class_info.class_id);
+    for (class_name, class_info) in sorted_classes {
+        if crate::types::checker::builtin_stdclass::is_stdclass(class_name) {
+            continue;
+        }
+        for (property, _) in &class_info.properties {
+            let Ok(slot) = resolve_property_slot_for_class(ctx, class_name, property, inst) else {
+                continue;
+            };
+            candidates.push(MixedPropertyCandidate {
+                class_id: class_info.class_id,
+                slot,
+            });
+        }
+    }
+    candidates.sort_by(|left, right| {
+        left.class_id
+            .cmp(&right.class_id)
+            .then_with(|| left.slot.property.cmp(&right.slot.property))
+    });
+    Ok(candidates)
+}
+
 /// Verifies that the EIR result type can receive every declared property candidate.
 fn ensure_dynamic_property_slot_results_supported(
     slots: &[PropertySlot],
@@ -2921,7 +3659,9 @@ fn ensure_dynamic_property_slot_results_supported(
         return Ok(());
     }
     for slot in slots {
-        if slot.php_type.codegen_repr() != result_ty {
+        let slot_ty = slot.php_type.codegen_repr();
+        let can_tag_nullable_int = result_ty == PhpType::TaggedScalar && slot_ty == PhpType::Int;
+        if slot_ty != result_ty && !can_tag_nullable_int {
             return Err(CodegenIrError::unsupported(format!(
                 "{} with declared property {}::${} PHP type {:?} and result PHP type {:?}",
                 inst.op.name(),
@@ -2938,7 +3678,7 @@ fn ensure_dynamic_property_slot_results_supported(
 /// Verifies that a runtime miss can be materialized in the EIR result register shape.
 fn ensure_dynamic_property_miss_supported(inst: &Instruction) -> Result<()> {
     match inst.result_php_type.codegen_repr() {
-        PhpType::Mixed | PhpType::Bool | PhpType::Int => Ok(()),
+        PhpType::Mixed | PhpType::TaggedScalar | PhpType::Bool | PhpType::Int => Ok(()),
         ty => Err(CodegenIrError::unsupported(format!(
             "{} runtime miss for result PHP type {:?}",
             inst.op.name(),
@@ -2973,15 +3713,17 @@ fn materialize_loaded_property_result(
 
 /// Emits a PHP null value for a dynamic property lookup that matched no declared slot.
 fn emit_dynamic_property_miss_result(ctx: &mut FunctionContext<'_>, inst: &Instruction) {
-    if inst.result_php_type.codegen_repr() == PhpType::Mixed {
-        emit_boxed_null(ctx);
-        return;
+    match inst.result_php_type.codegen_repr() {
+        PhpType::Mixed => emit_boxed_null(ctx),
+        PhpType::TaggedScalar => {
+            crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+        }
+        _ => abi::emit_load_int_immediate(
+            ctx.emitter,
+            abi::int_result_reg(ctx.emitter),
+            RUNTIME_NULL_SENTINEL,
+        ),
     }
-    abi::emit_load_int_immediate(
-        ctx.emitter,
-        abi::int_result_reg(ctx.emitter),
-        RUNTIME_NULL_SENTINEL,
-    );
 }
 
 /// Emits a runtime string comparison branch against one declared property name.
@@ -2998,7 +3740,8 @@ fn emit_branch_if_dynamic_name_matches(
             abi::emit_symbol_address(ctx.emitter, "x3", &label);
             abi::emit_load_int_immediate(ctx.emitter, "x4", len as i64);
             ctx.emitter.instruction("bl __rt_str_eq");                          // compare the runtime property name against this declared property
-            ctx.emitter.instruction(&format!("cbnz x0, {}", target_label));     // dispatch to the declared property slot when the names match
+            ctx.emitter
+                .instruction(&format!("cbnz x0, {}", target_label)); // dispatch to the declared property slot when the names match
         }
         Arch::X86_64 => {
             abi::emit_load_temporary_stack_slot(ctx.emitter, "rdi", 0);
@@ -3213,7 +3956,7 @@ fn lower_runtime_mixed_prop_set(
     abi::emit_push_reg_pair(ctx.emitter, ptr_reg, len_reg);
 
     for (candidate, label) in candidates.iter().zip(match_labels.iter()) {
-        emit_branch_if_mixed_dynamic_set_candidate_matches(ctx, candidate, label);
+        emit_branch_if_mixed_dynamic_property_candidate_matches(ctx, candidate, label);
     }
     emit_branch_if_stacked_object_is_stdclass(ctx, 16, &stdclass_label);
     abi::emit_jump(ctx.emitter, &miss_label);
@@ -3326,7 +4069,7 @@ fn push_mixed_unboxed_object_payload(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Branches when both the stacked object class id and runtime property name match.
-fn emit_branch_if_mixed_dynamic_set_candidate_matches(
+fn emit_branch_if_mixed_dynamic_property_candidate_matches(
     ctx: &mut FunctionContext<'_>,
     candidate: &MixedPropertyCandidate,
     matched_label: &str,
@@ -3377,6 +4120,29 @@ fn emit_branch_if_stacked_object_is_stdclass(
             ctx.emitter.instruction(&format!("je {}", matched_label));          // route stdClass writes through the dynamic-property helper
         }
     }
+}
+
+/// Calls `__rt_stdclass_get` using a stacked object pointer and runtime name pair.
+fn emit_runtime_stdclass_get_for_stacked_name(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+    object_stack_offset: usize,
+    name_stack_offset: usize,
+) -> Result<()> {
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x0", object_stack_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x1", name_stack_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "x2", name_stack_offset + 8);
+        }
+        Arch::X86_64 => {
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdi", object_stack_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rsi", name_stack_offset);
+            abi::emit_load_temporary_stack_slot(ctx.emitter, "rdx", name_stack_offset + 8);
+        }
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_stdclass_get");
+    cast_loaded_mixed_pointer_to_result(ctx, &inst.result_php_type.codegen_repr())
 }
 
 /// Calls `__rt_stdclass_set` using a stacked object pointer and runtime name pair.
@@ -3484,13 +4250,18 @@ fn lower_allow_dynamic_prop_set(
         Arch::AArch64 => {
             ctx.emitter.instruction(&format!("mov {}, x0", boxed_reg));         // preserve the boxed dynamic-property value across receiver restore
             abi::emit_pop_reg(ctx.emitter, object_reg);
-            ctx.emitter.instruction(&format!("ldr x0, [{}, #{}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
+            ctx.emitter
+                .instruction(&format!("ldr x0, [{}, #{}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
             abi::emit_push_reg(ctx.emitter, object_reg);
             abi::emit_symbol_address(ctx.emitter, "x1", &label);
             abi::emit_load_int_immediate(ctx.emitter, "x2", key_len as i64);
             ctx.emitter.instruction(&format!("mov x3, {}", boxed_reg));         // pass the boxed Mixed cell as the hash value payload
             ctx.emitter.instruction("mov x4, xzr");                             // boxed Mixed hash entries do not use the high payload word
-            abi::emit_load_int_immediate(ctx.emitter, "x5", runtime_value_tag(&PhpType::Mixed) as i64);
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                "x5",
+                runtime_value_tag(&PhpType::Mixed) as i64,
+            );
             abi::emit_call_label(ctx.emitter, "__rt_hash_set");
             abi::emit_pop_reg(ctx.emitter, object_reg);
             abi::emit_store_to_address(ctx.emitter, "x0", object_reg, hash_offset);
@@ -3498,13 +4269,20 @@ fn lower_allow_dynamic_prop_set(
         Arch::X86_64 => {
             ctx.emitter.instruction(&format!("mov {}, rax", boxed_reg));        // preserve the boxed dynamic-property value across receiver restore
             abi::emit_pop_reg(ctx.emitter, object_reg);
-            ctx.emitter.instruction(&format!("mov rdi, QWORD PTR [{} + {}]", object_reg, hash_offset)); // load the dynamic-property hash pointer from the receiver
+            ctx.emitter.instruction(&format!(
+                "mov rdi, QWORD PTR [{} + {}]",
+                object_reg, hash_offset
+            )); // load the dynamic-property hash pointer from the receiver
             abi::emit_push_reg(ctx.emitter, object_reg);
             abi::emit_symbol_address(ctx.emitter, "rsi", &label);
             abi::emit_load_int_immediate(ctx.emitter, "rdx", key_len as i64);
             ctx.emitter.instruction(&format!("mov rcx, {}", boxed_reg));        // pass the boxed Mixed cell as the hash value payload
             ctx.emitter.instruction("xor r8, r8");                              // boxed Mixed hash entries do not use the high payload word
-            abi::emit_load_int_immediate(ctx.emitter, "r9", runtime_value_tag(&PhpType::Mixed) as i64);
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                "r9",
+                runtime_value_tag(&PhpType::Mixed) as i64,
+            );
             abi::emit_call_label(ctx.emitter, "__rt_hash_set");
             abi::emit_pop_reg(ctx.emitter, object_reg);
             abi::emit_store_to_address(ctx.emitter, "rax", object_reg, hash_offset);
@@ -3568,14 +4346,16 @@ fn emit_property_assign_on_null_fatal(ctx: &mut FunctionContext<'_>, property: &
             ctx.emitter.instruction("mov x0, #2");                              // write the property-assign-on-null fatal to stderr
             ctx.emitter.adrp("x1", &message_label);
             ctx.emitter.add_lo12("x1", "x1", &message_label);
-            ctx.emitter.instruction(&format!("mov x2, #{}", message_len));      // pass the property-assign-on-null fatal byte length
+            ctx.emitter
+                .instruction(&format!("mov x2, #{}", message_len)); // pass the property-assign-on-null fatal byte length
             ctx.emitter.syscall(4);
             abi::emit_exit(ctx.emitter, 1);
         }
         Arch::X86_64 => {
             ctx.emitter.instruction("mov edi, 2");                              // write the property-assign-on-null fatal to Linux stderr
             abi::emit_symbol_address(ctx.emitter, "rsi", &message_label);
-            ctx.emitter.instruction(&format!("mov edx, {}", message_len));      // pass the property-assign-on-null fatal byte length
+            ctx.emitter
+                .instruction(&format!("mov edx, {}", message_len)); // pass the property-assign-on-null fatal byte length
             ctx.emitter.instruction("mov eax, 1");                              // Linux x86_64 syscall 1 = write
             ctx.emitter.instruction("syscall");                                 // emit the property-assign-on-null fatal before exiting
             abi::emit_exit(ctx.emitter, 1);
@@ -3587,12 +4367,18 @@ fn emit_property_assign_on_null_fatal(ctx: &mut FunctionContext<'_>, property: &
 pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
     let value_ty = ctx.value_php_type(value)?;
-    if !matches!(value_ty, PhpType::Object(_) | PhpType::Mixed | PhpType::Union(_)) {
+    if !matches!(
+        value_ty,
+        PhpType::Object(_) | PhpType::Mixed | PhpType::Union(_)
+    ) {
         emit_false(ctx);
         return store_if_result(ctx, inst);
     }
-    let class_name = class_name_immediate(ctx, inst)?;
-    let Some((target_id, target_kind)) = classify_named_target(ctx, class_name) else {
+    let class_name = class_name_immediate(ctx, inst)?.to_string();
+    if builtins::has_eval_context(ctx) {
+        return builtins::lower_eval_object_is_a(ctx, inst, value, &class_name, false);
+    }
+    let Some((target_id, target_kind)) = classify_named_target(ctx, &class_name) else {
         emit_false(ctx);
         return store_if_result(ctx, inst);
     };
@@ -3611,9 +4397,15 @@ pub(super) fn lower_instanceof(ctx: &mut FunctionContext<'_>, inst: &Instruction
 }
 
 /// Lowers dynamic `instanceof` where the target is resolved from a runtime string or object.
-pub(super) fn lower_instanceof_dynamic(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
+pub(super) fn lower_instanceof_dynamic(
+    ctx: &mut FunctionContext<'_>,
+    inst: &Instruction,
+) -> Result<()> {
     let value = expect_operand(inst, 0)?;
     let target = expect_operand(inst, 1)?;
+    if builtins::has_eval_context(ctx) {
+        return builtins::lower_eval_object_is_a_dynamic(ctx, inst, value, target, false);
+    }
     let value_ty = ctx.value_php_type(value)?;
     let target_ty = ctx.value_php_type(target)?;
     let target_false = ctx.next_label("instanceof_dynamic_target_false");
@@ -3644,7 +4436,8 @@ fn emit_object_allocation(
     let payload_size = dynamic_properties_offset + dynamic_properties_bytes;
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("mov x0, #{}", payload_size));     // request object payload storage for the class id and property slots
+            ctx.emitter
+                .instruction(&format!("mov x0, #{}", payload_size)); // request object payload storage for the class id and property slots
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
             ctx.emitter.instruction("mov x9, #4");                              // heap kind 4 marks object instances for ownership helpers
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp the heap header before the object payload
@@ -3652,9 +4445,13 @@ fn emit_object_allocation(
             ctx.emitter.instruction("str x10, [x0]");                           // store the class id at object payload offset zero
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("mov rax, {}", payload_size));     // request object payload storage for the class id and property slots
+            ctx.emitter
+                .instruction(&format!("mov rax, {}", payload_size)); // request object payload storage for the class id and property slots
             abi::emit_call_label(ctx.emitter, "__rt_heap_alloc");
-            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", (X86_64_HEAP_MAGIC_HI32 << 32) | 4)); // materialize the x86_64 object heap kind word
+            ctx.emitter.instruction(&format!(
+                "mov r10, 0x{:x}",
+                crate::codegen_support::sentinels::x86_64_heap_kind_word(4)
+            )); // materialize the x86_64 object heap kind word
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp the heap header before the object payload
             ctx.emitter.instruction(&format!("mov r10, {}", class_id));         // materialize the compile-time class id
             ctx.emitter.instruction("mov QWORD PTR [rax], r10");                // store the class id at object payload offset zero
@@ -3668,7 +4465,11 @@ fn emit_object_allocation(
     }
     if !uninitialized_marker_offsets.is_empty() {
         let marker_reg = abi::secondary_scratch_reg(ctx.emitter);
-        abi::emit_load_int_immediate(ctx.emitter, marker_reg, UNINITIALIZED_TYPED_PROPERTY_SENTINEL);
+        abi::emit_load_int_immediate(
+            ctx.emitter,
+            marker_reg,
+            UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+        );
         for offset in uninitialized_marker_offsets {
             abi::emit_store_to_address(ctx.emitter, marker_reg, object_reg, *offset);
         }
@@ -3708,24 +4509,152 @@ fn dynamic_property_hash_offset(property_count: usize) -> usize {
     8 + property_count * 16
 }
 
-/// Allocates the per-object dynamic-property hash and stores it in the object payload.
-fn emit_dynamic_property_hash_init(
+/// Returns property slot offsets whose copied low word must be retained for the cloned owner.
+fn cloned_property_retain_offsets(class_info: &ClassInfo) -> Vec<usize> {
+    class_info
+        .properties
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (property, php_type))| {
+            if class_info.property_slot_is_reference(index, property) {
+                return None;
+            }
+            property_clone_needs_retain(php_type).then_some(8 + index * 16)
+        })
+        .collect()
+}
+
+/// Returns true when a property slot's low word owns heap storage after a shallow copy.
+fn property_clone_needs_retain(php_type: &PhpType) -> bool {
+    let php_type = php_type.codegen_repr();
+    matches!(php_type, PhpType::Str) || php_type.is_refcounted()
+}
+
+/// Copies declared 16-byte property slots and retains heap-backed child payloads.
+fn emit_clone_declared_property_slots(
     ctx: &mut FunctionContext<'_>,
-    object_reg: &str,
+    source_reg: &str,
+    dest_reg: &str,
+    property_count: usize,
+    retained_offsets: &[usize],
+) {
+    for index in 0..property_count {
+        let offset = 8 + index * 16;
+        emit_copy_property_slot(ctx, source_reg, dest_reg, offset);
+        if retained_offsets.contains(&offset) {
+            emit_retain_cloned_property_pointer(ctx, source_reg, dest_reg, offset);
+        }
+    }
+}
+
+/// Copies one 16-byte declared-property slot from the source object to the clone.
+fn emit_copy_property_slot(
+    ctx: &mut FunctionContext<'_>,
+    source_reg: &str,
+    dest_reg: &str,
     offset: usize,
 ) {
+    let low_reg = abi::int_result_reg(ctx.emitter);
+    let high_reg = abi::tertiary_scratch_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, low_reg, source_reg, offset);
+    abi::emit_load_from_address(ctx.emitter, high_reg, source_reg, offset + 8);
+    abi::emit_store_to_address(ctx.emitter, low_reg, dest_reg, offset);
+    abi::emit_store_to_address(ctx.emitter, high_reg, dest_reg, offset + 8);
+}
+
+/// Retains the copied low-word pointer for string, array, hash, object, or Mixed slots.
+fn emit_retain_cloned_property_pointer(
+    ctx: &mut FunctionContext<'_>,
+    source_reg: &str,
+    dest_reg: &str,
+    offset: usize,
+) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, source_reg);
+    abi::emit_push_reg(ctx.emitter, dest_reg);
+    abi::emit_load_from_address(ctx.emitter, result_reg, dest_reg, offset);
+    abi::emit_call_label(ctx.emitter, "__rt_incref");
+    abi::emit_pop_reg(ctx.emitter, dest_reg);
+    abi::emit_pop_reg(ctx.emitter, source_reg);
+}
+
+/// Replaces the constructor-seeded dynamic-property hash with a shallow clone of the source hash.
+fn emit_clone_dynamic_property_hash(
+    ctx: &mut FunctionContext<'_>,
+    source_reg: &str,
+    dest_reg: &str,
+    offset: usize,
+) {
+    emit_release_existing_dynamic_property_hash(ctx, source_reg, dest_reg, offset);
+    let null_label = ctx.next_label("object_clone_dyn_props_null");
+    let done_label = ctx.next_label("object_clone_dyn_props_done");
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, result_reg, source_reg, offset);
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter
+                .instruction(&format!("cbz {}, {}", result_reg, null_label)); // missing dynamic-property hash clones as a null hash pointer
+        }
+        Arch::X86_64 => {
+            ctx.emitter
+                .instruction(&format!("test {}, {}", result_reg, result_reg)); // check whether the source dynamic-property hash exists
+            ctx.emitter.instruction(&format!("jz {}", null_label));             // missing dynamic-property hash clones as a null hash pointer
+        }
+    }
+    abi::emit_push_reg(ctx.emitter, source_reg);
+    abi::emit_push_reg(ctx.emitter, dest_reg);
+    let hash_arg = abi::int_arg_reg_name(ctx.emitter.target, 0);
+    if hash_arg != result_reg {
+        abi::emit_reg_move(ctx.emitter, hash_arg, result_reg);
+    }
+    abi::emit_call_label(ctx.emitter, "__rt_hash_clone_shallow");
+    abi::emit_pop_reg(ctx.emitter, dest_reg);
+    abi::emit_pop_reg(ctx.emitter, source_reg);
+    abi::emit_store_to_address(ctx.emitter, result_reg, dest_reg, offset);
+    abi::emit_jump(ctx.emitter, &done_label);
+    ctx.emitter.label(&null_label);
+    abi::emit_store_zero_to_address(ctx.emitter, dest_reg, offset);
+    ctx.emitter.label(&done_label);
+}
+
+/// Releases the empty hash allocated while constructing the clone shell.
+fn emit_release_existing_dynamic_property_hash(
+    ctx: &mut FunctionContext<'_>,
+    source_reg: &str,
+    dest_reg: &str,
+    offset: usize,
+) {
+    let result_reg = abi::int_result_reg(ctx.emitter);
+    abi::emit_push_reg(ctx.emitter, source_reg);
+    abi::emit_push_reg(ctx.emitter, dest_reg);
+    abi::emit_load_from_address(ctx.emitter, result_reg, dest_reg, offset);
+    abi::emit_call_label(ctx.emitter, "__rt_decref_any");
+    abi::emit_pop_reg(ctx.emitter, dest_reg);
+    abi::emit_pop_reg(ctx.emitter, source_reg);
+}
+
+/// Allocates the per-object dynamic-property hash and stores it in the object payload.
+fn emit_dynamic_property_hash_init(ctx: &mut FunctionContext<'_>, object_reg: &str, offset: usize) {
     let hash_reg = abi::secondary_scratch_reg(ctx.emitter);
     abi::emit_push_reg(ctx.emitter, object_reg);
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
             abi::emit_load_int_immediate(ctx.emitter, "x0", 4);
-            abi::emit_load_int_immediate(ctx.emitter, "x1", runtime_value_tag(&PhpType::Mixed) as i64);
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                "x1",
+                runtime_value_tag(&PhpType::Mixed) as i64,
+            );
             abi::emit_call_label(ctx.emitter, "__rt_hash_new");
             ctx.emitter.instruction(&format!("mov {}, x0", hash_reg));          // preserve the dynamic-property hash across object restore
         }
         Arch::X86_64 => {
             abi::emit_load_int_immediate(ctx.emitter, "rdi", 4);
-            abi::emit_load_int_immediate(ctx.emitter, "rsi", runtime_value_tag(&PhpType::Mixed) as i64);
+            abi::emit_load_int_immediate(
+                ctx.emitter,
+                "rsi",
+                runtime_value_tag(&PhpType::Mixed) as i64,
+            );
             abi::emit_call_label(ctx.emitter, "__rt_hash_new");
             ctx.emitter.instruction(&format!("mov {}, rax", hash_reg));         // preserve the dynamic-property hash across object restore
         }
@@ -3742,7 +4671,11 @@ fn class_interfaces_require_missing_method_symbols(
 ) -> bool {
     let emitted_methods = emitted_instance_method_keys(ctx);
     let mut seen = HashSet::new();
-    let mut stack = class_info.interfaces.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut stack = class_info
+        .interfaces
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
     while let Some(interface_name) = stack.pop() {
         if !seen.insert(interface_name.to_string()) {
             continue;
@@ -3824,8 +4757,7 @@ fn class_method_already_emitted(
                 .name
                 .rsplit_once("::")
                 .is_some_and(|(candidate_class, candidate_method)| {
-                    candidate_class == class_name
-                        && php_symbol_key(candidate_method) == method_key
+                    candidate_class == class_name && php_symbol_key(candidate_method) == method_key
                 })
     })
 }
@@ -3837,18 +4769,13 @@ fn uninitialized_property_marker_offsets(class_info: &ClassInfo) -> Vec<usize> {
         .iter()
         .enumerate()
         .filter_map(|(index, (property, _))| {
-            let starts_uninitialized = class_info.declared_properties.contains(property)
+            let is_owned_reference = class_info.owned_reference_properties.contains(property)
+                && class_info.property_slot_is_reference(index, property);
+            let starts_uninitialized = class_info.property_slot_is_declared(index, property)
                 && class_info.defaults.get(index).is_some_and(|default| default.is_none())
-                && !class_info.owned_reference_properties.contains(property);
+                && !is_owned_reference;
             if starts_uninitialized {
-                Some(
-                    class_info
-                        .property_offsets
-                        .get(property)
-                        .copied()
-                        .unwrap_or(8 + index * 16)
-                        + 8,
-                )
+                Some(8 + index * 16 + 8)
             } else {
                 None
             }
@@ -3864,14 +4791,10 @@ fn owned_reference_property_offsets(class_info: &ClassInfo) -> Vec<usize> {
         .iter()
         .enumerate()
         .filter_map(|(index, (property, _))| {
-            if class_info.owned_reference_properties.contains(property) {
-                Some(
-                    class_info
-                        .property_offsets
-                        .get(property)
-                        .copied()
-                        .unwrap_or(8 + index * 16),
-                )
+            if class_info.owned_reference_properties.contains(property)
+                && class_info.property_slot_is_reference(index, property)
+            {
+                Some(8 + index * 16)
             } else {
                 None
             }
@@ -3928,11 +4851,17 @@ fn dynamic_property_hash_offset_for_class(
         .class_infos
         .get(normalized)
         .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", normalized)))?;
-    if class_info.properties.iter().any(|(name, _)| name == property) {
+    if class_info
+        .properties
+        .iter()
+        .any(|(name, _)| name == property)
+    {
         return Ok(None);
     }
     if class_info.allow_dynamic_properties {
-        return Ok(Some(dynamic_property_hash_offset(class_info.properties.len())));
+        return Ok(Some(dynamic_property_hash_offset(
+            class_info.properties.len(),
+        )));
     }
     Ok(None)
 }
@@ -3963,13 +4892,7 @@ fn resolve_property_slot_for_class(
         .class_infos
         .get(normalized)
         .ok_or_else(|| CodegenIrError::unsupported(format!("unknown class {}", normalized)))?;
-    let is_reference = class_info.reference_properties.contains(property);
-    let Some((index, (_, php_type))) = class_info
-        .properties
-        .iter()
-        .enumerate()
-        .find(|(_, (name, _))| name == property)
-    else {
+    let Some((index, (_, php_type))) = class_info.visible_property(property) else {
         return Err(CodegenIrError::unsupported(format!(
             "{} for dynamic or missing property {}::${}",
             inst.op.name(),
@@ -3977,20 +4900,17 @@ fn resolve_property_slot_for_class(
             property
         )));
     };
+    let is_reference = class_info.property_slot_is_reference(index, property);
     let php_type = runtime_property_type_override(ctx, normalized, property)
         .unwrap_or_else(|| php_type.clone());
     ensure_property_type_supported(&php_type, inst)?;
-    let offset = class_info
-        .property_offsets
-        .get(property)
-        .copied()
-        .unwrap_or(8 + index * 16);
+    let offset = 8 + index * 16;
     Ok(PropertySlot {
         class_name: normalized.to_string(),
         property: property.to_string(),
         php_type,
         offset,
-        is_declared: class_info.declared_properties.contains(property),
+        is_declared: class_info.property_slot_is_declared(index, property),
         is_packed: false,
         is_reference,
     })
@@ -4037,7 +4957,9 @@ fn const_string_operand<'a>(ctx: &FunctionContext<'a>, value: ValueId) -> Result
         return Ok(None);
     }
     let Some(Immediate::Data(data)) = instruction.immediate else {
-        return Err(CodegenIrError::invalid_module("const_str missing data immediate"));
+        return Err(CodegenIrError::invalid_module(
+            "const_str missing data immediate",
+        ));
     };
     ctx.module
         .data
@@ -4080,10 +5002,7 @@ pub(super) fn nullable_object_receiver_class(
 }
 
 /// Returns the unique object class carried by a boxed union, ignoring null and scalar arms.
-fn union_object_member_class(
-    ctx: &FunctionContext<'_>,
-    object: ValueId,
-) -> Result<Option<String>> {
+fn union_object_member_class(ctx: &FunctionContext<'_>, object: ValueId) -> Result<Option<String>> {
     let PhpType::Union(members) = raw_value_php_type(ctx, object)? else {
         return Ok(None);
     };
@@ -4135,7 +5054,11 @@ pub(super) fn emit_nullable_receiver_object_payload(
 
 /// Boxes a PHP null sentinel as a runtime Mixed cell.
 pub(super) fn emit_boxed_null(ctx: &mut FunctionContext<'_>) {
-    abi::emit_load_int_immediate(ctx.emitter, abi::int_result_reg(ctx.emitter), RUNTIME_NULL_SENTINEL);
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        RUNTIME_NULL_SENTINEL,
+    );
     emit_box_current_value_as_mixed(ctx.emitter, &PhpType::Void);
 }
 
@@ -4151,8 +5074,14 @@ fn resolve_packed_field_slot(
         .module
         .packed_class_infos
         .get(normalized)
-        .ok_or_else(|| CodegenIrError::unsupported(format!("unknown packed class {}", normalized)))?;
-    let Some(field) = class_info.fields.iter().find(|field| field.name == property) else {
+        .ok_or_else(|| {
+            CodegenIrError::unsupported(format!("unknown packed class {}", normalized))
+        })?;
+    let Some(field) = class_info
+        .fields
+        .iter()
+        .find(|field| field.name == property)
+    else {
         return Err(CodegenIrError::unsupported(format!(
             "{} for missing packed field {}::${}",
             inst.op.name(),
@@ -4174,15 +5103,16 @@ fn resolve_packed_field_slot(
 
 /// Verifies that this slice knows how to represent the property type in an object slot.
 fn ensure_property_type_supported(php_type: &PhpType, inst: &Instruction) -> Result<()> {
-    match php_type {
+    match php_type.codegen_repr() {
         PhpType::Bool
         | PhpType::False
         | PhpType::Int
         | PhpType::Float
         | PhpType::Str
+        | PhpType::TaggedScalar
         | PhpType::Void
         | PhpType::Never => Ok(()),
-        ty if is_pointer_sized_property_type(ty) => Ok(()),
+        ref ty if is_pointer_sized_property_type(ty) => Ok(()),
         _ => Err(CodegenIrError::unsupported(format!(
             "{} for property PHP type {:?}",
             inst.op.name(),
@@ -4216,6 +5146,12 @@ fn ensure_property_value_supported(
     if can_convert_indexed_array_to_mixed_property(value_ty, &slot.php_type) {
         return Ok(());
     }
+    if can_store_assoc_array_as_mixed_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
+    if can_store_value_as_tagged_scalar_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
     if can_coerce_tagged_scalar_to_int_property(value_ty, &slot.php_type) {
         return Ok(());
     }
@@ -4229,6 +5165,9 @@ fn ensure_property_value_supported(
         return Ok(());
     }
     if can_coerce_mixed_to_scalar_property(value_ty, &slot.php_type) {
+        return Ok(());
+    }
+    if property_values::can_unbox_mixed_to_object_property(value_ty, &slot.php_type) {
         return Ok(());
     }
     Err(CodegenIrError::unsupported(format!(
@@ -4280,11 +5219,9 @@ fn object_type_implements_interface(
         let Some(class_info) = class_info_by_name(ctx, &class_name) else {
             return false;
         };
-        if class_info
-            .interfaces
-            .iter()
-            .any(|interface_name| interface_extends_interface(ctx, interface_name, target_interface))
-        {
+        if class_info.interfaces.iter().any(|interface_name| {
+            interface_extends_interface(ctx, interface_name, target_interface)
+        }) {
             return true;
         }
         current = class_info.parent.clone();
@@ -4311,11 +5248,7 @@ fn interface_extends_interface(
 }
 
 /// Returns true when a class is or extends the target class.
-fn class_extends_class(
-    ctx: &FunctionContext<'_>,
-    class_name: &str,
-    target_class: &str,
-) -> bool {
+fn class_extends_class(ctx: &FunctionContext<'_>, class_name: &str, target_class: &str) -> bool {
     let mut current = Some(class_name.to_string());
     while let Some(name) = current {
         if same_php_type_name(&name, target_class) {
@@ -4327,10 +5260,7 @@ fn class_extends_class(
 }
 
 /// Finds class metadata by PHP-case-insensitive name.
-fn class_info_by_name<'a>(
-    ctx: &'a FunctionContext<'_>,
-    class_name: &str,
-) -> Option<&'a ClassInfo> {
+fn class_info_by_name<'a>(ctx: &'a FunctionContext<'_>, class_name: &str) -> Option<&'a ClassInfo> {
     let wanted = php_symbol_key(class_name.trim_start_matches('\\'));
     ctx.module
         .class_infos
@@ -4377,6 +5307,24 @@ fn can_coerce_mixed_to_scalar_property(value_ty: &PhpType, slot_ty: &PhpType) ->
         )
 }
 
+/// Returns true when a value can materialize nullable-int tagged-scalar property storage.
+fn can_store_value_as_tagged_scalar_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    if slot_ty.codegen_repr() != PhpType::TaggedScalar {
+        return false;
+    }
+    matches!(
+        value_ty.codegen_repr(),
+        PhpType::Int
+            | PhpType::Bool
+            | PhpType::Callable
+            | PhpType::Void
+            | PhpType::Never
+            | PhpType::TaggedScalar
+            | PhpType::Mixed
+            | PhpType::Union(_)
+    )
+}
+
 /// Returns true when a nullable inline scalar can be narrowed into int property storage.
 fn can_coerce_tagged_scalar_to_int_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
     value_ty.codegen_repr() == PhpType::TaggedScalar && slot_ty.codegen_repr() == PhpType::Int
@@ -4413,8 +5361,19 @@ fn can_convert_indexed_array_to_mixed_property(value_ty: &PhpType, slot_ty: &Php
     else {
         return false;
     };
-    slot_elem.codegen_repr() == PhpType::Mixed
-        && value_elem.codegen_repr() != PhpType::Mixed
+    slot_elem.codegen_repr() == PhpType::Mixed && value_elem.codegen_repr() != PhpType::Mixed
+}
+
+/// Returns true when associative-array storage can satisfy a generic `array` property.
+fn can_store_assoc_array_as_mixed_property(value_ty: &PhpType, slot_ty: &PhpType) -> bool {
+    let PhpType::AssocArray { .. } = value_ty.codegen_repr() else {
+        return false;
+    };
+    match slot_ty.codegen_repr() {
+        PhpType::Array(slot_elem) => slot_elem.codegen_repr() == PhpType::Mixed,
+        PhpType::AssocArray { value, .. } => value.codegen_repr() == PhpType::Mixed,
+        _ => false,
+    }
 }
 
 /// Returns true when a value can initialize a pointer-sized slot as null.
@@ -4455,7 +5414,7 @@ fn emit_property_load(
     if slot.is_reference {
         return emit_reference_property_load(ctx, slot, base_reg);
     }
-    match &slot.php_type {
+    match slot.php_type.codegen_repr() {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             if base_reg == ptr_reg {
@@ -4474,14 +5433,22 @@ fn emit_property_load(
             let int_reg = abi::int_result_reg(ctx.emitter);
             abi::emit_load_from_address(ctx.emitter, int_reg, base_reg, slot.offset);
         }
-        ty if is_pointer_sized_property_type(ty) => {
+        PhpType::TaggedScalar => {
+            let int_reg = abi::int_result_reg(ctx.emitter);
+            let tag_reg = crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, int_reg, base_reg, slot.offset);
+            abi::emit_load_from_address(ctx.emitter, tag_reg, base_reg, slot.offset + 8);
+        }
+        ty if is_pointer_sized_property_type(&ty) => {
             let int_reg = abi::int_result_reg(ctx.emitter);
             abi::emit_load_from_address(ctx.emitter, int_reg, base_reg, slot.offset);
         }
-        _ => return Err(CodegenIrError::unsupported(format!(
-            "property load for PHP type {:?}",
-            slot.php_type
-        ))),
+        _ => {
+            return Err(CodegenIrError::unsupported(format!(
+                "property load for PHP type {:?}",
+                slot.php_type
+            )))
+        }
     }
     Ok(())
 }
@@ -4504,16 +5471,27 @@ fn emit_reference_property_load(
             let float_reg = abi::float_result_reg(ctx.emitter);
             abi::emit_load_from_address(ctx.emitter, float_reg, pointer_reg, 0);
         }
+        PhpType::TaggedScalar => {
+            let int_reg = abi::int_result_reg(ctx.emitter);
+            let tag_reg = crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter);
+            abi::emit_load_from_address(ctx.emitter, int_reg, pointer_reg, 0);
+            abi::emit_load_from_address(ctx.emitter, tag_reg, pointer_reg, 8);
+        }
         ty if is_pointer_sized_property_type(&ty)
-            || matches!(ty, PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never) =>
+            || matches!(
+                ty,
+                PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never
+            ) =>
         {
             let int_reg = abi::int_result_reg(ctx.emitter);
             abi::emit_load_from_address(ctx.emitter, int_reg, pointer_reg, 0);
         }
-        ty => return Err(CodegenIrError::unsupported(format!(
-            "reference property load for PHP type {:?}",
-            ty
-        ))),
+        ty => {
+            return Err(CodegenIrError::unsupported(format!(
+                "reference property load for PHP type {:?}",
+                ty
+            )))
+        }
     }
     Ok(())
 }
@@ -4524,7 +5502,7 @@ fn emit_packed_field_load(
     slot: &PropertySlot,
     base_reg: &str,
 ) -> Result<()> {
-    match &slot.php_type {
+    match slot.php_type.codegen_repr() {
         PhpType::Float => {
             let float_reg = abi::float_result_reg(ctx.emitter);
             abi::emit_load_from_address(ctx.emitter, float_reg, base_reg, slot.offset);
@@ -4540,22 +5518,31 @@ fn emit_packed_field_load(
         PhpType::Packed(_) => {
             let int_reg = abi::int_result_reg(ctx.emitter);
             if slot.offset == 0 {
-                ctx.emitter.instruction(&format!("mov {}, {}", int_reg, base_reg)); // return the nested packed field address directly
+                ctx.emitter
+                    .instruction(&format!("mov {}, {}", int_reg, base_reg)); // return the nested packed field address directly
             } else {
                 match ctx.emitter.target.arch {
                     Arch::AArch64 => {
-                        ctx.emitter.instruction(&format!("add {}, {}, #{}", int_reg, base_reg, slot.offset)); // compute the nested packed field address
+                        ctx.emitter.instruction(&format!(
+                            "add {}, {}, #{}",
+                            int_reg, base_reg, slot.offset
+                        )); // compute the nested packed field address
                     }
                     Arch::X86_64 => {
-                        ctx.emitter.instruction(&format!("lea {}, [{} + {}]", int_reg, base_reg, slot.offset)); // compute the nested packed field address
+                        ctx.emitter.instruction(&format!(
+                            "lea {}, [{} + {}]",
+                            int_reg, base_reg, slot.offset
+                        )); // compute the nested packed field address
                     }
                 }
             }
         }
-        _ => return Err(CodegenIrError::unsupported(format!(
-            "packed field load for PHP type {:?}",
-            slot.php_type
-        ))),
+        _ => {
+            return Err(CodegenIrError::unsupported(format!(
+                "packed field load for PHP type {:?}",
+                slot.php_type
+            )))
+        }
     }
     Ok(())
 }
@@ -4582,7 +5569,7 @@ fn emit_property_store(
         abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
         return Ok(());
     }
-    match &slot.php_type {
+    match slot.php_type.codegen_repr() {
         PhpType::Str => {
             let (ptr_reg, len_reg) = abi::string_result_regs(ctx.emitter);
             abi::emit_push_reg(ctx.emitter, base_reg);
@@ -4614,7 +5601,16 @@ fn emit_property_store(
             abi::emit_store_to_address(ctx.emitter, int_reg, base_reg, slot.offset);
             abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
         }
-        ty if is_pointer_sized_property_type(ty) => {
+        PhpType::TaggedScalar => {
+            let int_reg = abi::int_result_reg(ctx.emitter);
+            let tag_reg = crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter);
+            abi::emit_push_reg(ctx.emitter, base_reg);
+            load_property_store_value_to_result(ctx, value, &slot.php_type)?;
+            abi::emit_pop_reg(ctx.emitter, base_reg);
+            abi::emit_store_to_address(ctx.emitter, int_reg, base_reg, slot.offset);
+            abi::emit_store_to_address(ctx.emitter, tag_reg, base_reg, slot.offset + 8);
+        }
+        ty if is_pointer_sized_property_type(&ty) => {
             let int_reg = abi::int_result_reg(ctx.emitter);
             abi::emit_push_reg(ctx.emitter, base_reg);
             load_property_store_value_to_result(ctx, value, &slot.php_type)?;
@@ -4629,10 +5625,12 @@ fn emit_property_store(
             abi::emit_store_to_address(ctx.emitter, int_reg, base_reg, slot.offset);
             abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
         }
-        _ => return Err(CodegenIrError::unsupported(format!(
-            "property store for PHP type {:?}",
-            slot.php_type
-        ))),
+        _ => {
+            return Err(CodegenIrError::unsupported(format!(
+                "property store for PHP type {:?}",
+                slot.php_type
+            )))
+        }
     }
     Ok(())
 }
@@ -4645,7 +5643,12 @@ fn emit_reference_property_bind(
     base_reg: &str,
 ) -> Result<()> {
     super::materialize_local_ref_arg_address(ctx, value)?;
-    abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), base_reg, slot.offset);
+    abi::emit_store_to_address(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        base_reg,
+        slot.offset,
+    );
     abi::emit_store_zero_to_address(ctx.emitter, base_reg, slot.offset + 8);
     Ok(())
 }
@@ -4759,7 +5762,12 @@ fn release_previous_referenced_value(
         abi::emit_push_result_value(ctx.emitter, &result_ty.codegen_repr());
     }
     abi::emit_push_reg(ctx.emitter, pointer_reg);
-    abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+    abi::emit_load_from_address(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        pointer_reg,
+        0,
+    );
     match prop_ty {
         PhpType::Str => abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe"),
         PhpType::Callable => callable_descriptor::emit_release_current_descriptor(ctx.emitter),
@@ -4784,17 +5792,46 @@ fn store_current_result_to_reference_cell(
             abi::emit_store_to_address(ctx.emitter, len_reg, pointer_reg, 8);
         }
         PhpType::Float => {
-            abi::emit_store_to_address(ctx.emitter, abi::float_result_reg(ctx.emitter), pointer_reg, 0);
+            abi::emit_store_to_address(
+                ctx.emitter,
+                abi::float_result_reg(ctx.emitter),
+                pointer_reg,
+                0,
+            );
+        }
+        PhpType::TaggedScalar => {
+            abi::emit_store_to_address(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                pointer_reg,
+                0,
+            );
+            abi::emit_store_to_address(
+                ctx.emitter,
+                crate::codegen::sentinels::tagged_scalar_tag_reg(ctx.emitter),
+                pointer_reg,
+                8,
+            );
         }
         ty if is_pointer_sized_property_type(&ty)
-            || matches!(ty, PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never) =>
+            || matches!(
+                ty,
+                PhpType::Bool | PhpType::Int | PhpType::Void | PhpType::Never
+            ) =>
         {
-            abi::emit_store_to_address(ctx.emitter, abi::int_result_reg(ctx.emitter), pointer_reg, 0);
+            abi::emit_store_to_address(
+                ctx.emitter,
+                abi::int_result_reg(ctx.emitter),
+                pointer_reg,
+                0,
+            );
         }
-        ty => return Err(CodegenIrError::unsupported(format!(
-            "reference property store for PHP type {:?}",
-            ty
-        ))),
+        ty => {
+            return Err(CodegenIrError::unsupported(format!(
+                "reference property store for PHP type {:?}",
+                ty
+            )))
+        }
     }
     Ok(())
 }
@@ -4827,7 +5864,12 @@ fn release_previous_property_value(
         abi::emit_push_result_value(ctx.emitter, &result_ty.codegen_repr());
     }
     abi::emit_push_reg(ctx.emitter, base_reg);
-    abi::emit_load_from_address(ctx.emitter, abi::int_result_reg(ctx.emitter), base_reg, offset);
+    abi::emit_load_from_address(
+        ctx.emitter,
+        abi::int_result_reg(ctx.emitter),
+        base_reg,
+        offset,
+    );
     match prop_ty {
         PhpType::Str => abi::emit_call_label(ctx.emitter, "__rt_heap_free_safe"),
         PhpType::Callable => callable_descriptor::emit_release_current_descriptor(ctx.emitter),
@@ -4888,6 +5930,41 @@ fn load_property_store_value_to_result(
         abi::emit_incref_if_refcounted(ctx.emitter, &PhpType::Array(Box::new(PhpType::Mixed)));
         return Ok(());
     }
+    if can_store_assoc_array_as_mixed_property(&value_ty, slot_ty) {
+        let PhpType::AssocArray {
+            key: source_key,
+            value: source_value,
+        } = ctx.load_value_to_result(value)?.codegen_repr()
+        else {
+            return Err(CodegenIrError::unsupported(format!(
+                "property associative-array widening from PHP type {:?}",
+                value_ty
+            )));
+        };
+        if source_value.codegen_repr() != PhpType::Mixed {
+            emit_loaded_assoc_array_to_mixed(ctx);
+        }
+        abi::emit_incref_if_refcounted(
+            ctx.emitter,
+            &PhpType::AssocArray {
+                key: source_key,
+                value: Box::new(PhpType::Mixed),
+            },
+        );
+        return Ok(());
+    }
+    if can_store_value_as_tagged_scalar_property(&value_ty, slot_ty) {
+        match value_ty.codegen_repr() {
+            PhpType::Void | PhpType::Never => {
+                crate::codegen::sentinels::emit_tagged_scalar_null(ctx.emitter);
+            }
+            _ => {
+                ctx.load_value_to_result(value)?;
+                coerce_loaded_value_to_tagged_scalar(ctx, &value_ty)?;
+            }
+        }
+        return Ok(());
+    }
     if can_coerce_tagged_scalar_to_int_property(&value_ty, slot_ty) {
         ctx.load_value_to_result(value)?;
         crate::codegen::sentinels::emit_tagged_scalar_to_int_null_as_zero(ctx.emitter);
@@ -4900,6 +5977,7 @@ fn load_property_store_value_to_result(
             PhpType::Int => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_int"),
             PhpType::Bool => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_bool"),
             PhpType::Float => abi::emit_call_label(ctx.emitter, "__rt_mixed_cast_float"),
+            PhpType::Object(_) => property_values::emit_mixed_object_for_property_store(ctx),
             _ => {}
         }
         return Ok(());
@@ -4909,7 +5987,9 @@ fn load_property_store_value_to_result(
         abi::emit_call_label(ctx.emitter, "__rt_str_persist");
         return Ok(());
     }
-    if slot_ty.codegen_repr().is_refcounted() {
+    if matches!(slot_ty.codegen_repr(), PhpType::Callable) {
+        callable_descriptor::emit_retain_current_descriptor(ctx.emitter);
+    } else if slot_ty.codegen_repr().is_refcounted() {
         abi::emit_incref_if_refcounted(ctx.emitter, &loaded_ty.codegen_repr());
     }
     Ok(())
@@ -4943,10 +6023,12 @@ fn emit_packed_field_store(
             abi::emit_pop_reg(ctx.emitter, base_reg);
             abi::emit_store_to_address(ctx.emitter, int_reg, base_reg, slot.offset);
         }
-        _ => return Err(CodegenIrError::unsupported(format!(
-            "packed field store for PHP type {:?}",
-            slot.php_type
-        ))),
+        _ => {
+            return Err(CodegenIrError::unsupported(format!(
+                "packed field store for PHP type {:?}",
+                slot.php_type
+            )))
+        }
     }
     Ok(())
 }
@@ -4979,19 +6061,54 @@ fn emit_uninitialized_typed_property_guard(
     let marker_reg = abi::secondary_scratch_reg(ctx.emitter);
     let sentinel_reg = abi::tertiary_scratch_reg(ctx.emitter);
     abi::emit_load_from_address(ctx.emitter, marker_reg, object_reg, slot.offset + 8);
-    abi::emit_load_int_immediate(ctx.emitter, sentinel_reg, UNINITIALIZED_TYPED_PROPERTY_SENTINEL);
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        sentinel_reg,
+        UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+    );
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
-            ctx.emitter.instruction(&format!("b.ne {}", initialized_label));    // continue the property read once the slot has been initialized
+            ctx.emitter
+                .instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
+            ctx.emitter
+                .instruction(&format!("b.ne {}", initialized_label)); // continue the property read once the slot has been initialized
         }
         Arch::X86_64 => {
-            ctx.emitter.instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
-            ctx.emitter.instruction(&format!("jne {}", initialized_label));     // continue the property read once the slot has been initialized
+            ctx.emitter
+                .instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
+            ctx.emitter
+                .instruction(&format!("jne {}", initialized_label)); // continue the property read once the slot has been initialized
         }
     }
     emit_uninitialized_typed_property_fatal(ctx, slot);
     ctx.emitter.label(&initialized_label);
+}
+
+/// Compares a typed instance-property marker with the uninitialized sentinel.
+fn emit_typed_property_initialized_bool(
+    ctx: &mut FunctionContext<'_>,
+    slot: &PropertySlot,
+    object_reg: &str,
+) {
+    let marker_reg = abi::secondary_scratch_reg(ctx.emitter);
+    let sentinel_reg = abi::tertiary_scratch_reg(ctx.emitter);
+    abi::emit_load_from_address(ctx.emitter, marker_reg, object_reg, slot.offset + 8);
+    abi::emit_load_int_immediate(
+        ctx.emitter,
+        sentinel_reg,
+        UNINITIALIZED_TYPED_PROPERTY_SENTINEL,
+    );
+    match ctx.emitter.target.arch {
+        Arch::AArch64 => {
+            ctx.emitter.instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
+            ctx.emitter.instruction("cset x0, ne");                             // materialize true when the instance property is initialized
+        }
+        Arch::X86_64 => {
+            ctx.emitter.instruction(&format!("cmp {}, {}", marker_reg, sentinel_reg)); // compare the property marker against the uninitialized sentinel
+            ctx.emitter.instruction("setne al");                                // materialize true when the instance property is initialized
+            ctx.emitter.instruction("movzx rax, al");                           // widen the initialization flag into the integer result register
+        }
+    }
 }
 
 /// Emits the runtime throw for an uninitialized typed-property read.
@@ -5018,7 +6135,7 @@ fn emit_uninitialized_typed_property_fatal(
     let (message_label, message_len) = ctx.data.add_string(message.as_bytes());
     match ctx.emitter.target.arch {
         Arch::AArch64 => {
-            ctx.emitter.instruction("mov x0, #32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov x0, #56");                             // request Throwable payload storage (message/code/previous)
             ctx.emitter.instruction("bl __rt_heap_alloc");                      // allocate the Error object payload
             ctx.emitter.instruction("mov x9, #6");                              // heap kind 6 = object instance
             ctx.emitter.instruction("str x9, [x0, #-8]");                       // stamp allocation as a runtime object
@@ -5030,6 +6147,7 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction(&format!("mov x9, #{}", message_len));      // load Error message length
             ctx.emitter.instruction("str x9, [x0, #16]");                       // store exception message length
             ctx.emitter.instruction("str xzr, [x0, #24]");                      // exception code defaults to zero
+            ctx.emitter.instruction("str xzr, [x0, #40]");                      // previous defaults to null
             abi::emit_symbol_address(ctx.emitter, "x9", "_exc_value");             // materialize the active exception cell
             ctx.emitter.instruction("str x0, [x9]");                            // publish the active exception object
             ctx.emitter.instruction("b __rt_throw_current");                    // enter the standard exception unwinder
@@ -5038,9 +6156,9 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction("push rbp");                                // preserve caller frame pointer for exception allocation
             ctx.emitter.instruction("mov rbp, rsp");                            // establish aligned helper frame
             ctx.emitter.instruction("sub rsp, 16");                             // keep the nested heap allocation call 16-byte aligned
-            ctx.emitter.instruction("mov rax, 32");                             // request Throwable payload storage
+            ctx.emitter.instruction("mov rax, 56");                             // request Throwable payload storage (message/code/previous)
             ctx.emitter.instruction("call __rt_heap_alloc");                    // allocate the Error object payload
-            ctx.emitter.instruction("mov r10, 0x4548504c00000006");             // x86_64 heap-kind word: HE LP magic + kind 6 object
+            ctx.emitter.instruction(&format!("mov r10, 0x{:x}", crate::codegen_support::sentinels::x86_64_heap_kind_word(6))); // stamp the canonical x86_64 heap-kind word (magic + kind 6 throwable)
             ctx.emitter.instruction("mov QWORD PTR [rax - 8], r10");            // stamp allocation as a runtime object
             abi::emit_load_symbol_to_reg(ctx.emitter, "r10", "_spl_error_class_id", 0); // load Error's runtime class id for this program
             ctx.emitter.instruction("mov QWORD PTR [rax], r10");                // store class id at the object header
@@ -5048,6 +6166,7 @@ fn emit_uninitialized_typed_property_fatal(
             ctx.emitter.instruction("mov QWORD PTR [rax + 8], r10");            // store static Error message pointer
             ctx.emitter.instruction(&format!("mov QWORD PTR [rax + 16], {}", message_len)); // store Error message length
             ctx.emitter.instruction("mov QWORD PTR [rax + 24], 0");             // exception code defaults to zero
+            ctx.emitter.instruction("mov QWORD PTR [rax + 40], 0");             // previous defaults to null
             abi::emit_store_reg_to_symbol(ctx.emitter, "rax", "_exc_value", 0);   // publish the active exception object
             ctx.emitter.instruction("mov rsp, rbp");                            // release helper frame before throwing
             ctx.emitter.instruction("pop rbp");                                 // restore caller frame pointer before throwing
@@ -5109,7 +6228,6 @@ fn emit_normalized_dynamic_instanceof_value(
     Ok(())
 }
 
-/// Unboxes a Mixed/Union tested value and leaves only object payloads as matchable.
 fn emit_mixed_instanceof_value_normalization(ctx: &mut FunctionContext<'_>) {
     let object_label = ctx.next_label("instanceof_dynamic_value_object");
     let done = ctx.next_label("instanceof_dynamic_value_done");
@@ -5263,12 +6381,7 @@ fn emit_invalid_dynamic_target_fatal(ctx: &mut FunctionContext<'_>) {
 }
 
 /// Emits the metadata matcher call with object-or-mixed input already in argument 0.
-fn emit_match_call(
-    ctx: &mut FunctionContext<'_>,
-    target_id: u64,
-    target_kind: i64,
-    helper: &str,
-) {
+fn emit_match_call(ctx: &mut FunctionContext<'_>, target_id: u64, target_kind: i64, helper: &str) {
     abi::emit_load_int_immediate(
         ctx.emitter,
         abi::int_arg_reg_name(ctx.emitter.target, 1),
@@ -5283,10 +6396,7 @@ fn emit_match_call(
 }
 
 /// Classifies a named target as a class `(kind 0)` or interface `(kind 1)`.
-fn classify_named_target(
-    ctx: &FunctionContext<'_>,
-    class_name: &str,
-) -> Option<(u64, i64)> {
+fn classify_named_target(ctx: &FunctionContext<'_>, class_name: &str) -> Option<(u64, i64)> {
     let normalized = class_name.trim_start_matches('\\');
     if let Some(class_info) = ctx.module.class_infos.get(normalized) {
         return Some((class_info.class_id, 0));
@@ -5317,10 +6427,7 @@ fn property_name_immediate<'a>(
 }
 
 /// Resolves an instruction class-name immediate into the module data pool.
-fn class_name_immediate<'a>(
-    ctx: &'a FunctionContext<'_>,
-    inst: &Instruction,
-) -> Result<&'a str> {
+fn class_name_immediate<'a>(ctx: &'a FunctionContext<'_>, inst: &Instruction) -> Result<&'a str> {
     let data = expect_data(inst)?;
     ctx.module
         .data

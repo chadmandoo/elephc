@@ -5,8 +5,8 @@ We generate two trees:
 - ``docs/php/builtins/<slug>.md`` — user-facing reference (what does this
   function do, what does it return, examples).
 - ``docs/internals/builtins/<slug>.md`` — compiler-internals reference
-  (which file lowers it, which runtime helpers it calls, what the type
-  checker says about its arity).
+  (which descriptor lowers it, which typed EIR target it emits, what the type
+  checker says about its arity, and where backend dispatch begins).
 
 The renderer is *additive* by default: if a hand-written page already
 exists, it is left untouched. Use ``--force`` to overwrite.
@@ -45,6 +45,8 @@ sidebar:
 
 {return_section}
 
+{availability_section}
+
 {examples_section}
 
 {notes_section}
@@ -70,7 +72,11 @@ sidebar:
 - **Function symbol**: `{codegen_function}()`
 {codegen_notes}
 
-## Runtime helpers
+## Semantic descriptor
+
+{semantic_descriptor_section}
+
+## EIR and runtime boundary
 
 {runtime_helpers_section}
 
@@ -83,6 +89,10 @@ sidebar:
 ## What the type checker enforces
 
 {checker_notes}
+
+## Eval interpreter (magician)
+
+{eval_section}
 
 ## Cross-references
 
@@ -181,12 +191,62 @@ def _see_also_section(b: dict, prefix: str = "See also") -> str:
 
 
 def _runtime_helpers_section(b: dict) -> str:
+    """Describe the typed EIR target and any explicitly known concrete helpers."""
+    semantics = b.get("semantics") or {}
+    lowering = semantics.get("lowering") or {}
     helpers = b["lowering"].get("runtime_helpers", [])
-    if not helpers:
-        return "_No direct `__rt_*` helpers captured — the lowering is inlined or routes through another builtin._"
-    lines = ["The following runtime helpers are referenced:"]
+    lines: list[str] = []
+    if lowering.get("kind") == "runtime_call":
+        target = lowering.get("target", "unknown")
+        lines.extend(
+            [
+                f"- **Typed EIR target**: `runtime.{target}`",
+                "- **Backend boundary**: `src/codegen/lower_inst/runtime_calls.rs` resolves the typed target without PHP-name dispatch.",
+            ]
+        )
+    elif lowering.get("kind") == "eir":
+        lines.append(
+            "- **Typed EIR target**: descriptor-emitted EIR primitives or graph; no opaque builtin call remains."
+        )
+    elif not helpers:
+        lines.append(
+            "_Compiler-resident lowering; no registry-backed typed runtime target applies._"
+        )
+    if helpers:
+        lines.append("- **Concrete helpers referenced directly by this lowering**:")
     for h in helpers:
-        lines.append(f"- `{h}`")
+        lines.append(f"  - `{h}`")
+    return "\n".join(lines)
+
+
+def _semantic_descriptor_section(b: dict) -> str:
+    """Render the backend-neutral registry fields shared by compiler consumers."""
+    semantics = b.get("semantics")
+    if not semantics:
+        return "_Compiler-resident construct; this name is intentionally outside the builtin registry._"
+    validation = semantics.get("validation") or {}
+    ownership = semantics.get("ownership") or {}
+    callable_policy = semantics.get("callable") or {}
+    effects = semantics.get("effects") or {}
+    requirements = semantics.get("requirements") or {}
+    target_support = semantics.get("target_support") or []
+    effect_detail = effects.get("kind", "unknown")
+    if effects.get("kind") == "static":
+        effect_detail += f" ({len(effects.get('names') or [])} declared effects)"
+    requirement_detail = requirements.get("kind", "unknown")
+    if requirements.get("kind") == "static":
+        requirement_detail += f" ({len(requirements.get('values') or [])} requirements)"
+    lines = [
+        f"- **Target strategy**: `{semantics.get('target_strategy', 'unknown')}`",
+        f"- **Validation**: `{validation.get('kind', 'unknown')}`",
+        f"- **Result type source**: `{semantics.get('result_type', 'unknown')}`",
+        f"- **Result ownership**: `{ownership.get('kind', 'unknown')}`",
+        f"- **Effects**: `{effect_detail}`",
+        f"- **Requirements**: `{requirement_detail}`",
+        f"- **Callable policy**: `{callable_policy.get('kind', 'unknown')}`",
+        "- **Target support**: "
+        + (", ".join(f"`{target}`" for target in target_support) or "_none declared_"),
+    ]
     return "\n".join(lines)
 
 
@@ -201,6 +261,79 @@ def _github_url_with_line(repo_root: Path, file_path: str, line: int) -> str:
     if line is None:
         return _github_url(repo_root, file_path)
     return f"https://github.com/illegalstudio/elephc/blob/main/{rel}#L{line}"
+
+
+def _availability_section(b: dict) -> str:
+    """Two-line support matrix: compiled (AOT) vs eval() interpreter."""
+    lines = ["## Availability", ""]
+    if b.get("eval_only"):
+        lines.append(
+            "- **Compiled (AOT)**: not available — compiled programs cannot "
+            "call this builtin yet."
+        )
+    else:
+        lines.append("- **Compiled (AOT)**: supported by the Elephc code generator.")
+    ev = b.get("eval") or {}
+    if ev.get("supported"):
+        kind = ev.get("kind")
+        if kind == "registry":
+            home = ev.get("home_file") or ""
+            lines.append(
+                "- **`eval()` (magician interpreter)**: supported — declarative "
+                f"interpreter builtin ([`{home}`](https://github.com/illegalstudio/elephc/blob/main/{home}))."
+            )
+        elif kind == "date-alias":
+            lines.append(
+                "- **`eval()` (magician interpreter)**: supported through the "
+                "procedural date/time alias dispatcher."
+            )
+        else:
+            lines.append("- **`eval()` (magician interpreter)**: supported.")
+    else:
+        lines.append(
+            "- **`eval()` (magician interpreter)**: not available inside eval'd code."
+        )
+    if b.get("is_extension"):
+        lines.append(
+            "- **Strict PHP mode**: hidden — this builtin is an elephc extension "
+            "with no PHP equivalent, so programs compiled with "
+            "[`--strict-php`](../../../compiling/cli-reference.md#strict-php-mode) "
+            "treat the name as nonexistent, in compiled code and inside eval'd code."
+        )
+    return "\n".join(lines)
+
+
+def _eval_internals_section(b: dict) -> str:
+    """How the eval interpreter reaches this builtin, for the internals page."""
+    ev = b.get("eval") or {}
+    if not ev.get("supported"):
+        return (
+            "_Not callable from eval'd code — the magician interpreter has no "
+            "entry for this builtin._"
+        )
+    if ev.get("kind") == "date-alias":
+        home = ev.get("home_file") or ""
+        return (
+            "Dispatched as a procedural date/time alias by "
+            f"[`{home}`](https://github.com/illegalstudio/elephc/blob/main/{home})."
+        )
+    home = ev.get("home_file") or ""
+    hooks = ev.get("hooks") or []
+    lines = [
+        f"- **Declaration**: [`{home}`](https://github.com/illegalstudio/elephc/blob/main/{home}) (`eval_builtin!`)",
+        "- **Dispatch hooks**: "
+        + (", ".join(f"`{h}`" for h in hooks) or "_none_"),
+    ]
+    by_ref = [p["name"] for p in (ev.get("params") or []) if p.get("by_ref")]
+    if by_ref:
+        lines.append(
+            "- **By-reference parameters**: "
+            + ", ".join(f"`${n}`" for n in by_ref)
+            + "."
+        )
+    if ev.get("variadic"):
+        lines.append(f"- **Variadic**: collects excess arguments into `${ev['variadic']}`.")
+    return "\n".join(lines)
 
 
 def _internals_link(b: dict) -> str:
@@ -230,7 +363,7 @@ def render_user(b: dict, order: int, repo_root: Path) -> str:
     _ = repo_root  # reserved for future cross-repo links
     area_lower = b['area'].lower()
     article = "an" if area_lower[0] in "aeiou" else "a"
-    return USER_TEMPLATE.format(
+    rendered = USER_TEMPLATE.format(
         name=b["name"],
         short_description=_short_description(b).replace('"', '\\"'),
         area=b["area"],
@@ -241,15 +374,24 @@ def render_user(b: dict, order: int, repo_root: Path) -> str:
            "Behavior matches the PHP manual unless noted below.",
         parameters_section=_parameters_section(b),
         return_section=_return_section(b),
+        availability_section=_availability_section(b),
         examples_section=_examples_section(b),
         notes_section=_notes_section(b),
         see_also_section=_see_also_section(b),
         internals_link=_internals_link(b),
     )
+    # Empty optional sections can stack trailing blank lines. Keep generated
+    # pages canonical with exactly one final newline.
+    return rendered.rstrip() + "\n"
 
 
 def render_internals(b: dict, order: int, repo_root: Path) -> str:
-    sig_file = b["lowering"].get("sig_file") or "src/types/signatures.rs"
+    sig_file = b["lowering"].get("sig_file")
+    if not sig_file and b.get("eval_only"):
+        # Eval-only builtins have no static signature home; point at the
+        # magician declaration instead.
+        sig_file = (b.get("eval") or {}).get("home_file")
+    sig_file = sig_file or "src/types/signatures.rs"
     codegen_file = b["lowering"].get("codegen_file")
     codegen_line = b["lowering"].get("codegen_line")
     codegen_function = b["lowering"].get("codegen_function") or "(none — type-checker only)"
@@ -300,9 +442,11 @@ def render_internals(b: dict, order: int, repo_root: Path) -> str:
         checker_clause=checker_clause,
         codegen_function=codegen_function,
         codegen_notes=codegen_notes,
+        semantic_descriptor_section=_semantic_descriptor_section(b),
         runtime_helpers_section=_runtime_helpers_section(b),
         signature=_signature_line(b),
         checker_notes=_checker_notes(b),
+        eval_section=_eval_internals_section(b),
         see_also_section=see_also_section,
     )
 
@@ -362,8 +506,11 @@ def _index_table_rows(builtins: list[dict], link_prefix: str = ".") -> list[str]
             link = f"{link_prefix}/_internal/{slug(b['name'])}.md"
         else:
             link = f"{link_prefix}/{area_folder}/{slug(b['name'])}.md"
+        aot = "—" if b.get("eval_only") else "✓"
+        ev = "✓" if (b.get("eval") or {}).get("supported") else "—"
         rows.append(
-            f"| [`{b['name']}()`]({link}) | `{sig}` | `{b['sig']['return_type']}` |"
+            f"| [`{b['name']}()`]({link}) | `{sig}` | `{b['sig']['return_type']}` "
+            f"| {aot} | {ev} |"
         )
     return rows
 
@@ -382,8 +529,8 @@ def render_area_index(area: str, builtins: list[dict], order: int = 0) -> str:
         "",
         f"## {area} builtins",
         "",
-        "| Function | Signature | Returns |",
-        "|---|---|---|",
+        "| Function | Signature | Returns | AOT | eval() |",
+        "|---|---|---|:-:|:-:|",
     ]
     lines.extend(_index_table_rows(relevant))
     return "\n".join(lines) + "\n"
@@ -403,8 +550,8 @@ def render_master_index(builtins: list[dict]) -> str:
         "",
         "## Builtins",
         "",
-        "| Function | Signature | Returns |",
-        "|---|---|---|",
+        "| Function | Signature | Returns | AOT | eval() |",
+        "|---|---|---|:-:|:-:|",
     ]
     lines.extend(_index_table_rows(relevant, link_prefix="./builtins"))
     return "\n".join(lines) + "\n"

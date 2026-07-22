@@ -2,7 +2,7 @@
 title: "stream_select()"
 description: "Runs the equivalent of the select() system call on the given arrays of streams."
 sidebar:
-  order: 210
+  order: 229
 ---
 
 ## stream_select()
@@ -22,6 +22,11 @@ Runs the equivalent of the select() system call on the given arrays of streams.
 
 **Returns**: `int`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/filesystem/stream_select.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/filesystem/stream_select.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -33,4 +38,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `stream_select` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/stream_select.md).
-

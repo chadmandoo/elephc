@@ -17,8 +17,8 @@ use crate::parser::ast::Program;
 use crate::span::Span;
 
 use super::{
-    checker, ClassInfo, EnumInfo, ExternClassInfo, ExternFunctionSig, FunctionSig, InterfaceInfo,
-    PackedClassInfo, PhpType, TypeEnv,
+    checker, AttrArgEntry, ClassInfo, EnumInfo, ExternClassInfo, ExternFunctionSig, FunctionSig,
+    InterfaceInfo, PackedClassInfo, PhpType, ReturnAliasSummaries, TypeEnv,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -59,7 +59,11 @@ pub enum ThrowAccessKind {
 pub struct CheckResult {
     pub global_env: TypeEnv,
     pub functions: HashMap<String, FunctionSig>,
+    pub function_attribute_names: HashMap<String, Vec<String>>,
+    pub function_attribute_args: HashMap<String, Vec<Option<Vec<AttrArgEntry>>>>,
     pub callable_param_sigs: HashMap<(String, String), FunctionSig>,
+    /// Proven return-to-parameter storage aliases for source-declared callables.
+    pub(crate) return_alias_summaries: ReturnAliasSummaries,
     #[allow(dead_code)]
     pub callable_return_sigs: HashMap<String, FunctionSig>,
     #[allow(dead_code)]
@@ -76,6 +80,8 @@ pub struct CheckResult {
     /// Statically-decided access violations lowered to runtime `Error` throws,
     /// keyed by the source span of the offending call/assignment.
     pub throw_access_sites: HashMap<Span, ThrowAccessInfo>,
+    /// Authoritative checker result types for builtin calls, keyed by call span.
+    pub builtin_call_types: HashMap<Span, PhpType>,
 }
 
 /// Runs type checking using the host platform (auto-detected from the build environment).
@@ -120,5 +126,38 @@ mod tests {
         let mac = check_with_target(&program, Target::new(Platform::MacOS, Arch::AArch64))
             .expect("mac type check failed");
         assert_eq!(mac.required_libraries, vec!["elephc_crypto"]);
+    }
+
+    /// Verifies enum class metadata preserves flattened trait relation data for runtime reflection.
+    #[test]
+    fn test_enum_class_info_preserves_trait_metadata() {
+        let program = parse_program(
+            r#"<?php
+trait EnumMetaTrait {
+    public function original() {}
+}
+enum EnumMetaTarget {
+    use EnumMetaTrait {
+        original as aliasOriginal;
+    }
+    case Ready;
+}
+"#,
+        );
+
+        let result = check(&program).expect("type check failed");
+        let enum_class = result
+            .classes
+            .get("EnumMetaTarget")
+            .expect("missing enum class metadata");
+
+        assert_eq!(enum_class.used_traits, vec!["EnumMetaTrait"]);
+        assert_eq!(
+            enum_class.trait_aliases,
+            vec![(
+                "aliasOriginal".to_string(),
+                "EnumMetaTrait::original".to_string()
+            )]
+        );
     }
 }
