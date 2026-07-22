@@ -11,7 +11,7 @@
 
 use crate::codegen::abi;
 use crate::codegen::platform::Arch;
-use crate::ir::{Instruction, Op, Ownership, ValueDef, ValueId};
+use crate::ir::{Instruction, Op, ValueDef, ValueId};
 use crate::types::PhpType;
 
 use super::super::context::FunctionContext;
@@ -53,14 +53,11 @@ pub(super) fn lower_acquire(ctx: &mut FunctionContext<'_>, inst: &Instruction) -
     store_if_result(ctx, inst)
 }
 
-/// Lowers an ownership release for values that may hold runtime-managed storage.
+/// Lowers a release only for values that own or may own runtime-managed storage.
 pub(super) fn lower_release(ctx: &mut FunctionContext<'_>, inst: &Instruction) -> Result<()> {
     let value = expect_operand(inst, 0)?;
     let ownership = ctx.value_ownership(value)?;
-    if matches!(
-        ownership,
-        Ownership::NonHeap | Ownership::Borrowed | Ownership::Persistent | Ownership::Moved
-    ) {
+    if !ownership.may_require_release() {
         return Ok(());
     }
     if value_is_scratch_string(ctx, value)? {
@@ -110,6 +107,21 @@ fn value_is_scratch_string(ctx: &FunctionContext<'_>, value: ValueId) -> Result<
         .function
         .instruction(inst)
         .ok_or_else(|| CodegenIrError::missing_entry("instruction", inst.as_raw()))?;
+    if inst.op == Op::RuntimeCall {
+        let result_is_fresh = match inst.immediate {
+            Some(crate::ir::Immediate::RuntimeCall(
+                crate::ir::RuntimeCallTarget::Function(target),
+            )) => matches!(
+                target.result_ownership(),
+                crate::builtins::semantics::BuiltinResultOwnership::Fresh
+            ),
+            Some(crate::ir::Immediate::RuntimeCall(
+                crate::ir::RuntimeCallTarget::UnaryString(_),
+            )) => true,
+            _ => false,
+        };
+        return Ok(!result_is_fresh);
+    }
     Ok(matches!(
         inst.op,
         Op::IToStr
@@ -120,7 +132,6 @@ fn value_is_scratch_string(ctx: &FunctionContext<'_>, value: ValueId) -> Result<
             | Op::StrConcat
             | Op::StrCharAt
             | Op::StrInterpolate
-            | Op::RuntimeCall
     ))
 }
 

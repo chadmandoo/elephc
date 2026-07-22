@@ -16,7 +16,7 @@ Contributions created with the help of AI tools are welcome. What matters to us 
 
 ## Planning Larger Work
 
-If you're working toward something bigger than a single, self-contained change, we recommend writing a plan before you dive into the code. Plans live in the `.plans` directory of the repository.
+If you're working toward something bigger than a single, self-contained change, we recommend writing a plan before you dive into the code. Plans live in the `.plans` directory of the repository, and every plan in `.plans` must be written in English.
 
 Start each plan with a checklist of the tasks it involves, then follow it with the detailed implementation notes for each of them. Keeping the task list up front makes the plan's progress easy to verify at a glance — whether it's complete is simply a matter of checking which tasks are marked done.
 
@@ -83,6 +83,74 @@ Before opening a Pull Request, please ensure that:
 * When the Pull Request addresses an existing issue, reference it in the description.
 
 Please keep Pull Requests focused and self-contained. A Pull Request that solves a single, well-defined problem is far easier to review than a large one that bundles several unrelated changes together.
+
+### Pull Request labels
+
+Pull Requests are classified automatically by the `PR labels` workflow. Its
+catalog and matching rules live in `.github/pr-labels.json`, and the classifier
+is implemented in `.github/scripts/pr-labels.cjs`.
+
+The workflow runs when a Pull Request is opened, reopened, updated, edited, or
+marked ready for review. On each run it recalculates the managed labels and
+removes managed labels that no longer match. Contributors therefore do not need
+label-management permissions and should not add or remove labels in the
+following namespaces by hand:
+
+| Namespace | Meaning | Values |
+|---|---|---|
+| `type:*` | The intent of the change. Exactly one is assigned from the conventional PR title, falling back to the branch prefix. | `type:feature`, `type:fix`, `type:docs`, `type:refactor`, `type:chore`, `type:test`, `type:triage` |
+| `area:*` | The primary compiler or repository components affected by the changed paths. Up to three are assigned. | `area:lexer`, `area:parser`, `area:resolver`, `area:types`, `area:optimizer`, `area:eir`, `area:codegen`, `area:runtime`, `area:builtins`, `area:web`, `area:magician`, `area:platform`, `area:tooling-ci`, `area:docs`, `area:triage` |
+| `target:*` | A target explicitly affected by the title, branch, or changed paths. Target-neutral changes receive no target label. | `target:linux-x86_64`, `target:linux-aarch64`, `target:macos-aarch64`, `target:windows-x86_64`, `target:wasm32-wasi` |
+| `size:*` | Review size derived from the number of changed files and total added plus deleted lines. Exactly one is assigned. | `size:xs`, `size:s`, `size:m`, `size:l`, `size:xl` |
+| `scope:*` | Additional review attention for unusually broad changes. | `scope:multi-area` |
+
+The recognized conventional prefixes map directly to type labels: `feat:` and
+`feature:` become `type:feature`; `fix:` becomes `type:fix`; `docs:` becomes
+`type:docs`; `refactor:` becomes `type:refactor`; `chore:` becomes `type:chore`;
+and `test:` or `tests:` becomes `type:test`. A title or branch without a
+recognized prefix receives `type:triage`. The title takes precedence over the
+branch name, so correcting the title is normally enough to correct the type.
+
+Size labels use the first matching threshold below. Either the file count or
+the changed-line count can move a Pull Request into the larger category.
+
+| Label | Threshold |
+|---|---|
+| `size:xl` | More than 100 files or 10,000 changed lines |
+| `size:l` | More than 30 files or 2,000 changed lines |
+| `size:m` | More than 10 files or 500 changed lines |
+| `size:s` | More than 3 files or 100 changed lines |
+| `size:xs` | Everything smaller |
+
+A `target:*` label describes target-specific content; it does not add that
+target to the supported-target matrix. The supported-target policy in
+`AGENTS.md` remains authoritative.
+
+Some labels require maintainer judgment and are deliberately preserved by the
+automation:
+
+- `topic:*` describes cross-cutting semantics. The available labels are
+  `topic:php-compat`, `topic:ownership-gc`, `topic:performance`, `topic:abi`,
+  `topic:arrays`, `topic:strings`, `topic:closures`, `topic:generators`,
+  `topic:fibers`, `topic:regex`, `topic:magic-methods`, `topic:control-flow`,
+  `topic:numeric-literals`, `topic:json`, and `topic:errors`.
+- `priority:high` is assigned only by maintainers.
+
+The repository-wide labels `bug`, `enhancement`, `duplicate`, `good first
+issue`, `help wanted`, `invalid`, `question`, and `wontfix` are reserved for
+issue triage. GitHub exposes the same label catalog to issues and Pull Requests,
+but these labels should not be used in place of the PR `type:*` labels.
+
+If an automatic label looks wrong, first check the conventional title and the
+changed paths. Explain any remaining mismatch in the Pull Request instead of
+creating a near-duplicate label; a maintainer can assign an appropriate
+`topic:*` label or adjust the classifier rules. Changes to the label catalog or
+classification behavior must update `.github/pr-labels.json` and the focused
+tests, which can be run with:
+
+```bash
+node --test .github/scripts/pr-labels.test.cjs
+```
 
 ### Draft until it's ready
 
@@ -223,8 +291,8 @@ with the `builtin!` macro; all declarations are collected at link time through t
 `inventory` crate. From that single declaration the compiler derives the catalog
 name-set (case-insensitive lookup, `function_exists`, namespace fallback,
 redeclaration checks), the call signature (named arguments, defaults, by-ref params,
-variadic, arity), the type-check entry, the EIR lowering dispatch, and the generated
-documentation.
+variadic, arity), the shared semantic contract, backend-neutral EIR lowering, and the
+generated documentation.
 
 Do **not** re-add builtin names to the old hand-maintained tables (`catalog.rs`,
 `signatures.rs`, per-area `check_builtin` arms). They are superseded by the registry;
@@ -235,8 +303,9 @@ a builtin is fully wired the moment its home file compiles.
 Add `src/builtins/<area>/<name>.rs` and register it in `src/builtins/<area>/mod.rs`
 with `pub mod <name>;` (keep the list alphabetical). Areas are `string`, `array`,
 `math`, `io`, `system`, `types`, `callables`, `spl`, `pointers` (plus `internal` for
-compiler-internal builtins). One builtin per home file; the file owns its declaration
-plus its `check`/`lower` hooks. Start with the mandatory `//!` module preamble.
+compiler-internal builtins). One builtin per home file; the file owns its declaration,
+optional checker hook, and complete backend-neutral semantic descriptor. Start with
+the mandatory `//!` module preamble.
 
 ### 2. Declare it with `builtin!`
 
@@ -246,9 +315,19 @@ builtin! {
     area: String,
     params: [string: Str],
     returns: Int,
-    check: check,
-    lazy_check: true,
-    lower: lower,
+    semantics: BuiltinSemantics {
+        validation: BuiltinValidation::Shared(validate),
+        result_type: BuiltinResultType::Declared,
+        effects: BuiltinEffects::Shared(effects),
+        result_ownership: BuiltinResultOwnership::NonHeap,
+        requirements: BuiltinRequirements::Static(&[]),
+        target_strategy: BuiltinTargetStrategy::EirGraph,
+        target_support: BuiltinTargetSupport::All,
+        runtime_functions: BuiltinRuntimeFunctions::None,
+        argument_lowering: BuiltinArgumentLowering::Standard,
+        callable: BuiltinCallablePolicy::Dynamic(callable_accepts_strlen_source),
+        lowering: BuiltinLowering::Eir(lower),
+    },
     summary: "Returns the length of a string.",
     php_manual: "function.strlen",
 }
@@ -258,8 +337,8 @@ Fields must appear in this canonical order; optional fields (marked `?`) may be
 omitted:
 
 `name`, `area`, `params`, `variadic?`, `min_args?`, `max_args?`, `arity_error?`,
-`returns`, `by_ref_return?`, `check?`, `lazy_check?`, `lower`, `summary`, `examples?`,
-`php_manual?`, `deprecation?`, `internal?`.
+`returns`, `by_ref_return?`, `check?`, `lazy_check?`, `semantics`, `requirements?`,
+`summary`, `examples?`, `php_manual?`, `deprecation?`, `extension?`, `internal?`.
 
 - **`params`** — `[name: TypeSpec, name: TypeSpec = DefaultSpec::Variant, ...]`. A
   parameter with `= DefaultSpec::…` is optional; without it, required. Prefix a
@@ -271,6 +350,16 @@ omitted:
   `Float`, `Str`, `Bool`, `Mixed`, `Null`, `Void`. Non-scalar shapes (arrays, unions,
   resources) are declared as `Mixed`; supply the precise type from a `check` hook when
   it matters (see the note in step 3).
+- **`semantics`** — the complete shared contract for validation, result typing,
+  effects, ownership/aliasing, runtime/link requirements, target strategy/support,
+  typed runtime-function inventory, argument lowering, callable availability, and
+  backend-neutral EIR lowering. For the common case use
+  `runtime_fn_semantics(RuntimeFnId::...)`; for type predicates use
+  `type_predicate_semantics(...)`; use a custom `BuiltinSemantics` only when the
+  builtin composes EIR primitives or needs source/type-dependent contracts.
+- **`requirements`** — an optional source-dependent resolver layered over the
+  descriptor's fixed requirements. Do not rediscover bridges or runtime features from
+  PHP names later in the pipeline.
 - **`DefaultSpec`** — full path form: `DefaultSpec::Null`, `DefaultSpec::Int(0)`,
   `DefaultSpec::Bool(false)`, `DefaultSpec::Float(1.5)`, `DefaultSpec::Str("…")`,
   `DefaultSpec::IntMax`, `DefaultSpec::IntMin`, `DefaultSpec::EmptyArray`.
@@ -281,6 +370,9 @@ omitted:
   tighter/looser than its declared parameter list, or needs a verbatim error message.
 - **`summary` / `examples` / `php_manual` / `deprecation`** — documentation metadata
   surfaced by the `gen_builtins` exporter.
+- **`extension: true`** — an elephc extension with no PHP equivalent (`ptr_*`,
+  `zval_*`, `buffer_*`, `class_attribute_*`, …). `--strict-php` hides it from user
+  programs; update `EXPECTED_EXTENSION_BUILTINS` in `src/builtins/parity_tests.rs`.
 - **`internal: true`** — a compiler-internal builtin that is not PHP-visible and is
   excluded from catalogs and docs.
 
@@ -315,53 +407,57 @@ an unannotated closure argument *before* that closure is inferred (e.g. `usort`,
 `array_map` with a callback). With `lazy_check: true` the hook is responsible for
 inferring each argument itself.
 
-> **Return typing is a checker-only contract.** The `returns:` field and the `check`
-> hook drive the **type checker** only. The EIR backend derives call return types
-> independently in `call_return_type` (`src/ir_lower/expr/mod.rs`). If you declare
-> `returns: Mixed` + a precise `check` hook (the standard pattern for non-scalar
-> returns), you must also add a matching arm to the EIR return-type derivation, or the
-> checker and EIR will disagree on the value's type. This caveat is documented on the
-> `returns`/`check` fields in `src/builtins/spec.rs`.
+The macro embeds a `check` hook into `semantics.validation` and changes a declared
+result contract to `BuiltinResultType::Checked` when needed. EIR lowering consumes the
+checked call-site type from that same descriptor. If the backend returns a different
+storage representation from the checker-facing type (for example, a boxed dynamic
+result), set `BuiltinResultType::Shared(resolve)` and make the resolver return the
+actual EIR/backend representation. Do not add PHP-name arms to `call_return_type`.
 
-### 4. The `lower` hook (EIR codegen)
+### 4. Backend-neutral EIR lowering
 
-`lower` is mandatory — it is the builtin's EIR lowering entry point. Keep it a thin
-wrapper that dispatches to the actual emitter:
+The descriptor's `lowering` field is mandatory. Most builtins lower to one typed
+runtime operation:
 
 ```rust
-fn lower(ctx: &mut FunctionContext, inst: &Instruction) -> Result<(), CodegenIrError> {
-    crate::codegen::lower_inst::builtins::lower_strlen(ctx, inst)
-}
+semantics: runtime_fn_semantics(crate::ir::RuntimeFnId::ArrayMap),
 ```
 
-Write the emitter itself under `src/codegen/lower_inst/builtins/<area>/`, following
-the target-aware codegen conventions in `CLAUDE.md` (support every target through
-`emitter.target`, one emitter per leaf file, an inline `//` comment on every
-`emitter.instruction(...)`). If the builtin needs a runtime routine, add it under
-`src/codegen_support/runtime/<category>/`. The registry dispatches `spec.lower` first, so no
-match arm needs editing.
+The backend receives `Op::RuntimeCall` with a typed `RuntimeCallTarget`; PHP names are
+not present at that boundary. Add the target to `RuntimeFnId` (or another typed target
+enum), implement it under `src/codegen/lower_inst/runtime_functions/` or
+`runtime_calls.rs`, and keep every supported ABI in the same path. If it needs a
+runtime routine, add it under `src/codegen_support/runtime/<category>/`.
+
+For a builtin that is naturally expressed as reusable EIR operations, use
+`BuiltinLowering::Eir(lower)`. The hook receives only `BuiltinLoweringContext` and a
+`NormalizedBuiltinCall`; it may emit typed EIR values/runtime calls, but must not
+import `crate::codegen`, mention physical registers, choose concrete helper symbols,
+or emit assembly. `BuiltinLowering::TypePredicate` is the shared primitive for PHP
+type predicates.
 
 ### 5. What derives automatically
 
 Once the home file compiles, all of the following see the builtin with no further
 edits: `function_exists()` and case-insensitive/namespaced lookup, the named-argument
-`FunctionSig`, first-class-callable syntax (`strlen(...)`), the arity check and its
-error message, and the `gen_builtins` JSON docs export.
+`FunctionSig`, checker validation/result typing, optimizer effects, ownership cleanup,
+runtime/link requirements, direct and runtime-selected callable policy,
+backend-neutral EIR lowering, the arity check and its error message, and the
+`gen_builtins` JSON docs export.
 
 ### 6. Surfaces you still wire by hand
 
-The registry single-sources the declaration, signature, checker entry, lowering
-*dispatch*, and docs. These related surfaces are **not** derived and must be updated
-when relevant:
+The registry single-sources the semantic compiler contract. These implementation and
+user-facing surfaces still need updates when relevant:
 
-- **The EIR emitter** the `lower` hook calls (and any runtime routine it needs).
-- **EIR return typing** — see the note in step 3.
-- **Optimizer effects** in `src/optimize/effects/builtins.rs` when purity, reads/writes,
-  or thrown/fatal behavior matter for DCE and constant propagation. Never mark a call
-  pure if it can read/write globals, files, the environment, heap state, or emit output.
-- **Runtime-callable wrapper exclusion** — if the builtin cannot be dispatched through
-  the dynamic string-callable wrapper, add it to `runtime_builtin_wrapper_excluded()`
-  in `src/codegen/callable_dispatch.rs`.
+- **The typed backend target** and any runtime routine it needs. Every target must
+  validate the operand/result contract and support macOS ARM64, Linux ARM64, and Linux
+  x86_64.
+- **The descriptor itself** when effects, ownership, requirements, argument lowering,
+  or runtime-callable availability differ from the selected target's defaults. Never
+  mark a call pure if it can read/write globals, files, the environment, heap state,
+  argument storage, or emit output.
+- **Examples and generated docs** for the PHP-visible surface.
 
 ### 7. Tests, examples, and docs
 
@@ -375,10 +471,25 @@ when relevant:
 
 ### 8. Not every "builtin" is a function
 
-A small set of PHP language constructs — `isset`, `unset`, `empty`, `exit`, `die`, plus
-the `buffer_*` intrinsics — are l-value/lazy constructs with dedicated EIR paths and are
-intentionally kept in the checker (`numeric`/`arrays` `check_builtin`), not in the
-registry. Do not migrate those into `builtin!`.
+A small set of PHP language constructs — `isset`, `unset`, `empty`, `exit`, `die` — are
+l-value/lazy constructs with dedicated EIR paths and are intentionally kept in the
+checker (`numeric`/`arrays` `check_builtin`), not in the registry. Do not migrate those
+into `builtin!`. `buffer_new` is similar (its call form is dedicated syntax lowered as
+`ExprKind::BufferNew`; only its name lives in the catalog), while `buffer_len` and
+`buffer_free` are ordinary registry builtins under `src/builtins/pointers/`.
+
+Builtins that are elephc extensions with no PHP equivalent must declare
+`extension: true` in `builtin!` so `--strict-php` hides them from user programs; the
+pinned set lives in `src/builtins/parity_tests.rs` (`EXPECTED_EXTENSION_BUILTINS`).
+Injected compiler preludes must never call a PHP-visible extension builtin — use an
+`internal: true` `__elephc_*` alias instead (see `src/builtins/pointers/__elephc_ptr_read_string.rs`);
+the `preludes_never_call_php_visible_extension_builtins` gate enforces this.
+
+On the eval side, magician derives its extension set from `EvalArea::RawMemory`
+plus the `SYMBOLS_EXTENSION_BUILTINS` list (`crates/elephc-magician/src/interpreter/builtins/spec.rs`)
+instead of a per-declaration flag; the `extension_builtin_sets_agree_across_registries`
+gate in `tests/builtin_parity_tests.rs` pins that derivation against the compiler
+registry, so adding an extension builtin to either registry forces both sides to agree.
 
 ## Adding functionality via a Rust crate (bridge crates)
 
@@ -472,10 +583,10 @@ bridge automatically when the feature is used.
 
 - **Core builtins** — when the feature is a set of PHP built-in functions
   (`md5()`, `hash()`, …). Follow "Adding a built-in function" above (declare each
-  builtin in `src/builtins/<area>/` with its `check`/`lower` hooks), and call
-  `Checker::require_builtin_library("elephc_<name>")` from the `check` hook when a
-  builtin that needs the crate is used. The PHP names are always available, so no
-  prelude is needed.
+  builtin in `src/builtins/<area>/` with its semantic descriptor), and declare
+  `BuiltinRequirement::Bridge("elephc_<name>")` in its fixed requirements or return
+  it from the descriptor's source-dependent `requirements` resolver. The PHP names
+  are always available, so no prelude is needed.
 
 - **A prelude** — when the feature is a set of classes/functions written in
   elephc-PHP that wrap the crate (PDO, timezone introspection, image). Add

@@ -1,7 +1,7 @@
 //! Purpose:
 //! Groups all `pointers`-area builtin homes into this module so the registry can
 //! collect them in one place. Each submodule declares exactly one builtin via
-//! `builtin!` and provides its check hook and lowering hook.
+//! `builtin!` and provides its checker contract and typed runtime target.
 //!
 //! Called from:
 //! - `crate::builtins` (`mod pointers;` in `src/builtins/mod.rs`).
@@ -12,6 +12,11 @@
 //!   which `TypeSpec` cannot express statically.
 //! - Add `pub mod <name>;` here for every new pointer builtin home.
 
+pub mod __elephc_ptr_is_null;
+pub mod __elephc_ptr_read_string;
+pub mod __elephc_ptr_write_string;
+pub mod buffer_free;
+pub mod buffer_len;
 pub mod ptr;
 pub mod ptr_get;
 pub mod ptr_is_null;

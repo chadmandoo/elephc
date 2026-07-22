@@ -2,7 +2,7 @@
 title: "base64_decode()"
 description: "Decodes a Base64-encoded string back into its original data."
 sidebar:
-  order: 340
+  order: 359
 ---
 
 ## base64_decode()
@@ -18,6 +18,11 @@ Decodes a Base64-encoded string back into its original data.
 
 **Returns**: `string`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/string/base64_decode.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/string/base64_decode.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -29,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `base64_decode` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/base64_decode.md).
-

@@ -2,7 +2,7 @@
 title: "hash_final()"
 description: "Finalizes an incremental hash and returns the digest string."
 sidebar:
-  order: 356
+  order: 375
 ---
 
 ## hash_final()
@@ -19,6 +19,11 @@ Finalizes an incremental hash and returns the digest string.
 
 **Returns**: `string`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/string/hash_final.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/string/hash_final.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -30,4 +35,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `hash_final` is implemented in the compiler, see [the internals page](../../../internals/builtins/string/hash_final.md).
-

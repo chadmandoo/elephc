@@ -2,7 +2,7 @@
 title: "fflush()"
 description: "Flushes the output to a file."
 sidebar:
-  order: 157
+  order: 163
 ---
 
 ## fflush()
@@ -18,6 +18,11 @@ Flushes the output to a file.
 
 **Returns**: `bool`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/filesystem/fflush.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/filesystem/fflush.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -29,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `fflush` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/fflush.md).
-

@@ -17,7 +17,9 @@ use crate::types::{InterfaceInfo, PhpType, PropertyHookContract};
 
 use super::super::Checker;
 use super::super::InterfaceDeclInfo;
-use super::validation::{build_method_sig, validate_signature_compatibility};
+use super::validation::{
+    build_method_sig, late_static_return_compatible, validate_signature_compatibility,
+};
 use crate::types::traits::FlattenedClass;
 
 /// Recursively builds interface metadata by flattening inheritance and collecting methods,
@@ -66,11 +68,14 @@ pub(crate) fn build_interface_info_recursive(
     })?;
 
     let mut methods = HashMap::new();
+    let mut late_static_method_returns = HashMap::new();
     let mut method_declaring_interfaces = HashMap::new();
     let mut method_order = Vec::new();
     let mut method_slots = HashMap::new();
     let mut static_methods = HashMap::new();
-    let mut static_method_order: Vec<String> = Vec::new();
+    let mut late_static_static_method_returns = HashMap::new();
+    let mut static_method_declaring_interfaces = HashMap::new();
+    let mut static_method_order = Vec::new();
     let mut properties = HashMap::new();
     let mut property_order = Vec::new();
 
@@ -107,6 +112,13 @@ pub(crate) fn build_interface_info_recursive(
                 .methods
                 .get(method_name)
                 .expect("type checker bug: missing interface parent method signature");
+            if static_methods.contains_key(method_name) {
+                return Err(interface_method_kind_conflict(
+                    interface.span,
+                    &interface.name,
+                    method_name,
+                ));
+            }
             if let Some(existing_sig) = methods.get(method_name) {
                 validate_signature_compatibility(
                     interface.span,
@@ -117,9 +129,22 @@ pub(crate) fn build_interface_info_recursive(
                     "method",
                     "combining interface parent",
                 )?;
+                if let Some(return_type) = parent_info.late_static_method_returns.get(method_name) {
+                    methods.insert(method_name.clone(), parent_sig.clone());
+                    late_static_method_returns.insert(method_name.clone(), return_type.clone());
+                    let declaring = parent_info
+                        .method_declaring_interfaces
+                        .get(method_name)
+                        .cloned()
+                        .unwrap_or_else(|| parent_name.clone());
+                    method_declaring_interfaces.insert(method_name.clone(), declaring);
+                }
                 continue;
             }
             methods.insert(method_name.clone(), parent_sig.clone());
+            if let Some(return_type) = parent_info.late_static_method_returns.get(method_name) {
+                late_static_method_returns.insert(method_name.clone(), return_type.clone());
+            }
             let declaring = parent_info
                 .method_declaring_interfaces
                 .get(method_name)
@@ -134,7 +159,14 @@ pub(crate) fn build_interface_info_recursive(
             let parent_sig = parent_info
                 .static_methods
                 .get(method_name)
-                .expect("type checker bug: missing interface parent static method signature");
+                .expect("type checker bug: missing parent static interface method signature");
+            if methods.contains_key(method_name) {
+                return Err(interface_method_kind_conflict(
+                    interface.span,
+                    &interface.name,
+                    method_name,
+                ));
+            }
             if let Some(existing_sig) = static_methods.get(method_name) {
                 validate_signature_compatibility(
                     interface.span,
@@ -142,12 +174,39 @@ pub(crate) fn build_interface_info_recursive(
                     method_name,
                     existing_sig,
                     parent_sig,
-                    "method",
+                    "static method",
                     "combining interface parent",
                 )?;
+                if let Some(return_type) = parent_info
+                    .late_static_static_method_returns
+                    .get(method_name)
+                {
+                    static_methods.insert(method_name.clone(), parent_sig.clone());
+                    late_static_static_method_returns
+                        .insert(method_name.clone(), return_type.clone());
+                    let declaring = parent_info
+                        .static_method_declaring_interfaces
+                        .get(method_name)
+                        .cloned()
+                        .unwrap_or_else(|| parent_name.clone());
+                    static_method_declaring_interfaces.insert(method_name.clone(), declaring);
+                }
                 continue;
             }
             static_methods.insert(method_name.clone(), parent_sig.clone());
+            if let Some(return_type) = parent_info
+                .late_static_static_method_returns
+                .get(method_name)
+            {
+                late_static_static_method_returns
+                    .insert(method_name.clone(), return_type.clone());
+            }
+            let declaring = parent_info
+                .static_method_declaring_interfaces
+                .get(method_name)
+                .cloned()
+                .unwrap_or_else(|| parent_name.clone());
+            static_method_declaring_interfaces.insert(method_name.clone(), declaring);
             static_method_order.push(method_name.clone());
         }
         for property_name in &parent_info.property_order {
@@ -241,27 +300,67 @@ pub(crate) fn build_interface_info_recursive(
             ));
         }
 
-        let sig = build_method_sig(checker, method)?;
+        let sig = build_method_sig(checker, method, &interface.name)?;
         if method.is_static {
-            // PHP 8.3+ static interface method: a bodyless static contract. Recorded apart
-            // from instance methods (no vtable slot — dispatch is by class). Implementing
-            // classes satisfy it with a static method (see validate_interface_contracts).
-            if let Some(existing) = static_methods.get(&method_key) {
+            if methods.contains_key(&method_key) {
+                return Err(interface_method_kind_conflict(
+                    method.span,
+                    &interface.name,
+                    &method.name,
+                ));
+            }
+            if let Some(parent_sig) = static_methods.get(&method_key) {
                 validate_signature_compatibility(
                     method.span,
                     &interface.name,
                     &method.name,
                     &sig,
-                    existing,
-                    "method",
+                    parent_sig,
+                    "static method",
                     "redeclaring interface",
                 )?;
+                if late_static_return_compatible(
+                    checker,
+                    late_static_static_method_returns.get(&method_key),
+                    method.return_type.as_ref(),
+                    &sig.return_type,
+                    &interface.name,
+                    method.span,
+                )? == Some(false)
+                {
+                    return Err(CompileError::new(
+                        method.span,
+                        &format!(
+                            "Cannot redeclare interface static method {}::{} without a compatible late-static return type",
+                            interface.name, method.name
+                        ),
+                    ));
+                }
             }
             static_methods.insert(method_key.clone(), sig);
+            if let Some(return_type) = method
+                .return_type
+                .as_ref()
+                .filter(|return_type| return_type.contains_late_static())
+            {
+                late_static_static_method_returns
+                    .insert(method_key.clone(), return_type.clone());
+            } else {
+                late_static_static_method_returns.remove(&method_key);
+            }
+            static_method_declaring_interfaces
+                .insert(method_key.clone(), interface.name.clone());
             if !static_method_order.contains(&method_key) {
-                static_method_order.push(method_key.clone());
+                static_method_order.push(method_key);
             }
             continue;
+        }
+        if static_methods.contains_key(&method_key) {
+            return Err(interface_method_kind_conflict(
+                method.span,
+                &interface.name,
+                &method.name,
+            ));
         }
         if let Some(parent_sig) = methods.get(&method_key) {
             validate_signature_compatibility(
@@ -273,8 +372,34 @@ pub(crate) fn build_interface_info_recursive(
                 "method",
                 "redeclaring interface",
             )?;
+            if late_static_return_compatible(
+                checker,
+                late_static_method_returns.get(&method_key),
+                method.return_type.as_ref(),
+                &sig.return_type,
+                &interface.name,
+                method.span,
+            )? == Some(false)
+            {
+                return Err(CompileError::new(
+                    method.span,
+                    &format!(
+                        "Cannot redeclare interface method {}::{} without a compatible late-static return type",
+                        interface.name, method.name
+                    ),
+                ));
+            }
         }
         methods.insert(method_key.clone(), sig);
+        if let Some(return_type) = method
+            .return_type
+            .as_ref()
+            .filter(|return_type| return_type.contains_late_static())
+        {
+            late_static_method_returns.insert(method_key.clone(), return_type.clone());
+        } else {
+            late_static_method_returns.remove(&method_key);
+        }
         method_declaring_interfaces.insert(method_key.clone(), interface.name.clone());
         if !method_slots.contains_key(&method_key) {
             let slot = method_order.len();
@@ -284,37 +409,100 @@ pub(crate) fn build_interface_info_recursive(
     }
 
     let mut iface_constants: HashMap<String, crate::parser::ast::Expr> = HashMap::new();
+    let mut constant_types = HashMap::new();
+    let mut constant_declaring_interfaces = HashMap::new();
+    let mut final_constants = HashSet::new();
     for parent_name in &interface.extends {
         if let Some(parent_info) = checker.interfaces.get(parent_name) {
             for (k, v) in &parent_info.constants {
-                iface_constants
-                    .entry(k.clone())
-                    .or_insert_with(|| v.clone());
+                if !iface_constants.contains_key(k) {
+                    iface_constants.insert(k.clone(), v.clone());
+                    if let Some(type_expr) = parent_info.constant_types.get(k) {
+                        constant_types.insert(k.clone(), type_expr.clone());
+                    }
+                    constant_declaring_interfaces.insert(
+                        k.clone(),
+                        parent_info
+                            .constant_declaring_interfaces
+                            .get(k)
+                            .cloned()
+                            .unwrap_or_else(|| parent_name.clone()),
+                    );
+                }
             }
+            final_constants.extend(parent_info.final_constants.iter().cloned());
         }
     }
     for c in &interface.constants {
+        for parent_name in &interface.extends {
+            let Some(parent_info) = checker.interfaces.get(parent_name) else {
+                continue;
+            };
+            if parent_info.final_constants.contains(&c.name) {
+                return Err(CompileError::new(
+                    c.span,
+                    &format!(
+                        "{}::{} cannot override final interface constant",
+                        interface.name, c.name
+                    ),
+                ));
+            }
+        }
         iface_constants.insert(c.name.clone(), c.value.clone());
+        if let Some(type_expr) = &c.type_expr {
+            constant_types.insert(c.name.clone(), type_expr.clone());
+        } else {
+            constant_types.remove(&c.name);
+        }
+        constant_declaring_interfaces.insert(c.name.clone(), interface.name.clone());
+        if c.is_final {
+            final_constants.insert(c.name.clone());
+        } else {
+            final_constants.remove(&c.name);
+        }
     }
     checker.interfaces.insert(
         interface.name.clone(),
         InterfaceInfo {
             interface_id: *next_interface_id,
+            declaration_span: interface.span,
             parents: interface.extends.clone(),
             properties,
             property_order,
+            method_decls: interface.methods.clone(),
             methods,
+            late_static_method_returns,
             method_declaring_interfaces,
             method_order,
             method_slots,
             static_methods,
+            late_static_static_method_returns,
+            static_method_declaring_interfaces,
             static_method_order,
             constants: iface_constants,
+            constant_types,
+            constant_declaring_interfaces,
+            final_constants,
         },
     );
     *next_interface_id += 1;
     building.remove(interface_name);
     Ok(())
+}
+
+/// Constructs a diagnostic for conflicting static/non-static interface methods.
+fn interface_method_kind_conflict(
+    span: crate::span::Span,
+    interface_name: &str,
+    method_name: &str,
+) -> CompileError {
+    CompileError::new(
+        span,
+        &format!(
+            "Cannot combine static and non-static interface method: {}::{}",
+            interface_name, method_name
+        ),
+    )
 }
 
 /// Validates a single interface property declaration for syntactic correctness.

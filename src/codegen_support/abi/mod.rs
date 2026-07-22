@@ -29,6 +29,7 @@ pub use calls::{
     emit_push_float_reg, emit_push_reg, emit_push_reg_pair, emit_push_result_value,
     emit_release_temporary_stack, emit_reserve_temporary_stack, emit_store_incoming_param,
     emit_store_to_sp, emit_temporary_stack_address, materialize_outgoing_args,
+    outgoing_call_stack_pad_bytes,
 };
 pub use frame::{
     emit_frame_prologue, emit_frame_restore, emit_frame_slot_address, emit_load_from_address,
@@ -39,8 +40,9 @@ pub use frame::{
 #[cfg(test)]
 pub use frame::{emit_preserve_return_value, emit_restore_return_value};
 pub(crate) use registers::{
-    float_arg_reg_name, float_result_reg, int_arg_reg_name, int_result_reg, secondary_scratch_reg,
-    string_result_regs, symbol_scratch_reg, tertiary_scratch_reg,
+    float_arg_reg_name, float_result_reg, float_spill_scratch_reg, int_arg_reg_name,
+    int_result_reg, secondary_scratch_reg, string_result_regs, symbol_scratch_reg,
+    tertiary_scratch_reg,
 };
 pub use registers::{
     nested_call_reg, process_argc_reg, process_argv_reg, temp_int_reg, IncomingArgCursor,

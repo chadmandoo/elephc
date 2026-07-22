@@ -18,7 +18,9 @@ fn function_decl(name: &str, body: Vec<Stmt>) -> Stmt {
         StmtKind::FunctionDecl {
             name: name.to_string(),
             params: Vec::new(),
+            param_attributes: Vec::new(),
             variadic: None,
+            variadic_by_ref: false,
             variadic_type: None,
             return_type: None,
             by_ref_return: false,
@@ -151,17 +153,20 @@ fn test_known_builtin_call_does_not_write_globals() {
     );
 }
 
-/// Every builtin on the pure-non-throwing list must be by-value only:
+/// Every builtin with static pure/non-throwing semantics must be by-value only:
 /// `propagate_args` substitution into pure calls relies on it.
 #[test]
-fn test_pure_builtin_list_has_no_by_ref_params() {
+fn test_pure_builtin_semantics_have_no_by_ref_params() {
     for name in crate::builtins::registry::names() {
-        if !is_pure_non_throwing_builtin(name) {
-            continue;
-        }
         let Some(def) = crate::builtins::registry::lookup(name) else {
             continue;
         };
+        if !matches!(
+            def.spec.semantics.effects,
+            crate::builtins::semantics::BuiltinEffects::Static(effects) if effects.is_empty()
+        ) {
+            continue;
+        }
         assert!(
             def.ref_params.iter().all(|by_ref| !by_ref),
             "pure-non-throwing builtin `{name}` must not take by-ref parameters"

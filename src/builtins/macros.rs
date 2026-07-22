@@ -18,8 +18,10 @@
 //! - A trailing comma after the last field is optional.
 //!
 //! Canonical field order:
-//!   name, area, params, variadic?, min_args?, max_args?, arity_error?, returns, by_ref_return?,
-//!   check?, lower, summary, examples?, php_manual?, deprecation?, internal?
+//!   name, area, params, variadic?, min_args?, max_args?, arity_error?, returns,
+//!   by_ref_return?, check?,
+//!   lazy_check?, semantics, requirements?, summary, examples?, php_manual?,
+//!   deprecation?, extension?, internal?
 //!
 //! Example:
 //! ```ignore
@@ -28,7 +30,7 @@
 //!     area: String,
 //!     params: [string: Str],
 //!     returns: Int,
-//!     lower: strlen_lower,
+//!     semantics: string_length_semantics(),
 //!     summary: "Returns the length of a string.",
 //!     php_manual: "function.strlen",
 //! }
@@ -38,8 +40,12 @@
 ///
 /// Fields must appear in canonical order (optional fields may be omitted):
 /// `name`, `area`, `params`, `variadic`?, `min_args`?, `max_args`?, `arity_error`?,
-/// `returns`, `by_ref_return`?, `check`?, `lower`, `summary`, `examples`?, `php_manual`?,
-/// `deprecation`?, `internal`?
+/// `returns`, `by_ref_return`?, `check`?, `lazy_check`?, `semantics`, `requirements`?,
+/// `summary`, `examples`?,
+/// `php_manual`?, `deprecation`?, `extension`?, `internal`?
+///
+/// `extension` (optional `bool`, default `false`) marks the builtin as an elephc
+/// extension with no PHP equivalent; `--strict-php` hides it from user programs.
 ///
 /// `max_args` (optional `usize`) caps the maximum argument count enforced by the
 /// registry's `check_arity` only; it does not affect `function_sig` or the parity gate.
@@ -75,11 +81,13 @@ macro_rules! builtin {
         $(by_ref_return: $by_ref_return:expr,)?
         $(check: $check:expr,)?
         $(lazy_check: $lazy_check:expr,)?
-        lower: $lower:expr,
+        semantics: $semantics:expr,
+        $(requirements: $requirements:expr,)?
         summary: $summary:expr,
         $(examples: $examples:expr,)?
         $(php_manual: $php_manual:expr,)?
         $(deprecation: $deprecation:expr,)?
+        $(extension: $extension:expr,)?
         $(internal: $internal:expr)?
         $(,)?
     ) => {
@@ -98,13 +106,19 @@ macro_rules! builtin {
                 arity_error: builtin!(@opt_str $($arity_error)?),
                 returns: $crate::builtins::spec::TypeSpec::$returns,
                 by_ref_return: builtin!(@opt_bool $($by_ref_return)?),
-                check: builtin!(@opt_fn $($check)?),
-                lazy_check: builtin!(@opt_bool $($lazy_check)?),
-                lower: $lower,
+                semantics: $crate::builtins::semantics::with_registry_requirement_resolver(
+                    $crate::builtins::semantics::with_registry_checker_contract(
+                        $semantics,
+                        builtin!(@opt_fn $($check)?),
+                        builtin!(@opt_bool $($lazy_check)?),
+                    ),
+                    builtin!(@opt_requirements_fn $($requirements)?),
+                ),
                 summary: $summary,
                 examples: builtin!(@opt_examples $($examples)?),
                 php_manual: builtin!(@opt_str $($php_manual)?),
                 deprecation: builtin!(@opt_str $($deprecation)?),
+                extension: builtin!(@opt_bool $($extension)?),
                 internal: builtin!(@opt_bool $($internal)?),
             }
         }
@@ -213,6 +227,10 @@ macro_rules! builtin {
     // Helper: optional CheckFn — present yields Some, absent yields None.
     (@opt_fn $val:expr) => { Some($val) };
     (@opt_fn) => { None };
+
+    // Helper: optional source-dependent requirement resolver.
+    (@opt_requirements_fn $val:expr) => { Some($val) };
+    (@opt_requirements_fn) => { None };
 
     // Helper: optional examples slice — present yields the value, absent yields empty slice.
     (@opt_examples $val:expr) => { $val };

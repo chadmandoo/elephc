@@ -2,7 +2,7 @@
 title: "getprotobyname()"
 description: "Gets the protocol number associated with the given protocol name."
 sidebar:
-  order: 180
+  order: 186
 ---
 
 ## getprotobyname()
@@ -18,6 +18,11 @@ Gets the protocol number associated with the given protocol name.
 
 **Returns**: `mixed`
 
+## Availability
+
+- **Compiled (AOT)**: supported by the Elephc code generator.
+- **`eval()` (magician interpreter)**: supported — declarative interpreter builtin ([`crates/elephc-magician/src/interpreter/builtins/network_env/getprotobyname.rs`](https://github.com/illegalstudio/elephc/blob/main/crates/elephc-magician/src/interpreter/builtins/network_env/getprotobyname.rs)).
+
 _No examples yet — check `examples/` and `showcases/` for usage patterns._
 
 
@@ -29,4 +34,3 @@ _No examples yet — check `examples/` and `showcases/` for usage patterns._
 ## Internals
 
 For how `getprotobyname` is implemented in the compiler, see [the internals page](../../../internals/builtins/io/getprotobyname.md).
-
