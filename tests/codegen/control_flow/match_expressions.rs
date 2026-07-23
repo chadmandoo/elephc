@@ -1,6 +1,6 @@
 //! Purpose:
-//! Integration and regression tests for match expressions with heterogeneous
-//! arm result types (object/array/string/int/null mixes) and homogeneous arms.
+//! Integration and regression tests for match expressions, including builtin
+//! error references and heterogeneous or homogeneous arm result types.
 //!
 //! Called from:
 //! - `cargo test` through Rust's test harness.
@@ -14,8 +14,35 @@
 //!   temp to array-of-boxed-Mixed elements instead of letting the last arm's
 //!   element type relabel every other arm's runtime array.
 //! - `gettype` probes assert PHP's per-arm type preservation across arms.
+//! - Explicit `UnhandledMatchError` construction is distinct from the current
+//!   fatal terminator used when no match arm and no default arm succeeds.
 
 use super::*;
+
+/// Verifies the builtin `UnhandledMatchError` class can be constructed in a
+/// match default arm, thrown, caught by its fully-qualified name, and queried
+/// through the `getMessage()` method inherited from `Error`.
+#[test]
+fn test_unhandled_match_error_throw_and_catch() {
+    let out = compile_and_run(
+        r#"<?php
+function classify(int $n): string {
+    return match (true) {
+        $n < 0 => "negative",
+        $n === 0 => "zero",
+        default => throw new UnhandledMatchError("no arm for " . $n),
+    };
+}
+
+try {
+    classify(5);
+} catch (\UnhandledMatchError $e) {
+    echo $e->getMessage();
+}
+"#,
+    );
+    assert_eq!(out, "no arm for 5");
+}
 
 /// Regression test for issue #488: a match whose arms produce an object, an
 /// array, and a string must preserve each arm's value instead of fatally
