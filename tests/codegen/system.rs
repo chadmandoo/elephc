@@ -2236,6 +2236,24 @@ echo $result;
     assert_eq!(out, "price: [123] and [456]");
 }
 
+/// Verifies the regex functions accept PHP's other delimiters: any punctuation byte, and the
+/// four bracket pairs, with modifiers after the closing delimiter.
+#[test]
+fn test_preg_functions_accept_non_slash_delimiters() {
+    let out = compile_and_run(
+        r#"<?php
+echo preg_match('~^/a$~', '/a'), preg_match('#^/a$#', '/a'), preg_match('!^/a$!', '/a');
+echo preg_match('{^/a$}', '/a'), preg_match('(^/a$)', '/a'), preg_match('[^/a$]', '/a'), preg_match('<^/a$>', '/a');
+echo preg_match('~^/A$~i', '/a'), preg_match('~^x~', '/a'), "|";
+echo preg_match('~^/([^/]+)$~', '/Ada', $m), $m[1], "|";
+echo preg_replace('~^/([^/]+)$~', '$1', '/Ada'), preg_replace('#a#i', 'b', 'AaA'), "|";
+echo preg_replace_callback('#\d+#', static fn (array $matches): string => '<' . $matches[0] . '>', 'a1b22'), "|";
+echo implode(',', preg_split('~,~', 'x,y,z'));
+"#,
+    );
+    assert_eq!(out, "111111110|1Ada|Adabbb|a<1>b<22>|x,y,z");
+}
+
 /// Verifies `preg_replace_callback` exposes both complete match `$matches[0]` and numbered
 /// capture groups `$matches[1]`, `$matches[2]` to the closure.
 #[test]
