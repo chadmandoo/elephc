@@ -751,3 +751,30 @@ echo f(1, new H()), "|", f(3, [1, 2]), "|", g(1, new H()), "|", g(3, [1]), "\n";
     );
     assert_eq!(out, "7|2|object|1:array\n");
 }
+
+/// Verifies an `is_array()` guard narrows a `mixed` value, in the guarded branch and after an
+/// early exit, so it can be returned as `array` there.
+#[test]
+fn test_is_array_narrows_a_mixed_value() {
+    let out = compile_and_run(
+        r#"<?php
+function asList(mixed $v): array
+{
+    if (is_array($v)) {
+        return $v;
+    }
+    return [];
+}
+function orFail(mixed $v): array
+{
+    if (!is_array($v)) {
+        throw new Exception("not a list");
+    }
+    return $v;
+}
+$data = json_decode('[1,2,3]', true);
+echo count(asList($data)), "|", count(asList("x")), "|", count(orFail($data)), "\n";
+"#,
+    );
+    assert_eq!(out, "3|0|3\n");
+}
