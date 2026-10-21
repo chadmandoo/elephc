@@ -873,3 +873,63 @@ echo count(viaFinally([1])), "|", count(viaRethrow([1, 2])), "|", count(viaDefau
     );
     assert_eq!(out, "1|2|3|0|object|array\n");
 }
+
+/// Verifies the paths an exception or a `continue` takes do not see facts only a completed body
+/// established: a catch and a `finally` are checked with the types from before the `try`, a
+/// local the `finally` reassigns keeps its new type after it, and a `switch` case that leaves
+/// through `continue 1` reaches the end of the `switch` without the `default`'s fact.
+#[test]
+fn test_exceptional_and_continue_paths_do_not_see_a_completed_body_s_facts() {
+    let out = compile_and_run(
+        r#"<?php
+final class H { public int $h = 7; }
+function viaCatch(mixed $value): int {
+    try {
+        if (!is_array($value)) {
+            throw new Exception("x");
+        }
+    } catch (Exception $e) {
+        return $value->h;
+    }
+    return count($value);
+}
+function seenByFinally(mixed $value): string {
+    $seen = "";
+    try {
+        try {
+            if (!is_array($value)) {
+                throw new Exception("x");
+            }
+        } finally {
+            $seen = is_object($value) ? "object" : "array";
+        }
+    } catch (Exception $e) {
+    }
+    return $seen;
+}
+function reassignedInFinally(?array $value): int {
+    try {
+        if ($value === null) {
+            throw new Exception("x");
+        }
+    } finally {
+        $value = null;
+    }
+    return $value === null ? 0 : 1;
+}
+function viaContinue(int $kind, mixed $value): int {
+    switch ($kind) {
+        case 0:
+            continue 1;
+        default:
+            if (!is_array($value)) {
+                throw new Exception("x");
+            }
+    }
+    return is_array($value) ? count($value) : $value->h;
+}
+echo viaCatch(new H()), "|", viaCatch([1, 2]), "|", seenByFinally(new H()), "|", seenByFinally([1]), "|", reassignedInFinally([1]), "|", viaContinue(0, new H()), "|", viaContinue(1, [1, 2, 3]), "\n";
+"#,
+    );
+    assert_eq!(out, "7|2|object|array|0|7|3\n");
+}

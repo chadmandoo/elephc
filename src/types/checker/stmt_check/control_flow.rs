@@ -967,21 +967,21 @@ impl Checker {
             } => {
                 let mut errors = Vec::new();
                 let branch_entry_boxed_refs = self.boxed_ref_aliased_locals.clone();
-                // An exception can leave the try body at any statement, so a catch, and the code
-                // after a caught one, may run without what the body's early exits kept. When no
-                // catch can fall out of the `try`, only a completed body reaches what follows.
+                // An exception can leave the try body at any statement, so the catches, the
+                // `finally` and the code after a caught exception may all run without what the
+                // body's early exits kept: they are checked without those facts. When no catch
+                // can fall out of the `try`, only a completed body reaches what follows, so the
+                // facts come back after the `finally` for every local nothing has reassigned.
                 let try_mark = self.kept_narrowings.len();
                 for s in try_body {
                     if let Err(error) = self.check_stmt(s, env) {
                         errors.extend(error.flatten());
                     }
                 }
-                if catches
+                let completed_facts = self.take_kept_narrowings_since(try_mark, env);
+                let only_completion_falls_out = catches
                     .iter()
-                    .any(|catch_clause| !self.body_cannot_fall_through(&catch_clause.body))
-                {
-                    self.undo_kept_narrowings_since(try_mark, env);
-                }
+                    .all(|catch_clause| self.body_cannot_fall_through(&catch_clause.body));
                 for catch_clause in catches {
                     self.boxed_ref_aliased_locals = branch_entry_boxed_refs.clone();
                     let mut resolved_types = Vec::new();
@@ -1035,6 +1035,13 @@ impl Checker {
                         .push(self.break_continue_depth);
                     errors.extend(self.check_body(body, env));
                     self.finally_break_continue_bases.pop();
+                }
+                if only_completion_falls_out {
+                    let untouched: Vec<_> = completed_facts
+                        .into_iter()
+                        .filter(|fact| env.get(&fact.var) == fact.original.as_ref())
+                        .collect();
+                    self.keep_facts_every_path_shares(&[untouched], env);
                 }
                 self.callable_array_targets.clear();
                 self.callable_array_target_versions.clear();
@@ -1212,17 +1219,19 @@ impl Checker {
 
     /// Checks a loop body with its control-flow depth and conservative property narrowings.
     /// Returns the facts a `switch` case contributes at the end of the `switch`: `None` when it
-    /// never reaches the end (it returns or throws), none when a `break` or `continue` before
+    /// never reaches the end (it leaves the function), none when a `break` or `continue` before
     /// its last statement can leave it before they were established, else what it kept.
     fn switch_case_reaching_facts(
         &self,
         body: &[Stmt],
         facts: Vec<crate::types::checker::KeptNarrowing>,
     ) -> Option<Vec<crate::types::checker::KeptNarrowing>> {
-        let effect = crate::termination::block_terminal_effect_with_divergence(body, &|expr| {
+        // Only a case that leaves the function never reaches the end. A `continue` does not
+        // count: `continue 1` leaves the `switch` the way `break` does, so its path reaches
+        // the end, and the check below keeps none of the case's facts for it.
+        if crate::termination::block_guarantees_function_exit_with_divergence(body, &|expr| {
             self.expr_is_declared_never_call(expr)
-        });
-        if matches!(effect, crate::termination::TerminalEffect::ExitsCurrentBlock) {
+        }) {
             return None;
         }
         let before_last_break = match body.split_last() {
