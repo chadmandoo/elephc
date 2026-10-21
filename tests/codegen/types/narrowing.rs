@@ -818,3 +818,58 @@ echo viaSwitch(1, new H()), "|", viaSwitch(3, [1, 2]), "|", viaTry(new H()), "|"
     );
     assert_eq!(out, "7|2|object|array|3\n");
 }
+
+/// Verifies facts an early exit kept survive the construct when every path reaching its end
+/// established them: a `try` whose catches cannot fall out (or that has only `finally`), and a
+/// `switch` with a `default` whose reaching cases all kept them; without a `default`, a breaking
+/// case's fact does not survive, since an unmatched value reaches the end without it.
+#[test]
+fn test_kept_narrowing_survives_try_and_switch_when_every_path_shares_it() {
+    let out = compile_and_run(
+        r#"<?php
+final class H { public int $h = 7; }
+function viaFinally(?array $value): array {
+    try {
+        if ($value === null) {
+            throw new Exception("x");
+        }
+    } finally {
+    }
+    return $value;
+}
+function viaRethrow(?array $value): array {
+    try {
+        if ($value === null) {
+            throw new Exception("x");
+        }
+    } catch (Exception $e) {
+        throw $e;
+    }
+    return $value;
+}
+function viaDefault(int $kind, ?array $value): array {
+    switch ($kind) {
+        case 0:
+            return [];
+        default:
+            if ($value === null) {
+                throw new Exception("x");
+            }
+    }
+    return $value;
+}
+function viaBreakWithoutDefault(int $kind, mixed $value): string {
+    switch ($kind) {
+        case 1:
+            if (!is_array($value)) {
+                throw new Exception("x");
+            }
+            break;
+    }
+    return is_object($value) ? "object" : "array";
+}
+echo count(viaFinally([1])), "|", count(viaRethrow([1, 2])), "|", count(viaDefault(1, [1, 2, 3])), "|", count(viaDefault(0, null)), "|", viaBreakWithoutDefault(2, new H()), "|", viaBreakWithoutDefault(1, [1]), "\n";
+"#,
+    );
+    assert_eq!(out, "1|2|3|0|object|array\n");
+}
