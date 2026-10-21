@@ -572,7 +572,11 @@ impl Checker {
                         .filter(|name| !invalidated.contains(*name))
                         .cloned()
                         .collect();
+                    // A case runs only for its own values, so what its early exits kept holds
+                    // for the rest of that case, not after the `switch`.
+                    let mark = self.kept_narrowings.len();
                     errors.extend(self.check_body(body, env));
+                    self.undo_kept_narrowings_since(mark, env);
                 }
                 if let Some(body) = default {
                     let invalidated = self
@@ -584,7 +588,9 @@ impl Checker {
                         .into_iter()
                         .filter(|name| !invalidated.contains(name))
                         .collect();
+                    let mark = self.kept_narrowings.len();
                     errors.extend(self.check_body(body, env));
+                    self.undo_kept_narrowings_since(mark, env);
                 }
                 self.break_continue_depth -= 1;
                 self.callable_array_targets.clear();
@@ -810,7 +816,16 @@ impl Checker {
             StmtKind::DoWhile { body, condition } => {
                 self.boxed_ref_aliased_locals.clear();
                 stabilize_loop_storage(self, stmt.span, body, None, env, None);
-                let errors = self.check_break_continue_target_body(body, env);
+                let mark = self.kept_narrowings.len();
+                let errors = self.check_loop_body(body, env, false);
+                // The body always runs once. When no `break` or `continue` can leave it early,
+                // every path to the condition, and so out of the loop, went through the whole
+                // body, and the facts its early exits kept still hold after the loop.
+                if crate::termination::block_may_break_current_loop(body)
+                    || crate::optimize::block_continues_enclosing_loop(body, 0)
+                {
+                    self.undo_kept_narrowings_since(mark, env);
+                }
                 self.infer_type_with_assignment_effects(condition, env)?;
                 self.callable_array_targets.clear();
                 self.callable_array_target_versions.clear();
@@ -939,11 +954,15 @@ impl Checker {
             } => {
                 let mut errors = Vec::new();
                 let branch_entry_boxed_refs = self.boxed_ref_aliased_locals.clone();
+                // An exception can leave the try body at any statement, so a catch, and the code
+                // after a caught one, may run without what the body's early exits kept.
+                let try_mark = self.kept_narrowings.len();
                 for s in try_body {
                     if let Err(error) = self.check_stmt(s, env) {
                         errors.extend(error.flatten());
                     }
                 }
+                self.undo_kept_narrowings_since(try_mark, env);
                 for catch_clause in catches {
                     self.boxed_ref_aliased_locals = branch_entry_boxed_refs.clone();
                     let mut resolved_types = Vec::new();
@@ -975,11 +994,13 @@ impl Checker {
                             PhpType::Object(self.common_catch_type_name(&resolved_types)),
                         );
                     }
+                    let catch_mark = self.kept_narrowings.len();
                     for s in &catch_clause.body {
                         if let Err(error) = self.check_stmt(s, env) {
                             errors.extend(error.flatten());
                         }
                     }
+                    self.undo_kept_narrowings_since(catch_mark, env);
                 }
                 if let Some(body) = finally_body {
                     let invalidated = self
@@ -1176,6 +1197,18 @@ impl Checker {
         body: &[Stmt],
         env: &mut TypeEnv,
     ) -> Vec<CompileError> {
+        self.check_loop_body(body, env, true)
+    }
+
+    /// Checks a loop body one level deeper for `break`/`continue`. With `undo_kept`, the facts
+    /// the body's early exits kept are undone once it has been checked; `do`/`while` passes
+    /// `false` and decides itself, since its body always runs once.
+    fn check_loop_body(
+        &mut self,
+        body: &[Stmt],
+        env: &mut TypeEnv,
+        undo_kept: bool,
+    ) -> Vec<CompileError> {
         // A loop body may observe a property write made by an earlier iteration (the write site
         // is *after* the read site in source order), so property narrowings from outside the
         // loop cannot be trusted inside it.
@@ -1185,7 +1218,9 @@ impl Checker {
         let errors = self.check_body(body, env);
         // An early exit inside the body narrows the rest of one iteration, not the code after
         // the loop, which may run after no iteration at all.
-        self.undo_kept_narrowings_since(body_mark, env);
+        if undo_kept {
+            self.undo_kept_narrowings_since(body_mark, env);
+        }
         self.break_continue_depth -= 1;
         errors
     }

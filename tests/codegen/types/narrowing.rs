@@ -778,3 +778,43 @@ echo count(asList($data)), "|", count(asList("x")), "|", count(orFail($data)), "
     );
     assert_eq!(out, "3|0|3\n");
 }
+
+/// Verifies narrowings kept inside a `switch` case or a `try` body stay inside it, while a
+/// `do`/`while` body that cannot leave early keeps its facts after the loop.
+#[test]
+fn test_kept_narrowing_scopes_follow_switch_try_and_do_while() {
+    let out = compile_and_run(
+        r#"<?php
+final class H { public int $h = 7; }
+function viaSwitch(int $kind, mixed $value): int {
+    switch ($kind) {
+        case 3:
+            if (!is_array($value)) {
+                throw new Exception("x");
+            }
+            return count($value);
+    }
+    return $value->h;
+}
+function viaTry(mixed $value): string {
+    try {
+        if (!is_array($value)) {
+            throw new Exception("x");
+        }
+    } catch (Exception $e) {
+    }
+    return is_object($value) ? "object" : "array";
+}
+function viaDoWhile(?array $value): array {
+    do {
+        if ($value === null) {
+            throw new Exception("x");
+        }
+    } while (false);
+    return $value;
+}
+echo viaSwitch(1, new H()), "|", viaSwitch(3, [1, 2]), "|", viaTry(new H()), "|", viaTry([1]), "|", count(viaDoWhile([1, 2, 3])), "\n";
+"#,
+    );
+    assert_eq!(out, "7|2|object|array|3\n");
+}
