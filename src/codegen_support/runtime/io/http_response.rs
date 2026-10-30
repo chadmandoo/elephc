@@ -127,39 +127,49 @@ pub fn emit_flush(emitter: &mut Emitter, web: bool, mbstring: bool) {
     emitter.comment("--- runtime: flush ---");
     emitter.label_global("__rt_flush");
     if emitter.target.arch == Arch::AArch64 {
+        // -- set up the helper frame --
         emitter.instruction("stp x29, x30, [sp, #-16]!");                       // keep the caller linkage across the bridge calls
         emitter.instruction("mov x29, sp");                                     // establish the helper frame
         if mbstring {
+            // -- commit the mbstring response head --
             emitter.instruction("mov x0, #1");                                  // commit as a nonempty terminal write would
             emitter.bl_c("elephc_mbstring_response_commit_v1");
             emitter.instruction("cbnz x0, __rt_flush_fatal");                   // stop after an invalid request-state boundary
         }
         if web {
+            // -- send the web response head --
             emitter.bl_c("elephc_web_flush");                                   // send the status and headers if no output has yet
         }
+        // -- tear down the frame and return --
         emitter.instruction("ldp x29, x30, [sp], #16");                         // restore the caller linkage
         emitter.instruction("ret");                                             // return without a PHP value
         if mbstring {
             emitter.label("__rt_flush_fatal");
+            // -- exit on a fatal bridge failure --
             emitter.instruction("mov x0, #1");                                  // preserve a nonzero exit status for a fatal bridge failure
             emitter.bl_c("exit");
         }
     } else {
+        // -- set up the helper frame --
         emitter.instruction("push rbp");                                        // keep the caller frame and align rsp for the bridge calls
         emitter.instruction("mov rbp, rsp");                                    // establish the helper frame
         if mbstring {
+            // -- commit the mbstring response head --
             emitter.instruction("mov edi, 1");                                  // commit as a nonempty terminal write would
             emitter.bl_c("elephc_mbstring_response_commit_v1");
             emitter.instruction("test eax, eax");                               // detect a fatal request-state boundary
             emitter.instruction("jnz __rt_flush_fatal");                        // stop rather than continue without response state
         }
         if web {
+            // -- send the web response head --
             emitter.bl_c("elephc_web_flush");                                   // send the status and headers if no output has yet
         }
+        // -- tear down the frame and return --
         emitter.instruction("pop rbp");                                         // restore the caller frame
         emitter.instruction("ret");                                             // return without a PHP value
         if mbstring {
             emitter.label("__rt_flush_fatal");
+            // -- exit on a fatal bridge failure --
             emitter.instruction("mov edi, 1");                                  // preserve a nonzero exit status for a fatal bridge failure
             emitter.bl_c("exit");
         }
